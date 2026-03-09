@@ -1,5 +1,5 @@
 # Rust / Cargo
-target/
+target
 **/target/
 
 # Asili build outputs
