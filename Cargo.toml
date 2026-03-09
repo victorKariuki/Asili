@@ -1,0 +1,12 @@
+[workspace]
+members = [
+  "core/diagnostics",
+  "core/lexer",
+  "core/parser",
+  "core/evaluator",
+  "pata/cli",
+  "pata/runner",
+  "pata/lsp",
+  "driver/wasm",
+]
+resolver = "2"

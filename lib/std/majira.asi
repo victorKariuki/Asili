@@ -1,0 +1,11 @@
+# Majira (time) – interface stub
+
+thabiti SEKUNDE_KWA_SIKU: Namba
+thabiti MWANZO_WA_ZAMANI: Namba
+
+kazi majira() -> Namba
+kazi sasa() -> Wakati
+kazi sekunde(w: Wakati) -> Namba
+kazi kutoka_sekunde(n: Namba) -> Wakati
+kazi umbiza(w: Wakati) -> Neno
+kazi lala(sekunde: Namba) -> Tupu

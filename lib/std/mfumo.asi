@@ -1,0 +1,10 @@
+# Mfumo (system) – interface stub
+
+thabiti TOLEO: Neno
+thabiti JINA_OS: Neno
+
+kazi vigezo() -> Orodha<Neno>
+kazi pata_env(jina: Neno) -> Chaguo<Neno>
+kazi toka(kodi: Namba) -> Tupu
+kazi sikiliza_ishara(ishara: Namba, kazi_jina: Neno) -> Tupu
+kazi rejesha_ishara(ishara: Namba) -> Tupu

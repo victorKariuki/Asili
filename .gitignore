@@ -1,0 +1,35 @@
+# Rust / Cargo
+target/
+**/target/
+
+# Asili build outputs
+*.asb
+*.asm
+
+# IDE / editor
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Debug / temp
+*.log
+*.tmp
+*.temp
+.cache/
+
+# Node (extensions, LSP tooling)
+node_modules/
+
+# Local env (secrets)
+.env
+.env.local
+.env.*.local

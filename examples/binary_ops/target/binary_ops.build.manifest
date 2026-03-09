@@ -1,0 +1,5 @@
+project=binary_ops
+entry=./src/kuu.as
+functions=45
+artifact=binary_ops.asb
+input_hash=c148e9183ea1443b

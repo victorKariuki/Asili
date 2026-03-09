@@ -1,0 +1,27 @@
+{
+  "kazi kuu": {
+    "prefix": "kuu",
+    "body": ["kazi kuu(hoja: Orodha<Neno>) -> Tupu {", "  $0", "}"],
+    "description": "Entry point kazi kuu"
+  },
+  "ikiwa": {
+    "prefix": "ikiwa",
+    "body": ["ikiwa ${1:sharti} {", "  $0", "}"],
+    "description": "Conditional ikiwa"
+  },
+  "linganisha": {
+    "prefix": "linganisha",
+    "body": ["linganisha ${1:thamani} {", "  ${2:_} => { $0 }", "}"],
+    "description": "Match linganisha"
+  },
+  "weka": {
+    "prefix": "weka",
+    "body": ["weka ${1:jina} = ${2:thamani}"],
+    "description": "Let binding"
+  },
+  "leta": {
+    "prefix": "leta",
+    "body": ["leta ${1:hisabati}"],
+    "description": "Import module"
+  }
+}

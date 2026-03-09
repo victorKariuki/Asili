@@ -1,0 +1,80 @@
+# Msingi::hisabati (interface stub)
+
+umbo Kosa_Hisabati {
+    aina: Neno,
+    ujumbe: Neno,
+}
+
+thabiti Ukomo: Namba
+thabiti Siyo_Namba: Namba
+thabiti PI: Namba
+thabiti E: Namba
+thabiti PHI: Namba
+thabiti TAU: Namba
+thabiti LN10: Namba
+thabiti LN2: Namba
+thabiti LOG10E: Namba
+thabiti LOG2E: Namba
+thabiti KIPEUO1_2: Namba
+thabiti KIPEUO2: Namba
+thabiti KIPEUO3: Namba
+thabiti KIPEUO5: Namba
+thabiti EPSILON: Namba
+thabiti INF: Namba
+thabiti NAN: Namba
+
+kazi jumla(a: Namba, b: Namba) -> Namba
+kazi tofauti(a: Namba, b: Namba) -> Namba
+kazi zao(a: Namba, b: Namba) -> Namba
+
+kazi gawio(a: Namba, b: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi kipeo(msingi: Namba, nguvu: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi mizizi(n: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+
+kazi duara(n: Namba) -> Namba
+kazi absolute(n: Namba) -> Namba
+kazi abs(n: Namba) -> Namba
+kazi ishara(n: Namba) -> Namba
+kazi upeo(msingi: Namba, nguvu: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi kipeuo2(n: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi kipeuo3(n: Namba) -> Namba
+kazi haipot(x: Namba, y: Namba) -> Namba
+kazi upeo_wa_e(x: Namba) -> Namba
+kazi expm1(x: Namba) -> Namba
+kazi sakafu(n: Namba) -> Namba
+kazi dari(n: Namba) -> Namba
+kazi duara_maeneo(x: Namba, m: Namba) -> Namba
+kazi punguza(n: Namba) -> Namba
+kazi kubwa(a: Namba, b: Namba) -> Namba
+kazi ndogo(a: Namba, b: Namba) -> Namba
+kazi kikwazo(x: Namba, chini: Namba, juu: Namba) -> Namba
+kazi kwenda_radiani(d: Namba) -> Namba
+kazi kwenda_nyuzi(r: Namba) -> Namba
+kazi mzizi(x: Namba, n: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi faktoriali(n: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi baki(x: Namba, y: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi logi(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi logi10(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi logi2(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi logi1p(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi asini(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi akosini(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi atanjenti(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi asini_h(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi akosini_h(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi atanjenti_h(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
+kazi sini(x: Namba) -> Namba
+kazi kosini(x: Namba) -> Namba
+kazi tanjenti(x: Namba) -> Namba
+kazi atanjenti2(y: Namba, x: Namba) -> Namba
+kazi sini_h(x: Namba) -> Namba
+kazi kosini_h(x: Namba) -> Namba
+kazi tanjenti_h(x: Namba) -> Namba
+kazi ni_namba(x: Namba) -> Ukweli
+kazi si_namba(x: Namba) -> Ukweli
+kazi ni_ukomo(x: Namba) -> Ukweli
+kazi ni_namba?(x: Namba) -> Ukweli
+kazi si_namba?(x: Namba) -> Ukweli
+kazi ni_ukomo?(x: Namba) -> Ukweli
+kazi nasibu() -> Namba
+kazi nasibu_chini(chini: Namba, juu: Namba) -> Namba

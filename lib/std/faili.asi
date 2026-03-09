@@ -1,0 +1,10 @@
+# Faili (file system) – interface stub
+
+thabiti NJIA_SEPARATOR: Neno
+
+kazi soma_faili(njia: Neno) -> Tokeo<Neno, Neno>
+kazi andika_faili(njia: Neno, data: Neno) -> Tokeo<Tupu, Neno>
+kazi ongeza(njia: Neno, data: Neno) -> Tokeo<Tupu, Neno>
+kazi vipo(njia: Neno) -> Ukweli
+kazi futa(njia: Neno) -> Tokeo<Tupu, Neno>
+kazi ukubwa(njia: Neno) -> Namba

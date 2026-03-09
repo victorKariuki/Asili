@@ -1,0 +1,3 @@
+# Syscall – interface stub
+
+kazi syscall(nr: Namba, a: Namba, b: Namba, c: Namba) -> Anuani

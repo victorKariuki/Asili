@@ -1,0 +1,11 @@
+[package]
+name = "pata-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+asili-diagnostics = { path = "../../core/diagnostics" }
+asili-lexer = { path = "../../core/lexer" }
+asili-parser = { path = "../../core/parser" }
+asili-evaluator = { path = "../../core/evaluator" }
+pata-lsp = { path = "../lsp" }

@@ -1,0 +1,15 @@
+[package]
+name = "asili-parser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+asili-diagnostics = { path = "../diagnostics" }
+asili-lexer = { path = "../lexer" }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+asili-lexer = { path = "../lexer" }
+
+[lib]
+path = "src/lib.rs"

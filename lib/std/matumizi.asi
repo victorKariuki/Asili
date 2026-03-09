@@ -1,0 +1,7 @@
+# Matumizi (I/O) – interface stub
+
+kazi chapisha(ujumbe: Neno) -> Tupu
+kazi onyo(ujumbe: Neno) -> Tupu
+kazi makosa(ujumbe: Neno) -> Tupu
+kazi paparika(ujumbe: Neno) -> Tupu
+kazi omba(swali: Neno) -> Neno

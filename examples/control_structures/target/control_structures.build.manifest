@@ -1,0 +1,5 @@
+project=control_structures
+entry=./src/kuu.as
+functions=17
+artifact=control_structures.asb
+input_hash=adde00be21277620

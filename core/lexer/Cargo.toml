@@ -1,0 +1,10 @@
+[package]
+name = "asili-lexer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+asili-diagnostics = { path = "../diagnostics" }
+
+[lib]
+path = "src/lib.rs"

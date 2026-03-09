@@ -1,0 +1,4 @@
+# Runtime (kitekelezi) – interface stub
+
+kazi toleo() -> Neno
+kazi jina_os() -> Neno

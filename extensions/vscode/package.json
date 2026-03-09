@@ -1,0 +1,62 @@
+{
+  "name": "asili",
+  "displayName": "Asili",
+  "description": "Asili language support: syntax highlighting and LSP (Mwalimu)",
+  "version": "0.1.0",
+  "publisher": "asili",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:asili"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "asili",
+        "aliases": ["Asili"],
+        "extensions": [".as", ".asi"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "asili",
+        "scopeName": "source.asili",
+        "path": "./syntaxes/asili.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "asili",
+        "path": "./snippets/asili.code-snippets"
+      }
+    ],
+    "configuration": {
+      "title": "Asili",
+      "properties": {
+        "asili.serverPath": {
+          "type": "string",
+          "default": "pata",
+          "description": "Path to pata or pata-lsp binary for LSP"
+        },
+        "asili.serverArgs": {
+          "type": "array",
+          "default": ["mwalimu"],
+          "description": "Arguments for LSP (e.g. [\"mwalimu\"] when using pata)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  }
+}

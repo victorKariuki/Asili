@@ -1,0 +1,13 @@
+# Msingi (prelude) – interface stub
+
+thabiti KWELI: Ukweli
+thabiti SIYO_KWELI: Ukweli
+thabiti TUPU: Tupu
+
+kazi orodha() -> Orodha
+kazi kamusi() -> Kamusi
+kazi kamusi_tupu() -> Kamusi
+kazi jozi(a: Unknown, b: Unknown) -> Jozi
+kazi tokeo(val) -> Tokeo
+kazi kosa(ujumbe: Neno) -> Tokeo
+kazi chaguo(val) -> Chaguo

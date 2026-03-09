@@ -1,0 +1,15 @@
+[package]
+name = "pata-lsp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+asili-diagnostics = { path = "../../core/diagnostics" }
+asili-lexer = { path = "../../core/lexer" }
+asili-parser = { path = "../../core/parser" }
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["full"] }
+
+[[bin]]
+name = "pata-lsp"
+path = "src/main.rs"

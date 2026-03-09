@@ -1,0 +1,12 @@
+[package]
+name = "asili-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+asili-lexer = { path = "../../core/lexer" }
+asili-parser = { path = "../../core/parser" }
+asili-evaluator = { path = "../../core/evaluator" }

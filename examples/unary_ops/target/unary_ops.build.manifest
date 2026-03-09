@@ -1,0 +1,5 @@
+project=unary_ops
+entry=./src/kuu.as
+functions=29
+artifact=unary_ops.asb
+input_hash=ff1824c43208603d

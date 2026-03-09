@@ -1,0 +1,4 @@
+# Sambamba (concurrency) – interface stub
+
+kazi anza_mwendo(kazi_jina: Neno, hoja: Orodha) -> Namba
+kazi subiri_mwendo(mwendo_id: Namba) -> Tokeo<Tupu, Neno>

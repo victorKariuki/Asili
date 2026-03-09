@@ -1,0 +1,4 @@
+# Kiungo (FFI) – interface stub
+
+kazi saza_kiungo(njia: Neno) -> Tokeo<Anuani, Neno>
+kazi wito_kiungo(anuani: Anuani, jina: Neno) -> Tokeo<Namba, Neno>

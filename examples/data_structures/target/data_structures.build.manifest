@@ -1,0 +1,5 @@
+project=data_structures
+entry=./src/kuu.as
+functions=46
+artifact=data_structures.asb
+input_hash=fa24ae0d880b8cb6

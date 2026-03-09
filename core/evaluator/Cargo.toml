@@ -1,0 +1,21 @@
+[package]
+name = "asili-evaluator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+asili-diagnostics = { path = "../diagnostics" }
+rand = "0.8"
+asili-parser = { path = "../parser" }
+bincode = "1.3"
+serde = { version = "1", features = ["derive"] }
+unicode-segmentation = "1.11"
+
+[target.'cfg(unix)'.dependencies]
+signal-hook = "0.3"
+
+[dev-dependencies]
+asili-lexer = { path = "../lexer" }
+
+[lib]
+path = "src/lib.rs"
