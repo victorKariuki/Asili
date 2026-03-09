@@ -1,35 +1,88 @@
-# Asili Workspace Scaffold
+# Asili
 
-This repository is scaffolded from the Asili specification.
+**Asili** (Origin / Nature) is a programming language that uses Swahili as the primary vocabulary for logic and structure. The toolchain (**Pata**) provides a single pipeline for learning, scripting, and embedded-style targets.
 
-## Getting started
+- **Syntax:** Swahili keywords (`kazi`, `weka`, `ikiwa`, `linganisha`, `rejesha`, …).
+- **Types:** Primitives (`Namba`, `Neno`, `Ukweli`), collections (`Orodha<T>`, `Kamusi<K,V>`), `Chaguo<T>`, `Tokeo<T,E>`, structs and impls.
+- **Stdlib:** Modular built-ins (msingi, mfumo, majira, matumizi, faili, hisabati, runtime, syscall, kiungo, sambamba) plus `lib/std` interface stubs.
+- **Spec:** [SPECIFICATION.md](SPECIFICATION.md) and [spec/](spec/) define the language and execution model.
 
-**Prerequisites:** Rust toolchain (e.g. `rustup`).
+## Prerequisites
 
-**Build:** From the workspace root, run `cargo build`. To build an Asili project and produce bytecode, use `pata jenga` from that project’s directory (requires `pata.toml` and entrypoint, e.g. `src/kuu.as`).
+- **Rust** toolchain (e.g. [rustup](https://rustup.rs/)).
 
-**Run:** From an Asili project directory, run `pata jenga --run` to compile and execute the entrypoint.
+## Build and run
 
-**Tests:** Run `pata jaribu` to discover and run `#[jaribio]` tests. Use `pata jaribu --list` to list test names without running them.
+From the workspace root:
 
-**New project:** Run `pata njozi` in an empty directory to create a new project with `pata.toml` and `src/kuu.as`.
+```bash
+cargo build
+```
 
-See `examples/` for small runnable samples; copy an example into your project’s `src/kuu.as` (or set it as entrypoint) and run `pata jenga --run`.
+To work with an Asili project (e.g. under `examples/asi_sample` or one created with `pata njozi`):
 
-## Docs
+```bash
+cd path/to/project
+cargo run -p pata-cli -- jenga          # compile to bytecode
+cargo run -p pata-cli -- jenga --run    # compile and execute entrypoint
+```
 
-- **How-to:** [docs/howto/](docs/howto/) — getting started, running tests, using the LSP.
-- **Design:** [docs/design/](docs/design/) — Mwalimu (LSP) design, Phase II decisions.
-- **Spec:** [spec/](spec/) and [SPECIFICATION.md](SPECIFICATION.md) — language and execution reference.
-- **Stdlib API templates:** [lib/docs/](lib/docs/) — `.asdoc` templates for `pata maelezo`.
+If the CLI is installed as `pata`:
+
+```bash
+pata jenga
+pata jenga --run
+```
+
+## CLI commands (Pata)
+
+| Command | Description |
+|--------|-------------|
+| `pata jenga` | Build project; output `.asb` (and optional manifest). |
+| `pata jenga --run` | Build and run the entrypoint (`kuu`). |
+| `pata jaribu` | Discover and run `#[jaribio]` tests. |
+| `pata jaribu --list` | List test names only. |
+| `pata njozi <dir>` | Create a new project (e.g. `pata.toml`, `src/kuu.as`). |
+| `pata nadhifu` | Format Asili source (line-based, best-effort). |
+| `pata thibitisha` | Check public API documentation. |
+| `pata mwalimu` | Start LSP server (Mwalimu) for editors. |
 
 ## Layout
 
-- `core/` — Kiini (lexer, parser, evaluator, diagnostics)
-- `driver/` — Dereva/Mfumo target adapters
-- `pata/` — CLI, package, formatter, LSP tooling
-- `lib/` — Standard library, tests, docs templates
-- `src/` — Application Asili source
-- `target/` — Build artifacts (`.asb`, binaries, debug output)
-- `spec/` — Language specification
-- `examples/` — Sample Asili programs (copy into a project to run)
+| Path | Contents |
+|------|----------|
+| `core/` | Lexer, parser, semantic analysis, evaluator, diagnostics. |
+| `driver/` | Target adapters (e.g. Wasm). |
+| `pata/` | CLI (`pata-cli`), runner, LSP. |
+| `lib/` | Standard library surface (`lib/std/*.asi` stubs). |
+| `spec/` | Language specification. |
+| `examples/` | Sample Asili programs. |
+| `docs/` | How-to and design notes. |
+
+## Standard library modules
+
+Available via `leta <moduli>` (e.g. `leta matumizi`):
+
+- **msingi** — Prelude: constructors (`orodha`, `kamusi`, `jozi`, `tokeo`, `kosa`, `chaguo`), constants (`KWELI`, `SIYO_KWELI`, `TUPU`).
+- **mfumo** — System: `vigezo`, `pata_env`, `toka`, `sikiliza_ishara`, `rejesha_ishara`.
+- **majira** — Time: `sasa`, `majira`, `sekunde`, `kutoka_sekunde`, `umbiza`, `lala`.
+- **matumizi** — I/O: `chapisha`, `onyo`, `makosa`, `paparika`, `omba`.
+- **faili** — File system: `soma_faili`, `andika_faili`, `ongeza`, `vipo`, `futa`, `ukubwa`.
+- **hisabati** — Math: `jumla`, `tofauti`, `zao`, `gawio`, `duara`, `kipeo`, `mizizi`, etc.
+- **runtime** — `toleo`, `jina_os`.
+- **syscall** — Raw syscall stub.
+- **kiungo** — FFI stubs (`saza_kiungo`, `wito_kiungo`).
+- **sambamba** — Concurrency stubs (`anza_mwendo`, `subiri_mwendo`).
+
+## Documentation
+
+- **How-to:** [docs/howto/](docs/howto/) — getting started, tests, LSP.
+- **Design:** [docs/design/](docs/design/) — Mwalimu (LSP), phase decisions.
+- **Spec:** [spec/](spec/) and [SPECIFICATION.md](SPECIFICATION.md).
+- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Changelog:** [CHANGELOG.md](CHANGELOG.md).
+- **Security:** [SECURITY.md](SECURITY.md).
+
+## License
+
+This project is licensed under the **GNU General Public License v2.0** — see [LICENSE](LICENSE).
