@@ -125,18 +125,38 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                 // iteration are not supported — the loop body is silently skipped for those types.
                 ForMode::InExpr(expr) => {
                     let col = super::eval_expr_impl(expr, rt)?;
-                    if let Value::Orodha(elems) = col {
-                        for item in elems {
-                            rt.env.push_scope();
-                            rt.env.define(var, item);
-                            let out = super::eval_block_impl(body, rt)?;
-                            rt.env.pop_scope();
-                            match handle_loop_out(my_label.as_ref(), out) {
-                                LoopAction::Continue => {}
-                                LoopAction::Break => break,
-                                LoopAction::Propagate(out) => return Ok(out),
+                    match col {
+                        Value::Orodha(elems) => {
+                            for item in elems {
+                                rt.env.push_scope();
+                                rt.env.define(var, item);
+                                let out = super::eval_block_impl(body, rt)?;
+                                rt.env.pop_scope();
+                                match handle_loop_out(my_label.as_ref(), out) {
+                                    LoopAction::Continue => {}
+                                    LoopAction::Break => break,
+                                    LoopAction::Propagate(out) => return Ok(out),
+                                }
                             }
                         }
+                        Value::Kamusi(map) => {
+                            for (key, val) in map {
+                                let pair = Value::Jozi(
+                                    Box::new(key.to_value()),
+                                    Box::new(val),
+                                );
+                                rt.env.push_scope();
+                                rt.env.define(var, pair);
+                                let out = super::eval_block_impl(body, rt)?;
+                                rt.env.pop_scope();
+                                match handle_loop_out(my_label.as_ref(), out) {
+                                    LoopAction::Continue => {}
+                                    LoopAction::Break => break,
+                                    LoopAction::Propagate(out) => return Ok(out),
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }

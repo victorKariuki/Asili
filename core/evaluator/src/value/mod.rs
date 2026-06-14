@@ -20,6 +20,15 @@ pub enum MapKey {
 }
 
 impl MapKey {
+    pub fn to_value(&self) -> Value {
+        match self {
+            MapKey::Neno(s) => Value::Neno(s.clone()),
+            MapKey::Namba(b) => Value::Namba(f64::from_bits(*b)),
+            MapKey::Ukweli(b) => Value::Ukweli(*b),
+            MapKey::Herufi(c) => Value::Herufi(*c),
+        }
+    }
+
     pub fn try_from_value(v: &Value) -> Result<MapKey, EvalError> {
         match v {
             Value::Neno(s) => Ok(MapKey::Neno(s.clone())),
