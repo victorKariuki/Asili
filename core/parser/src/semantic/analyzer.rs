@@ -407,13 +407,13 @@ impl<'a> Analyzer<'a> {
                         }
                         match op {
                             AssignOp::Assign => {
-                                if !self.compatible(&b.ty, &rhs_ty) {
-                                    self.errors.push(
-                                        Diagnostic::new("SEM013", "aina ya assignment haitalingana")
-                                            .with_stage("semantic")
-                                            .with_span(*line, 1),
-                                    );
-                                }
+                                self.check_type_compatibility(
+                                    &b.ty,
+                                    &rhs_ty,
+                                    "SEM013",
+                                    "aina ya assignment haitalingana".to_string(),
+                                    Span { line: *line, column: 1 },
+                                );
                                 b.moved = false;
                                 b.moved_at = None;
                             }
@@ -598,13 +598,13 @@ impl<'a> Analyzer<'a> {
                     .map(|e| self.check_expr(e, scopes, UseMode::Return))
                     .unwrap_or(ValueType::Tupu);
                 let want = self.type_from_decl(return_type);
-                if !self.compatible(&want, &got) {
-                    self.errors.push(
-                        Diagnostic::new("SEM026", "aina ya rejesha haitalingana na signature ya kazi")
-                            .with_stage("semantic")
-                            .with_span(*line, 1),
-                    );
-                }
+                self.check_type_compatibility(
+                    &want,
+                    &got,
+                    "SEM026",
+                    "aina ya rejesha haitalingana na signature ya kazi".to_string(),
+                    Span { line: *line, column: 1 },
+                );
             }
             Stmt::Drop { name, line } => {
                 let mut found = false;
@@ -961,22 +961,19 @@ impl<'a> Analyzer<'a> {
                     let arg_ty = self.check_expr(arg, scopes, UseMode::Move);
                     if i + 1 < func.params.len() {
                         let param_ty = self.type_from_decl(&func.params[i + 1].ty.name);
-                        if !self.compatible(&param_ty, &arg_ty) {
-                            self.errors.push(
-                                Diagnostic::new(
-                                    "SEM042",
-                                    format!(
-                                        "hoja ya {} kwa '{}' haitalingana: inahitaji {}, imepata {}",
-                                        i + 1,
-                                        method_name,
-                                        param_ty,
-                                        arg_ty
-                                    ),
-                                )
-                                .with_stage("semantic")
-                                .with_span(*line, 1),
-                            );
-                        }
+                        self.check_type_compatibility(
+                            &param_ty,
+                            &arg_ty,
+                            "SEM042",
+                            format!(
+                                "hoja ya {} kwa '{}' haitalingana: inahitaji {}, imepata {}",
+                                i + 1,
+                                method_name,
+                                param_ty,
+                                arg_ty
+                            ),
+                            Span { line: *line, column: 1 },
+                        );
                     }
                 }
 
@@ -1228,15 +1225,38 @@ impl<'a> Analyzer<'a> {
     // - Generic instantiation: Orodha<Namba> vs Orodha<Neno> are not distinguished (both Unknown)
     // - Coercions: &T -> &Tupu, Struct -> Sifa (trait object) upcasting
     fn compatible(&self, a: &ValueType, b: &ValueType) -> bool {
-        if a == b {
-            return true;
+        a == b
+    }
+
+    /// Checks compatibility and emits a diagnostic if they are incompatible
+    /// or if one of the types is `Unknown` (inference failure).
+    fn check_type_compatibility(
+        &mut self,
+        expected: &ValueType,
+        actual: &ValueType,
+        error_code: &'static str,
+        message: String,
+        span: Span,
+    ) -> bool {
+        if matches!(expected, ValueType::Unknown) || matches!(actual, ValueType::Unknown) {
+            // Production type checkers should log inference failures here.
+            self.errors.push(
+                Diagnostic::new("SEM-INF", "aina haikuweza kubainishwa (inference failure)")
+                    .with_stage("semantic")
+                    .with_span(span.line, span.column),
+            );
+            return true; // Assume compatibility to avoid cascading errors
         }
-        if matches!(a, ValueType::Unknown) || matches!(b, ValueType::Unknown) {
-            // Note: In a production type checker, you might not want to log here if `Unknown` is
-            // expected (e.g. during incomplete inference), but for Phase I, it helps catch bugs.
-            return true;
+
+        if !self.compatible(expected, actual) {
+            self.errors.push(
+                Diagnostic::new(error_code, message)
+                    .with_stage("semantic")
+                    .with_span(span.line, span.column),
+            );
+            return false;
         }
-        false
+        true
     }
 
     fn type_from_decl(&self, t: &str) -> ValueType {
