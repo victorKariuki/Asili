@@ -601,8 +601,58 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                         Err(e) => Err(e),
                     }
                 }
+                (Value::Enum(enum_name, _, _), _) => {
+                    let method = rt
+                        .module
+                        .impls
+                        .iter()
+                        .filter(|i| i.target == *enum_name && i.trait_name.is_none())
+                        .flat_map(|i| i.body.iter())
+                        .find(|mf| mf.name == *method_name)
+                        .or_else(|| {
+                            rt.module
+                                .impls
+                                .iter()
+                                .filter(|i| i.target == *enum_name && i.trait_name.is_some())
+                                .flat_map(|i| i.body.iter())
+                                .find(|mf| mf.name == *method_name)
+                        })
+                        .cloned()
+                        .ok_or_else(|| {
+                            let has_any_impl =
+                                rt.module.impls.iter().any(|i| i.target == *enum_name);
+                            if has_any_impl {
+                                EvalError::TypeErr(format!(
+                                    "njia '{}' haijulikani kwa jenum '{}'",
+                                    method_name, enum_name
+                                ))
+                            } else {
+                                EvalError::TypeErr(format!(
+                                    "jenum '{}' hauna shughuli yoyote iliyofafanuliwa",
+                                    enum_name
+                                ))
+                            }
+                        })?;
+
+                    rt.env.push_scope();
+                    for (i, p) in method.params.iter().enumerate() {
+                        let val = if i == 0 {
+                            recv.clone()
+                        } else {
+                            args_val.get(i - 1).cloned().unwrap_or(Value::Hamna)
+                        };
+                        rt.env.define(&p.name, val);
+                    }
+                    let out = super::eval_block_impl(&method.body, rt);
+                    rt.env.pop_scope();
+                    match out {
+                        Ok(EvalOut::Return(v)) => Ok(v),
+                        Ok(_) => Ok(Value::Tupu),
+                        Err(e) => Err(e),
+                    }
+                }
                 _ => Err(EvalError::TypeErr(format!(
-                    "mwito wa njia '{method_name}' unahitaji Neno, Orodha au umbo"
+                    "mwito wa njia '{method_name}' unahitaji Neno, Orodha, jenum au umbo"
                 ))),
             }
         }
