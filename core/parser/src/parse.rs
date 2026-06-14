@@ -936,7 +936,30 @@ impl<'a> Parser<'a> {
             return Some(Expr::String(strip_string_lexeme_quotes(&t.lexeme)));
         }
 
-        if self.peek().lexeme.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        let next_lex = self.peek().lexeme.clone();
+        let next_line = self.peek().line;
+        let next_col = self.peek().column;
+
+        if (next_lex.starts_with("0x") || next_lex.starts_with("0X")) && next_lex.len() > 2 {
+            self.advance();
+            self.errors.push(
+                Diagnostic::new("PAR072", "heksadesimali (0x) haiwezekani - tumia namba za desimali tu")
+                    .with_stage("parse")
+                    .with_span(next_line, next_col),
+            );
+            return None;
+        }
+        if (next_lex.starts_with("0b") || next_lex.starts_with("0B")) && next_lex.len() > 2 {
+            self.advance();
+            self.errors.push(
+                Diagnostic::new("PAR072", "binari (0b) haiwezekani - tumia namba za desimali tu")
+                    .with_stage("parse")
+                    .with_span(next_line, next_col),
+            );
+            return None;
+        }
+
+        if next_lex.chars().all(|c| c.is_ascii_digit() || c == '.') {
             let t = self.advance();
             let line = t.line;
             let column = t.column;
