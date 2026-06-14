@@ -1,16 +1,29 @@
-//! Runtime (kitekelezi): toleo, jina_os.
-//
-// TODO: The spec lists additional runtime introspectives that are not implemented:
-//   - `arch()` -> Neno — CPU architecture (x86_64, aarch64, wasm32, ...)
-//   - `ni_debug()` -> Ukweli — true when compiled with debug profile
-//   - `ni_wasm()` -> Ukweli — true when running in WASM
-//   - `mazingira()` -> Kamusi<Neno,Neno> — full environment variable map
-//   - `muda_wa_kuanza()` -> Wakati — process start time (for uptime/perf measurement)
+//! Runtime (kitekelezi): toleo, jina_os, arch, ni_debug, ni_wasm, mazingira, muda_wa_kuanza.
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
-use crate::value::Value;
+use crate::value::{Value, MapKey};
 use super::BuiltinFn;
+
+static START_TIME: OnceLock<f64> = OnceLock::new();
+
+fn get_start_time() -> f64 {
+    *START_TIME.get_or_init(|| {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64()
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            0.0
+        }
+    })
+}
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     m.insert("toleo".to_string(), Box::new(|_args: &[Value]| {
@@ -20,5 +33,27 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     }));
     m.insert("jina_os".to_string(), Box::new(|_args: &[Value]| {
         Ok(Value::Neno(std::env::consts::OS.into()))
+    }));
+    m.insert("arch".to_string(), Box::new(|_args: &[Value]| {
+        Ok(Value::Neno(std::env::consts::ARCH.into()))
+    }));
+    m.insert("ni_debug".to_string(), Box::new(|_args: &[Value]| {
+        Ok(Value::Ukweli(cfg!(debug_assertions)))
+    }));
+    m.insert("ni_wasm".to_string(), Box::new(|_args: &[Value]| {
+        Ok(Value::Ukweli(cfg!(target_arch = "wasm32")))
+    }));
+    m.insert("mazingira".to_string(), Box::new(|_args: &[Value]| {
+        let mut map = HashMap::new();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            for (key, val) in std::env::vars() {
+                map.insert(MapKey::Neno(key), Value::Neno(val));
+            }
+        }
+        Ok(Value::Kamusi(map))
+    }));
+    m.insert("muda_wa_kuanza".to_string(), Box::new(|_args: &[Value]| {
+        Ok(Value::Wakati(get_start_time()))
     }));
 }
