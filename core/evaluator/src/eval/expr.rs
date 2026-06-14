@@ -437,9 +437,26 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                         Ok(Value::Chaguo(Some(Box::new(removed))))
                     }
                 }
-                // TODO: kila_mmoja(callback_name) should iterate the list and call the named kazi
-                // on each element. Currently a no-op — the callback is never invoked.
-                (Value::Orodha(_), "kila_mmoja") => Ok(Value::Tupu),
+                (Value::Orodha(v), "kila_mmoja") => {
+                    let cb_name = args_val.first().and_then(value::as_string).ok_or_else(
+                        || EvalError::TypeErr("kila_mmoja inahitaji jina la kazi".into())
+                    )?;
+                    for elem in v {
+                        if let Some(f) = rt.builtins.get(&cb_name) {
+                            f(&[elem.clone()])?;
+                        } else if let Some(f) = rt.module.functions.iter().find(|x| x.name == cb_name).cloned() {
+                            rt.env.push_scope();
+                            if let Some(p) = f.params.first() {
+                                rt.env.define(&p.name, elem.clone());
+                            }
+                            super::eval_block_impl(&f.body, rt)?;
+                            rt.env.pop_scope();
+                        } else {
+                            return Err(EvalError::TypeErr(format!("kazi haijulikani: {cb_name}")));
+                        }
+                    }
+                    Ok(Value::Tupu)
+                }
                 (Value::Kamusi(m), "ingiza") | (Value::Kamusi(m), "weka_key") => {
                     let key_val = args_val.first().ok_or_else(|| EvalError::TypeErr("ingiza inahitaji ufunguo na thamani".into()))?;
                     let val = args_val.get(1).cloned().unwrap_or(Value::Hamna);
