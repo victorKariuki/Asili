@@ -31,8 +31,6 @@ If the CLI is installed as `pata`:
 ```bash
 pata jenga
 pata jenga --tenda
-
-pata jenga --run
 ```
 
 ## CLI commands (Pata)
