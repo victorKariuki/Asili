@@ -947,6 +947,19 @@ impl<'a> Analyzer<'a> {
                         return ValueType::Unknown;
                     }
                 };
+                let is_enum = self.module.enums.iter().any(|e| e.name == receiver_ty_name);
+                let _is_struct = self.module.structs.iter().any(|s| s.name == receiver_ty_name);
+                if !is_enum && !_is_struct {
+                    self.errors.push(
+                        Diagnostic::new(
+                            "SEM104",
+                            format!("njia inaweza tu kuwa juu ya umbo au jenum, si '{}'", receiver_ty_name),
+                        )
+                        .with_stage("semantic")
+                        .with_span(*line, 1),
+                    );
+                    return ValueType::Unknown;
+                }
 
                 let mut method_decl = None;
                 for imp in &self.module.impls {

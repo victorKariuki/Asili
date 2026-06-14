@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::value::{self, Value};
+use crate::value::Value;
 use super::BuiltinFn;
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
