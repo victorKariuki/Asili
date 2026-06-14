@@ -55,6 +55,12 @@ pub fn register_handler(sig_id: i32, kazi_name: String) {
     let mut inst = installed().lock().unwrap();
     if inst.insert(sig_id) {
         let sig = sig_id;
+        // # Safety:
+        // We are registering a simple signal handler that sets a static atomic variable (`set_pending`).
+        // This is safe because:
+        // 1. `signal_hook::low_level::register` ensures that only async-signal-safe operations are
+        //    performed in the handler.
+        // 2. `set_pending` only performs atomic operations, which are async-signal-safe.
         let _ = unsafe { signal_hook::low_level::register(sig, move || set_pending(sig)) };
     }
 }
