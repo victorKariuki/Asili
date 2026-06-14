@@ -27,10 +27,10 @@ This compiles the entrypoint (e.g. `src/kuu.as`) and produces bytecode/artifacts
 From an Asili project directory (with `pata.toml` and e.g. `src/kuu.as`):
 
 ```bash
-pata jenga --run
+pata jenga --tenda
 ```
 
-This compiles and executes the entrypoint. You can pass arguments after `--run`; they are available to `kazi kuu(hoja: Orodha<Neno>)` as `hoja`.
+This compiles and executes the entrypoint. You can pass arguments after `--tenda`; they are available to `kazi kuu(hoja: Orodha<Neno>)` as `hoja`.
 
 ## Run tests
 
@@ -50,7 +50,7 @@ From an **empty directory**:
 pata njozi
 ```
 
-This creates `pata.toml` and `src/kuu.as` so you can start writing Asili code. Then run `pata jenga --run` or `pata jaribu` as above.
+This creates `pata.toml` and `src/kuu.as` so you can start writing Asili code. Then run `pata jenga --tenda` or `pata jaribu` as above.
 
 ## Install (optional)
 

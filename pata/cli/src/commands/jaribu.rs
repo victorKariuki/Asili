@@ -60,7 +60,7 @@ fn parse_args(args: &[String]) -> Result<(Option<String>, bool, bool), CliError>
                 fail_fast = true;
                 i += 1;
             }
-            "--list" => {
+            "--orodha" => {
                 list_only = true;
                 i += 1;
             }

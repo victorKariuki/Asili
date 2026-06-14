@@ -95,4 +95,4 @@ This example pushes Orodha, Kamusi, Jozi, Struct, Chaguo, Tokeo, and Neno to the
 
 ---
 
-**Run:** `cd examples/data_structures && cargo run -p pata-cli -- jenga --run`
+**Run:** `cd examples/data_structures && cargo run -p pata-cli -- jenga --tenda`

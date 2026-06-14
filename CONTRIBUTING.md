@@ -35,7 +35,8 @@ Contributions are welcome. This document outlines how to build, test, and submit
 - **CLI:**  
   `cargo test -p pata-cli`
 - **Examples:** From an example directory (e.g. `examples/asi_sample`):  
-  `cargo run -p pata-cli -- jenga --run`  
+  `cargo run -p pata-cli -- jenga --tenda`
+  
   to confirm it builds and runs.
 
 New behavior should be covered by tests where practical (parser, semantic, evaluator, or CLI tests as appropriate).

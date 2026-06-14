@@ -150,7 +150,7 @@ fn parse_args(
                 out = Some(PathBuf::from(p));
                 i += 2;
             }
-            "--run" | "--tenda" => {
+            "--tenda" => {
                 do_run = true;
                 i += 1;
             }
@@ -250,7 +250,7 @@ mod tests {
         let original = std::env::current_dir().expect("cwd");
         let root = temp_project();
         std::env::set_current_dir(&root).expect("chdir");
-        run(&["--run".into()]).expect("jenga --run ok");
+        run(&["--tenda".into()]).expect("jenga --tenda ok");
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(&root);
     }
@@ -287,7 +287,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 }"#;
         fs::write(root.join("src/kuu.as"), src).expect("write");
         std::env::set_current_dir(&root).expect("chdir");
-        run(&["--run".into()]).expect("jenga --run with struct and impl");
+        run(&["--tenda".into()]).expect("jenga --tenda with struct and impl");
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(&root);
     }

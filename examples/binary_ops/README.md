@@ -56,4 +56,4 @@ Covers every binary operator and assign operator in Asili so none are overlooked
 - Division by zero (`/` or `/=` with 0)
 - Short-circuit: `kweli au paparika("")` and `si_kweli na paparika("")` (tested in integration tests)
 
-Run: `cd examples/binary_ops && cargo run -p pata-cli -- jenga --run`
+Run: `cd examples/binary_ops && cargo run -p pata-cli -- jenga --tenda`

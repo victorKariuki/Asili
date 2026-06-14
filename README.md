@@ -25,6 +25,7 @@ To work with an Asili project (e.g. under `examples/asi_sample` or one created w
 cd path/to/project
 cargo run -p pata-cli -- jenga          # compile to bytecode
 cargo run -p pata-cli -- jenga --tenda    # compile and execute entrypoint
+```
 
 If the CLI is installed as `pata`:
 
@@ -38,7 +39,7 @@ pata jenga --tenda
 | Command | Description |
 |--------|-------------|
 | `pata jenga` | Build project; output `.asb` (and optional manifest). |
-| `pata jenga --run` | Build and run the entrypoint (`kuu`). |
+| `pata jenga --tenda` | Build and run the entrypoint (`kuu`). |
 | `pata jaribu` | Discover and run `#[jaribio]` tests. |
 | `pata jaribu --orodha` | List test names only. |
 | `pata njozi <dir>` | Create a new project (e.g. `pata.toml`, `src/kuu.as`). |

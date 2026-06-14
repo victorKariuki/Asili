@@ -47,7 +47,7 @@ Reference: Nuru project layout and patterns. This document summarizes what Asili
 ## 6. **REPL and inline docs**
 
 - **Nuru:** `repl/` with `repl.go` and per-topic docs in `repl/docs/` (en + sw): arrays, files, hisabati, keywords, etc.
-- **Asili:** Spec says “terminal REPL” in Phase I but there’s no REPL; only “copy example + `pata jenga --run`”.
+- **Asili:** Spec says “terminal REPL” in Phase I but there’s no REPL; only “copy example + `pata jenga --tenda`”.
 - **Takeaway:** Asili is missing the REPL entirely. Nuru also ties REPL docs to the runtime (e.g. `?hisabati`), which Asili could do later.
 
 ---
