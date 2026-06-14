@@ -258,3 +258,28 @@ fn unconsumed_tokeo_emits_sem048() {
         errs.iter().map(|d| &d.code).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn method_call_type_checking_is_implemented() {
+    let src = r#"
+        kazi kuu(hoja: Orodha<Neno>) -> Tupu {
+            weka x = "hi"
+            weka n = x.urefu()
+        }
+    "#;
+    let toks = tokenize(src).expect("tokens");
+    let module = parse_tokens(&toks).expect("parse");
+    let kuu = module.functions.iter().find(|f| f.name == "kuu").unwrap();
+
+    if let Stmt::Let { value, .. } = &kuu.body.statements[1] {
+        if let Expr::MethodCall { receiver, method_name, args, .. } = value {
+            assert_eq!(method_name, "urefu");
+            assert!(args.is_empty());
+            assert!(matches!(receiver.as_ref(), Expr::Ident(_)));
+        } else {
+            panic!("expected MethodCall");
+        }
+    } else {
+        panic!("expected Let with method call");
+    }
+}
