@@ -24,13 +24,14 @@ To work with an Asili project (e.g. under `examples/asi_sample` or one created w
 ```bash
 cd path/to/project
 cargo run -p pata-cli -- jenga          # compile to bytecode
-cargo run -p pata-cli -- jenga --run    # compile and execute entrypoint
-```
+cargo run -p pata-cli -- jenga --tenda    # compile and execute entrypoint
 
 If the CLI is installed as `pata`:
 
 ```bash
 pata jenga
+pata jenga --tenda
+
 pata jenga --run
 ```
 

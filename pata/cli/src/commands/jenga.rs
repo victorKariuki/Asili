@@ -11,7 +11,7 @@ const JENGA_USAGE: &str = r#"matumizi: pata jenga [faili.as] [chagua...] [hoja z
 Jenga mradi kutoka pata.toml au faili moja (bila mradi).
 
 Chagua:
-  --tenda (au --run)     Baada ya kujenga, tenda kazi kuu na hoja zinazofuata.
+  --tenda          Baada ya kujenga, tenda kazi kuu na hoja zinazofuata.
   --pato <njia> (au --out)  Mahali pa kuweka kilele (default: target/).
   --namna <dev|release|embedded> (au --profile)  Namna ya kujenga (haijatumika bado).
   --msaada, -h (au --help)   Onyesha ujumbe huu.
