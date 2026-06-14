@@ -20,13 +20,18 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         let b = args.get(1).cloned().unwrap_or(Value::Hamna);
         Ok(Value::Jozi(Box::new(a), Box::new(b)))
     }));
+    m.insert("ok".to_string(), Box::new(|args: &[Value]| {
+        let val = args.first().cloned().unwrap_or(Value::Hamna);
+        Ok(Value::Tokeo(Ok(Box::new(val))))
+    }));
     m.insert("tokeo".to_string(), Box::new(|args: &[Value]| {
         let val = args.first().cloned().unwrap_or(Value::Hamna);
         Ok(Value::Tokeo(Ok(Box::new(val))))
     }));
     m.insert("kosa".to_string(), Box::new(|args: &[Value]| {
-        let msg = value::as_string(args.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
-        Ok(Value::Tokeo(Err(Box::new(Value::Neno(msg)))))
+        // Accept any value as error (not just strings)
+        let err = args.first().cloned().unwrap_or(Value::Neno("error".to_string()));
+        Ok(Value::Tokeo(Err(Box::new(err))))
     }));
     m.insert("chaguo".to_string(), Box::new(|args: &[Value]| {
         let val = args.first().cloned().unwrap_or(Value::Hamna);
