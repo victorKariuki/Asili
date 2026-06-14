@@ -4,10 +4,22 @@ use asili_parser::{AssignOp, ForMode, Stmt};
 
 use crate::runtime::Runtime;
 use crate::value::{self, assign_f64_op, handle_loop_out, EvalError, EvalOut, LoopAction, Value};
+use crate::signal;
 
 use super::expr::match_and_bind_pattern;
 
 pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOut, EvalError> {
+    let sig = signal::take_pending();
+    if sig != 0 {
+        if let Some(handler_name) = signal::get_handler(sig) {
+            if let Some(f) = rt.module.functions.iter().find(|x| x.name == handler_name).cloned() {
+                rt.env.push_scope();
+                super::eval_block_impl(&f.body, rt)?;
+                rt.env.pop_scope();
+            }
+        }
+    }
+
     match stmt {
         Stmt::Let { name, value, .. } => {
             let v = super::eval_expr_impl(value, rt)?;

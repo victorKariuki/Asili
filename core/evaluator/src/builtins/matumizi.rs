@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::env;
-use std::io::{self, BufRead};
+use std::io;
 
 use crate::value::{self, Value, EvalError};
 use super::BuiltinFn;
