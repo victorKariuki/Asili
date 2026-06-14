@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::env;
+use std::io::{self, BufRead};
 
 use crate::value::{self, Value, EvalError};
 use super::BuiltinFn;
@@ -70,9 +71,27 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             .unwrap_or_else(|| "paparika".to_string());
         Err(EvalError::Panic(msg))
     }));
-    // TODO: Read a line from stdin using std::io::stdin().read_line(). Currently returns
-    // an empty string, so any program prompting the user receives no input.
     m.insert("omba".to_string(), Box::new(|_args: &[Value]| {
-        Ok(Value::Neno(String::new()))
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let stdin = io::stdin();
+            let mut line = String::new();
+            match stdin.read_line(&mut line) {
+                Ok(_) => {
+                    if line.ends_with('\n') {
+                        line.pop();
+                    }
+                    if line.ends_with('\r') {
+                        line.pop();
+                    }
+                    Ok(Value::Neno(line))
+                }
+                Err(e) => Err(EvalError::Panic(format!("omba: read error: {}", e))),
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            Err(EvalError::Panic("omba: stdin not available in WASM".to_string()))
+        }
     }));
 }
