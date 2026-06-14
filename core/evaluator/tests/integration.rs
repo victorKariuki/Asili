@@ -53,6 +53,7 @@ fn asb_is_deterministic() {
         structs: vec![],
         traits: vec![],
         impls: vec![],
+        constants: vec![],
     };
     let a = emit_asb(&module, "abc");
     let b = emit_asb(&module, "abc");
@@ -231,6 +232,7 @@ fn recursion_depth_limit_eval() {
         structs: vec![],
         traits: vec![],
         impls: vec![],
+        constants: vec![],
     };
     let result = run_function(&module, "deep", vec![]);
     assert!(result.is_err(), "eval should fail when recursion depth exceeded");
