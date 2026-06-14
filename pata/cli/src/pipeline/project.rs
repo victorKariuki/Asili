@@ -4,12 +4,33 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug)]
+pub enum Dependency {
+    Version(String),
+    Path(PathBuf),
+}
+
+impl From<&str> for Dependency {
+    fn from(s: &str) -> Self {
+        Dependency::Version(s.to_string())
+    }
+}
+
+impl std::fmt::Display for Dependency {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Dependency::Version(v) => write!(f, "\"{}\"", v),
+            Dependency::Path(p) => write!(f, "{{ path = \"{}\" }}", p.display()),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct ProjectConfig {
     pub name: String,
     pub version: String,
     pub asili_version: String,
     pub entrypoint: PathBuf,
-    pub dependencies: BTreeMap<String, String>,
+    pub dependencies: BTreeMap<String, Dependency>,
 }
 
 pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
@@ -22,7 +43,7 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
     let mut version = String::new();
     let mut asili_version = String::new();
     let mut entry = PathBuf::from("src/kuu.as");
-    let mut deps: BTreeMap<String, String> = BTreeMap::new();
+    let mut deps: BTreeMap<String, Dependency> = BTreeMap::new();
 
     for raw in content.lines() {
         let line = raw.trim();
@@ -33,6 +54,25 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
             section = line.trim_matches(&['[', ']'][..]).to_string();
             continue;
         }
+
+        if section == "tegemezi" {
+            if let Some((k, v)) = line.split_once('=') {
+                let key = k.trim().to_string();
+                let val = v.trim();
+                if val.starts_with('{') && val.ends_with('}') {
+                    let inner = val.trim_matches(&['{', '}'][..]);
+                    if let Some((pk, pv)) = inner.split_once('=') {
+                        if pk.trim() == "path" {
+                            deps.insert(key, Dependency::Path(PathBuf::from(pv.trim().trim_matches('"'))));
+                        }
+                    }
+                } else {
+                    deps.insert(key, Dependency::Version(val.trim_matches('"').to_string()));
+                }
+            }
+            continue;
+        }
+
         let Some((k, v)) = line.split_once('=') else {
             continue;
         };
@@ -50,9 +90,6 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
                 if key == "kuingia" {
                     entry = PathBuf::from(value);
                 }
-            }
-            "tegemezi" => {
-                deps.insert(key.to_string(), value);
             }
             _ => {}
         }
@@ -165,13 +202,13 @@ pub fn update_dependency(root: &Path, dep: &str, version: &str) -> Result<(), Cl
 }
 
 /// Read pata.lock when present and return locked dependency versions for deterministic builds.
-pub fn read_lockfile(root: &Path) -> Result<Option<BTreeMap<String, String>>, CliError> {
+pub fn read_lockfile(root: &Path) -> Result<Option<BTreeMap<String, Dependency>>, CliError> {
     let path = root.join("pata.lock");
     let content = match fs::read_to_string(&path) {
         Ok(c) => c,
         Err(_) => return Ok(None),
     };
-    let mut deps: BTreeMap<String, String> = BTreeMap::new();
+    let mut deps: BTreeMap<String, Dependency> = BTreeMap::new();
     let mut in_deps = false;
     for raw in content.lines() {
         let line = raw.trim();
@@ -186,7 +223,7 @@ pub fn read_lockfile(root: &Path) -> Result<Option<BTreeMap<String, String>>, Cl
             if let Some((k, v)) = line.split_once('=') {
                 let key = k.trim().trim_matches('"').to_string();
                 let value = v.trim().trim_matches('"').to_string();
-                deps.insert(key, value);
+                deps.insert(key, Dependency::Version(value));
             }
         }
     }
@@ -199,7 +236,10 @@ pub fn write_lockfile(root: &Path, cfg: &ProjectConfig) -> Result<(), CliError> 
         checksum_src.push('|');
         checksum_src.push_str(k);
         checksum_src.push('|');
-        checksum_src.push_str(v);
+        match v {
+            Dependency::Version(ver) => checksum_src.push_str(ver),
+            Dependency::Path(path) => checksum_src.push_str(&path.to_string_lossy()),
+        }
     }
     let checksum = simple_hash(&checksum_src);
 
@@ -210,7 +250,7 @@ pub fn write_lockfile(root: &Path, cfg: &ProjectConfig) -> Result<(), CliError> 
     content.push_str(&format!("checksum = \"{checksum:016x}\"\n\n"));
     content.push_str("[dependencies]\n");
     for (k, v) in &cfg.dependencies {
-        content.push_str(&format!("{k} = \"{v}\"\n"));
+        content.push_str(&format!("{k} = {v}\n"));
     }
 
     let path = root.join("pata.lock");
