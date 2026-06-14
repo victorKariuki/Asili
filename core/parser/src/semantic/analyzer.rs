@@ -954,27 +954,26 @@ impl<'a> Analyzer<'a> {
                         .with_stage("semantic")
                         .with_span(*line, 1),
                     );
+                    return self.type_from_decl(&func.return_type.name);
                 }
 
                 // Type check arguments
                 for (i, arg) in args.iter().enumerate() {
                     let arg_ty = self.check_expr(arg, scopes, UseMode::Move);
-                    if i + 1 < func.params.len() {
-                        let param_ty = self.type_from_decl(&func.params[i + 1].ty.name);
-                        self.check_type_compatibility(
-                            &param_ty,
-                            &arg_ty,
-                            "SEM042",
-                            format!(
-                                "hoja ya {} kwa '{}' haitalingana: inahitaji {}, imepata {}",
-                                i + 1,
-                                method_name,
-                                param_ty,
-                                arg_ty
-                            ),
-                            Span { line: *line, column: 1 },
-                        );
-                    }
+                    let param_ty = self.type_from_decl(&func.params[i + 1].ty.name);
+                    self.check_type_compatibility(
+                        &param_ty,
+                        &arg_ty,
+                        "SEM042",
+                        format!(
+                            "hoja ya {} kwa '{}' haitalingana: inahitaji {}, imepata {}",
+                            i + 1,
+                            method_name,
+                            param_ty,
+                            arg_ty
+                        ),
+                        Span { line: *line, column: 1 },
+                    );
                 }
 
                 self.type_from_decl(&func.return_type.name)
