@@ -43,11 +43,19 @@ New behavior should be covered by tests where practical (parser, semantic, evalu
 
 ## Submitting changes
 
-1. **Branch** from `main` (or the current default branch) for your work.
-2. **Commit** with clear, concise messages. Do not add Co-authored-by, Signed-off-by, or other attribution trailers for tools or AI; you are the author of the contribution.
-3. **Push** your branch and open a **pull request** (or equivalent) against the main branch.
-4. **Describe** what changed and why; reference any issues or spec sections if relevant.
-5. Ensure **CI** (if present) and local `cargo test` pass.
+This project uses [Git-Flow](https://github.com/nvie/gitflow).
+
+1. **Branch** using Git-Flow commands:
+   - Features: `git flow feature start <name>`
+   - Bugfixes: `git flow bugfix start <name>`
+2. **Develop** and **commit** with clear, concise messages.
+3. **Finish** your work with Git-Flow:
+   - Features: `git flow feature finish <name>`
+   - Bugfixes: `git flow bugfix finish <name>`
+4. **Push** your changes to the remote repository.
+5. **Pull Request:** Open a pull request against `main` (usually for releases) or `develop` as per Git-Flow practices.
+6. **Describe** what changed and why; reference any issues or spec sections if relevant.
+7. Ensure **CI** (if present) and local `cargo test` pass.
 
 ## Specification and design
 
