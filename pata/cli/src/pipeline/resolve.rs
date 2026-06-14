@@ -9,7 +9,7 @@
 // the struct is not present in the merged Module passed to the evaluator.
 
 use crate::pipeline::interface_registry::{InterfaceRegistry, StdlibEnv};
-use crate::pipeline::project::{Dependency, ProjectConfig};
+use crate::pipeline::project::Dependency;
 use asili_diagnostics::Diagnostic;
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, parse_value_type, FnContract, ImportPath, Module, ValueType};

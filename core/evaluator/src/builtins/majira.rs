@@ -47,9 +47,8 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         };
         #[cfg(not(target_arch = "wasm32"))]
         let s = {
-            use std::time::{Duration, UNIX_EPOCH, SystemTime};
+            use std::time::Duration;
             let dur = Duration::from_secs_f64(secs);
-            let datetime = UNIX_EPOCH + dur;
             let secs_total = dur.as_secs();
             let days_since_epoch = secs_total / 86400;
             let secs_today = secs_total % 86400;
