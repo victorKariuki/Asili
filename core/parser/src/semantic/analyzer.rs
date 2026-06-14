@@ -830,6 +830,10 @@ impl<'a> Analyzer<'a> {
                     target
                 }
             }
+            Expr::EnumConstruct { .. } => {
+                // TODO: Implement EnumConstruct type checking.
+                ValueType::Unknown
+            }
             Expr::Call { callee, args, line } => {
                 let callee_name = if let Expr::Ident(n) = &**callee {
                     Some(n.clone())
@@ -1060,6 +1064,26 @@ impl<'a> Analyzer<'a> {
                     }
                 }
                 ValueType::Struct(struct_name.clone())
+            }
+            Expr::EnumConstruct {
+                enum_name,
+                variant_name: _,
+                data,
+                line,
+            } => {
+                let _en = self.module.enums.iter().find(|e| e.name == *enum_name);
+                if _en.is_none() {
+                    self.errors.push(
+                        Diagnostic::new("SEM098", format!("jenum haijulikani: {}", enum_name))
+                            .with_stage("semantic")
+                            .with_span(*line, 1),
+                    );
+                    return ValueType::Unknown;
+                }
+                if let Some(d) = data {
+                    let _ = self.check_expr(d, scopes, UseMode::Move);
+                }
+                ValueType::Struct(enum_name.clone())
             }
             Expr::Index { base, index, line } => {
                 let base_ty = self.check_expr(base, scopes, UseMode::Move);

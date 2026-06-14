@@ -252,6 +252,12 @@ pub enum Expr {
         fields: Vec<(String, Expr)>,
         line: usize,
     },
+    EnumConstruct {
+        enum_name: String,
+        variant_name: String,
+        data: Option<Box<Expr>>,
+        line: usize,
+    },
     FieldAccess {
         receiver: Box<Expr>,
         field: String,
