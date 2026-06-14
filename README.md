@@ -42,7 +42,7 @@ pata jenga --run
 | `pata jenga` | Build project; output `.asb` (and optional manifest). |
 | `pata jenga --run` | Build and run the entrypoint (`kuu`). |
 | `pata jaribu` | Discover and run `#[jaribio]` tests. |
-| `pata jaribu --list` | List test names only. |
+| `pata jaribu --orodha` | List test names only. |
 | `pata njozi <dir>` | Create a new project (e.g. `pata.toml`, `src/kuu.as`). |
 | `pata nadhifu` | Format Asili source (line-based, best-effort). |
 | `pata thibitisha` | Check public API documentation. |

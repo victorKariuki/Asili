@@ -103,7 +103,7 @@ mod tests {
         let root = temp_project();
         std::env::set_current_dir(&root).expect("chdir");
 
-        let result = run(&["--list".to_string()]);
+        let result = run(&["--orodha".to_string()]);
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(root);
 
