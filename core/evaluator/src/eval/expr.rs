@@ -284,7 +284,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 Ok(Value::Neno(match &v {
                     Value::Namba(n) => n.to_string(),
                     Value::Ukweli(true) => "kweli".into(),
-                    Value::Ukweli(false) => "sikweli".into(),
+                    Value::Ukweli(false) => "si_kweli".into(),
                     Value::Neno(s) => s.clone(),
                     Value::Herufi(c) => c.to_string(),
                     Value::Wakati(secs) => secs.to_string(),
@@ -338,7 +338,9 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 if let Some(f) = rt.builtins.get(name) {
                     return f(&args_val);
                 }
-                if let Some(f) = rt.module.functions.iter().find(|x| x.name == *name) {
+                // Clone so we can mutably borrow rt.env below without conflict.
+                let module_fn = rt.module.functions.iter().find(|x| x.name == *name).cloned();
+                if let Some(f) = module_fn {
                     rt.env.push_scope();
                     for (i, p) in f.params.iter().enumerate() {
                         let val = args_val.get(i).cloned().unwrap_or(Value::Hamna);
@@ -352,8 +354,10 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                         Err(e) => Err(e),
                     };
                 }
+                // Not found as builtin or module function.
+                return Err(EvalError::UndefinedVar(name.clone()));
             }
-            Err(EvalError::UndefinedVar("kazi".into()))
+            Err(EvalError::TypeErr("kitu kinachoweza kuitwa kinahitajika".into()))
         }
         Expr::MethodCall {
             receiver,
@@ -497,20 +501,44 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 (Value::Neno(_), _) | (Value::Orodha(_), _) | (Value::Kamusi(_), _) | (Value::Jozi(_, _), _) | (Value::Wakati(_), _) | (Value::Anuani(_), _) | (Value::Chaguo(_), _) | (Value::Tokeo(_), _) => Err(EvalError::TypeErr(format!(
                     "njia '{method_name}' haijulikani kwa aina hii"
                 ))),
-                (Value::Struct(name, _), _) => {
-                    let impl_decl = rt
+                (Value::Struct(struct_name, _), _) => {
+                    // Search inherent impls first (no trait_name), then trait impls.
+                    // This allows `shughuli ya Foo { }` and `shughuli ya Foo: Sifa { }`
+                    // to coexist; methods from both blocks are callable on the same receiver.
+                    let method = rt
                         .module
                         .impls
                         .iter()
-                        .find(|i| i.target == *name)
-                        .ok_or_else(|| EvalError::TypeErr(format!("hakuna shughuli ya '{}'", name)))?;
-                    let f = impl_decl
-                        .body
-                        .iter()
+                        .filter(|i| i.target == *struct_name && i.trait_name.is_none())
+                        .flat_map(|i| i.body.iter())
                         .find(|mf| mf.name == *method_name)
-                        .ok_or_else(|| EvalError::TypeErr(format!("njia '{}' haijulikani kwa '{}'", method_name, name)))?;
+                        .or_else(|| {
+                            rt.module
+                                .impls
+                                .iter()
+                                .filter(|i| i.target == *struct_name && i.trait_name.is_some())
+                                .flat_map(|i| i.body.iter())
+                                .find(|mf| mf.name == *method_name)
+                        })
+                        .cloned()
+                        .ok_or_else(|| {
+                            let has_any_impl =
+                                rt.module.impls.iter().any(|i| i.target == *struct_name);
+                            if has_any_impl {
+                                EvalError::TypeErr(format!(
+                                    "njia '{}' haijulikani kwa umbo '{}'",
+                                    method_name, struct_name
+                                ))
+                            } else {
+                                EvalError::TypeErr(format!(
+                                    "umbo '{}' hauna shughuli yoyote iliyofafanuliwa",
+                                    struct_name
+                                ))
+                            }
+                        })?;
+
                     rt.env.push_scope();
-                    for (i, p) in f.params.iter().enumerate() {
+                    for (i, p) in method.params.iter().enumerate() {
                         let val = if i == 0 {
                             recv.clone()
                         } else {
@@ -518,7 +546,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                         };
                         rt.env.define(&p.name, val);
                     }
-                    let out = super::eval_block_impl(&f.body, rt);
+                    let out = super::eval_block_impl(&method.body, rt);
                     rt.env.pop_scope();
                     match out {
                         Ok(EvalOut::Return(v)) => Ok(v),

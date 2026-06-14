@@ -634,3 +634,139 @@ fn unary_ops_stress() {
     assert_eq!(run_function(&module, "borrow_imm", vec![]).unwrap(), Value::Namba(7.0), "azima x");
     assert_eq!(run_function(&module, "borrow_mut", vec![]).unwrap(), Value::Namba(8.0), "azima_tenda x");
 }
+
+// ── Trait dispatch ────────────────────────────────────────────────────────────
+
+/// Two separate `shughuli ya` blocks on the same struct — both must be reachable.
+/// Previously only the first block was searched.
+#[test]
+fn multi_impl_blocks_both_reachable() {
+    let module = parse_only(
+        r#"kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+           umbo Duara { r: Namba }
+           shughuli ya Duara { kazi eneo(self: Duara) -> Namba { rejesha 3 * self.r * self.r } }
+           shughuli ya Duara { kazi mzingo(self: Duara) -> Namba { rejesha 6 * self.r } }
+           kazi run_eneo() -> Namba { weka d = Duara { r: 2 } rejesha d.eneo() }
+           kazi run_mzingo() -> Namba { weka d = Duara { r: 2 } rejesha d.mzingo() }"#,
+    );
+    assert_eq!(
+        run_function(&module, "run_eneo", vec![]).expect("eneo"),
+        Value::Namba(12.0),
+        "eneo kutoka block ya kwanza"
+    );
+    assert_eq!(
+        run_function(&module, "run_mzingo", vec![]).expect("mzingo"),
+        Value::Namba(12.0),
+        "mzingo kutoka block ya pili"
+    );
+}
+
+/// A trait impl (`shughuli ya Foo: Sifa`) alongside an inherent impl — both callable.
+#[test]
+fn trait_impl_method_reachable() {
+    let module = parse_only(
+        r#"kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+           sifa Onyesheka { }
+           umbo Mtu { jina: Neno }
+           shughuli ya Mtu { kazi salamu(self: Mtu) -> Neno { rejesha "habari " + self.jina } }
+           shughuli ya Mtu: Onyesheka { kazi onyesha(self: Mtu) -> Neno { rejesha self.jina } }
+           kazi run_salamu() -> Neno { weka m = Mtu { jina: "Amani" } rejesha m.salamu() }
+           kazi run_onyesha() -> Neno { weka m = Mtu { jina: "Amani" } rejesha m.onyesha() }"#,
+    );
+    assert_eq!(
+        run_function(&module, "run_salamu", vec![]).expect("salamu"),
+        Value::Neno("habari Amani".into()),
+        "njia ya kawaida"
+    );
+    assert_eq!(
+        run_function(&module, "run_onyesha", vec![]).expect("onyesha"),
+        Value::Neno("Amani".into()),
+        "njia ya sifa"
+    );
+}
+
+/// Inherent method takes priority over a same-named trait method.
+#[test]
+fn inherent_impl_takes_priority_over_trait() {
+    let module = parse_only(
+        r#"kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+           sifa Sifa { }
+           umbo Kitu { thamani: Namba }
+           shughuli ya Kitu { kazi pata(self: Kitu) -> Namba { rejesha self.thamani + 1 } }
+           shughuli ya Kitu: Sifa { kazi pata(self: Kitu) -> Namba { rejesha self.thamani + 100 } }
+           kazi run() -> Namba { weka k = Kitu { thamani: 5 } rejesha k.pata() }"#,
+    );
+    // inherent (+1) must win over trait (+100)
+    assert_eq!(
+        run_function(&module, "run", vec![]).expect("pata"),
+        Value::Namba(6.0),
+        "inherent lazima iwe ya kwanza"
+    );
+}
+
+/// Multiple methods, multiple args, single impl block.
+#[test]
+fn impl_multi_method_multi_arg() {
+    let module = parse_only(
+        r#"kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+           umbo Hisabati { msingi: Namba }
+           shughuli ya Hisabati {
+             kazi ongeza(self: Hisabati, n: Namba) -> Namba { rejesha self.msingi + n }
+             kazi zidisha(self: Hisabati, n: Namba) -> Namba { rejesha self.msingi * n }
+             kazi toa(self: Hisabati, n: Namba) -> Namba { rejesha self.msingi - n }
+           }
+           kazi run() -> Namba {
+             weka h = Hisabati { msingi: 10 }
+             rejesha h.ongeza(5) + h.zidisha(3) + h.toa(2)
+           }"#,
+    );
+    // (10+5) + (10*3) + (10-2) = 15 + 30 + 8 = 53
+    assert_eq!(
+        run_function(&module, "run", vec![]).expect("run"),
+        Value::Namba(53.0)
+    );
+}
+
+/// Calling an unknown method on a struct with an impl gives a clear Swahili error.
+#[test]
+fn unknown_impl_method_swahili_error() {
+    let module = parse_only(
+        r#"kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+           umbo Chombo { }
+           shughuli ya Chombo { kazi kazi_moja(self: Chombo) -> Tupu { } }
+           kazi run() -> Tupu { weka c = Chombo { } rejesha c.haipo() }"#,
+    );
+    let err = run_function(&module, "run", vec![]).expect_err("inapaswa kushindwa");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("haipo") || msg.contains("njia"),
+        "ujumbe wa kosa unapaswa kutaja njia: {msg}"
+    );
+}
+
+// ── si_kweli fix ──────────────────────────────────────────────────────────────
+
+#[test]
+fn ukweli_false_kama_neno_is_si_kweli() {
+    let module = parse_only(
+        r#"kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+           kazi run() -> Neno { rejesha si_kweli kama Neno }"#,
+    );
+    assert_eq!(
+        run_function(&module, "run", vec![]).expect("run"),
+        Value::Neno("si_kweli".into()),
+        "si_kweli kama Neno lazima iwe 'si_kweli' si 'sikweli'"
+    );
+}
+
+#[test]
+fn ukweli_true_kama_neno_is_kweli() {
+    let module = parse_only(
+        r#"kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+           kazi run() -> Neno { rejesha kweli kama Neno }"#,
+    );
+    assert_eq!(
+        run_function(&module, "run", vec![]).expect("run"),
+        Value::Neno("kweli".into())
+    );
+}
