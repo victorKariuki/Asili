@@ -49,11 +49,12 @@ fn asb_is_deterministic() {
     use asili_evaluator::emit_asb;
     let module = Module {
         imports: vec![],
+        constants: vec![],
+        enums: vec![],
         functions: vec![],
         structs: vec![],
         traits: vec![],
         impls: vec![],
-        constants: vec![],
     };
     let a = emit_asb(&module, "abc");
     let b = emit_asb(&module, "abc");
@@ -228,11 +229,12 @@ fn recursion_depth_limit_eval() {
     };
     let module = Module {
         imports: vec![],
+        constants: vec![],
+        enums: vec![],
         functions: vec![kuu, deep_fn],
         structs: vec![],
         traits: vec![],
         impls: vec![],
-        constants: vec![],
     };
     let result = run_function(&module, "deep", vec![]);
     assert!(result.is_err(), "eval should fail when recursion depth exceeded");

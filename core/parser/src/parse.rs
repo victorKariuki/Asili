@@ -280,6 +280,7 @@ impl<'a> Parser<'a> {
             variants,
             line,
             is_public,
+            attrs,
         })
     }
 
