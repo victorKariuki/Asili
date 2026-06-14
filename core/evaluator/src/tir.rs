@@ -1,4 +1,12 @@
 //! Typed IR and ASB emission.
+//
+// TODO(Phase II): lower_to_tir currently only records block/statement counts per function.
+// A real TIR should lower each AST node to typed 3-address instructions:
+//   - Type-annotated temporaries (t0: Namba, t1: Neno, ...)
+//   - Explicit control-flow graph with BasicBlock edges
+//   - Phi nodes for join points (if/else, loops)
+//   - Explicit move/borrow/drop instructions to feed the borrow checker
+// Until this exists, emit_asb_from_tir produces a text stub, not real bytecode.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -97,6 +105,9 @@ pub fn lower_to_tir(module: &Module) -> TypedIrModule {
     TypedIrModule { functions, imports }
 }
 
+// HACK: emit_asb_from_tir emits a human-readable text header ("ASB-STUB"), not binary bytecode.
+// The .asb format is currently just AST metadata serialized as key=value lines.
+// A real .asb should be a length-prefixed binary format (e.g. bincode of BytecodeProgram).
 pub fn emit_asb_from_tir(tir: &TypedIrModule, source: &str) -> String {
     let mut h = DefaultHasher::new();
     source.hash(&mut h);

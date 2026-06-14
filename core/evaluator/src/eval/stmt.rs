@@ -43,6 +43,10 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             };
             Ok(EvalOut::Return(v))
         }
+        // TODO(Phase III): tupa currently sets the variable to Hamna (null) rather than removing
+        // it from scope. Subsequent reads of the dropped variable silently succeed and return Hamna
+        // instead of producing a compile-time "use after drop" error (SEM027 only catches unknown names,
+        // not dropped-then-read patterns in the evaluator).
         Stmt::Drop { name, .. } => {
             rt.env.set(name, Value::Hamna);
             Ok(EvalOut::Next)
@@ -117,6 +121,8 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                         }
                     }
                 }
+                // TODO: kwa ... katika only iterates Orodha. Kamusi, Mfululizo, and Seti
+                // iteration are not supported — the loop body is silently skipped for those types.
                 ForMode::InExpr(expr) => {
                     let col = super::eval_expr_impl(expr, rt)?;
                     if let Value::Orodha(elems) = col {
@@ -147,6 +153,9 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                 }
                 rt.env.pop_scope();
             }
+            // TODO: Non-exhaustive linganisha silently falls through to Ok(Next) instead of
+            // panicking or emitting a compile-time exhaustiveness warning. The semantic analyzer
+            // (SEM023) requires at least one arm, but does not check pattern coverage.
             Ok(EvalOut::Next)
         }
         Stmt::Break { label, .. } => Ok(EvalOut::Break(label.clone())),

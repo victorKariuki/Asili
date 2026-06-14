@@ -5,6 +5,11 @@ use crate::pipeline::project::{
 use std::path::Path;
 
 // Contract: ../../commands/ongeza.md
+//
+// TODO: `pata ongeza` writes the dependency to pata.toml and generates pata.lock, but does NOT
+// actually download or resolve the package. There is no package registry, resolver, or caching layer.
+// To implement: define a registry URL (or local path convention), fetch the package manifest,
+// resolve version constraints, download the source, and extract it to a vendor/ or cache directory.
 pub fn run(args: &[String]) -> CliResult {
     let (lib, version) = parse_args(args)?;
     validate_dep_name(&lib)?;

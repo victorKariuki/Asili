@@ -70,6 +70,8 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             .unwrap_or_else(|| "paparika".to_string());
         Err(EvalError::Panic(msg))
     }));
+    // TODO: Read a line from stdin using std::io::stdin().read_line(). Currently returns
+    // an empty string, so any program prompting the user receives no input.
     m.insert("omba".to_string(), Box::new(|_args: &[Value]| {
         Ok(Value::Neno(String::new()))
     }));

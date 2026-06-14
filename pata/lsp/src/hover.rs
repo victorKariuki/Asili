@@ -10,6 +10,11 @@ const KEYWORDS: &[&str] = &[
     "kama", "azima", "azima_tenda", "umma", "katika", "kutoka", "au_ikiwa", "chapisha", "paparika",
 ];
 
+// TODO(Phase II): compute_hover only shows "Keyword", "Function", or "Identifier" labels.
+// Should include: inferred type for variables/params, full function signature with param types
+// and return type, struct field list for umbo names, trait method list for sifa names.
+// Requires passing the semantic analysis result (typed scopes) alongside the parsed module.
+
 /// Compute hover at (line, character) in LSP 0-based coordinates. Returns None on parse/lex error or no token.
 pub fn compute_hover(text: &str, line_0: u32, character_0: u32) -> Option<Hover> {
     let tokens = tokenize(text).ok()?;

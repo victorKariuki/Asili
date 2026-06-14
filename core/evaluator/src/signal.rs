@@ -1,5 +1,15 @@
 //! Signal state for mfumo: pending signal flag and handler registry.
 //! OS handler only sets an atomic; eval loop dispatches to registered kazi by name.
+//
+// TODO: Signal dispatch is registered but never polled. The eval loop in eval/stmt.rs does not
+// call signal::take_pending() between statements, so signal handlers registered with
+// sikiliza_ishara() are never actually invoked during program execution.
+// Fix: add a signal check at the top of eval_stmt_impl (or every N iterations) that calls
+// take_pending() and, if non-zero, looks up the handler name and calls run_function() for it.
+//
+// TODO: sikiliza_ishara/rejesha_ishara are no-ops on non-unix platforms (#[cfg(not(unix))]).
+// Windows users get no signal handling at all — not even a runtime error. Should return
+// Tokeo(Err) on unsupported platforms rather than silently doing nothing.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicI32, Ordering};

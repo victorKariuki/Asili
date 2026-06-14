@@ -7,6 +7,13 @@ use std::fs;
 use std::path::Path;
 
 // Contract: ../../commands/thibitisha.md
+//
+// TODO: thibitisha currently checks two things: public-item doc coverage and formatting compliance.
+// Missing checks from the spec:
+//   - Type stability: public function signatures must not change in a breaking way between versions
+//   - ABI compatibility: exported kiunganishi functions must match declared C signatures
+//   - Trait completeness: every sifa listed in [tegemezi] must be fully implemented
+//   - Test coverage threshold: at minimum N% of public kazi must have #[jaribio] coverage
 pub fn run(_args: &[String]) -> CliResult {
     compile_project(Path::new("."))?;
     enforce_docs(Path::new("."))?;

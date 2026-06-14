@@ -15,6 +15,9 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
+// TODO: cache_key uses DefaultHasher which is not stable across Rust versions or platforms.
+// A cache hit on one machine may miss on another with a different Rust toolchain. Use a
+// stable hash (e.g. FxHash, blake3, or SHA-256) for reproducible cross-machine caching.
 /// Content-addressable cache key from name and source (e.g. for single-file builds).
 pub fn cache_key(name: &str, source: &str) -> String {
     let mut h = DefaultHasher::new();

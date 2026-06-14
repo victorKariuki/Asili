@@ -40,6 +40,9 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         let n = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0);
         Ok(Value::Wakati(n))
     }));
+    // TODO: umbiza currently emits raw "seconds.millis" (e.g. "1718301234.567").
+    // Should produce a human-readable datetime string like "2024-06-14 10:00:34" using
+    // the `time` or `chrono` crate, or at minimum format as HH:MM:SS for elapsed durations.
     m.insert("umbiza".to_string(), Box::new(|args: &[Value]| {
         let secs = match args.first() {
             Some(Value::Wakati(s)) => *s,

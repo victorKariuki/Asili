@@ -27,6 +27,9 @@ pub(crate) fn handle_loop_out(my_label: Option<&String>, out: EvalOut) -> LoopAc
     }
 }
 
+// TODO: parse_number silently returns 0.0 for any invalid numeric literal (e.g. "0x1F", "1_000",
+// "1e3" with locale-specific separators, binary "0b1010"). Invalid literals should produce a lex
+// error at tokenization time, not silently evaluate to zero at runtime.
 pub(crate) fn parse_number(s: &str) -> f64 {
     s.trim().parse().unwrap_or(0.0)
 }

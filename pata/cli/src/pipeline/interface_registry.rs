@@ -80,6 +80,10 @@ fn parse_thabiti_line(line: &str) -> Option<(String, ValueType)> {
     Some((name, ty))
 }
 
+// TODO: parse_asi_content is a line-by-line text parser for .asi stub files, not a real AST parser.
+// It cannot handle multi-line signatures, generic constraints (kazi foo<T: Sifa>(...)), doc comments,
+// or attribute lines (#[ndani]). Any .asi stub spanning multiple lines will be silently misparsed.
+// Fix: run the real lexer+parser on .asi files and extract FnContract from the parsed Function nodes.
 fn parse_asi_content(content: &str) -> (HashMap<String, FnContract>, HashMap<String, ValueType>) {
     let mut functions = HashMap::new();
     let mut constants = HashMap::new();

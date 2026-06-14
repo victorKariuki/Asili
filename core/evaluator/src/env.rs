@@ -36,6 +36,10 @@ impl Env {
         None
     }
 
+    // HACK: set() falls back to inserting into the global (first) scope when the name is not found
+    // in any existing scope. This silently creates a global from inside a function body, which masks
+    // undefined-variable bugs. Should return an error (or at minimum panic in debug builds) when
+    // the name does not already exist in any scope.
     pub fn set(&mut self, name: &str, value: Value) {
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains_key(name) {

@@ -153,6 +153,8 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     let bits = n as i64;
                     Ok(Value::Namba(!bits as f64))
                 }
+                // TODO(Phase III): BorrowImm/BorrowMut should produce Rejeo/Rejeo_Tenda values
+                // tracked by a borrow checker. Currently they are identity ops — ownership is not enforced.
                 UnaryOp::BorrowImm | UnaryOp::BorrowMut => Ok(v),
             }
         }
@@ -308,6 +310,8 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             } else if t == "Anuani" {
                 let n = value::as_f64(&v).unwrap_or(0.0);
                 Ok(Value::Anuani(n as u64))
+            // TODO(Phase II): Biti8/uBiti8/Biti32 etc. should map to distinct runtime types,
+            // not just range-checked f64. Fixed-width integer arithmetic currently overflows silently.
             } else if t.starts_with("Biti") || t.starts_with("uBiti") {
                 let n = value::as_f64(&v).unwrap_or(0.0);
                 let n_i = n as i64;
@@ -433,6 +437,8 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                         Ok(Value::Chaguo(Some(Box::new(removed))))
                     }
                 }
+                // TODO: kila_mmoja(callback_name) should iterate the list and call the named kazi
+                // on each element. Currently a no-op — the callback is never invoked.
                 (Value::Orodha(_), "kila_mmoja") => Ok(Value::Tupu),
                 (Value::Kamusi(m), "ingiza") | (Value::Kamusi(m), "weka_key") => {
                     let key_val = args_val.first().ok_or_else(|| EvalError::TypeErr("ingiza inahitaji ufunguo na thamani".into()))?;
@@ -498,6 +504,11 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 (Value::Jozi(a, _), "kwanza") => Ok((**a).clone()),
                 (Value::Jozi(_, b), "pili") => Ok((**b).clone()),
                 (Value::Wakati(secs), "sekunde") => Ok(Value::Namba(*secs)),
+                // TODO: Missing Orodha methods from spec: badilisha(idx, val), chuja(kazi),
+                // panga(kazi), pata(idx) -> Chaguo<T>, chunguza(kazi) -> Ukweli, onyesha().
+                // Missing Kamusi methods: ondoa(key), thamani() -> Orodha<V>, idadi() -> Namba.
+                // Missing Neno methods: gawanya(sep) -> Orodha<Neno>, badilisha(kutoka, kwenda),
+                // anza_na(kiambishi) -> Ukweli, maliza_na(kiishio) -> Ukweli, kwa_herufi_ndogo/kubwa.
                 (Value::Neno(_), _) | (Value::Orodha(_), _) | (Value::Kamusi(_), _) | (Value::Jozi(_, _), _) | (Value::Wakati(_), _) | (Value::Anuani(_), _) | (Value::Chaguo(_), _) | (Value::Tokeo(_), _) => Err(EvalError::TypeErr(format!(
                     "njia '{method_name}' haijulikani kwa aina hii"
                 ))),

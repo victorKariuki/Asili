@@ -68,6 +68,9 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
         return Err(CliError::new("pata.toml haina [jumla].asili", 2));
     }
 
+    // TODO: asili_version is read from pata.toml but never validated or used for compatibility
+    // checking. A project declaring `asili = "1.1"` runs fine on any interpreter version with no
+    // warning when features from a newer spec are used. Should compare against TOLEO at build time.
     Ok(ProjectConfig {
         name,
         version,
@@ -215,6 +218,9 @@ pub fn write_lockfile(root: &Path, cfg: &ProjectConfig) -> Result<(), CliError> 
         .map_err(|e| CliError::new(format!("imeshindwa kuandika {}: {e}", path.display()), 1))
 }
 
+// HACK: simple_hash is a FNV-1a variant used for the pata.lock checksum. It is not
+// cryptographically secure — a malicious pata.toml could be crafted to produce a collision.
+// For lock file integrity use a proper hash (SHA-256 via the `sha2` crate) to detect tampering.
 fn simple_hash(s: &str) -> u64 {
     let mut hash = 1469598103934665603u64;
     for b in s.as_bytes() {

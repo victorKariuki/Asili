@@ -7,6 +7,10 @@ use asili_parser::Module;
 use crate::builtins;
 use crate::env::Env;
 
+// TODO: MAX_EVAL_DEPTH is a flat call-depth counter shared between function calls and block nesting
+// (if/else/while each increment it). This means deeply nested control flow inside a single function
+// hits the limit before deep recursion does. A real stack depth limit should count call frames only,
+// not block scopes. Also 100 is very low — most languages default to 500–1000 call frames.
 pub(crate) const MAX_EVAL_DEPTH: usize = 100;
 
 pub(crate) struct Runtime<'a> {

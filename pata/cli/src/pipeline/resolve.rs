@@ -1,4 +1,12 @@
 //! Module loader: resolve imports, build export tables, detect cycles.
+//
+// TODO: build_export_table only exports public functions. Constants declared at module level
+// with `thabiti` are never added to the export table (the `constants` field is always empty
+// for user modules). Programs that `leta` a module expecting its constants will get Unknown type.
+//
+// TODO: merge_for_eval only merges functions from imported modules — not structs, traits, or impls.
+// A program that imports a struct definition from another module cannot use it at runtime because
+// the struct is not present in the merged Module passed to the evaluator.
 
 use crate::pipeline::interface_registry::{InterfaceRegistry, StdlibEnv};
 use asili_diagnostics::Diagnostic;
@@ -320,7 +328,9 @@ pub fn dependency_order(resolved: &HashMap<String, ResolvedModule>) -> Vec<Strin
                 break;
             }
         }
-        let name = found.expect("cycle in resolved modules (should be prevented by RES001)");
+        // HACK: dependency_order() panics if a cycle slips through (e.g. RES001 was not triggered).
+    // Should return Result<Vec<String>, Diagnostic> so the caller can surface the error cleanly.
+    let name = found.expect("cycle in resolved modules (should be prevented by RES001)");
         remaining.remove(&name);
         order.push(name);
     }

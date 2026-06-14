@@ -29,6 +29,13 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), CliError> {
     Ok(())
 }
 
+// TODO: canonical_format is a line-level text transform — it does NOT parse the AST.
+// Known limitations:
+//   - Indentation is stripped entirely (all lines are left-aligned after formatting)
+//   - Brace/comma spacing is inserted blindly, including inside string literals
+//   - No operator spacing (a+b stays a+b, not a + b)
+//   - No alignment of struct fields or match arms
+// To fix: format by re-printing the parsed AST with a pretty-printer visitor, not regex on raw text.
 pub fn canonical_format(input: &str) -> String {
     let mut out = String::new();
     let mut last_blank = false;
@@ -44,6 +51,8 @@ pub fn canonical_format(input: &str) -> String {
         }
 
         last_blank = false;
+        // HACK: brace and comma spacing via string replace can corrupt string literals
+        // containing { } or , characters. Must be replaced with a token-aware formatter.
         let mut line = trimmed_end.replace("{", " { ");
         line = line.replace("}", " } ");
         line = line.replace(",", ", ");

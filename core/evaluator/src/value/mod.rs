@@ -33,6 +33,14 @@ impl MapKey {
     }
 }
 
+// TODO(Phase II): Missing value variants from the spec:
+//   - Seti(HashSet<MapKey>) — ordered set type (Seti<T>)
+//   - Mfululizo(&[Value]) — slice/view into an Orodha without cloning (requires lifetime or Rc)
+//   - NambaKuu(BigInt) — arbitrary-precision integer (Namba_Kuu); needs the `num-bigint` crate
+//   - NambaSahihi(BigDecimal) — arbitrary-precision decimal (Namba_Sahihi)
+//   - FixedInt(i64, IntWidth) — Biti8/Biti32/Biti64/uBiti8/uBiti32/uBiti64 distinct from Namba
+// Adding these requires updating all match arms in eval/expr.rs and the bytecode VM.
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Namba(f64),

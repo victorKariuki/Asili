@@ -1,4 +1,11 @@
 //! ASB (Asili bytecode) serialized format: header + payload for run-from-.asb.
+//
+// HACK: The "ASB" format currently serializes the parsed AST (Module) via bincode, not real bytecode.
+// Running an .asb file re-interprets the AST through the tree-walk evaluator, not a VM.
+// This means .asb files carry the full AST, not a compact instruction stream, and "compilation"
+// provides no performance benefit over re-parsing source.
+// TODO(Phase II): Replace with a real bytecode format: lower AST -> TIR -> BytecodeProgram,
+// serialize BytecodeProgram, and execute with run_bytecode() instead of run_main().
 
 use asili_parser::Module;
 use std::fmt;

@@ -1,5 +1,16 @@
 //! Mwalimu — Asili Language Server (Phase II).
 //! Library entry point: modules and LanguageServer impl.
+//
+// TODO(Phase II): Implement remaining LSP capabilities:
+//   - completion_provider: keyword list + module-level function/struct names
+//   - definition_provider: map Ident tokens to their declaration Span
+//   - references_provider: find all usages of a symbol across open files
+//   - document_symbol_provider: outline of functions/structs/traits in the file
+//   - rename_provider: rename a symbol across all files in the workspace
+//   - document_formatting_provider: call pipeline::format::canonical_format on the document
+//   - semantic_tokens_provider: highlight keywords, types, functions with distinct token types
+//   - workspace_symbol_provider: cross-file symbol search
+// Each requires registering the capability in initialize() ServerCapabilities.
 
 mod diagnostics;
 mod doc_store;
@@ -55,6 +66,8 @@ impl LanguageServer for Backend {
             None => return,
         };
         self.documents.insert(uri.clone(), text.clone()).await;
+        // TODO(Phase II): Also run semantic analysis here and publish semantic diagnostics
+        // (type errors, unknown variables, unused Tokeo, etc.) in addition to lex/parse errors.
         let diags = run_lex_parse(&text);
         let lsp_diags = asili_diagnostics_to_lsp(&diags);
         let _ = self.client.publish_diagnostics(uri.parse().unwrap(), lsp_diags, None).await;

@@ -8,6 +8,8 @@ use asili_parser::{Block, Expr, Module};
 use crate::runtime::{Runtime, MAX_EVAL_DEPTH};
 use crate::value::{EvalError, EvalOut};
 
+// TODO: depth is incremented on every block entry (if/while/for/match arms), not just function
+// calls. This means MAX_EVAL_DEPTH is not a true recursion limit. See runtime.rs for details.
 pub(crate) fn eval_block_impl(block: &Block, rt: &mut Runtime<'_>) -> Result<EvalOut, EvalError> {
     rt.depth += 1;
     rt.update_peak_depth();

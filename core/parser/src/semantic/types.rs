@@ -1,4 +1,9 @@
 //! Type string parsing: split_generic_args and parse_value_type.
+//
+// TODO(Phase II): parse_value_type collapses Biti8/uBiti8/Biti32/Biti64/uBiti32/uBiti64 into
+// ValueType::Namba, losing all fixed-width information. The type checker cannot distinguish
+// Biti8 from Namba, so overflow and range errors are invisible at compile time.
+// Fix: add ValueType::FixedInt(BitWidth, Signed) variants and propagate them through type checking.
 
 use crate::ValueType;
 

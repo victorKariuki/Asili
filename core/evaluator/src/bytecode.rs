@@ -1,4 +1,16 @@
 //! Minimal bytecode ISA and VM for format=bytecode .asb (future expansion).
+//
+// TODO(Phase II/IV): This ISA is a skeleton. Missing opcodes needed for real programs:
+//   - Jump(offset) / JumpIfFalse(offset) — control flow
+//   - Call(fn_idx, arity) / CallMethod(method_idx, arity) — function dispatch
+//   - Add / Sub / Mul / Div / Rem / Pow — arithmetic
+//   - Eq / Ne / Lt / Gt / Le / Ge — comparisons
+//   - And / Or / Not — logical
+//   - MakeList(n) / MakeMap(n) / MakeStruct(type_idx, n) — collection constructors
+//   - GetField(field_idx) / SetField(field_idx) — struct access
+//   - Index / SetIndex — collection indexing
+//   - Borrow / BorrowMut / Drop — ownership (Phase III)
+// run_bytecode currently only handles Const, Return, LoadLocal, StoreLocal, and CallBuiltin(0).
 
 use crate::value::{EvalError, Value};
 use serde::{Deserialize, Serialize};
@@ -24,7 +36,7 @@ pub enum Opcode {
     LoadLocal(u32),
     /// Store local by index.
     StoreLocal(u32),
-    /// Reserved for future (Call, Jump, Branch, ...).
+    /// TODO: Reserved — replace with Jump, Call, arithmetic ops, etc. when ISA is expanded.
     Nop,
 }
 
@@ -101,6 +113,7 @@ pub fn run_bytecode(program: &BytecodeProgram, args: Vec<String>) -> Result<(), 
                     println!("{s}");
                 }
             }
+            // TODO: Only builtin index 0 (chapisha) is wired up. All other builtins are silently ignored.
             Opcode::CallBuiltin(_) => {}
             Opcode::Nop => {}
         }

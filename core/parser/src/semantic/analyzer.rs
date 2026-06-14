@@ -889,6 +889,9 @@ impl<'a> Analyzer<'a> {
                     ValueType::Unknown
                 }
             }
+            // TODO: Method call type-checking is not implemented — always returns Unknown.
+            // Should resolve receiver type, look up method signature in impl blocks,
+            // check argument arity and types, and return the method's declared return type.
             Expr::MethodCall { receiver, args, .. } => {
                 let _ = self.check_expr(receiver, scopes, UseMode::BorrowImm);
                 for a in args {
@@ -1130,10 +1133,17 @@ impl<'a> Analyzer<'a> {
         ValueType::Unknown
     }
 
+    // TODO(Phase III): Herufi and Tupu should also be Copy. Neno, Orodha, Kamusi, and Struct
+    // are non-Copy but are currently treated as moved only at the semantic level — the evaluator
+    // clones them unconditionally, so move semantics are not enforced at runtime.
     fn is_copy_type(&self, ty: &ValueType) -> bool {
         matches!(ty, ValueType::Namba | ValueType::Ukweli)
     }
 
+    // TODO(Phase II): compatible() is a simple structural equality check. Missing cases:
+    // - Trait bounds: `T: Sifa` constraints are not verified
+    // - Generic instantiation: Orodha<Namba> vs Orodha<Neno> are not distinguished (both Unknown)
+    // - Coercions: &T -> &Tupu, Struct -> Sifa (trait object) upcasting
     fn compatible(&self, a: &ValueType, b: &ValueType) -> bool {
         a == b || matches!((a, b), (ValueType::Unknown, _) | (_, ValueType::Unknown))
     }
