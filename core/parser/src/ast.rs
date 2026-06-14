@@ -28,6 +28,7 @@ pub struct EnumDecl {
     pub variants: Vec<EnumVariant>,
     pub line: usize,
     pub is_public: bool,
+    pub attrs: Vec<Attribute>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

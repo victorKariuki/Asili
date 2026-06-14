@@ -122,6 +122,8 @@ fn resolve_one(
             ResolvedModule {
                 module: Module {
                     imports: vec![],
+                    constants: vec![],
+                    enums: vec![],
                     functions: vec![],
                     structs: vec![],
                     traits: vec![],
@@ -160,6 +162,8 @@ fn resolve_one(
                 let exports = ExportTable { functions, constants };
                 let module = Module {
                     imports: vec![],
+                    constants: vec![],
+                    enums: vec![],
                     functions: vec![],
                     structs: vec![],
                     traits: vec![],

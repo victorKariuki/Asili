@@ -164,6 +164,19 @@ impl<'a> Analyzer<'a> {
             }
             self.check_function(f);
         }
+        for e in &self.module.enums {
+            self.check_attrs(&e.attrs, &allowed_attrs);
+            let mut seen = std::collections::HashSet::new();
+            for variant in &e.variants {
+                if !seen.insert(&variant.name) {
+                    self.errors.push(
+                        Diagnostic::new("SEM093", format!("jenum '{}' ina variant mara mbili: {}", e.name, variant.name))
+                            .with_stage("semantic")
+                            .with_span(e.line, 1),
+                    );
+                }
+            }
+        }
         for s in &self.module.structs {
             self.check_attrs(&s.attrs, &allowed_attrs);
             let mut seen = std::collections::HashSet::new();
