@@ -602,7 +602,7 @@ impl<'a> Analyzer<'a> {
                     &want,
                     &got,
                     "SEM026",
-                    "aina ya rejesha haitalingana na signature ya kazi".to_string(),
+                    "Sahihi ya kazi haitalingana na aina ya rejesha".to_string(),
                     Span { line: *line, column: 1 },
                 );
             }
