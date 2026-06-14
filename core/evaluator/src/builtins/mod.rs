@@ -1,4 +1,4 @@
-//! Builtin function registry: msingi, mfumo, majira, matumizi, faili, hisabati, runtime.
+//! Usajili wa kazi zilizojengwa (builtins): msingi, mfumo, majira, matumizi, faili, hisabati, runtime.
 
 mod faili;
 mod hisabati;
@@ -7,9 +7,9 @@ mod majira;
 mod matumizi;
 mod mfumo;
 mod msingi;
-// TODO: neno module defines string utility builtins (chapisha, onyo, makosa, paparika) but is
-// never registered with builtins(). The matumizi module registers those functions instead.
-// Decide: remove neno.rs as dead code, or repurpose it for string-specific builtins
+// TODO: neno module defines string utility zilizojengwa (chapisha, onyo, makosa, paparika) but is
+// never registered with zilizojengwa(). The matumizi module registers those functions instead.
+// Decide: remove neno.rs as dead code, or repurpose it for string-specific zilizojengwa
 // (gawanya, badilisha, anza_na, maliza_na, kwa_herufi_ndogo, kwa_herufi_kubwa) and register it.
 #[allow(dead_code)]
 mod neno;
@@ -36,4 +36,27 @@ pub(crate) fn builtins() -> HashMap<String, BuiltinFn> {
     sambamba::register(&mut m);
     syscall::register(&mut m);
     m
+}
+
+pub(crate) fn builtin_names() -> Vec<String> {
+    let mut m = HashMap::new();
+    msingi::register(&mut m);
+    mfumo::register(&mut m);
+    majira::register(&mut m);
+    matumizi::register(&mut m);
+    faili::register(&mut m);
+    hisabati::register(&mut m);
+    kiungo::register(&mut m);
+    runtime::register(&mut m);
+    sambamba::register(&mut m);
+    syscall::register(&mut m);
+
+    let mut names: Vec<String> = m.keys().cloned().collect();
+    // Ensure "chapisha" is faharisi 0 for backward compatibility
+    names.sort_by(|a, b| {
+        if a == "chapisha" { std::cmp::Ordering::Less }
+        else if b == "chapisha" { std::cmp::Ordering::Greater }
+        else { a.cmp(b) }
+    });
+    names
 }
