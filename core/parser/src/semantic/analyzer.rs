@@ -29,6 +29,8 @@ struct Analyzer<'a> {
     loop_depth: usize,
     /// Per-scope set of variable names that have type Tokeo and have not been consumed (match, ?, or passed to Tokeo param).
     unconsumed_tokeo: Vec<HashSet<String>>,
+    /// Per-scope set of variable names that have been dropped.
+    dropped_vars: Vec<HashSet<String>>,
 }
 
 use super::types::parse_value_type;
@@ -62,6 +64,7 @@ impl<'a> Analyzer<'a> {
             extern_constants,
             loop_depth: 0,
             unconsumed_tokeo: Vec::new(),
+            dropped_vars: Vec::new(),
         }
     }
 
@@ -256,6 +259,7 @@ impl<'a> Analyzer<'a> {
 
         let mut scopes: Vec<HashMap<String, Binding>> = vec![HashMap::new()];
         self.unconsumed_tokeo = vec![HashSet::new()];
+        self.dropped_vars = vec![HashSet::new()];
         for p in &f.params {
             let ty = self.type_from_decl(&p.ty.name);
             scopes[0].insert(
@@ -302,6 +306,7 @@ impl<'a> Analyzer<'a> {
         if !root {
             scopes.push(HashMap::new());
             self.unconsumed_tokeo.push(HashSet::new());
+            self.dropped_vars.push(HashSet::new());
         }
         for stmt in &block.statements {
             self.check_stmt(stmt, scopes, return_type);
@@ -322,6 +327,7 @@ impl<'a> Analyzer<'a> {
             }
             scopes.pop();
             self.unconsumed_tokeo.pop();
+            self.dropped_vars.pop();
         }
     }
 
@@ -522,6 +528,7 @@ impl<'a> Analyzer<'a> {
                 self.loop_depth += 1;
                 scopes.push(HashMap::new());
                 self.unconsumed_tokeo.push(HashSet::new());
+                self.dropped_vars.push(HashSet::new());
                 if let Some(scope) = scopes.last_mut() {
                     scope.insert(
                         var.clone(),
@@ -554,6 +561,7 @@ impl<'a> Analyzer<'a> {
                 }
                 scopes.pop();
                 self.unconsumed_tokeo.pop();
+                self.dropped_vars.pop();
                 self.loop_depth -= 1;
             }
             Stmt::Match { expr, arms, line } => {
@@ -635,6 +643,11 @@ impl<'a> Analyzer<'a> {
                             .with_stage("semantic")
                             .with_span(*line, 1),
                     );
+                } else {
+                    // Track this variable as dropped in the current scope
+                    if let Some(set) = self.dropped_vars.last_mut() {
+                        set.insert(name.clone());
+                    }
                 }
             }
             Stmt::Expr { expr, .. } => {
@@ -1125,6 +1138,16 @@ impl<'a> Analyzer<'a> {
 
         for scope in scopes.iter_mut().rev() {
             if let Some(b) = scope.get_mut(name) {
+                if let Some(set) = self.dropped_vars.last() {
+                    if set.contains(name) {
+                        self.errors.push(
+                            Diagnostic::new("SEM028", format!("{name} tupwa na haipaswi kutumiwa"))
+                                .with_stage("semantic")
+                                .with_span(b.created_at.line, b.created_at.column),
+                        );
+                        return b.ty.clone();
+                    }
+                }
                 if b.moved {
                     let map = ContextMap {
                         symbol: name.to_string(),

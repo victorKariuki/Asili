@@ -55,12 +55,10 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             };
             Ok(EvalOut::Return(v))
         }
-        // TODO(Phase III): tupa currently sets the variable to Hamna (null) rather than removing
-        // it from scope. Subsequent reads of the dropped variable silently succeed and return Hamna
-        // instead of producing a compile-time "use after drop" error (SEM027 only catches unknown names,
-        // not dropped-then-read patterns in the evaluator).
         Stmt::Drop { name, .. } => {
-            rt.env.set(name, Value::Hamna);
+            if !rt.env.drop(name) {
+                return Err(EvalError::UndefinedVar(name.clone()));
+            }
             Ok(EvalOut::Next)
         }
         Stmt::If {
