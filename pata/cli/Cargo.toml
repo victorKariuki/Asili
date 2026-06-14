@@ -9,3 +9,4 @@ asili-lexer = { path = "../../core/lexer" }
 asili-parser = { path = "../../core/parser" }
 asili-evaluator = { path = "../../core/evaluator" }
 pata-lsp = { path = "../lsp" }
+sha2 = "0.11.0"
