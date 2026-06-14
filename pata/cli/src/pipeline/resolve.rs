@@ -261,9 +261,9 @@ pub fn resolve_all(
 /// Merge entrypoint + resolved modules into one module for evaluation (imported names only).
 fn merge_for_eval(entrypoint: &Module, resolved: &HashMap<String, ResolvedModule>) -> Module {
     let mut functions = entrypoint.functions.clone();
-    let structs = entrypoint.structs.clone();
-    let traits = entrypoint.traits.clone();
-    let impls = entrypoint.impls.clone();
+    let mut structs = entrypoint.structs.clone();
+    let mut traits = entrypoint.traits.clone();
+    let mut impls = entrypoint.impls.clone();
     for imp in &entrypoint.imports {
         let (module_name, names_to_import) = match &imp.path {
             ImportPath::Full(name) => (name.as_str(), None as Option<Vec<String>>),
@@ -277,6 +277,29 @@ fn merge_for_eval(entrypoint: &Module, resolved: &HashMap<String, ResolvedModule
             };
             if include && !functions.iter().any(|x| x.name == f.name) {
                 functions.push(f.clone());
+            }
+        }
+        for s in &res.module.structs {
+            let include = match &names_to_import {
+                None => s.is_public,
+                Some(names) => names.contains(&s.name),
+            };
+            if include && !structs.iter().any(|x| x.name == s.name) {
+                structs.push(s.clone());
+            }
+        }
+        for t in &res.module.traits {
+            let include = match &names_to_import {
+                None => t.is_public,
+                Some(names) => names.contains(&t.name),
+            };
+            if include && !traits.iter().any(|x| x.name == t.name) {
+                traits.push(t.clone());
+            }
+        }
+        for imp_decl in &res.module.impls {
+            if !impls.iter().any(|x| x.target == imp_decl.target) {
+                impls.push(imp_decl.clone());
             }
         }
     }
