@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct Module {
     pub imports: Vec<Import>,
     pub constants: Vec<Constant>,
+    pub enums: Vec<EnumDecl>,
     pub functions: Vec<Function>,
     pub structs: Vec<StructDecl>,
     pub traits: Vec<TraitDecl>,
@@ -17,6 +18,22 @@ pub struct Constant {
     pub name: String,
     pub ty: TypeExpr,
     pub value: Expr,
+    pub line: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EnumDecl {
+    pub name: String,
+    pub generics: Vec<String>,
+    pub variants: Vec<EnumVariant>,
+    pub line: usize,
+    pub is_public: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EnumVariant {
+    pub name: String,
+    pub data: Option<TypeExpr>,
     pub line: usize,
 }
 

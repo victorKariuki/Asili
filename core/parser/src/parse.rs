@@ -4,8 +4,9 @@ use asili_diagnostics::Diagnostic;
 use std::mem;
 
 use crate::{
-    AssignOp, Attribute, BinaryOp, Block, Constant, Expr, ForMode, Function, Import, ImportPath,
-    ImplDecl, MatchArm, Module, Param, Pattern, Stmt, StructDecl, TraitDecl, TypeExpr, UnaryOp,
+    AssignOp, Attribute, BinaryOp, Block, Constant, EnumDecl, EnumVariant, Expr, ForMode,
+    Function, Import, ImportPath, ImplDecl, MatchArm, Module, Param, Pattern, Stmt, StructDecl,
+    TraitDecl, TypeExpr, UnaryOp,
 };
 use crate::cursor::Parser;
 
@@ -24,6 +25,7 @@ impl<'a> Parser<'a> {
     pub(crate) fn parse_module(&mut self) -> Module {
         let mut imports = Vec::new();
         let mut constants = Vec::new();
+        let mut enums = Vec::new();
         let mut functions = Vec::new();
         let mut structs = Vec::new();
         let mut traits = Vec::new();
@@ -69,6 +71,13 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
+            if self.match_tok("jenum") {
+                if let Some(decl) = self.parse_enum_decl(is_public, mem::take(&mut pending_attrs)) {
+                    enums.push(decl);
+                }
+                continue;
+            }
+
             if self.match_tok("umbo") {
                 if let Some(decl) = self.parse_struct_decl(is_public, mem::take(&mut pending_attrs)) {
                     structs.push(decl);
@@ -102,6 +111,7 @@ impl<'a> Parser<'a> {
         Module {
             imports,
             constants,
+            enums,
             functions,
             structs,
             traits,
@@ -227,6 +237,48 @@ impl<'a> Parser<'a> {
             fields,
             line,
             attrs,
+            is_public,
+        })
+    }
+
+    fn parse_enum_decl(&mut self, is_public: bool, attrs: Vec<Attribute>) -> Option<EnumDecl> {
+        let name = self.consume_ident("PAR905", "jenum inahitaji jina")?;
+        let line = name.line;
+        let generics = self.parse_generic_names();
+        let variants = if self.match_tok("{") {
+            let mut vars = Vec::new();
+            loop {
+                if self.match_tok("}") {
+                    break;
+                }
+                let var_name = self.consume_ident("PAR905", "jenum inahitaji jina la variant")?;
+                let var_line = var_name.line;
+                let data = if self.match_tok("(") {
+                    let ty = self.parse_type();
+                    self.consume(")", "PAR905", "variant inahitaji ')'")?;
+                    Some(ty)
+                } else {
+                    None
+                };
+                vars.push(EnumVariant {
+                    name: var_name.lexeme,
+                    data,
+                    line: var_line,
+                });
+                if !self.match_tok(",") {
+                    let _ = self.consume("}", "PAR905", "jenum inahitaji '}'");
+                    break;
+                }
+            }
+            vars
+        } else {
+            Vec::new()
+        };
+        Some(EnumDecl {
+            name: name.lexeme,
+            generics,
+            variants,
+            line,
             is_public,
         })
     }
