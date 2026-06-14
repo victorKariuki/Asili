@@ -4,8 +4,8 @@ use asili_diagnostics::Diagnostic;
 use std::mem;
 
 use crate::{
-    AssignOp, Attribute, BinaryOp, Block, Expr, ForMode, Function, Import, ImportPath, ImplDecl,
-    MatchArm, Module, Param, Pattern, Stmt, StructDecl, TraitDecl, TypeExpr, UnaryOp,
+    AssignOp, Attribute, BinaryOp, Block, Constant, Expr, ForMode, Function, Import, ImportPath,
+    ImplDecl, MatchArm, Module, Param, Pattern, Stmt, StructDecl, TraitDecl, TypeExpr, UnaryOp,
 };
 use crate::cursor::Parser;
 
@@ -23,6 +23,7 @@ fn strip_string_lexeme_quotes(lexeme: &str) -> String {
 impl<'a> Parser<'a> {
     pub(crate) fn parse_module(&mut self) -> Module {
         let mut imports = Vec::new();
+        let mut constants = Vec::new();
         let mut functions = Vec::new();
         let mut structs = Vec::new();
         let mut traits = Vec::new();
@@ -45,6 +46,14 @@ impl<'a> Parser<'a> {
                 let line = self.prev().line;
                 if let Some(path) = self.parse_import_path() {
                     imports.push(Import { path, line });
+                }
+                continue;
+            }
+
+            if self.match_tok("thabiti") {
+                let line = self.prev().line;
+                if let Some(const_decl) = self.parse_module_constant(line) {
+                    constants.push(const_decl);
                 }
                 continue;
             }
@@ -92,11 +101,20 @@ impl<'a> Parser<'a> {
 
         Module {
             imports,
+            constants,
             functions,
             structs,
             traits,
             impls,
         }
+    }
+
+    fn parse_module_constant(&mut self, line: usize) -> Option<Constant> {
+        let name = self.consume_ident("PAR040", "thabiti inahitaji jina")?.lexeme;
+        let ty = self.parse_type();
+        self.consume("=", "PAR041", "thabiti inahitaji '='")?;
+        let value = self.parse_expression()?;
+        Some(Constant { name, ty, value, line })
     }
 
     fn parse_import_path(&mut self) -> Option<ImportPath> {

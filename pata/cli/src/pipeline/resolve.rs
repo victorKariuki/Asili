@@ -45,13 +45,17 @@ pub struct ResolvedProgram {
 /// Build export table from a module AST (public functions and constants).
 pub fn build_export_table(module: &Module) -> ExportTable {
     let mut functions = HashMap::new();
-    let constants = HashMap::new();
+    let mut constants = HashMap::new();
     for f in &module.functions {
         if f.is_public {
             let params = f.params.iter().map(|p| parse_value_type(&p.ty.name)).collect();
             let ret = parse_value_type(&f.return_type.name);
             functions.insert(f.name.clone(), FnContract { params, ret });
         }
+    }
+    for c in &module.constants {
+        let ty = parse_value_type(&c.ty.name);
+        constants.insert(c.name.clone(), ty);
     }
     ExportTable { functions, constants }
 }
