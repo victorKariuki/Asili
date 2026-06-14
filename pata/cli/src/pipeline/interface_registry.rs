@@ -49,7 +49,7 @@ pub struct InterfaceRegistry {
     modules: HashMap<String, Arc<ModuleInterface>>,
 }
 
-fn parse_fn_signature(line: &str) -> Option<(String, FnContract)> {
+fn parse_fn_sahihi(line: &str) -> Option<(String, FnContract)> {
     let tail = line.strip_prefix("kazi ")?;
     let open = tail.find('(')?;
     let close = tail.rfind(')')?;
@@ -81,7 +81,7 @@ fn parse_thabiti_line(line: &str) -> Option<(String, ValueType)> {
 }
 
 // TODO: parse_asi_content is a line-by-line text parser for .asi stub files, not a real AST parser.
-// It cannot handle multi-line signatures, generic constraints (kazi foo<T: Sifa>(...)), doc comments,
+// It cannot handle multi-line sahihi, generic constraints (kazi foo<T: Sifa>(...)), doc comments,
 // or attribute lines (#[ndani]). Any .asi stub spanning multiple lines will be silently misparsed.
 // Fix: run the real lexer+parser on .asi files and extract FnContract from the parsed Function nodes.
 fn parse_asi_content(content: &str) -> (HashMap<String, FnContract>, HashMap<String, ValueType>) {
@@ -90,7 +90,7 @@ fn parse_asi_content(content: &str) -> (HashMap<String, FnContract>, HashMap<Str
     for raw in content.lines() {
         let line = raw.trim();
         if line.starts_with("kazi ") {
-            if let Some((name, sig)) = parse_fn_signature(line) {
+            if let Some((name, sig)) = parse_fn_sahihi(line) {
                 functions.insert(name, sig);
             }
         } else if line.starts_with("thabiti ") {
