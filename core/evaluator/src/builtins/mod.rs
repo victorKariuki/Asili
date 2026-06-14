@@ -21,9 +21,9 @@ use std::collections::HashMap;
 
 use crate::value::{Value, EvalError};
 
-pub(crate) type BuiltinFn = Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>;
+pub type BuiltinFn = Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>;
 
-pub(crate) fn builtins() -> HashMap<String, BuiltinFn> {
+pub fn builtins() -> HashMap<String, BuiltinFn> {
     let mut m: HashMap<String, BuiltinFn> = HashMap::new();
     msingi::register(&mut m);
     mfumo::register(&mut m);
@@ -38,7 +38,7 @@ pub(crate) fn builtins() -> HashMap<String, BuiltinFn> {
     m
 }
 
-pub(crate) fn builtin_names() -> Vec<String> {
+pub fn builtin_names() -> Vec<String> {
     let mut m = HashMap::new();
     msingi::register(&mut m);
     mfumo::register(&mut m);

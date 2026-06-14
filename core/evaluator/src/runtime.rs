@@ -33,6 +33,16 @@ impl<'a> Runtime<'a> {
         }
     }
 
+    pub fn with_builtins(env: &'a mut Env, module: &'a Module, builtins: HashMap<String, builtins::BuiltinFn>) -> Self {
+        Self {
+            env,
+            module,
+            builtins,
+            depth: 0,
+            peak_depth: 0,
+        }
+    }
+
     /// Update peak depth from current depth. Call after incrementing `depth`.
     pub(crate) fn update_peak_depth(&mut self) {
         if self.depth > self.peak_depth {
