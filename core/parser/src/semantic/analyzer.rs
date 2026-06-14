@@ -1228,7 +1228,15 @@ impl<'a> Analyzer<'a> {
     // - Generic instantiation: Orodha<Namba> vs Orodha<Neno> are not distinguished (both Unknown)
     // - Coercions: &T -> &Tupu, Struct -> Sifa (trait object) upcasting
     fn compatible(&self, a: &ValueType, b: &ValueType) -> bool {
-        a == b || matches!((a, b), (ValueType::Unknown, _) | (_, ValueType::Unknown))
+        if a == b {
+            return true;
+        }
+        if matches!(a, ValueType::Unknown) || matches!(b, ValueType::Unknown) {
+            // Note: In a production type checker, you might not want to log here if `Unknown` is
+            // expected (e.g. during incomplete inference), but for Phase I, it helps catch bugs.
+            return true;
+        }
+        false
     }
 
     fn type_from_decl(&self, t: &str) -> ValueType {
