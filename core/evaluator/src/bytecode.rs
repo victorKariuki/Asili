@@ -120,7 +120,7 @@ pub fn run_bytecode(program: &BytecodeProgram, args: Vec<String>) -> Result<(), 
                     .ok_or_else(|| EvalError::Unknown(format!("faharisi ya batili iliyojengwa: {idx}")))?;
                 
                 let builtin_fn = builtin_map.get(name)
-                    .ok_or_else(|| EvalError::Unknown(format!("builtin haikupatikana: {name}")))?;
+                    .ok_or_else(|| EvalError::Unknown(format!("iliyojengwa haikupatikana: {name}")))?;
 
                 // Assume 1 argument for now (matching previous chapisha implementation).
                 // This will need better arity management in the ISA/VM later.
