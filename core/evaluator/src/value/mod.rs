@@ -61,6 +61,7 @@ pub enum Value {
     Tokeo(Result<Box<Value>, Box<Value>>),
     Orodha(Vec<Value>),
     Struct(String, Vec<(String, Value)>),
+    Enum(String, String, Option<Box<Value>>), // enum_name, variant_name, optional_data
     Herufi(char),
     Jozi(Box<Value>, Box<Value>),
     Kamusi(HashMap<MapKey, Value>),

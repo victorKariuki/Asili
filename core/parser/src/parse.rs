@@ -177,7 +177,7 @@ impl<'a> Parser<'a> {
             return gens;
         }
         loop {
-            if let Some(id) = self.consume_ident("PAR085", "generic inahitaji jina") {
+            if let Some(id) = self.consume_ident("PAR085", "jumla inahitaji jina") {
                 gens.push(id.lexeme);
             }
             if self.match_tok(",") {
@@ -185,7 +185,7 @@ impl<'a> Parser<'a> {
             }
             break;
         }
-        let _ = self.consume(">", "PAR086", "generic list inahitaji '>'");
+        let _ = self.consume(">", "PAR086", "orodha ya jumla inahitaji '>'");
         gens
     }
 
@@ -251,11 +251,11 @@ impl<'a> Parser<'a> {
                 if self.match_tok("}") {
                     break;
                 }
-                let var_name = self.consume_ident("PAR905", "jenum inahitaji jina la variant")?;
+                let var_name = self.consume_ident("PAR905", "jenum inahitaji jina la lahaja")?;
                 let var_line = var_name.line;
                 let data = if self.match_tok("(") {
                     let ty = self.parse_type();
-                    self.consume(")", "PAR905", "variant inahitaji ')'")?;
+                    self.consume(")", "PAR905", "lahaja inahitaji ')'")?;
                     Some(ty)
                 } else {
                     None
@@ -972,6 +972,30 @@ impl<'a> Parser<'a> {
                     expr: Box::new(expr),
                     line,
                 };
+                continue;
+            }
+            if self.match_tok("::") {
+                if let Expr::Ident(enum_name) = expr {
+                    let variant_tok = self.consume_ident("PAR080", "jenum variant inahitaji jina")?;
+                    let variant_name = variant_tok.lexeme;
+                    let line = variant_tok.line;
+                    let data = if self.match_tok("(") {
+                        let d = self.parse_expression()?;
+                        self.consume(")", "PAR081", "jenum variant data inahitaji ')'")?;
+                        Some(Box::new(d))
+                    } else {
+                        None
+                    };
+                    expr = Expr::EnumConstruct {
+                        enum_name,
+                        variant_name,
+                        data,
+                        line,
+                    };
+                } else {
+                    self.err_here("PAR082", ":: inahitaji jina la jenum");
+                    return None;
+                }
                 continue;
             }
             break;

@@ -91,6 +91,25 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             }
             Ok(Value::Struct(struct_name.clone(), flds))
         }
+        Expr::EnumConstruct {
+            enum_name,
+            variant_name,
+            data,
+            ..
+        } => {
+            let _en = rt
+                .module
+                .enums
+                .iter()
+                .find(|e| e.name == *enum_name)
+                .ok_or_else(|| EvalError::TypeErr(format!("jenum haijulikani: {}", enum_name)))?;
+            let variant_data = if let Some(d) = data {
+                Some(Box::new(super::eval_expr_impl(d, rt)?))
+            } else {
+                None
+            };
+            Ok(Value::Enum(enum_name.clone(), variant_name.clone(), variant_data))
+        }
         Expr::FieldAccess { receiver, field, .. } => {
             let recv = super::eval_expr_impl(receiver, rt)?;
             match &recv {
