@@ -5,10 +5,19 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Module {
     pub imports: Vec<Import>,
+    pub constants: Vec<Constant>,
     pub functions: Vec<Function>,
     pub structs: Vec<StructDecl>,
     pub traits: Vec<TraitDecl>,
     pub impls: Vec<ImplDecl>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Constant {
+    pub name: String,
+    pub ty: TypeExpr,
+    pub value: Expr,
+    pub line: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
