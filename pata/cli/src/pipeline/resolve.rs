@@ -9,10 +9,11 @@
 // the struct is not present in the merged Module passed to the evaluator.
 
 use crate::pipeline::interface_registry::{InterfaceRegistry, StdlibEnv};
+use crate::pipeline::project::{Dependency, ProjectConfig};
 use asili_diagnostics::Diagnostic;
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, parse_value_type, FnContract, ImportPath, Module, ValueType};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -57,7 +58,25 @@ pub fn build_export_table(module: &Module) -> ExportTable {
 }
 
 /// Search path order: root, root/lib, then root/lib/std (stdlib .asi). Returns (path, true if stdlib .asi).
-pub fn find_module_file(name: &str, root: &Path) -> Option<(PathBuf, bool)> {
+pub fn find_module_file(
+    name: &str,
+    root: &Path,
+    dependencies: &BTreeMap<String, Dependency>,
+) -> Option<(PathBuf, bool)> {
+    // Check path-based dependencies first.
+    if let Some(Dependency::Path(dep_path)) = dependencies.get(name) {
+        let abs_path = if dep_path.is_absolute() {
+            dep_path.clone()
+        } else {
+            root.join(dep_path)
+        };
+        // Expect a project structure within the dependency path.
+        let entrypoint = abs_path.join("src").join(format!("{name}.as"));
+        if entrypoint.is_file() {
+            return Some((entrypoint, false));
+        }
+    }
+
     let candidates = [
         (root.join(format!("{name}.as")), false),
         (root.join("lib").join(format!("{name}.as")), false),
@@ -76,6 +95,7 @@ pub fn find_module_file(name: &str, root: &Path) -> Option<(PathBuf, bool)> {
 fn resolve_one(
     name: &str,
     root: &Path,
+    dependencies: &BTreeMap<String, Dependency>,
     resolved: &mut HashMap<String, ResolvedModule>,
     loading: &mut HashSet<String>,
     errors: &mut Vec<Diagnostic>,
@@ -110,7 +130,7 @@ fn resolve_one(
         );
         return;
     }
-    let (path, is_asi) = match find_module_file(name, root) {
+    let (path, is_asi) = match find_module_file(name, root, dependencies) {
         Some(p) => p,
         None => {
             let searched = format!(
@@ -196,7 +216,7 @@ fn resolve_one(
             ImportPath::Full(n) => n.as_str(),
             ImportPath::Selective { module: n, .. } => n.as_str(),
         };
-        resolve_one(dep_name, root, resolved, loading, errors, registry);
+        resolve_one(dep_name, root, dependencies, resolved, loading, errors, registry);
     }
     loading.remove(name);
     let exports = build_export_table(&module);
@@ -214,6 +234,7 @@ fn resolve_one(
 pub fn resolve_all(
     entrypoint: &Module,
     root: &Path,
+    dependencies: &BTreeMap<String, Dependency>,
     registry: &mut InterfaceRegistry,
 ) -> Result<ResolvedProgram, Vec<Diagnostic>> {
     let mut resolved = HashMap::new();
@@ -224,7 +245,7 @@ pub fn resolve_all(
             ImportPath::Full(n) => n.as_str(),
             ImportPath::Selective { module: n, .. } => n.as_str(),
         };
-        resolve_one(name, root, &mut resolved, &mut loading, &mut errors, registry);
+        resolve_one(name, root, dependencies, &mut resolved, &mut loading, &mut errors, registry);
     }
     if !errors.is_empty() {
         return Err(errors);

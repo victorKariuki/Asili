@@ -1,6 +1,6 @@
 use crate::commands::CliError;
 use crate::pipeline::interface_registry::InterfaceRegistry;
-use crate::pipeline::project::{load_project_config, read_lockfile, ProjectConfig};
+use crate::pipeline::project::{load_project_config, read_lockfile, ProjectConfig, Dependency};
 use crate::pipeline::resolve::{
     check_duplicate_imports, dependency_order, find_module_file, merge_for_semantic, resolve_all,
     ResolvedProgram,
@@ -43,13 +43,14 @@ pub fn project_input_hash(
     entry_path: &Path,
     entry_content: &str,
     program: &ResolvedProgram,
+    dependencies: &BTreeMap<String, Dependency>,
 ) -> String {
     let mut h = DefaultHasher::new();
     entry_path.display().to_string().hash(&mut h);
     entry_content.hash(&mut h);
     let mut pairs: Vec<(String, String)> = Vec::new();
     for name in dependency_order(&program.resolved) {
-        let content = if let Some((path, _)) = find_module_file(name.as_str(), root) {
+        let content = if let Some((path, _)) = find_module_file(name.as_str(), root, dependencies) {
             fs::read_to_string(&path).unwrap_or_default()
         } else {
             format!("builtin:{name}")
@@ -82,9 +83,9 @@ pub fn compile_project(root: &Path) -> Result<CompileOutput, CliError> {
     registry.register_builtins();
     registry.load_stdlib()?;
     let prelude = registry.prelude_env();
-    let program = resolve_all(&entrypoint, root, &mut registry).map_err(|errors| diag_err("resolve", errors))?;
+    let program = resolve_all(&entrypoint, root, &cfg.dependencies, &mut registry).map_err(|errors| diag_err("resolve", errors))?;
 
-    let input_hash = project_input_hash(root, &cfg.entrypoint, &source, &program);
+    let input_hash = project_input_hash(root, &cfg.entrypoint, &source, &program, &cfg.dependencies);
     let target_dir = root.join("target");
     let manifest_path = target_dir.join(format!("{}.build.manifest", cfg.name));
     let asb_path = target_dir.join(format!("{}.asb", cfg.name));
@@ -171,7 +172,7 @@ pub fn compile_single_file(entry_path: &Path) -> Result<CompileOutput, CliError>
     registry.register_builtins();
     registry.load_stdlib()?;
     let prelude = registry.prelude_env();
-    let program = resolve_all(&entrypoint, &root, &mut registry).map_err(|errors| diag_err("resolve", errors))?;
+    let program = resolve_all(&entrypoint, &root, &config.dependencies, &mut registry).map_err(|errors| diag_err("resolve", errors))?;
 
     let dup_errors = check_duplicate_imports(&entrypoint, &program.resolved, &prelude);
     if !dup_errors.is_empty() {
@@ -258,7 +259,7 @@ pub fn run_project_tests(root: &Path, filter: Option<&str>, fail_fast: bool) -> 
         let tokens = tokenize(&source).map_err(|errors| diag_err("lex", errors))?;
         let entrypoint = parse_tokens(&tokens).map_err(|errors| diag_err("parse", errors))?;
 
-        let program = resolve_all(&entrypoint, root, &mut registry).map_err(|errors| diag_err("resolve", errors))?;
+        let program = resolve_all(&entrypoint, root, &cfg.dependencies, &mut registry).map_err(|errors| diag_err("resolve", errors))?;
         let dup_errors = check_duplicate_imports(&entrypoint, &program.resolved, &prelude);
         if !dup_errors.is_empty() {
             return Err(diag_err("semantic", dup_errors));
@@ -304,7 +305,7 @@ pub fn list_project_tests(root: &Path) -> Result<Vec<String>, CliError> {
         let tokens = tokenize(&source).map_err(|errors| diag_err("lex", errors))?;
         let entrypoint = parse_tokens(&tokens).map_err(|errors| diag_err("parse", errors))?;
 
-        let program = resolve_all(&entrypoint, root, &mut registry).map_err(|errors| diag_err("resolve", errors))?;
+        let program = resolve_all(&entrypoint, root, &cfg.dependencies, &mut registry).map_err(|errors| diag_err("resolve", errors))?;
         let dup_errors = check_duplicate_imports(&entrypoint, &program.resolved, &prelude);
         if !dup_errors.is_empty() {
             return Err(diag_err("semantic", dup_errors));
