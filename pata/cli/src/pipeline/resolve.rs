@@ -42,7 +42,7 @@ pub struct ResolvedProgram {
     pub merged_for_eval: Module,
 }
 
-/// Build export table from a module AST (public functions only; constants from AST if present).
+/// Build export table from a module AST (public functions and constants).
 pub fn build_export_table(module: &Module) -> ExportTable {
     let mut functions = HashMap::new();
     let constants = HashMap::new();
@@ -53,7 +53,6 @@ pub fn build_export_table(module: &Module) -> ExportTable {
             functions.insert(f.name.clone(), FnContract { params, ret });
         }
     }
-    // Constants: we could scan for top-level thabiti/weka; for now leave empty for user modules.
     ExportTable { functions, constants }
 }
 

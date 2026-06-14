@@ -133,8 +133,6 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                         }
                     }
                 }
-                // TODO: kwa ... katika only iterates Orodha. Kamusi, Mfululizo, and Seti
-                // iteration are not supported — the loop body is silently skipped for those types.
                 ForMode::InExpr(expr) => {
                     let col = super::eval_expr_impl(expr, rt)?;
                     match col {
@@ -168,7 +166,11 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                                 }
                             }
                         }
-                        _ => {}
+                        _ => {
+                            return Err(EvalError::TypeErr(
+                                "kwa...katika inashughulikia Orodha na Kamusi tu".to_string()
+                            ));
+                        }
                     }
                 }
             }

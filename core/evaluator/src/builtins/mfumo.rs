@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::signal;
-use crate::value::{self, Value};
+use crate::value::{self, Value, MapKey};
 use super::BuiltinFn;
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
@@ -35,14 +35,38 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         }
     }));
     m.insert("sikiliza_ishara".to_string(), Box::new(|args: &[Value]| {
-        let sig_id = value::as_f64(args.get(0).unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
-        let kazi_name = value::as_string(args.get(1).unwrap_or(&Value::Hamna)).unwrap_or_default();
-        signal::register_handler(sig_id, kazi_name);
-        Ok(Value::Tupu)
+        #[cfg(unix)]
+        {
+            let sig_id = value::as_f64(args.get(0).unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
+            let kazi_name = value::as_string(args.get(1).unwrap_or(&Value::Hamna)).unwrap_or_default();
+            signal::register_handler(sig_id, kazi_name);
+            Ok(Value::Tupu)
+        }
+        #[cfg(not(unix))]
+        {
+            let mut err_map = HashMap::new();
+            err_map.insert(MapKey::Neno("ujumbe".to_string()), Value::Neno("sikiliza_ishara: sifa haipo kwenye jukwaa hili".to_string()));
+            Ok(Value::Tokeo(
+                Box::new(Value::Tupu),
+                Box::new(Value::Kamusi(err_map))
+            ))
+        }
     }));
     m.insert("rejesha_ishara".to_string(), Box::new(|args: &[Value]| {
-        let sig_id = value::as_f64(args.get(0).unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
-        signal::clear_handler(sig_id);
-        Ok(Value::Tupu)
+        #[cfg(unix)]
+        {
+            let sig_id = value::as_f64(args.get(0).unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
+            signal::clear_handler(sig_id);
+            Ok(Value::Tupu)
+        }
+        #[cfg(not(unix))]
+        {
+            let mut err_map = HashMap::new();
+            err_map.insert(MapKey::Neno("ujumbe".to_string()), Value::Neno("rejesha_ishara: sifa haipo kwenye jukwaa hili".to_string()));
+            Ok(Value::Tokeo(
+                Box::new(Value::Tupu),
+                Box::new(Value::Kamusi(err_map))
+            ))
+        }
     }));
 }
