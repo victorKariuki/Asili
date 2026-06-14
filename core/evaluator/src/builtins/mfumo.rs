@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::signal;
-use crate::value::{self, Value, MapKey};
+use crate::value::{self, Value};
 use super::BuiltinFn;
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
