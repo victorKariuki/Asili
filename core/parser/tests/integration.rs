@@ -13,7 +13,15 @@ fn parses_main() {
     let src = "kazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }";
     let toks = tokenize(src).expect("tokens");
     let module = parse_tokens(&toks).expect("parse");
-    semantic_check(&module).expect("semantics");
+    let mut extern_fns = HashMap::new();
+    extern_fns.insert(
+        "chapisha".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno],
+            ret: ValueType::Tupu,
+        },
+    );
+    semantic_check_with_env(&module, true, extern_fns, HashMap::new()).expect("semantics");
 }
 
 #[test]

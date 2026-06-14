@@ -889,15 +889,98 @@ impl<'a> Analyzer<'a> {
                     ValueType::Unknown
                 }
             }
-            // TODO: Method call type-checking is not implemented — always returns Unknown.
-            // Should resolve receiver type, look up method signature in impl blocks,
-            // check argument arity and types, and return the method's declared return type.
-            Expr::MethodCall { receiver, args, .. } => {
-                let _ = self.check_expr(receiver, scopes, UseMode::BorrowImm);
-                for a in args {
-                    let _ = self.check_expr(a, scopes, UseMode::BorrowImm);
+            // Method call type-checking.
+            Expr::MethodCall {
+                receiver,
+                method_name,
+                args,
+                line,
+            } => {
+                let receiver_ty = self.check_expr(receiver, scopes, UseMode::BorrowImm);
+                let receiver_ty_name = match &receiver_ty {
+                    ValueType::Struct(name) => name.clone(),
+                    _ => {
+                        self.errors.push(
+                            Diagnostic::new(
+                                "SEM039",
+                                format!("aina '{}' haina njia", receiver_ty.to_string()),
+                            )
+                            .with_stage("semantic")
+                            .with_span(*line, 1),
+                        );
+                        return ValueType::Unknown;
+                    }
+                };
+
+                let mut method_decl = None;
+                for imp in &self.module.impls {
+                    if imp.target == receiver_ty_name {
+                        for func in &imp.body {
+                            if func.name == *method_name {
+                                method_decl = Some(func);
+                                break;
+                            }
+                        }
+                    }
+                    if method_decl.is_some() {
+                        break;
+                    }
                 }
-                ValueType::Unknown
+
+                let Some(func) = method_decl else {
+                    self.errors.push(
+                        Diagnostic::new(
+                            "SEM040",
+                            format!("njia '{}' haipo kwa '{}'", method_name, receiver_ty_name),
+                        )
+                        .with_stage("semantic")
+                        .with_span(*line, 1),
+                    );
+                    return ValueType::Unknown;
+                };
+
+                // Validate arity (excluding self)
+                if args.len() != func.params.len() - 1 {
+                    self.errors.push(
+                        Diagnostic::new(
+                            "SEM041",
+                            format!(
+                                "njia '{}' inahitaji hoja {} (umetoa {})",
+                                method_name,
+                                func.params.len() - 1,
+                                args.len()
+                            ),
+                        )
+                        .with_stage("semantic")
+                        .with_span(*line, 1),
+                    );
+                }
+
+                // Type check arguments
+                for (i, arg) in args.iter().enumerate() {
+                    let arg_ty = self.check_expr(arg, scopes, UseMode::Move);
+                    if i + 1 < func.params.len() {
+                        let param_ty = self.type_from_decl(&func.params[i + 1].ty.name);
+                        if !self.compatible(&param_ty, &arg_ty) {
+                            self.errors.push(
+                                Diagnostic::new(
+                                    "SEM042",
+                                    format!(
+                                        "hoja ya {} kwa '{}' haitalingana: inahitaji {}, imepata {}",
+                                        i + 1,
+                                        method_name,
+                                        param_ty,
+                                        arg_ty
+                                    ),
+                                )
+                                .with_stage("semantic")
+                                .with_span(*line, 1),
+                            );
+                        }
+                    }
+                }
+
+                self.type_from_decl(&func.return_type.name)
             }
             Expr::StructLiteral {
                 struct_name,

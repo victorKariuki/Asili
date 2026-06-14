@@ -274,6 +274,35 @@ pub enum BinaryOp {
     Or,
 }
 
+use std::fmt;
+
+impl fmt::Display for ValueType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ValueType::Namba => write!(f, "Namba"),
+            ValueType::Neno => write!(f, "Neno"),
+            ValueType::Ukweli => write!(f, "Ukweli"),
+            ValueType::Tupu => write!(f, "Tupu"),
+            ValueType::Hamna => write!(f, "Hamna"),
+            ValueType::Herufi => write!(f, "Herufi"),
+            ValueType::NambaKuu => write!(f, "NambaKuu"),
+            ValueType::NambaSahihi => write!(f, "NambaSahihi"),
+            ValueType::Chaguo(t) => write!(f, "Chaguo<{}>", t),
+            ValueType::Tokeo(t, e) => write!(f, "Tokeo<{}, {}>", t, e),
+            ValueType::Rejeo(t, m) => write!(f, "Rejeo<{}, {}>", t, m),
+            ValueType::Orodha(t) => write!(f, "Orodha<{}>", t),
+            ValueType::Kamusi(k, v) => write!(f, "Kamusi<{}, {}>", k, v),
+            ValueType::Mfululizo(t) => write!(f, "Mfululizo<{}>", t),
+            ValueType::Jozi(a, b) => write!(f, "Jozi<{}, {}>", a, b),
+            ValueType::Seti(t) => write!(f, "Seti<{}>", t),
+            ValueType::Struct(name) => write!(f, "{}", name),
+            ValueType::Wakati => write!(f, "Wakati"),
+            ValueType::Anuani => write!(f, "Anuani"),
+            ValueType::Unknown => write!(f, "Unknown"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ValueType {
     Namba,
