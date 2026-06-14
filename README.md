@@ -1,4 +1,4 @@
-![Asili](Assets/Asili_Banner.png)
+![Asili](assets/Asili_Banner.png)
 
 # Asili
 
