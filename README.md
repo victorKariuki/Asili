@@ -1,3 +1,5 @@
+![Asili](Assets/Asili_Banner.png)
+
 # Asili
 
 **Asili** (Origin / Nature) is a programming language that uses Swahili as the primary vocabulary for logic and structure. The toolchain (**Pata**) provides a single pipeline for learning, scripting, and embedded-style targets.
