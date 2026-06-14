@@ -572,6 +572,12 @@ impl<'a> Analyzer<'a> {
                             .with_stage("semantic")
                             .with_span(*line, 1),
                     );
+                } else if !arms.iter().any(|a| matches!(a.pattern, Pattern::Wildcard)) {
+                    self.errors.push(
+                        Diagnostic::new("SEM023", "linganisha inaweza kutokuwa na kufanya kazi kwa kesi zote — ongeza _ => {} kwa kawaida")
+                            .with_stage("semantic")
+                            .with_span(*line, 1),
+                    );
                 }
             }
             Stmt::Break { label: _, line } => {
