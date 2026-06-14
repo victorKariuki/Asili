@@ -7,10 +7,8 @@ mod majira;
 mod matumizi;
 mod mfumo;
 mod msingi;
-// TODO: neno module defines string utility builtins (chapisha, onyo, makosa, paparika) but is
-// never registered with builtins(). The matumizi module registers those functions instead.
-// Decide: remove neno.rs as dead code, or repurpose it for string-specific builtins
-// (gawanya, badilisha, anza_na, maliza_na, kwa_herufi_ndogo, kwa_herufi_kubwa) and register it.
+// PHASE II: neno module is reserved for string-specific methods (gawanya, badilisha, anza_na, maliza_na, etc.)
+// Currently, basic string output (chapisha, onyo, makosa, paparika) are in matumizi instead.
 #[allow(dead_code)]
 mod neno;
 mod runtime;
