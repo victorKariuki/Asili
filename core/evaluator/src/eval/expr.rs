@@ -54,6 +54,23 @@ pub(crate) fn match_and_bind_pattern(pat: &Pattern, v: &Value, rt: &mut Runtime<
             };
             match_and_bind_pattern(p1, a, rt) && match_and_bind_pattern(p2, b, rt)
         }
+        Pattern::Enum {
+            enum_name,
+            variant_name,
+            data,
+        } => {
+            let Value::Enum(en, vn, en_data) = v else {
+                return false;
+            };
+            if en != enum_name || vn != variant_name {
+                return false;
+            }
+            match (data, en_data) {
+                (None, None) => true,
+                (Some(dpat), Some(dval)) => match_and_bind_pattern(dpat, dval, rt),
+                _ => false,
+            }
+        }
         Pattern::Literal(_) => false,
     }
 }
