@@ -252,6 +252,14 @@ pub enum Expr {
         args: Vec<Expr>,
         line: usize,
     },
+    List {
+        elements: Vec<Expr>,
+        line: usize,
+    },
+    Map {
+        entries: Vec<(Expr, Expr)>,
+        line: usize,
+    },
     StructLiteral {
         struct_name: String,
         fields: Vec<(String, Expr)>,

@@ -792,17 +792,17 @@ impl<'a> Parser<'a> {
 
     fn parse_or(&mut self) -> Option<Expr> {
         let left = self.parse_and()?;
-        self.parse_binary_left(left, &[("au", BinaryOp::Or)], |p| p.parse_and())
+        self.parse_binary_left(left, &[("au", BinaryOp::Or), ("||", BinaryOp::Or)], |p| p.parse_and())
     }
 
     fn parse_and(&mut self) -> Option<Expr> {
         let left = self.parse_bitwise_or()?;
-        self.parse_binary_left(left, &[("na", BinaryOp::And)], |p| p.parse_bitwise_or())
+        self.parse_binary_left(left, &[("na", BinaryOp::And), ("&&", BinaryOp::And)], |p| p.parse_bitwise_or())
     }
 
     fn parse_bitwise_or(&mut self) -> Option<Expr> {
         let left = self.parse_bitwise_xor()?;
-        self.parse_binary_left(left, &[("au_biti", BinaryOp::BitOr)], |p| p.parse_bitwise_xor())
+        self.parse_binary_left(left, &[("au_biti", BinaryOp::BitOr), ("|", BinaryOp::BitOr)], |p| p.parse_bitwise_xor())
     }
 
     fn parse_bitwise_xor(&mut self) -> Option<Expr> {
@@ -895,6 +895,7 @@ impl<'a> Parser<'a> {
         const UNARY_OPS: &[(&str, UnaryOp)] = &[
             ("-", UnaryOp::Neg),
             ("siyo", UnaryOp::Not),
+            ("!", UnaryOp::Not),
             ("siyo_biti", UnaryOp::BitNot),
             ("azima", UnaryOp::BorrowImm),
             ("azima_tenda", UnaryOp::BorrowMut),
@@ -1044,6 +1045,43 @@ impl<'a> Parser<'a> {
             return Some(Expr::Hamna);
         }
 
+        if self.match_tok("[") {
+            let mut elements = Vec::new();
+            if !self.match_tok("]") {
+                loop {
+                    elements.push(self.parse_expression()?);
+                    if !self.match_tok(",") {
+                        break;
+                    }
+                }
+                self.consume("]", "PAR079", "orodha inahitaji ']'")?;
+            }
+            return Some(Expr::List {
+                elements,
+                line: self.prev().line,
+            });
+        }
+
+        if self.match_tok("{") {
+            let mut entries = Vec::new();
+            if !self.match_tok("}") {
+                loop {
+                    let key = self.parse_expression()?;
+                    self.consume(":", "PAR053", "kamusi inahitaji ':'")?;
+                    let val = self.parse_expression()?;
+                    entries.push((key, val));
+                    if !self.match_tok(",") {
+                        break;
+                    }
+                }
+                self.consume("}", "PAR053", "kamusi inahitaji '}'")?;
+            }
+            return Some(Expr::Map {
+                entries,
+                line: self.prev().line,
+            });
+        }
+
         if self.peek().lexeme.starts_with("CHAR:") {
             let t = self.advance();
             let ch = t.lexeme.strip_prefix("CHAR:").and_then(|s| s.chars().next()).unwrap_or('\0');
@@ -1092,6 +1130,71 @@ impl<'a> Parser<'a> {
                 return None;
             }
             return Some(Expr::Number(lexeme));
+        }
+
+        // [] list literal — sugar for orodha(e1, e2, ...)
+        if self.match_tok("[") {
+            let line = self.prev().line;
+            let mut args = Vec::new();
+            while !self.check("]") && !self.is_eof() {
+                args.push(self.parse_expression()?);
+                if !self.match_tok(",") {
+                    break;
+                }
+            }
+            self.consume("]", "PAR090", "orodha literal inahitaji ']'")?;
+            return Some(Expr::Call {
+                callee: Box::new(Expr::Ident("orodha".to_string())),
+                args,
+                line,
+            });
+        }
+
+        // {} empty-map literal — sugar for kamusi_tupu()
+        // { key: val, ... } non-empty map literal
+        if self.check("{") {
+            let first_inside = self.tokens.get(self.pos + 1).map(|u| u.lexeme.as_str());
+            let second_inside = self.tokens.get(self.pos + 2).map(|u| u.lexeme.as_str());
+            // Empty braces → kamusi_tupu()
+            if first_inside == Some("}") {
+                let line = self.peek().line;
+                self.advance(); // {
+                self.advance(); // }
+                return Some(Expr::Call {
+                    callee: Box::new(Expr::Ident("kamusi_tupu".to_string())),
+                    args: vec![],
+                    line,
+                });
+            }
+            // { key: val, ... } — non-empty map literal (key is ident, string, or number)
+            let is_map_lit = second_inside == Some(":");
+            if is_map_lit {
+                let line = self.peek().line;
+                self.advance(); // consume {
+                let mut entries: Vec<Expr> = Vec::new();
+                loop {
+                    if self.check("}") || self.is_eof() {
+                        break;
+                    }
+                    let k = self.parse_expression()?;
+                    self.consume(":", "PAR092", "kamusi literal inahitaji ':' kati ya ufunguo na thamani")?;
+                    let v = self.parse_expression()?;
+                    entries.push(k);
+                    entries.push(v);
+                    if !self.match_tok(",") {
+                        break;
+                    }
+                }
+                self.consume("}", "PAR093", "kamusi literal inahitaji '}'")?;
+                // Desugar: { k1: v1, k2: v2 } → MapLiteral([(k1,v1), (k2,v2)])
+                // Represented as Call("__kamusi_literal__", [k1, v1, k2, v2])
+                // The evaluator unpacks pairs and calls ingiza for each.
+                return Some(Expr::Call {
+                    callee: Box::new(Expr::Ident("__kamusi_literal__".to_string())),
+                    args: entries,
+                    line,
+                });
+            }
         }
 
         if self.check_ident() {
