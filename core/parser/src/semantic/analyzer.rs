@@ -830,10 +830,6 @@ impl<'a> Analyzer<'a> {
                     target
                 }
             }
-            Expr::EnumConstruct { .. } => {
-                // TODO: Implement EnumConstruct type checking.
-                ValueType::Unknown
-            }
             Expr::Call { callee, args, line } => {
                 let callee_name = if let Expr::Ident(n) = &**callee {
                     Some(n.clone())
@@ -935,6 +931,12 @@ impl<'a> Analyzer<'a> {
                 let receiver_ty = self.check_expr(receiver, scopes, UseMode::BorrowImm);
                 let receiver_ty_name = match &receiver_ty {
                     ValueType::Struct(name) => name.clone(),
+                    ValueType::Neno => "Neno".to_string(),
+                    ValueType::Orodha(_) => "Orodha".to_string(),
+                    ValueType::Kamusi(_, _) => "Kamusi".to_string(),
+                    ValueType::Jozi(_, _) => "Jozi".to_string(),
+                    ValueType::Chaguo(_) => "Chaguo".to_string(),
+                    ValueType::Tokeo(_, _) => "Tokeo".to_string(),
                     _ => {
                         self.errors.push(
                             Diagnostic::new(
@@ -949,6 +951,21 @@ impl<'a> Analyzer<'a> {
                 };
                 let is_enum = self.module.enums.iter().any(|e| e.name == receiver_ty_name);
                 let _is_struct = self.module.structs.iter().any(|s| s.name == receiver_ty_name);
+                let is_builtin = matches!(receiver_ty, ValueType::Neno | ValueType::Orodha(_) | ValueType::Kamusi(_, _) | ValueType::Jozi(_, _) | ValueType::Chaguo(_) | ValueType::Tokeo(_, _));
+                if is_builtin {
+                    for arg in args {
+                        let _ = self.check_expr(arg, scopes, UseMode::Move);
+                    }
+                    return match (receiver_ty, method_name.as_str()) {
+                        (ValueType::Neno, "urefu" | "biti_ngapi") => ValueType::Namba,
+                        (ValueType::Neno, "kwa_herufi_ndogo" | "kwa_herufi_kubwa" | "badilisha") => ValueType::Neno,
+                        (ValueType::Neno, "anza_na" | "maliza_na") => ValueType::Ukweli,
+                        (ValueType::Neno, "gawanya") => ValueType::Orodha(Box::new(ValueType::Neno)),
+                        (ValueType::Neno, "kata") => ValueType::Neno,
+                        (ValueType::Neno, "tafuta") => ValueType::Chaguo(Box::new(ValueType::Namba)),
+                        _ => ValueType::Unknown,
+                    };
+                }
                 if !is_enum && !_is_struct {
                     self.errors.push(
                         Diagnostic::new(
