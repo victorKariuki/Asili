@@ -540,11 +540,51 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 (Value::Jozi(a, _), "kwanza") => Ok((**a).clone()),
                 (Value::Jozi(_, b), "pili") => Ok((**b).clone()),
                 (Value::Wakati(secs), "sekunde") => Ok(Value::Namba(*secs)),
+                (Value::Neno(s), "urefu") => Ok(Value::Namba(s.chars().count() as f64)),
+                (Value::Neno(s), "biti_ngapi") => Ok(Value::Namba(s.len() as f64)),
+                (Value::Neno(s), "kwa_herufi_ndogo") => Ok(Value::Neno(s.to_lowercase())),
+                (Value::Neno(s), "kwa_herufi_kubwa") => Ok(Value::Neno(s.to_uppercase())),
+                (Value::Neno(s), "anza_na") => {
+                    let prefix = value::as_string(args_val.first().unwrap_or(&Value::Hamna)).ok_or_else(|| EvalError::TypeErr("anza_na inahitaji Neno".into()))?;
+                    Ok(Value::Ukweli(s.starts_with(&prefix)))
+                }
+                (Value::Neno(s), "maliza_na") => {
+                    let suffix = value::as_string(args_val.first().unwrap_or(&Value::Hamna)).ok_or_else(|| EvalError::TypeErr("maliza_na inahitaji Neno".into()))?;
+                    Ok(Value::Ukweli(s.ends_with(&suffix)))
+                }
+                (Value::Neno(s), "gawanya") => {
+                    let sep = value::as_string(args_val.first().unwrap_or(&Value::Hamna)).ok_or_else(|| EvalError::TypeErr("gawanya inahitaji Neno".into()))?;
+                    let parts: Vec<Value> = s.split(&sep).map(|p| Value::Neno(p.to_string())).collect();
+                    Ok(Value::Orodha(parts))
+                }
+                (Value::Neno(s), "badilisha") => {
+                    let from = value::as_string(args_val.first().unwrap_or(&Value::Hamna)).ok_or_else(|| EvalError::TypeErr("badilisha inahitaji from na to".into()))?;
+                    let to = value::as_string(args_val.get(1).unwrap_or(&Value::Hamna)).ok_or_else(|| EvalError::TypeErr("badilisha inahitaji to".into()))?;
+                    Ok(Value::Neno(s.replace(&from, &to)))
+                }
+                (Value::Neno(s), "kata") => {
+                    let start = args_val.first().and_then(value::as_f64).map(|n| n as usize).unwrap_or(0);
+                    let chars: Vec<char> = s.chars().collect();
+                    let end = args_val.get(1).and_then(value::as_f64).map(|n| n as usize).unwrap_or(chars.len());
+                    let start = start.min(chars.len());
+                    let end = end.min(chars.len());
+                    if start > end {
+                        Ok(Value::Neno(String::new()))
+                    } else {
+                        let result: String = chars[start..end].iter().collect();
+                        Ok(Value::Neno(result))
+                    }
+                }
+                (Value::Neno(s), "tafuta") => {
+                    let needle = value::as_string(args_val.first().unwrap_or(&Value::Hamna)).ok_or_else(|| EvalError::TypeErr("tafuta inahitaji Neno".into()))?;
+                    match s.find(&needle) {
+                        Some(idx) => Ok(Value::Chaguo(Some(Box::new(Value::Namba(idx as f64))))),
+                        None => Ok(Value::Chaguo(None)),
+                    }
+                }
                 // TODO: Missing Orodha methods from spec: badilisha(idx, val), chuja(kazi),
                 // panga(kazi), pata(idx) -> Chaguo<T>, chunguza(kazi) -> Ukweli, onyesha().
                 // Missing Kamusi methods: ondoa(key), thamani() -> Orodha<V>, idadi() -> Namba.
-                // Missing Neno methods: gawanya(sep) -> Orodha<Neno>, badilisha(kutoka, kwenda),
-                // anza_na(kiambishi) -> Ukweli, maliza_na(kiishio) -> Ukweli, kwa_herufi_ndogo/kubwa.
                 (Value::Neno(_), _) | (Value::Orodha(_), _) | (Value::Kamusi(_), _) | (Value::Jozi(_, _), _) | (Value::Wakati(_), _) | (Value::Anuani(_), _) | (Value::Chaguo(_), _) | (Value::Tokeo(_), _) => Err(EvalError::TypeErr(format!(
                     "njia '{method_name}' haijulikani kwa aina hii"
                 ))),
