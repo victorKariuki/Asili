@@ -696,6 +696,22 @@ impl<'a> Parser<'a> {
         if self.check_ident() {
             let t = self.advance();
             let name = t.lexeme.clone();
+            if self.match_tok("::") {
+                let variant_tok = self.consume_ident("PAR085", "jenum pattern inahitaji jina la variant")?;
+                let variant_name = variant_tok.lexeme.clone();
+                let data = if self.match_tok("(") {
+                    let sub = self.parse_pattern()?;
+                    self.consume(")", "PAR086", "jenum pattern inahitaji ')'")?;
+                    Some(Box::new(sub))
+                } else {
+                    None
+                };
+                return Some(Pattern::Enum {
+                    enum_name: name,
+                    variant_name,
+                    data,
+                });
+            }
             if self.match_tok("{") {
                 let mut fields = Vec::new();
                 loop {
@@ -1122,7 +1138,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn standard_enums(&self) -> Vec<EnumDecl> {
+    pub(crate) fn standard_enums(&self) -> Vec<EnumDecl> {
         vec![
             EnumDecl {
                 name: "Chaguo".to_string(),

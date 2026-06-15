@@ -208,6 +208,11 @@ pub enum Pattern {
         struct_name: String,
         fields: Vec<(String, Pattern)>,
     },
+    Enum {
+        enum_name: String,
+        variant_name: String,
+        data: Option<Box<Pattern>>,
+    },
     Jozi(Box<Pattern>, Box<Pattern>),
 }
 
