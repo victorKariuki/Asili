@@ -37,7 +37,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     m.insert("sikiliza_ishara".to_string(), Box::new(|args: &[Value]| {
         #[cfg(unix)]
         {
-            let sig_id = value::as_f64(args.get(0).unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
+            let sig_id = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
             let kazi_name = value::as_string(args.get(1).unwrap_or(&Value::Hamna)).unwrap_or_default();
             signal::register_handler(sig_id, kazi_name);
             Ok(Value::Tupu)
@@ -55,7 +55,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     m.insert("rejesha_ishara".to_string(), Box::new(|args: &[Value]| {
         #[cfg(unix)]
         {
-            let sig_id = value::as_f64(args.get(0).unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
+            let sig_id = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
             signal::clear_handler(sig_id);
             Ok(Value::Tupu)
         }

@@ -202,14 +202,14 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     }));
     m.insert("asini".to_string(), Box::new(|args: &[Value]| {
         let x = value::arg_f64(args, 0, "asini")?;
-        if x < -1.0 || x > 1.0 {
+        if !(-1.0..=1.0).contains(&x) {
             return Ok(Value::Tokeo(Err(Box::new(kosa_h("asini: kikoa ni -1 hadi 1")))));
         }
         Ok(Value::Tokeo(Ok(Box::new(Value::Namba(x.asin())))))
     }));
     m.insert("akosini".to_string(), Box::new(|args: &[Value]| {
         let x = value::arg_f64(args, 0, "akosini")?;
-        if x < -1.0 || x > 1.0 {
+        if !(-1.0..=1.0).contains(&x) {
             return Ok(Value::Tokeo(Err(Box::new(kosa_h("akosini: kikoa ni -1 hadi 1")))));
         }
         Ok(Value::Tokeo(Ok(Box::new(Value::Namba(x.acos())))))

@@ -125,9 +125,11 @@ pub fn run(args: &[String]) -> CliResult {
     Ok(())
 }
 
-fn parse_args(
+#[allow(clippy::type_complexity)]
+pub fn parse_args(
     args: &[String],
 ) -> Result<(String, Option<PathBuf>, bool, Option<PathBuf>, Vec<String>), CliError> {
+
     let mut profile = String::from("dev");
     let mut out = None;
     let mut do_run = false;

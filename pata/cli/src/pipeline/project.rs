@@ -86,10 +86,8 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
                 "asili" => asili_version = value,
                 _ => {}
             },
-            "chanzo" => {
-                if key == "kuingia" {
-                    entry = PathBuf::from(value);
-                }
+            "chanzo" if key == "kuingia" => {
+                entry = PathBuf::from(value);
             }
             _ => {}
         }

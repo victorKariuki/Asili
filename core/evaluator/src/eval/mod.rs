@@ -39,9 +39,7 @@ pub(crate) fn eval_block_in_env(block: &Block, rt: &mut Runtime<'_>) -> Result<E
             if let Some(kazi_name) = crate::signal::get_handler(sig_id) {
                 if let Some(f) = rt.module.functions.iter().find(|x| x.name == kazi_name) {
                     let out = eval_block_impl(&f.body, rt);
-                    if let Err(e) = out {
-                        return Err(e);
-                    }
+                    out?;
                 }
             }
         }

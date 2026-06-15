@@ -151,6 +151,16 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
                     }
                     break;
                 }
+                // Include decimal point in numeric literals: if building a digit-only token
+                // and we see '.' followed by a digit, absorb both to form e.g. "100.0".
+                if c == '.' && word.chars().all(|ch| ch.is_ascii_digit()) && !word.is_empty()
+                    && i + 1 < chars.len() && chars[i + 1].is_ascii_digit()
+                {
+                    word.push('.');
+                    i += 1;
+                    col += 1;
+                    continue;
+                }
                 if c.is_whitespace() || "(){}:,.;+-*/%<>!=[]#&\"".contains(c) {
                     break;
                 }

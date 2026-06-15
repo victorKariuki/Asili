@@ -30,6 +30,11 @@ pub(crate) fn split_generic_args(s: &str) -> Vec<&str> {
     out
 }
 
+/// Check if a string is a type variable (single uppercase letter: T, E, U, etc.)
+fn is_type_variable(s: &str) -> bool {
+    s.len() == 1 && s.chars().next().is_some_and(|c| c.is_uppercase())
+}
+
 /// Parse a type string (e.g. from .asi or AST) into ValueType. Public API for shared use.
 pub fn parse_value_type(s: &str) -> ValueType {
     let s = s.replace(' ', "");
@@ -121,6 +126,9 @@ pub fn parse_value_type(s: &str) -> ValueType {
     }
     if s == "Anuani" {
         return ValueType::Anuani;
+    }
+    if is_type_variable(&s) {
+        return ValueType::TypeVar(s.to_string());
     }
     ValueType::Unknown
 }

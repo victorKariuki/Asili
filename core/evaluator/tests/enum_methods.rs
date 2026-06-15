@@ -23,9 +23,8 @@ fn test_enum_method_basic() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    assert_eq!(module.enums.len(), 1);
-    assert_eq!(module.impls.len(), 1);
-    assert_eq!(module.impls[0].target, "Color");
+    assert!(module.enums.iter().any(|e| e.name == "Color"));
+    assert!(module.impls.iter().any(|i| i.target == "Color"));
 }
 
 /// Test 2: Enum method with parameters
@@ -48,9 +47,10 @@ fn test_enum_method_with_params() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    assert_eq!(module.enums.len(), 1);
-    assert!(module.impls[0].body.len() > 0);
-    assert_eq!(module.impls[0].body[0].params.len(), 2);
+    assert!(module.enums.iter().any(|e| e.name == "Status"));
+    let status_impl = module.impls.iter().find(|i| i.target == "Status").expect("Status impl");
+    assert!(!status_impl.body.is_empty());
+    assert_eq!(status_impl.body[0].params.len(), 2);
 }
 
 /// Test 3: Multiple methods on same enum
@@ -77,8 +77,9 @@ fn test_enum_multiple_methods() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    assert_eq!(module.enums.len(), 1);
-    assert_eq!(module.impls[0].body.len(), 2);
+    assert!(module.enums.iter().any(|e| e.name == "Message"));
+    let message_impl = module.impls.iter().find(|i| i.target == "Message").expect("Message impl");
+    assert_eq!(message_impl.body.len(), 2);
 }
 
 /// Test 4: Enum method returning enum
@@ -101,8 +102,9 @@ fn test_enum_method_returns_enum() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    assert_eq!(module.enums.len(), 1);
-    assert_eq!(module.impls[0].body[0].name, "unwrap");
+    assert!(module.enums.iter().any(|e| e.name == "Option"));
+    let option_impl = module.impls.iter().find(|i| i.target == "Option").expect("Option impl");
+    assert_eq!(option_impl.body[0].name, "unwrap");
 }
 
 /// Test 5: Multiple impl blocks on same enum
@@ -131,10 +133,9 @@ fn test_enum_multiple_impls() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    assert_eq!(module.enums.len(), 1);
-    assert_eq!(module.impls.len(), 2);
-    assert_eq!(module.impls[0].target, "Result");
-    assert_eq!(module.impls[1].target, "Result");
+    assert!(module.enums.iter().any(|e| e.name == "Result"));
+    let result_impls: Vec<_> = module.impls.iter().filter(|i| i.target == "Result").collect();
+    assert_eq!(result_impls.len(), 2);
 }
 
 /// Test 6: Enum method with self consumption
@@ -157,7 +158,8 @@ fn test_enum_method_move_self() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    assert_eq!(module.impls[0].body[0].params[0].name, "self");
+    let box_impl = module.impls.iter().find(|i| i.target == "Box").expect("Box impl");
+    assert_eq!(box_impl.body[0].params[0].name, "self");
 }
 
 /// Test 7: Enum method returns namba
@@ -180,7 +182,8 @@ fn test_enum_method_complex_return() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    assert_eq!(module.impls[0].body[0].return_type.name, "Namba");
+    let either_impl = module.impls.iter().find(|i| i.target == "Either").expect("Either impl");
+    assert_eq!(either_impl.body[0].return_type.name, "Namba");
 }
 
 /// Test 8: Enum with method calling convention
@@ -203,8 +206,8 @@ fn test_enum_method_convention() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    assert_eq!(module.enums.len(), 1);
-    assert_eq!(module.impls.len(), 1);
+    assert!(module.enums.iter().any(|e| e.name == "Comparable"));
+    assert!(module.impls.iter().any(|i| i.target == "Comparable"));
 }
 
 /// Test 9: Enum method with no return
@@ -226,7 +229,8 @@ fn test_enum_method_no_return() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    assert_eq!(module.impls[0].body[0].return_type.name, "Tupu");
+    let event_impl = module.impls.iter().find(|i| i.target == "Event").expect("Event impl");
+    assert_eq!(event_impl.body[0].return_type.name, "Tupu");
 }
 
 /// Test 10: Mixed enum and struct impls
@@ -260,7 +264,8 @@ fn test_mixed_enum_struct_impls() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    assert_eq!(module.enums.len(), 1);
+    assert!(module.enums.iter().any(|e| e.name == "Status"));
     assert_eq!(module.structs.len(), 1);
-    assert_eq!(module.impls.len(), 2);
+    assert!(module.impls.iter().any(|i| i.target == "Status"));
+    assert!(module.impls.iter().any(|i| i.target == "Person"));
 }

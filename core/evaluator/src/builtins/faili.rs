@@ -23,7 +23,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         )))))
     }));
     m.insert("andika_faili".to_string(), Box::new(|args: &[Value]| {
-        let path = value::as_string(args.get(0).unwrap_or(&Value::Hamna)).unwrap_or_default();
+        let path = value::as_string(args.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
         let data = value::as_string(args.get(1).unwrap_or(&Value::Hamna)).unwrap_or_default();
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -38,7 +38,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         )))))
     }));
     m.insert("ongeza".to_string(), Box::new(|args: &[Value]| {
-        let path = value::as_string(args.get(0).unwrap_or(&Value::Hamna)).unwrap_or_default();
+        let path = value::as_string(args.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
         let data = value::as_string(args.get(1).unwrap_or(&Value::Hamna)).unwrap_or_default();
         #[cfg(not(target_arch = "wasm32"))]
         {

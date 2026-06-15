@@ -13,7 +13,7 @@ use super::BuiltinFn;
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     // FIXME(Phase IV): always returns dummy ID 0 — no thread is actually spawned.
     m.insert("anza_mwendo".to_string(), Box::new(|args: &[Value]| {
-        let _kazi = value::as_string(args.get(0).unwrap_or(&Value::Hamna)).unwrap_or_default();
+        let _kazi = value::as_string(args.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
         let _hoja = args.get(1).cloned();
         let _ = (_kazi, _hoja);
         Ok(Value::Namba(0.0))

@@ -121,6 +121,7 @@ impl<'a> Analyzer<'a> {
     }
 
     fn mark_tokeo_consumed(&mut self, scopes: &[HashMap<String, Binding>], idents: &[String]) {
+
         for name in idents {
             if let Some(ty) = Self::get_type_in_scopes(scopes, name) {
                 if matches!(ty, ValueType::Tokeo(_, _)) {
@@ -522,9 +523,14 @@ impl<'a> Analyzer<'a> {
                 line,
                 ..
             } => {
-                match mode {
+                let var_ty = match mode {
                     ForMode::InExpr(expr) => {
-                        let _ = self.check_expr(expr, scopes, UseMode::BorrowImm);
+                        let iter_ty = self.check_expr(expr, scopes, UseMode::BorrowImm);
+                        match iter_ty {
+                            ValueType::Orodha(inner) => *inner,
+                            ValueType::Kamusi(k, v) => ValueType::Jozi(k, v),
+                            _ => ValueType::Namba,
+                        }
                     }
                     ForMode::Range { start, end } => {
                         let st = self.check_expr(start, scopes, UseMode::Move);
@@ -536,8 +542,9 @@ impl<'a> Analyzer<'a> {
                                     .with_span(*line, 1),
                             );
                         }
+                        ValueType::Namba
                     }
-                }
+                };
                 self.loop_depth += 1;
                 scopes.push(HashMap::new());
                 self.unconsumed_tokeo.push(HashSet::new());
@@ -546,7 +553,7 @@ impl<'a> Analyzer<'a> {
                     scope.insert(
                         var.clone(),
                         Binding {
-                            ty: ValueType::Namba,
+                            ty: var_ty,
                             mutable: true,
                             moved: false,
                             imm_borrows: 0,
@@ -582,10 +589,58 @@ impl<'a> Analyzer<'a> {
                 let idents = Self::collect_idents_from_expr(expr);
                 self.mark_tokeo_consumed(scopes, &idents);
                 for a in arms {
-                    if let Pattern::Literal(e) = &a.pattern {
-                        let _ = self.check_expr(e, scopes, UseMode::Move);
+                    scopes.push(HashMap::new());
+                    match &a.pattern {
+                        Pattern::Literal(e) => {
+                            let _ = self.check_expr(e, scopes, UseMode::Move);
+                        }
+                        Pattern::Enum { enum_name, variant_name, data } => {
+                            // Validate that the enum exists
+                            if !self.module.enums.iter().any(|e| &e.name == enum_name) {
+                                self.errors.push(
+                                    Diagnostic::new("SEM094", format!("jenum '{enum_name}' haijulikani"))
+                                        .with_stage("semantic")
+                                        .with_span(*line, 1),
+                                );
+                            }
+                            // Validate that the variant exists and bind data pattern variables
+                            if let Some(e) = self.module.enums.iter().find(|en| &en.name == enum_name) {
+                                if !e.variants.iter().any(|v| &v.name == variant_name) {
+                                    self.errors.push(
+                                        Diagnostic::new("SEM095", format!("kigezo '{variant_name}' haipo katika jenum '{enum_name}'"))
+                                            .with_stage("semantic")
+                                            .with_span(*line, 1),
+                                    );
+                                }
+                                // Bind data pattern variable with the variant's inner type
+                                if let Some(data_pat) = data {
+                                    let inner_ty = e.variants.iter()
+                                        .find(|v| &v.name == variant_name)
+                                        .and_then(|v| v.data.as_ref())
+                                        .map(|ty| self.type_from_decl(&ty.name))
+                                        .unwrap_or(ValueType::Unknown);
+                                    if let Pattern::Ident(bind_name) = data_pat.as_ref() {
+                                        if let Some(scope) = scopes.last_mut() {
+                                            scope.insert(bind_name.clone(), Binding {
+                                                ty: inner_ty,
+                                                mutable: true,
+                                                moved: false,
+                                                imm_borrows: 0,
+                                                mut_borrowed: false,
+                                                created_at: Span { line: *line, column: 1 },
+                                                moved_at: None,
+                                                borrowed_at: Vec::new(),
+                                                dropped_at: None,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Pattern::Wildcard | Pattern::Ident(_) | Pattern::Struct { .. } | Pattern::Jozi(_, _) => {}
                     }
                     self.check_block(&a.body, scopes, return_type, false);
+                    scopes.pop();
                 }
                 if arms.is_empty() {
                     self.errors.push(
@@ -593,12 +648,39 @@ impl<'a> Analyzer<'a> {
                             .with_stage("semantic")
                             .with_span(*line, 1),
                     );
-                } else if !arms.iter().any(|a| matches!(a.pattern, Pattern::Wildcard)) {
-                    self.errors.push(
-                        Diagnostic::new("SEM023", "linganisha inaweza kutokuwa na kufanya kazi kwa kesi zote — ongeza _ => {} kwa kawaida")
-                            .with_stage("semantic")
-                            .with_span(*line, 1),
-                    );
+                } else {
+                    let has_wildcard = arms.iter().any(|a| matches!(a.pattern, Pattern::Wildcard));
+                    let has_ident_catch = arms.iter().any(|a| matches!(a.pattern, Pattern::Ident(_)));
+                    if !has_wildcard && !has_ident_catch {
+                        // Check if all variants of the matched enum are covered
+                        let enum_name_from_arms = arms.iter().find_map(|a| {
+                            if let Pattern::Enum { enum_name, .. } = &a.pattern {
+                                Some(enum_name.as_str())
+                            } else {
+                                None
+                            }
+                        });
+                        let all_covered = if let Some(ename) = enum_name_from_arms {
+                            if let Some(e) = self.module.enums.iter().find(|e| e.name == ename) {
+                                e.variants.iter().all(|v| {
+                                    arms.iter().any(|a| {
+                                        matches!(&a.pattern, Pattern::Enum { variant_name, .. } if variant_name == &v.name)
+                                    })
+                                })
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+                        if !all_covered {
+                            self.errors.push(
+                                Diagnostic::new("SEM023", "linganisha inaweza kutokuwa na kufanya kazi kwa kesi zote — ongeza _ => {} kwa kawaida")
+                                    .with_stage("semantic")
+                                    .with_span(*line, 1),
+                            );
+                        }
+                    }
                 }
             }
             Stmt::Break { label: _, line } => {
@@ -635,24 +717,35 @@ impl<'a> Analyzer<'a> {
             }
             Stmt::Drop { name, line } => {
                 let mut found = false;
+                let mut already_dropped = false;
                 for scope in scopes.iter_mut().rev() {
                     if let Some(b) = scope.get_mut(name) {
                         found = true;
-                        b.moved = true;
-                        b.moved_at = Some(Span {
-                            line: *line,
-                            column: 1,
-                        });
-                        b.dropped_at = Some(Span {
-                            line: *line,
-                            column: 1,
-                        });
+                        if b.dropped_at.is_some() {
+                            already_dropped = true;
+                        } else {
+                            b.moved = true;
+                            b.moved_at = Some(Span {
+                                line: *line,
+                                column: 1,
+                            });
+                            b.dropped_at = Some(Span {
+                                line: *line,
+                                column: 1,
+                            });
+                        }
                         break;
                     }
                 }
                 if !found {
                     self.errors.push(
                         Diagnostic::new("SEM027", format!("tupa inatumia jina lisilojulikana: {name}"))
+                            .with_stage("semantic")
+                            .with_span(*line, 1),
+                    );
+                } else if already_dropped {
+                    self.errors.push(
+                        Diagnostic::new("SEM029", format!("'{name}' tayari imetupwa — haiwezekani kutupa tena"))
                             .with_stage("semantic")
                             .with_span(*line, 1),
                     );
@@ -858,7 +951,7 @@ impl<'a> Analyzer<'a> {
                                 if let Expr::Ident(n) = arg {
                                     let pt = self.type_from_decl(&param.ty.name);
                                     if matches!(pt, ValueType::Tokeo(_, _)) {
-                                        self.mark_tokeo_consumed(scopes, &[n.clone()]);
+                                        self.mark_tokeo_consumed(scopes, std::slice::from_ref(n));
                                     }
                                 }
                             }
@@ -896,7 +989,7 @@ impl<'a> Analyzer<'a> {
                                 }
                                 if let Expr::Ident(n) = arg {
                                     if matches!(want, ValueType::Tokeo(_, _)) {
-                                        self.mark_tokeo_consumed(scopes, &[n.clone()]);
+                                        self.mark_tokeo_consumed(scopes, std::slice::from_ref(n));
                                     }
                                 }
                             }
@@ -941,7 +1034,7 @@ impl<'a> Analyzer<'a> {
                         self.errors.push(
                             Diagnostic::new(
                                 "SEM039",
-                                format!("aina '{}' haina njia", receiver_ty.to_string()),
+                                format!("aina '{}' haina njia", receiver_ty),
                             )
                             .with_stage("semantic")
                             .with_span(*line, 1),
@@ -963,6 +1056,8 @@ impl<'a> Analyzer<'a> {
                         (ValueType::Neno, "gawanya") => ValueType::Orodha(Box::new(ValueType::Neno)),
                         (ValueType::Neno, "kata") => ValueType::Neno,
                         (ValueType::Neno, "tafuta") => ValueType::Chaguo(Box::new(ValueType::Namba)),
+                        (ValueType::Jozi(k, _), "kwanza") => *k,
+                        (ValueType::Jozi(_, v), "pili") => *v,
                         _ => ValueType::Unknown,
                     };
                 }
@@ -994,6 +1089,29 @@ impl<'a> Analyzer<'a> {
                 }
 
                 let Some(func) = method_decl else {
+                    // Check for built-in methods on Tokeo and Chaguo before emitting SEM040
+                    if is_enum {
+                        let builtin_ret = match (receiver_ty_name.as_str(), method_name.as_str()) {
+                            ("Tokeo", "ni_kosa" | "ni_sawa") => Some(ValueType::Ukweli),
+                            ("Tokeo", "kosa" | "angu") => {
+                                for arg in args {
+                                    let _ = self.check_expr(arg, scopes, UseMode::Move);
+                                }
+                                Some(ValueType::TypeVar("T".to_string()))
+                            }
+                            ("Chaguo", "ni_po" | "ni_tupu") => Some(ValueType::Ukweli),
+                            ("Chaguo", "angu" | "hakikisha") => {
+                                for arg in args {
+                                    let _ = self.check_expr(arg, scopes, UseMode::Move);
+                                }
+                                Some(ValueType::TypeVar("T".to_string()))
+                            }
+                            _ => None,
+                        };
+                        if let Some(ret) = builtin_ret {
+                            return ret;
+                        }
+                    }
                     self.errors.push(
                         Diagnostic::new(
                             "SEM040",
@@ -1193,7 +1311,7 @@ impl<'a> Analyzer<'a> {
     fn use_ident(
         &mut self,
         name: &str,
-        scopes: &mut Vec<HashMap<String, Binding>>,
+        scopes: &mut [HashMap<String, Binding>],
         mode: UseMode,
     ) -> ValueType {
         if name == "Ukomo" || name == "Siyo_Namba" {
@@ -1320,6 +1438,10 @@ impl<'a> Analyzer<'a> {
     // - Generic instantiation: Orodha<Namba> vs Orodha<Neno> are not distinguished (both Unknown)
     // - Coercions: &T -> &Tupu, Struct -> Sifa (trait object) upcasting
     fn compatible(&self, a: &ValueType, b: &ValueType) -> bool {
+        // Type variables are compatible with anything (unbound generics)
+        if matches!(a, ValueType::TypeVar(_)) || matches!(b, ValueType::TypeVar(_)) {
+            return true;
+        }
         a == b
     }
 
@@ -1333,6 +1455,11 @@ impl<'a> Analyzer<'a> {
         message: String,
         span: Span,
     ) -> bool {
+        // Type variables are always compatible (unbound generics)
+        if matches!(expected, ValueType::TypeVar(_)) || matches!(actual, ValueType::TypeVar(_)) {
+            return true;
+        }
+
         if matches!(expected, ValueType::Unknown) || matches!(actual, ValueType::Unknown) {
             // Production type checkers should log inference failures here.
             self.errors.push(
@@ -1357,6 +1484,9 @@ impl<'a> Analyzer<'a> {
     fn type_from_decl(&self, t: &str) -> ValueType {
         let s = t.trim();
         if self.module.structs.iter().any(|st| st.name == s) {
+            return ValueType::Struct(s.to_string());
+        }
+        if self.module.enums.iter().any(|e| e.name == s) {
             return ValueType::Struct(s.to_string());
         }
         parse_value_type(t)

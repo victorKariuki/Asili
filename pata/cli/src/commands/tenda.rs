@@ -66,13 +66,13 @@ pub fn run(args: &[String]) -> CliResult {
     let asb_path: PathBuf = if artifact_path
         .file_name()
         .and_then(|n| n.to_str())
-        .map_or(false, |n| n.ends_with(".build.manifest"))
+        .is_some_and(|n| n.ends_with(".build.manifest"))
     {
         artifact_from_manifest(&artifact_path)?
     } else if artifact_path
         .file_name()
         .and_then(|n| n.to_str())
-        .map_or(false, |n| n.ends_with(".asb"))
+        .is_some_and(|n| n.ends_with(".asb"))
     {
         artifact_path.clone()
     } else {
