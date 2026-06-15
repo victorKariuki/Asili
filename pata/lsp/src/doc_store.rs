@@ -22,6 +22,11 @@ impl DocStore {
     pub async fn get(&self, uri: &str) -> Option<String> {
         self.inner.read().await.get(uri).cloned()
     }
+
+    /// Return all (uri, text) pairs currently stored.
+    pub async fn all(&self) -> Vec<(String, String)> {
+        self.inner.read().await.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    }
 }
 
 impl Default for DocStore {

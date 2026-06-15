@@ -1,3 +1,5 @@
+import * as path from "path";
+import * as fs from "fs";
 import { workspace, ExtensionContext } from "vscode";
 import {
   LanguageClient,
@@ -10,8 +12,13 @@ let client: LanguageClient | undefined;
 
 export function activate(context: ExtensionContext): void {
   const config = workspace.getConfiguration("asili");
-  const serverPath = config.get<string>("serverPath") ?? "pata";
-  const serverArgs = config.get<string[]>("serverArgs") ?? ["mwalimu"];
+
+  // Prefer the bundled binary, fall back to user-configured path or global pata.
+  const bundled = context.asAbsolutePath(path.join("bin", "pata-lsp"));
+  const hasBundled = fs.existsSync(bundled);
+
+  const serverPath = config.get<string>("serverPath") ?? (hasBundled ? bundled : "pata");
+  const serverArgs = config.get<string[]>("serverArgs") ?? (hasBundled ? [] : ["mwalimu"]);
 
   const executable: Executable = {
     command: serverPath,

@@ -1,0 +1,7 @@
+{
+  "asili.serverPath": "/home/don/.local/bin/pata",
+  "asili.serverArgs": ["mwalimu"],
+  "[asili]": {
+    "editor.semanticHighlighting.enabled": true
+  }
+}

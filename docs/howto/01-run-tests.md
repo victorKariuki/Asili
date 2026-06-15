@@ -16,8 +16,8 @@ pata jaribu
 
 ## Options
 
-- **`pata jaribu --list`** — List test names (one per line), do not run. Exit 0 if discovery succeeds.
-- **`pata jaribu --filter <pattern>`** — Run only tests whose name contains `pattern`. Also applies when using `--list`.
+- **`pata jaribu --orodha`** — List test names (one per line), do not run. Exit 0 if discovery succeeds.
+- **`pata jaribu --filter <pattern>`** — Run only tests whose name contains `pattern`. Also applies when using `--orodha`.
 - **`pata jaribu --fail-fast`** — Stop on first failure.
 
 ## Writing tests

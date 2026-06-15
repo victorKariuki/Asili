@@ -161,7 +161,7 @@ fn parses_method_call() {
 
 #[test]
 fn recursion_depth_limit_parse() {
-    let n = 101;
+    let n = 1001;
     let open: String = "(".repeat(n);
     let close: String = ")".repeat(n);
     let src = format!("kazi kuu(hoja: Orodha<Neno>) -> Tupu {{ weka x = {}1{} }}", open, close);

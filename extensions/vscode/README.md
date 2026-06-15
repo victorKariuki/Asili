@@ -1,25 +1,33 @@
-# Asili VS Code Extension
+![Asili Banner](assets/Asili_Banner.png)
 
-Syntax highlighting and LSP (Mwalimu) for Asili (`.as`, `.asi`).
+<p align="center">
+  <img src="assets/Asili_Logo.png" alt="Asili Logo" width="110" />
+</p>
 
-## Install from repo
+# Asili Language Support
 
-1. Open the repo in VS Code.
-2. Open `extensions/vscode` in the workspace.
-3. Run **Run Extension** from the Debug panel (F5), or package a vsix: `vsce package` (requires `npm i -g @vscode/vsce`).
-
-## LSP configuration
-
-Ensure `pata` (or `pata-lsp`) is on your PATH. The extension starts the language server with:
-
-- **Command:** `pata` (or value of `asili.lsp.serverPath`)
-- **Args:** `["mwalimu"]` (or `asili.lsp.serverArgs`)
-
-If you use the standalone `pata-lsp` binary, set `asili.lsp.serverPath` to `pata-lsp` and `asili.lsp.serverArgs` to `[]`.
+Syntax highlighting and LSP (Mwalimu) for the Asili language (`.as`, `.asi`).
 
 ## Features
 
-- Syntax highlighting (keywords, strings, numbers, comments)
-- Diagnostics and hover via Mwalimu LSP
+- Syntax highlighting — keywords, strings, numbers, comments
+- Diagnostics and hover via the Mwalimu language server
 
-See [docs/howto/02-use-lsp.md](../../docs/howto/02-use-lsp.md) for editor setup.
+## Setup
+
+The extension starts `pata mwalimu` as the language server. Make sure `pata` is on your PATH, or set a custom path in workspace settings:
+
+```json
+{
+  "asili.serverPath": "/path/to/pata-cli",
+  "asili.serverArgs": ["mwalimu"]
+}
+```
+
+Build `pata` from source:
+
+```bash
+cargo build -p pata-cli
+```
+
+See the [project README](../../README.md) for full build instructions.

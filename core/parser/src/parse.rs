@@ -513,6 +513,39 @@ impl<'a> Parser<'a> {
             });
         }
 
+        // Index-assign: name[expr] = val  →  Stmt::Expr( name.ingiza(expr, val) )
+        if self.check_ident() && self.check_n(1, "[") {
+            // Scan forward past matching brackets to check for '=' after ']'
+            let mut depth = 1usize;
+            let mut j = self.pos + 2;
+            while j < self.tokens.len() && depth > 0 {
+                match self.tokens[j].lexeme.as_str() {
+                    "[" => depth += 1,
+                    "]" => depth -= 1,
+                    _ => {}
+                }
+                if depth > 0 { j += 1; }
+            }
+            if depth == 0 && self.tokens.get(j + 1).map(|t| t.lexeme.as_str()) == Some("=") {
+                let name = self.advance().lexeme.clone();
+                let line = self.prev().line;
+                self.advance(); // consume [
+                let idx = self.parse_expression()?;
+                self.consume("]", "PAR091", "fahirisi inahitaji ']'")?;
+                self.advance(); // consume =
+                let val = self.parse_expression()?;
+                return Some(Stmt::Expr {
+                    expr: Expr::MethodCall {
+                        receiver: Box::new(Expr::Ident(name)),
+                        method_name: "ingiza".to_string(),
+                        args: vec![idx, val],
+                        line,
+                    },
+                    line,
+                });
+            }
+        }
+
         if self.check_ident() && self.check_n(1, "=") {
             let name = self.advance().lexeme.clone();
             let line = self.prev().line;
@@ -1132,46 +1165,30 @@ impl<'a> Parser<'a> {
             return Some(Expr::Number(lexeme));
         }
 
-        // [] list literal — sugar for orodha(e1, e2, ...)
+        // [] list literal → Expr::List
         if self.match_tok("[") {
             let line = self.prev().line;
-            let mut args = Vec::new();
+            let mut elements = Vec::new();
             while !self.check("]") && !self.is_eof() {
-                args.push(self.parse_expression()?);
+                elements.push(self.parse_expression()?);
                 if !self.match_tok(",") {
                     break;
                 }
             }
             self.consume("]", "PAR090", "orodha literal inahitaji ']'")?;
-            return Some(Expr::Call {
-                callee: Box::new(Expr::Ident("orodha".to_string())),
-                args,
-                line,
-            });
+            return Some(Expr::List { elements, line });
         }
 
-        // {} empty-map literal — sugar for kamusi_tupu()
-        // { key: val, ... } non-empty map literal
+        // {} / { k: v, ... } map literal → Expr::Map
         if self.check("{") {
             let first_inside = self.tokens.get(self.pos + 1).map(|u| u.lexeme.as_str());
             let second_inside = self.tokens.get(self.pos + 2).map(|u| u.lexeme.as_str());
-            // Empty braces → kamusi_tupu()
-            if first_inside == Some("}") {
-                let line = self.peek().line;
-                self.advance(); // {
-                self.advance(); // }
-                return Some(Expr::Call {
-                    callee: Box::new(Expr::Ident("kamusi_tupu".to_string())),
-                    args: vec![],
-                    line,
-                });
-            }
-            // { key: val, ... } — non-empty map literal (key is ident, string, or number)
-            let is_map_lit = second_inside == Some(":");
-            if is_map_lit {
+            let is_empty_map = first_inside == Some("}");
+            let is_map_lit = !is_empty_map && second_inside == Some(":");
+            if is_empty_map || is_map_lit {
                 let line = self.peek().line;
                 self.advance(); // consume {
-                let mut entries: Vec<Expr> = Vec::new();
+                let mut entries: Vec<(Expr, Expr)> = Vec::new();
                 loop {
                     if self.check("}") || self.is_eof() {
                         break;
@@ -1179,21 +1196,13 @@ impl<'a> Parser<'a> {
                     let k = self.parse_expression()?;
                     self.consume(":", "PAR092", "kamusi literal inahitaji ':' kati ya ufunguo na thamani")?;
                     let v = self.parse_expression()?;
-                    entries.push(k);
-                    entries.push(v);
+                    entries.push((k, v));
                     if !self.match_tok(",") {
                         break;
                     }
                 }
                 self.consume("}", "PAR093", "kamusi literal inahitaji '}'")?;
-                // Desugar: { k1: v1, k2: v2 } → MapLiteral([(k1,v1), (k2,v2)])
-                // Represented as Call("__kamusi_literal__", [k1, v1, k2, v2])
-                // The evaluator unpacks pairs and calls ingiza for each.
-                return Some(Expr::Call {
-                    callee: Box::new(Expr::Ident("__kamusi_literal__".to_string())),
-                    args: entries,
-                    line,
-                });
+                return Some(Expr::Map { entries, line });
             }
         }
 

@@ -1,4 +1,8 @@
-![Asili](assets/Asili_Banner.png)
+![Asili Banner](assets/Asili_Banner.png)
+
+<p align="center">
+  <img src="assets/Asili_Logo.png" alt="Asili Logo" width="110" />
+</p>
 
 # Asili
 
@@ -44,6 +48,7 @@ pata jenga --tenda
 | `pata jenga --tenda` | Build and run the entrypoint (`kuu`). |
 | `pata jaribu` | Discover and run `#[jaribio]` tests. |
 | `pata jaribu --orodha` | List test names only. |
+| `pata repl` | Start interactive REPL. Use `?mada` for help topics. |
 | `pata njozi <dir>` | Create a new project (e.g. `pata.toml`, `src/kuu.as`). |
 | `pata nadhifu` | Format Asili source (line-based, best-effort). |
 | `pata thibitisha` | Check public API documentation. |
@@ -78,6 +83,8 @@ Available via `leta <moduli>` (e.g. `leta matumizi`):
 
 ## Documentation
 
+- **Language reference:** [docs/language/](docs/language/) — syntax, functions, control flow, data structures, error handling, modules.
+- **REPL help:** [docs/repl/](docs/repl/) — topic docs usable via `?mada` in `pata repl`.
 - **How-to:** [docs/howto/](docs/howto/) — getting started, tests, LSP.
 - **Design:** [docs/design/](docs/design/) — Mwalimu (LSP), phase decisions.
 - **Spec:** [spec/](spec/) and [SPECIFICATION.md](SPECIFICATION.md).

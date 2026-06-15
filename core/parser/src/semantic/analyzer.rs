@@ -960,7 +960,12 @@ impl<'a> Analyzer<'a> {
                     }
                     if let Some(sig) = self.extern_fn_map.get(&name).cloned() {
                         let variadic = name == "orodha";
-                        if !variadic && sig.params.len() != args.len() {
+                        // Evaluate all arg types upfront for both validation and generic instantiation.
+                        let arg_types: Vec<ValueType> = args
+                            .iter()
+                            .map(|a| self.check_expr(a, scopes, UseMode::Move))
+                            .collect();
+                        if !variadic && sig.params.len() != arg_types.len() {
                             self.errors.push(
                                 Diagnostic::new(
                                     "SEM046",
@@ -969,15 +974,11 @@ impl<'a> Analyzer<'a> {
                                 .with_stage("semantic")
                                 .with_span(*line, 1),
                             );
-                        } else if variadic {
-                            for arg in args {
-                                let _ = self.check_expr(arg, scopes, UseMode::Move);
-                            }
-                        } else {
-                            for (idx, arg) in args.iter().enumerate() {
-                                let got = self.check_expr(arg, scopes, UseMode::Move);
-                                let want = &sig.params[idx];
-                                if !self.compatible(want, &got) {
+                        } else if !variadic {
+                            for (idx, (got, want)) in
+                                arg_types.iter().zip(sig.params.iter()).enumerate()
+                            {
+                                if !self.compatible(want, got) {
                                     self.errors.push(
                                         Diagnostic::new(
                                             "SEM047",
@@ -987,14 +988,37 @@ impl<'a> Analyzer<'a> {
                                         .with_span(*line, 1),
                                     );
                                 }
-                                if let Expr::Ident(n) = arg {
+                                if let Expr::Ident(n) = &args[idx] {
                                     if matches!(want, ValueType::Tokeo(_, _)) {
                                         self.mark_tokeo_consumed(scopes, std::slice::from_ref(n));
                                     }
                                 }
                             }
                         }
-                        return sig.ret.clone();
+                        // Instantiate generic return types from actual argument types so that
+                        // orodha(1,2,3) → Orodha(Namba) and jozi("a", kweli) → Jozi(Neno, Ukweli)
+                        // instead of Orodha(Unknown)/Jozi(Unknown,Unknown) which cause SEM-INF.
+                        return match name.as_str() {
+                            "orodha" => {
+                                let elem = arg_types
+                                    .into_iter()
+                                    .find(|t| !matches!(t, ValueType::Unknown))
+                                    .unwrap_or(ValueType::Unknown);
+                                ValueType::Orodha(Box::new(elem))
+                            }
+                            "jozi" if arg_types.len() == 2 => ValueType::Jozi(
+                                Box::new(arg_types[0].clone()),
+                                Box::new(arg_types[1].clone()),
+                            ),
+                            "tokeo" if !arg_types.is_empty() => ValueType::Tokeo(
+                                Box::new(arg_types[0].clone()),
+                                Box::new(ValueType::Unknown),
+                            ),
+                            "chaguo" if !arg_types.is_empty() => {
+                                ValueType::Chaguo(Box::new(arg_types[0].clone()))
+                            }
+                            _ => sig.ret.clone(),
+                        };
                     }
                     self.errors.push(
                         Diagnostic::new("SEM037", format!("kazi haijulikani: {name}"))
@@ -1253,21 +1277,24 @@ impl<'a> Analyzer<'a> {
             Expr::Index { base, index, line } => {
                 let base_ty = self.check_expr(base, scopes, UseMode::BorrowImm);
                 let idx_ty = self.check_expr(index, scopes, UseMode::Move);
-                if idx_ty != ValueType::Namba {
-                    self.errors.push(
-                        Diagnostic::new("SEM102", "fahirisi inahitaji Namba")
-                            .with_stage("semantic")
-                            .with_span(*line, 1),
-                    );
-                }
                 match &base_ty {
-                    ValueType::Orodha(inner) => ValueType::Tokeo(
-                        inner.clone(),
-                        Box::new(ValueType::Struct("KosaMipaka".to_string())),
-                    ),
+                    ValueType::Orodha(inner) => {
+                        if idx_ty != ValueType::Namba && idx_ty != ValueType::Unknown {
+                            self.errors.push(
+                                Diagnostic::new("SEM102", "fahirisi inahitaji Namba")
+                                    .with_stage("semantic")
+                                    .with_span(*line, 1),
+                            );
+                        }
+                        ValueType::Tokeo(
+                            inner.clone(),
+                            Box::new(ValueType::Struct("KosaMipaka".to_string())),
+                        )
+                    }
+                    ValueType::Kamusi(_, v) => *v.clone(),
                     _ => {
                         self.errors.push(
-                            Diagnostic::new("SEM103", "fahirisi inahitaji Orodha")
+                            Diagnostic::new("SEM103", "fahirisi inahitaji Orodha au Kamusi")
                                 .with_stage("semantic")
                                 .with_span(*line, 1),
                         );
