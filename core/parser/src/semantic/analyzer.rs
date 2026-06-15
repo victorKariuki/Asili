@@ -1050,14 +1050,31 @@ impl<'a> Analyzer<'a> {
                         let _ = self.check_expr(arg, scopes, UseMode::Move);
                     }
                     return match (receiver_ty, method_name.as_str()) {
+                        (ValueType::Neno, "clona") => ValueType::Neno,
                         (ValueType::Neno, "urefu" | "biti_ngapi") => ValueType::Namba,
                         (ValueType::Neno, "kwa_herufi_ndogo" | "kwa_herufi_kubwa" | "badilisha") => ValueType::Neno,
                         (ValueType::Neno, "anza_na" | "maliza_na") => ValueType::Ukweli,
                         (ValueType::Neno, "gawanya") => ValueType::Orodha(Box::new(ValueType::Neno)),
                         (ValueType::Neno, "kata") => ValueType::Neno,
                         (ValueType::Neno, "tafuta") => ValueType::Chaguo(Box::new(ValueType::Namba)),
+                        (ValueType::Jozi(k, v), "clona") => ValueType::Jozi(k.clone(), v.clone()),
                         (ValueType::Jozi(k, _), "kwanza") => *k,
                         (ValueType::Jozi(_, v), "pili") => *v,
+                        (ValueType::Orodha(ref t), "clona") => ValueType::Orodha(t.clone()),
+                        (ValueType::Orodha(_), "urefu") => ValueType::Namba,
+                        (ValueType::Orodha(_), "ongeza") => ValueType::Tupu,
+                        (ValueType::Orodha(ref t), "ondoa") => ValueType::Chaguo(t.clone()),
+                        (ValueType::Orodha(_), "kila_mmoja") => ValueType::Tupu,
+                        (ValueType::Kamusi(ref k, ref v), "clona") => ValueType::Kamusi(k.clone(), v.clone()),
+                        (ValueType::Kamusi(_, _), "idadi") => ValueType::Namba,
+                        (ValueType::Kamusi(_, ref v), "pata") => ValueType::Chaguo(v.clone()),
+                        (ValueType::Kamusi(_, _), "ingiza") => ValueType::Tupu,
+                        (ValueType::Kamusi(_, _), "vipo") => ValueType::Ukweli,
+                        (ValueType::Tokeo(ref t, _), "angu") => *t.clone(),
+                        (ValueType::Tokeo(_, _), "ni_kosa" | "ni_sawa") => ValueType::Ukweli,
+                        (ValueType::Tokeo(_, ref e), "kosa") => *e.clone(),
+                        (ValueType::Chaguo(ref t), "angu" | "hakikisha") => *t.clone(),
+                        (ValueType::Chaguo(_), "ni_po" | "ni_tupu") => ValueType::Ukweli,
                         _ => ValueType::Unknown,
                     };
                 }
@@ -1234,7 +1251,7 @@ impl<'a> Analyzer<'a> {
                 ValueType::Struct(enum_name.clone())
             }
             Expr::Index { base, index, line } => {
-                let base_ty = self.check_expr(base, scopes, UseMode::Move);
+                let base_ty = self.check_expr(base, scopes, UseMode::BorrowImm);
                 let idx_ty = self.check_expr(index, scopes, UseMode::Move);
                 if idx_ty != ValueType::Namba {
                     self.errors.push(
@@ -1259,7 +1276,7 @@ impl<'a> Analyzer<'a> {
                 }
             }
             Expr::FieldAccess { receiver, field, line } => {
-                let rec_ty = self.check_expr(receiver, scopes, UseMode::Move);
+                let rec_ty = self.check_expr(receiver, scopes, UseMode::BorrowImm);
                 match &rec_ty {
                     ValueType::Struct(name) => {
                         let Some(st) = self.module.structs.iter().find(|s| s.name == *name) else {
@@ -1304,6 +1321,36 @@ impl<'a> Analyzer<'a> {
                         ValueType::Unknown
                     }
                 }
+            }
+            Expr::List { elements, line } => {
+                let mut ty = ValueType::Unknown;
+                for e in elements {
+                    let ety = self.check_expr(e, scopes, UseMode::Move);
+                    if matches!(ty, ValueType::Unknown) {
+                        ty = ety;
+                    } else if !self.compatible(&ty, &ety) {
+                        self.errors.push(Diagnostic::new("SEM099", "orodha inahitaji aina moja ya vipengele")
+                            .with_stage("semantic")
+                            .with_span(*line, 1));
+                    }
+                }
+                ValueType::Orodha(Box::new(ty))
+            }
+            Expr::Map { entries, line } => {
+                let mut kty = ValueType::Unknown;
+                let mut vty = ValueType::Unknown;
+                for (k, v) in entries {
+                    let kety = self.check_expr(k, scopes, UseMode::Move);
+                    let vety = self.check_expr(v, scopes, UseMode::Move);
+                    if matches!(kty, ValueType::Unknown) { kty = kety.clone(); }
+                    if matches!(vty, ValueType::Unknown) { vty = vety.clone(); }
+                    if !self.compatible(&kty, &kety) || !self.compatible(&vty, &vety) {
+                        self.errors.push(Diagnostic::new("SEM100", "kamusi inahitaji aina moja ya ufunguo na thamani")
+                            .with_stage("semantic")
+                            .with_span(*line, 1));
+                    }
+                }
+                ValueType::Kamusi(Box::new(kty), Box::new(vty))
             }
         }
     }
@@ -1385,9 +1432,10 @@ impl<'a> Analyzer<'a> {
                         return b.ty.clone();
                     }
                     UseMode::Move => {
-                        if b.mut_borrowed || b.imm_borrows > 0 {
+                        if !self.is_copy_type(&b.ty) && b.mut_borrowed {
+                            // TODO(Phase III): Re-enable immutable borrow check once lifetimes are modeled.
                             self.errors.push(
-                                Diagnostic::new("SEM044", format!("haiwezi move wakati borrow ipo: {name}"))
+                                Diagnostic::new("SEM044", format!("haiwezi move wakati mutable borrow ipo: {name}"))
                                     .with_stage("semantic"),
                             );
                         }
@@ -1401,7 +1449,7 @@ impl<'a> Analyzer<'a> {
                         return b.ty.clone();
                     }
                     UseMode::Return => {
-                        if b.mut_borrowed {
+                        if !self.is_copy_type(&b.ty) && b.mut_borrowed {
                             self.errors.push(
                                 Diagnostic::new("SEM044", format!("haiwezi rejesha wakati mutable borrow ipo: {name}"))
                                     .with_stage("semantic"),
@@ -1430,7 +1478,16 @@ impl<'a> Analyzer<'a> {
     // are non-Copy but are currently treated as moved only at the semantic level — the evaluator
     // clones them unconditionally, so move semantics are not enforced at runtime.
     fn is_copy_type(&self, ty: &ValueType) -> bool {
-        matches!(ty, ValueType::Namba | ValueType::Ukweli)
+        matches!(
+            ty,
+            ValueType::Namba
+                | ValueType::Ukweli
+                | ValueType::Tupu
+                | ValueType::Hamna
+                | ValueType::Herufi
+                | ValueType::Wakati
+                | ValueType::Anuani
+        )
     }
 
     // TODO(Phase II): compatible() is a simple structural equality check. Missing cases:
@@ -1442,7 +1499,27 @@ impl<'a> Analyzer<'a> {
         if matches!(a, ValueType::TypeVar(_)) || matches!(b, ValueType::TypeVar(_)) {
             return true;
         }
-        a == b
+        // Unknown acts as a wildcard in Phase I
+        if matches!(a, ValueType::Unknown) || matches!(b, ValueType::Unknown) {
+            return true;
+        }
+        match (a, b) {
+            (ValueType::Orodha(a1), ValueType::Orodha(b1)) => self.compatible(a1, b1),
+            (ValueType::Kamusi(ak, av), ValueType::Kamusi(bk, bv)) => {
+                self.compatible(ak, bk) && self.compatible(av, bv)
+            }
+            (ValueType::Jozi(a1, a2), ValueType::Jozi(b1, b2)) => {
+                self.compatible(a1, b1) && self.compatible(a2, b2)
+            }
+            (ValueType::Chaguo(a1), ValueType::Chaguo(b1)) => self.compatible(a1, b1),
+            (ValueType::Tokeo(a1, a2), ValueType::Tokeo(b1, b2)) => {
+                self.compatible(a1, b1) && self.compatible(a2, b2)
+            }
+            (ValueType::Rejeo(a1, am), ValueType::Rejeo(b1, bm)) => {
+                am == bm && self.compatible(a1, b1)
+            }
+            _ => a == b,
+        }
     }
 
     /// Checks compatibility and emits a diagnostic if they are incompatible
