@@ -184,9 +184,9 @@ fn execute_tests_runs_multiple() {
 #[test]
 fn recursion_depth_limit_eval() {
     use asili_parser::{Block, Expr, Function, Module, Stmt, TypeExpr};
-    // Exceed MAX_EVAL_DEPTH (100) so we get "undani mno" before stack overflow
+    // Exceed MAX_EVAL_DEPTH (1000) so we get "undani mno" before stack overflow
     let mut inner = Expr::Number("1".into());
-    for _ in 0..101 {
+    for _ in 0..1001 {
         inner = Expr::Group(Box::new(inner));
     }
     let block = Block {

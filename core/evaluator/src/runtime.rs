@@ -10,8 +10,7 @@ use crate::env::Env;
 // MAX_EVAL_DEPTH limits evaluation depth to prevent stack overflow.
 // NOTE: This counter includes both block nesting and expression depth, not just function call frames.
 // A proper implementation would separate call-depth from block-nesting-depth.
-// Set to 500 to accommodate typical nested control flow (if/while/for chains) while still catching infinite recursion.
-pub(crate) const MAX_EVAL_DEPTH: usize = 500;
+pub(crate) const MAX_EVAL_DEPTH: usize = 1000;
 
 pub(crate) struct Runtime<'a> {
     pub env: &'a mut Env,
