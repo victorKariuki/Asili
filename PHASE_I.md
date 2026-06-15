@@ -328,7 +328,8 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 ```
 
 **Configuration:**
-- `MAX_EVAL_DEPTH = 500` — Accommodates 50+ levels of control flow
+- `MAX_EVAL_DEPTH = 1000` — Accommodates 100+ levels of control flow
+- Uses `stacker` crate to grow native stack on demand, preventing OS stack overflow
 - Increased from `100` to support real programs
 
 **Fixed Issues:**

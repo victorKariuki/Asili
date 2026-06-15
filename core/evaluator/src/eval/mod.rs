@@ -17,7 +17,7 @@ pub(crate) fn eval_block_impl(block: &Block, rt: &mut Runtime<'_>) -> Result<Eva
         rt.depth -= 1;
         return Err(EvalError::Unknown("undani mno".into()));
     }
-    let result = eval_block_inner(block, rt);
+    let result = stacker::maybe_grow(32 * 1024, 1024 * 1024, || eval_block_inner(block, rt));
     rt.depth -= 1;
     result
 }
@@ -71,7 +71,7 @@ pub(crate) fn eval_expr_impl(expr: &Expr, rt: &mut Runtime<'_>) -> Result<crate:
         rt.depth -= 1;
         return Err(EvalError::Unknown("undani mno".into()));
     }
-    let result = expr::eval_expr_inner(expr, rt);
+    let result = stacker::maybe_grow(32 * 1024, 1024 * 1024, || expr::eval_expr_inner(expr, rt));
     rt.depth -= 1;
     result
 }
