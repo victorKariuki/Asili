@@ -386,6 +386,9 @@ impl<'a> Parser<'a> {
             });
 
             if self.match_tok(",") {
+                if self.check(")") {
+                    break;
+                }
                 continue;
             }
             break;
