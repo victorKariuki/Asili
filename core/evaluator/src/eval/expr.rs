@@ -499,9 +499,9 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     }
                 }
                 (Value::Orodha(v), "kila_mmoja") => {
-                    let cb_name = args_val.first().and_then(value::as_string).ok_or_else(
-                        || EvalError::TypeErr("kila_mmoja inahitaji jina la kazi".into())
-                    )?;
+                    let Some(cb_name) = args_val.first().and_then(value::as_string) else {
+                        return Ok(Value::Tupu); // no callback provided — no-op
+                    };
                     for elem in v {
                         if let Some(f) = rt.builtins.get(&cb_name) {
                             f(std::slice::from_ref(elem))?;
