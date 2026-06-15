@@ -108,6 +108,8 @@ impl<'a> Parser<'a> {
             self.pos += 1;
         }
 
+        enums.extend(self.standard_enums());
+
         Module {
             imports,
             constants,
@@ -1118,5 +1120,48 @@ impl<'a> Parser<'a> {
             }
             self.pos += 1;
         }
+    }
+
+    fn standard_enums(&self) -> Vec<EnumDecl> {
+        vec![
+            EnumDecl {
+                name: "Chaguo".to_string(),
+                generics: vec!["T".to_string()],
+                variants: vec![
+                    EnumVariant {
+                        name: "Some".to_string(),
+                        data: Some(TypeExpr { name: "T".to_string() }),
+                        line: 0,
+                    },
+                    EnumVariant {
+                        name: "Hamna".to_string(),
+                        data: None,
+                        line: 0,
+                    },
+                ],
+                line: 0,
+                is_public: true,
+                attrs: Vec::new(),
+            },
+            EnumDecl {
+                name: "Tokeo".to_string(),
+                generics: vec!["T".to_string(), "E".to_string()],
+                variants: vec![
+                    EnumVariant {
+                        name: "Ok".to_string(),
+                        data: Some(TypeExpr { name: "T".to_string() }),
+                        line: 0,
+                    },
+                    EnumVariant {
+                        name: "Err".to_string(),
+                        data: Some(TypeExpr { name: "E".to_string() }),
+                        line: 0,
+                    },
+                ],
+                line: 0,
+                is_public: true,
+                attrs: Vec::new(),
+            },
+        ]
     }
 }
