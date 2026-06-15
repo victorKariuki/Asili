@@ -235,22 +235,18 @@ fn phase1_for_in_iteration() {
 /// Test Phase I feature: Evaluation depth limits
 #[test]
 fn phase1_evaluation_depth() {
-    let src = r#"
-        kazi kuu(hoja: Orodha<Neno>) -> Tupu {
-            ikiwa kweli {
-                ikiwa kweli {
-                    ikiwa kweli {
-                        ikiwa kweli {
-                            ikiwa kweli {
-                                chapisha("nested")
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    "#;
-    let toks = tokenize(src).expect("tokenize");
+    // Test 100 levels of nesting (limit is 1000)
+    let mut src = "kazi kuu(hoja: Orodha<Neno>) -> Tupu {\n".to_string();
+    for _ in 0..100 {
+        src.push_str("ikiwa kweli {\n");
+    }
+    src.push_str("chapisha(\"nested\")\n");
+    for _ in 0..100 {
+        src.push_str("}\n");
+    }
+    src.push_str("}\n");
+
+    let toks = tokenize(&src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     let mut extern_fns = HashMap::new();
     extern_fns.insert("chapisha".to_string(), FnContract {
@@ -258,5 +254,5 @@ fn phase1_evaluation_depth() {
         ret: ValueType::Tupu,
     });
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
-    assert!(result.is_ok(), "reasonable nesting should pass");
+    assert!(result.is_ok(), "deep nesting (100) should pass");
 }

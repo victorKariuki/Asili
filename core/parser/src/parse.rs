@@ -10,7 +10,7 @@ use crate::{
 };
 use crate::cursor::Parser;
 
-const MAX_RECURSION_DEPTH: usize = 100;
+const MAX_RECURSION_DEPTH: usize = 1000;
 
 /// Strip surrounding double quotes from string literal lexeme so the AST holds content only.
 fn strip_string_lexeme_quotes(lexeme: &str) -> String {
@@ -304,9 +304,15 @@ impl<'a> Parser<'a> {
         let mut trait_name = None;
         let mut target = first.lexeme.clone();
         if self.match_tok("kwa") {
+            // "shughuli ya Trait kwa Target { }" — kwa keyword syntax
             trait_name = Some(first.lexeme);
             if let Some(t) = self.consume_ident("PAR905", "shughuli ya kwa inahitaji target") {
                 target = t.lexeme;
+            }
+        } else if self.match_tok(":") {
+            // "shughuli ya Target: Trait { }" — colon syntax
+            if let Some(t) = self.consume_ident("PAR905", "shughuli ya : inahitaji jina la sifa") {
+                trait_name = Some(t.lexeme);
             }
         }
         let mut body = Vec::new();
@@ -432,7 +438,7 @@ impl<'a> Parser<'a> {
             self.depth -= 1;
             return None;
         }
-        let result = self.parse_block_inner();
+        let result = stacker::maybe_grow(32 * 1024, 1024 * 1024, || self.parse_block_inner());
         self.depth -= 1;
         result
     }
@@ -751,7 +757,7 @@ impl<'a> Parser<'a> {
             self.depth -= 1;
             return None;
         }
-        let result = self.parse_or();
+        let result = stacker::maybe_grow(32 * 1024, 1024 * 1024, || self.parse_or());
         self.depth -= 1;
         result
     }
@@ -1094,8 +1100,10 @@ impl<'a> Parser<'a> {
             let line = t.line;
             // Only parse struct literal when "{ field : expr" appears; "pattern =>" is linganisha arms.
             if self.check("{") {
+                let first_inside = self.tokens.get(self.pos + 1).map(|u| u.lexeme.as_str());
                 let second_inside = self.tokens.get(self.pos + 2).map(|u| u.lexeme.as_str());
-                if second_inside == Some(":") && self.match_tok("{") {
+                let is_struct_lit = second_inside == Some(":") || first_inside == Some("}");
+                if is_struct_lit && self.match_tok("{") {
                     let fields = self.parse_struct_literal_fields()?;
                     return Some(Expr::StructLiteral {
                         struct_name: name,
