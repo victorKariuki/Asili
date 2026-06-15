@@ -6,6 +6,7 @@ use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, Stmt};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
+use pulldown_cmark::{Parser, Event};
 
 const REPL_FUNC: &str = "__repl__";
 const PROMPT: &str = "> ";
@@ -93,7 +94,7 @@ fn parse_repl_line(line: &str) -> Result<(asili_parser::Module, asili_parser::Bl
     Ok((module, body))
 }
 
-/// Print content of docs/repl/{topic}.md if it exists. Path is relative to current dir.
+/// Print and render content of docs/repl/{topic}.md if it exists. Path is relative to current dir.
 fn show_repl_doc(topic: &str, out: &mut impl Write) -> Result<(), String> {
     if topic.is_empty() || topic.contains('/') || topic.contains('\\') {
         return Err("jina la mada si sahihi".to_string());
@@ -106,6 +107,79 @@ fn show_repl_doc(topic: &str, out: &mut impl Write) -> Result<(), String> {
             format!("hakuna mada '{}' (tazama docs/repl/)", topic)
         }
     })?;
-    writeln!(out, "{}", content).map_err(|e| e.to_string())?;
+
+    let parser = Parser::new(&content);
+    let rendered = render_markdown_to_terminal(parser);
+    writeln!(out, "{}", rendered).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn render_markdown_to_terminal(parser: Parser) -> String {
+    let mut output = String::new();
+    let mut in_table = false;
+
+    for event in parser {
+        match event {
+            Event::Start(tag) => {
+                match tag {
+                    pulldown_cmark::Tag::Heading(level, _, _) => {
+                        output.push_str("\x1b[1m"); // bold
+                        if matches!(level, pulldown_cmark::HeadingLevel::H1 | pulldown_cmark::HeadingLevel::H2) {
+                            output.push_str("\x1b[36m"); // cyan
+                        }
+                    }
+                    pulldown_cmark::Tag::CodeBlock(_) => {
+                        output.push_str("\x1b[90m"); // dark gray
+                    }
+                    pulldown_cmark::Tag::Table(_) => {
+                        in_table = true;
+                    }
+                    pulldown_cmark::Tag::Emphasis => {
+                        output.push_str("\x1b[3m"); // italic
+                    }
+                    pulldown_cmark::Tag::Strong => {
+                        output.push_str("\x1b[1m"); // bold
+                    }
+                    _ => {}
+                }
+            }
+            Event::End(tag) => {
+                match tag {
+                    pulldown_cmark::Tag::Heading(_, _, _) => {
+                        output.push_str("\x1b[0m\n"); // reset + newline
+                    }
+                    pulldown_cmark::Tag::CodeBlock(_) => {
+                        output.push_str("\x1b[0m\n"); // reset + newline
+                    }
+                    pulldown_cmark::Tag::Paragraph => {
+                        if !in_table {
+                            output.push('\n');
+                        }
+                    }
+                    pulldown_cmark::Tag::Table(_) => {
+                        in_table = false;
+                    }
+                    pulldown_cmark::Tag::Emphasis | pulldown_cmark::Tag::Strong => {
+                        output.push_str("\x1b[0m"); // reset
+                    }
+                    _ => {}
+                }
+            }
+            Event::Text(text) => {
+                output.push_str(&text);
+            }
+            Event::Code(code) => {
+                output.push_str("\x1b[92m"); // green
+                output.push('`');
+                output.push_str(&code);
+                output.push('`');
+                output.push_str("\x1b[0m"); // reset
+            }
+            Event::SoftBreak | Event::HardBreak => {
+                output.push('\n');
+            }
+            _ => {}
+        }
+    }
+    output
 }

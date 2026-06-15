@@ -23,6 +23,28 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
                 continue;
             }
 
+            if ch == '#' {
+                if i + 1 < chars.len() && chars[i + 1] == '[' {
+                    // Attribute start, treat '#' as a token
+                } else {
+                    // Comment, skip until end of line
+                    while i < chars.len() && chars[i] != '\n' {
+                        i += 1;
+                        col += 1;
+                    }
+                    continue;
+                }
+            }
+
+            if ch == '/' && i + 1 < chars.len() && chars[i + 1] == '/' {
+                // Comment, skip until end of line
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                    col += 1;
+                }
+                continue;
+            }
+
             if ch == '\'' {
                 let start_col = col;
                 let mut decoded = None;
@@ -117,12 +139,12 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
                 continue;
             }
 
-            if "(){}:,.;+-*/%<>!=[]?#&".contains(ch) {
+            if "(){}:,.;+-*/%<>!=[]?#&|".contains(ch) {
                 let start_col = col;
                 let mut lexeme = ch.to_string();
                 if i + 1 < chars.len() {
                     let pair = format!("{}{}", ch, chars[i + 1]);
-                    if ["==", "!=", ">=", "<=", "->", "+=", "-=", "*=", "/=", "=>", "::", "**", "&&"].contains(&pair.as_str()) {
+                    if ["==", "!=", ">=", "<=", "->", "+=", "-=", "*=", "/=", "=>", "::", "**", "&&", "||"].contains(&pair.as_str()) {
                         lexeme = pair;
                         i += 1;
                         col += 1;
@@ -142,15 +164,6 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
             let mut word = String::new();
             while i < chars.len() {
                 let c = chars[i];
-                if c == '?' {
-                    // Allow trailing ? only when identifier is multi-char or contains underscore (e.g. ni_namba?)
-                    if word.len() > 1 || word.contains('_') {
-                        word.push('?');
-                        i += 1;
-                        col += 1;
-                    }
-                    break;
-                }
                 // Include decimal point in numeric literals: if building a digit-only token
                 // and we see '.' followed by a digit, absorb both to form e.g. "100.0".
                 if c == '.' && word.chars().all(|ch| ch.is_ascii_digit()) && !word.is_empty()
@@ -161,7 +174,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
                     col += 1;
                     continue;
                 }
-                if c.is_whitespace() || "(){}:,.;+-*/%<>!=[]#&\"".contains(c) {
+                if c.is_whitespace() || "(){}:,.;+-*/%<>!=[]#&?|\"".contains(c) {
                     break;
                 }
                 word.push(c);
@@ -211,11 +224,11 @@ mod tests {
     }
 
     #[test]
-    fn trailing_question_mark_in_long_ident() {
+    fn trailing_question_mark_is_separate_token() {
         let src = "ni_namba?(3)";
         let t = tokenize(src).expect("tokenize");
         let lexemes: Vec<&str> = t.iter().map(|x| x.lexeme.as_str()).collect();
-        assert_eq!(lexemes, ["ni_namba?", "(", "3", ")"], "ni_namba? should be one token");
+        assert_eq!(lexemes, ["ni_namba", "?", "(", "3", ")"], "ni_namba? should be two tokens");
     }
 
     #[test]

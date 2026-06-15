@@ -1,27 +1,142 @@
 {
-  "kazi kuu": {
+  "Function": {
+    "prefix": "kazi",
+    "body": ["kazi ${1:function_name}(${2:params}) -> ${3:Tupu} {", "\t$0", "}"],
+    "description": "Define a function"
+  },
+  "Main Function": {
     "prefix": "kuu",
-    "body": ["kazi kuu(hoja: Orodha<Neno>) -> Tupu {", "  $0", "}"],
+    "body": ["kazi kuu(hoja: Orodha<Neno>) -> Tupu {", "\t$0", "}"],
     "description": "Entry point kazi kuu"
   },
-  "ikiwa": {
+  "If Statement": {
     "prefix": "ikiwa",
-    "body": ["ikiwa ${1:sharti} {", "  $0", "}"],
+    "body": ["ikiwa ${1:condition} {", "\t$0", "}"],
     "description": "Conditional ikiwa"
   },
-  "linganisha": {
-    "prefix": "linganisha",
-    "body": ["linganisha ${1:thamani} {", "  ${2:_} => { $0 }", "}"],
-    "description": "Match linganisha"
+  "If-Else": {
+    "prefix": "ikiwa-vinginevyo",
+    "body": ["ikiwa ${1:condition} {", "\t${2:# then}", "} vinginevyo {", "\t${3:# else}", "}"],
+    "description": "If-else statement"
   },
-  "weka": {
+  "While Loop": {
+    "prefix": "wakati",
+    "body": ["wakati ${1:condition} {", "\t$0", "}"],
+    "description": "While loop"
+  },
+  "For Loop": {
+    "prefix": "kwa",
+    "body": ["kwa ${1:item} katika ${2:collection} {", "\t$0", "}"],
+    "description": "For-in loop"
+  },
+  "For Range": {
+    "prefix": "kwa-kutoka",
+    "body": ["kwa ${1:i} kutoka ${2:0} hadi ${3:10} {", "\t$0", "}"],
+    "description": "For range loop"
+  },
+  "Match": {
+    "prefix": "linganisha",
+    "body": ["linganisha ${1:value} {", "\t${2:pattern} => { $0 }", "\t_ => { }", "}"],
+    "description": "Match linganisha statement"
+  },
+  "Struct": {
+    "prefix": "umbo",
+    "body": ["umbo ${1:StructName} {", "\t${2:field}: ${3:Type},", "}"],
+    "description": "Define a struct"
+  },
+  "Enum": {
+    "prefix": "jenum",
+    "body": ["jenum ${1:EnumName} {", "\t${2:Variant1},", "\t${3:Variant2},", "}"],
+    "description": "Define an enum"
+  },
+  "Trait": {
+    "prefix": "sifa",
+    "body": ["sifa ${1:TraitName} {", "\tkazi ${2:method}() -> ${3:Type};", "}"],
+    "description": "Define a trait"
+  },
+  "Impl": {
+    "prefix": "shughuli",
+    "body": ["shughuli ya ${1:StructName} {", "\tkazi ${2:method}(self) -> ${3:Type} {", "\t\t$0", "\t}", "}"],
+    "description": "Implement methods for a struct"
+  },
+  "Variable": {
     "prefix": "weka",
-    "body": ["weka ${1:jina} = ${2:thamani}"],
+    "body": ["weka ${1:name} = ${2:value}"],
     "description": "Let binding"
   },
-  "leta": {
+  "Constant": {
+    "prefix": "thabiti",
+    "body": ["thabiti ${1:NAME} = ${2:value}"],
+    "description": "Constant binding"
+  },
+  "Typed Variable": {
+    "prefix": "weka-ty",
+    "body": ["weka ${1:name}: ${2:Type} = ${3:value}"],
+    "description": "Variable with type annotation"
+  },
+  "List": {
+    "prefix": "orodha",
+    "body": ["[${1:1}, ${2:2}, ${3:3}]"],
+    "description": "List literal"
+  },
+  "Map": {
+    "prefix": "kamusi",
+    "body": ["{${1:\"key\"} => ${2:\"value\"}}"],
+    "description": "Map literal"
+  },
+  "Pair": {
+    "prefix": "jozi",
+    "body": ["jozi(${1:first}, ${2:second})"],
+    "description": "Pair (tuple)"
+  },
+  "Try": {
+    "prefix": "jaribu",
+    "body": ["jaribu ${1:result}"],
+    "description": "Try operator (?)"
+  },
+  "Result": {
+    "prefix": "tokeo",
+    "body": ["tokeo(${1:value})"],
+    "description": "Create Result"
+  },
+  "Error": {
+    "prefix": "kosa",
+    "body": ["kosa(${1:\"error\"})"],
+    "description": "Create error Result"
+  },
+  "Print": {
+    "prefix": "chapisha",
+    "body": ["chapisha(${1:\"message\"})"],
+    "description": "Print output"
+  },
+  "Import": {
     "prefix": "leta",
-    "body": ["leta ${1:hisabati}"],
+    "body": ["leta ${1:module}"],
     "description": "Import module"
+  },
+  "Test": {
+    "prefix": "test",
+    "body": ["#[jaribio]", "kazi ${1:test_name}() -> Tupu {", "\t$0", "}"],
+    "description": "Test function"
+  },
+  "Break": {
+    "prefix": "vunja",
+    "body": ["vunja"],
+    "description": "Break from loop"
+  },
+  "Continue": {
+    "prefix": "endelea",
+    "body": ["endelea"],
+    "description": "Continue loop"
+  },
+  "Return": {
+    "prefix": "rejesha",
+    "body": ["rejesha ${1:value}"],
+    "description": "Return from function"
+  },
+  "Drop": {
+    "prefix": "tupa",
+    "body": ["tupa ${1:variable}"],
+    "description": "Drop (destroy) a value"
   }
 }

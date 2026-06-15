@@ -81,7 +81,7 @@ pub fn parse_value_type(s: &str) -> ValueType {
         return ValueType::Tokeo(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown));
     }
     if s.starts_with("Orodha<") && s.ends_with('>') {
-        let inner = s[6..s.len() - 1].trim();
+        let inner = s[7..s.len() - 1].trim();
         return ValueType::Orodha(Box::new(parse_value_type(inner)));
     }
     if s.starts_with("Kamusi<") && s.ends_with('>') {
@@ -95,11 +95,11 @@ pub fn parse_value_type(s: &str) -> ValueType {
         }
     }
     if s.starts_with("Mfululizo<") && s.ends_with('>') {
-        let inner = s[9..s.len() - 1].trim();
+        let inner = s[10..s.len() - 1].trim();
         return ValueType::Mfululizo(Box::new(parse_value_type(inner)));
     }
     if s.starts_with("Jozi<") && s.ends_with('>') {
-        let inner = s[4..s.len() - 1].trim();
+        let inner = s[5..s.len() - 1].trim();
         let parts = split_generic_args(inner);
         if parts.len() >= 2 {
             return ValueType::Jozi(
@@ -109,7 +109,7 @@ pub fn parse_value_type(s: &str) -> ValueType {
         }
     }
     if s.starts_with("Seti<") && s.ends_with('>') {
-        let inner = s[4..s.len() - 1].trim();
+        let inner = s[5..s.len() - 1].trim();
         return ValueType::Seti(Box::new(parse_value_type(inner)));
     }
     if s == "Herufi" {

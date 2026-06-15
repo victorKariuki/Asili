@@ -87,6 +87,24 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             .env
             .get(name)
             .ok_or_else(|| EvalError::UndefinedVar(name.clone())),
+        Expr::List { elements, .. } => {
+            let vals: Vec<Value> = elements
+                .iter()
+                .map(|e| super::eval_expr_impl(e, rt))
+                .collect::<Result<_, _>>()?;
+            Ok(Value::Orodha(vals))
+        }
+        Expr::Map { entries, .. } => {
+            use std::collections::HashMap;
+            let mut m: HashMap<MapKey, Value> = HashMap::new();
+            for (k, v) in entries {
+                let kval = super::eval_expr_impl(k, rt)?;
+                let vval = super::eval_expr_impl(v, rt)?;
+                let key = MapKey::try_from_value(&kval)?;
+                m.insert(key, vval);
+            }
+            Ok(Value::Kamusi(m))
+        }
         Expr::StructLiteral {
             struct_name,
             fields,
@@ -141,12 +159,16 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
         Expr::Index { base, index, .. } => {
             let b = super::eval_expr_impl(base, rt)?;
             let i_val = super::eval_expr_impl(index, rt)?;
-            let idx = value::as_f64(&i_val)
-                .ok_or_else(|| EvalError::TypeErr("fahirisi inahitaji Namba".into()))?;
-            let idx = idx as i64;
-            let idx = if idx < 0 { 0 } else { idx as usize };
             match &b {
+                Value::Kamusi(m) => {
+                    let key = MapKey::try_from_value(&i_val)?;
+                    Ok(m.get(&key).cloned().unwrap_or(Value::Hamna))
+                }
                 Value::Orodha(v) => {
+                    let idx = value::as_f64(&i_val)
+                        .ok_or_else(|| EvalError::TypeErr("fahirisi inahitaji Namba".into()))?;
+                    let idx = idx as i64;
+                    let idx = if idx < 0 { 0 } else { idx as usize };
                     if idx >= v.len() {
                         let msg = format!("fahirisi nje ya mipaka: {} (urefu {})", idx, v.len());
                         let kosa = Value::Struct(
@@ -158,7 +180,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                         Ok(Value::Tokeo(Ok(Box::new(v[idx].clone()))))
                     }
                 }
-                _ => Err(EvalError::TypeErr("fahirisi inahitaji Orodha".into())),
+                _ => Err(EvalError::TypeErr("fahirisi inahitaji Orodha au Kamusi".into())),
             }
         }
         Expr::Unary { op, expr, .. } => {
@@ -411,6 +433,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 .map(|a| super::eval_expr_impl(a, rt))
                 .collect::<Result<_, _>>()?;
             match (&recv, method_name.as_str()) {
+                (Value::Neno(s), "clona") => Ok(Value::Neno(s.clone())),
                 (Value::Neno(s), "urefu") => Ok(Value::Namba(s.graphemes(true).count() as f64)),
                 (Value::Neno(s), "biti_ngapi") => Ok(Value::Namba(s.len() as f64)),
                 (Value::Neno(s), "unganisha") => {
@@ -471,7 +494,9 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                         .ok_or_else(|| EvalError::TypeErr("badilisha inahitaji to".into()))?;
                     Ok(Value::Neno(s.replace(&from, &to)))
                 }
-                (Value::Orodha(v), "urefu") => Ok(Value::Namba(v.len() as f64)),
+                (Value::Orodha(l), "clona") => Ok(Value::Orodha(l.clone())),
+                (Value::Orodha(l), "urefu") => Ok(Value::Namba(l.len() as f64)),
+
                 (Value::Orodha(v), "ongeza") => {
                     let elem = args_val.first().cloned().unwrap_or(Value::Hamna);
                     let mut new_v = v.clone();
@@ -529,6 +554,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     }
                     Ok(Value::Tupu)
                 }
+                (Value::Kamusi(m), "clona") => Ok(Value::Kamusi(m.clone())),
                 (Value::Kamusi(m), "pata") => {
                     let key_val = args_val.first().ok_or_else(|| EvalError::TypeErr("pata inahitaji ufunguo".into()))?;
                     let key = MapKey::try_from_value(key_val)?;
@@ -579,6 +605,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                         Err(_) => mbadala,
                     })
                 }
+                (Value::Jozi(a, b), "clona") => Ok(Value::Jozi(a.clone(), b.clone())),
                 (Value::Jozi(a, _), "kwanza") => Ok((**a).clone()),
                 (Value::Jozi(_, b), "pili") => Ok((**b).clone()),
                 (Value::Wakati(secs), "sekunde") => Ok(Value::Namba(*secs)),

@@ -774,3 +774,205 @@ fn ukweli_true_kama_neno_is_kweli() {
         Value::Neno("kweli".into())
     );
 }
+
+#[test]
+fn recursive_fibonacci_works() {
+    // Verifies that stacker allows deep recursive function calls without stack overflow.
+    // fib(20) = 6765, requires ~20 levels of call-frame recursion.
+    let module = parse_only(
+        r#"
+kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+
+kazi fibonacci(n: Namba) -> Namba {
+    ikiwa n <= 1.0 {
+        rejesha n
+    }
+    rejesha fibonacci(n - 1.0) + fibonacci(n - 2.0)
+}
+
+kazi run() -> Namba {
+    rejesha fibonacci(20.0)
+}
+"#,
+    );
+    let result = run_function(&module, "run", vec![]).expect("fibonacci(20) lazima ifanikiwe");
+    assert_eq!(
+        result,
+        Value::Namba(6765.0),
+        "fibonacci(20) lazima iwe 6765"
+    );
+}
+
+#[test]
+fn astar_pathfinding_works() {
+    // A* on a 5×5 grid. Nodes: flat index idx = row*5 + col (0..=24).
+    // Heuristic: Manhattan distance via `%` (Rem) for col and integer division for row.
+    // Shortest path (0,0)→(4,4) costs 8 moves on an obstacle-free grid.
+    //
+    // Collection API used:
+    //   orodha()              — empty list
+    //   list.ongeza(x)        — push
+    //   list.urefu()          — length
+    //   kamusi_tupu()         — empty map
+    //   map.ingiza(key, val)  — insert/update (receiver must be a local Ident)
+    //   map.pata(key)         — returns Chaguo<val>
+    //   chaguo.angu(default)  — unwrap or default
+    let src = r#"
+kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+
+kazi abs_val(x: Namba) -> Namba {
+    ikiwa x < 0.0 {
+        rejesha 0.0 - x
+    }
+    rejesha x
+}
+
+kazi heuristic(a: Namba, b: Namba) -> Namba {
+    weka acol = a % 5.0
+    weka arow = (a - acol) / 5.0
+    weka bcol = b % 5.0
+    weka brow = (b - bcol) / 5.0
+    rejesha abs_val(arow - brow) + abs_val(acol - bcol)
+}
+
+kazi orodha_ina(lst: Orodha<Namba>, v: Namba) -> Ukweli {
+    kwa x katika lst {
+        ikiwa x == v {
+            rejesha kweli
+        }
+    }
+    rejesha si_kweli
+}
+
+kazi orodha_toa(lst: Orodha<Namba>, v: Namba) -> Orodha<Namba> {
+    weka result = orodha()
+    kwa x katika lst {
+        ikiwa x != v {
+            result.ongeza(x)
+        }
+    }
+    rejesha result
+}
+
+kazi bora_wazi(wazi: Orodha<Namba>, g: Kamusi<Namba, Namba>, lengo: Namba) -> Namba {
+    weka bora = 0.0 - 1.0
+    weka f_bora = 0.0 - 1.0
+    kwa nodo katika wazi {
+        weka gn = g.pata(nodo).angu(9999.0)
+        weka f = gn + heuristic(nodo, lengo)
+        ikiwa f_bora < 0.0 au f < f_bora {
+            bora = nodo
+            f_bora = f
+        }
+    }
+    rejesha bora
+}
+
+kazi jirani(nodo: Namba) -> Orodha<Namba> {
+    weka col = nodo % 5.0
+    weka row = (nodo - col) / 5.0
+    weka j = orodha()
+    ikiwa col > 0.0  { j.ongeza(nodo - 1.0) }
+    ikiwa col < 4.0  { j.ongeza(nodo + 1.0) }
+    ikiwa row > 0.0  { j.ongeza(nodo - 5.0) }
+    ikiwa row < 4.0  { j.ongeza(nodo + 5.0) }
+    rejesha j
+}
+
+kazi astar(chanzo: Namba, lengo: Namba) -> Namba {
+    weka g = kamusi_tupu()
+    g.ingiza(chanzo, 0.0)
+    weka wazi = orodha()
+    wazi.ongeza(chanzo)
+    weka imefungwa = orodha()
+
+    wakati wazi.urefu() > 0.0 {
+        weka sasa = bora_wazi(wazi, g, lengo)
+        ikiwa sasa == lengo {
+            rejesha g.pata(lengo).angu(0.0 - 1.0)
+        }
+        wazi = orodha_toa(wazi, sasa)
+        imefungwa.ongeza(sasa)
+        kwa mwisho katika jirani(sasa) {
+            ikiwa siyo orodha_ina(imefungwa, mwisho) {
+                weka g_sasa = g.pata(sasa).angu(9999.0)
+                weka g_mpya = g_sasa + 1.0
+                ikiwa siyo orodha_ina(wazi, mwisho) {
+                    wazi.ongeza(mwisho)
+                    g.ingiza(mwisho, g_mpya)
+                } au_ikiwa g_mpya < g.pata(mwisho).angu(9999.0) {
+                    g.ingiza(mwisho, g_mpya)
+                }
+            }
+        }
+    }
+    rejesha 0.0 - 1.0
+}
+
+kazi run() -> Namba {
+    rejesha astar(0.0, 24.0)
+}
+"#;
+    let module = parse_only(src);
+    let result = run_function(&module, "run", vec![]).expect("A* lazima ifanikiwe");
+    assert_eq!(
+        result,
+        Value::Namba(8.0),
+        "umbali mfupi kutoka (0,0) hadi (4,4) kwenye gridi 5x5 ni hatua 8"
+    );
+}
+
+#[test]
+fn syntax_sugar_list_map_ops() {
+    // Exercises all six new syntax-sugar features:
+    //  1. [] list literal
+    //  2. {} empty-map / { k: v } map literal
+    //  3. g[key] = val  (index-assign → ingiza)
+    //  4. g[key]        (index-read  → pata or Hamna)
+    //  5. weka without type annotation (already worked; confirmed here)
+    //  6. ! (not), && (and), || (or) operator aliases
+    let module = parse_only(r#"
+kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+
+kazi run_list() -> Namba {
+    weka a = [10, 20, 30]
+    rejesha a.urefu()
+}
+
+kazi run_map_empty() -> Namba {
+    weka m = {}
+    m["x"] = 99
+    rejesha m["x"]
+}
+
+kazi run_map_literal() -> Namba {
+    weka m = { "a": 1, "b": 2 }
+    rejesha m["a"] + m["b"]
+}
+
+kazi run_map_missing() -> Ukweli {
+    weka m = {}
+    rejesha m["z"] == Hamna
+}
+
+kazi run_not() -> Ukweli {
+    rejesha !si_kweli
+}
+
+kazi run_and() -> Ukweli {
+    rejesha kweli && kweli
+}
+
+kazi run_or() -> Ukweli {
+    rejesha si_kweli || kweli
+}
+"#);
+
+    assert_eq!(run_function(&module, "run_list",    vec![]).expect("list"),   Value::Namba(3.0));
+    assert_eq!(run_function(&module, "run_map_empty",   vec![]).expect("map_empty"),  Value::Namba(99.0));
+    assert_eq!(run_function(&module, "run_map_literal", vec![]).expect("map_lit"),    Value::Namba(3.0));
+    assert_eq!(run_function(&module, "run_map_missing", vec![]).expect("map_miss"),   Value::Ukweli(true));
+    assert_eq!(run_function(&module, "run_not",    vec![]).expect("not"),     Value::Ukweli(true));
+    assert_eq!(run_function(&module, "run_and",    vec![]).expect("and"),     Value::Ukweli(true));
+    assert_eq!(run_function(&module, "run_or",     vec![]).expect("or"),      Value::Ukweli(true));
+}

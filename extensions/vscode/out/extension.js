@@ -2,13 +2,18 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
+const path = require("path");
+const fs = require("fs");
 const vscode_1 = require("vscode");
 const node_1 = require("vscode-languageclient/node");
 let client;
 function activate(context) {
     const config = vscode_1.workspace.getConfiguration("asili");
-    const serverPath = config.get("serverPath") ?? "pata";
-    const serverArgs = config.get("serverArgs") ?? ["mwalimu"];
+    // Prefer the bundled binary, fall back to user-configured path or global pata.
+    const bundled = context.asAbsolutePath(path.join("bin", "pata-lsp"));
+    const hasBundled = fs.existsSync(bundled);
+    const serverPath = config.get("serverPath") ?? (hasBundled ? bundled : "pata");
+    const serverArgs = config.get("serverArgs") ?? (hasBundled ? [] : ["mwalimu"]);
     const executable = {
         command: serverPath,
         args: serverArgs,

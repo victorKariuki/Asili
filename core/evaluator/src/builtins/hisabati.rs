@@ -276,18 +276,6 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         let x = value::arg_f64(args, 0, "ni_ukomo")?;
         Ok(Value::Ukweli(x.is_infinite()))
     }));
-    m.insert("ni_namba?".to_string(), Box::new(|args: &[Value]| {
-        let x = value::arg_f64(args, 0, "ni_namba?")?;
-        Ok(Value::Ukweli(x.is_finite()))
-    }));
-    m.insert("si_namba?".to_string(), Box::new(|args: &[Value]| {
-        let x = value::arg_f64(args, 0, "si_namba?")?;
-        Ok(Value::Ukweli(x.is_nan()))
-    }));
-    m.insert("ni_ukomo?".to_string(), Box::new(|args: &[Value]| {
-        let x = value::arg_f64(args, 0, "ni_ukomo?")?;
-        Ok(Value::Ukweli(x.is_infinite()))
-    }));
     m.insert("nasibu".to_string(), Box::new(|args: &[Value]| {
         if !args.is_empty() {
             return Err(crate::value::EvalError::TypeErr(
