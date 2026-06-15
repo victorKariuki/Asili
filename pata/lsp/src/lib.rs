@@ -42,7 +42,6 @@ impl LanguageServer for Backend {
                 name: "mwalimu".to_string(),
                 version: Some("0.1.0".to_string()),
             }),
-            ..Default::default()
         })
     }
 

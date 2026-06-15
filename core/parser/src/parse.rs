@@ -371,10 +371,7 @@ impl<'a> Parser<'a> {
             return params;
         }
 
-        loop {
-            let Some(name) = self.consume_ident("PAR010", "param inahitaji jina") else {
-                break;
-            };
+        while let Some(name) = self.consume_ident("PAR010", "param inahitaji jina") {
             if self.consume(":", "PAR011", "param inahitaji ':'").is_none() {
                 break;
             }

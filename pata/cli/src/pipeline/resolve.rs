@@ -312,6 +312,8 @@ fn merge_for_eval(entrypoint: &Module, resolved: &HashMap<String, ResolvedModule
     }
     Module {
         imports: entrypoint.imports.clone(),
+        constants: entrypoint.constants.clone(),
+        enums: entrypoint.enums.clone(),
         functions,
         structs,
         traits,
@@ -410,7 +412,7 @@ pub fn check_duplicate_imports(
         };
         let Some(res) = resolved.get(module_name) else { continue };
         for name in res.exports.functions.keys() {
-            let include = names_to_import.as_ref().map_or(true, |n| n.contains(name));
+            let include = names_to_import.as_ref().is_none_or(|n| n.contains(name));
             if include {
                 if let Some(from) = seen_functions.get(name) {
                     if *from != "msingi" || !res.is_stdlib {
@@ -426,7 +428,7 @@ pub fn check_duplicate_imports(
             }
         }
         for name in res.exports.constants.keys() {
-            let include = names_to_import.as_ref().map_or(true, |n| n.contains(name));
+            let include = names_to_import.as_ref().is_none_or(|n| n.contains(name));
             if include {
                 if let Some(from) = seen_constants.get(name) {
                     if *from != "msingi" || !res.is_stdlib {

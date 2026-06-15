@@ -213,6 +213,6 @@ fn test_double_drop() {
     assert!(result.is_err(), "should error on double drop");
     if let Err(errs) = result {
         // First drop succeeds, second drop tries to drop already-dropped variable
-        assert!(errs.len() >= 1, "should have errors");
+        assert!(!errs.is_empty(), "should have errors");
     }
 }

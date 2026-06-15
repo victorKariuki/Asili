@@ -20,7 +20,7 @@ impl Backend {
 /// Run the Mwalimu LSP server over stdio (async). Use from the `pata-lsp` binary.
 pub async fn run_stdio() {
     let (stdin, stdout) = (tokio::io::stdin(), tokio::io::stdout());
-    let (service, socket) = LspService::new(|client| Backend::new(client));
+    let (service, socket) = LspService::new(Backend::new);
     Server::new(stdin, stdout, socket).serve(service).await;
 }
 

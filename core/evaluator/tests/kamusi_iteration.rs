@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use asili_evaluator::{runtime, Env, Value, run_function};
+use asili_evaluator::Value;
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, semantic_check_with_env, FnContract, Module, ValueType};
+use asili_parser::{parse_tokens, semantic_check_with_env, FnContract, ValueType};
 
 #[test]
 fn kamusi_iteration() {
@@ -12,7 +12,7 @@ fn kamusi_iteration() {
             k.ingiza("a", 1.0)
             k.ingiza("b", 2.0)
             weka jumla = 0.0
-            kwa j in k {
+            kwa j katika k {
                 weka val = j.pili()
                 jumla = jumla + val
             }
@@ -33,7 +33,7 @@ fn kamusi_iteration() {
     let output = Arc::new(Mutex::new(0.0));
     let output_clone = output.clone();
     let chapisha = Box::new(move |args: &[Value]| {
-        if let Some(Value::Namba(n)) = args.get(0) {
+        if let Some(Value::Namba(n)) = args.first() {
             let mut o = output_clone.lock().unwrap();
             *o = *n;
         }

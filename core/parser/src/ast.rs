@@ -336,6 +336,7 @@ impl fmt::Display for ValueType {
             ValueType::Struct(name) => write!(f, "{}", name),
             ValueType::Wakati => write!(f, "Wakati"),
             ValueType::Anuani => write!(f, "Anuani"),
+            ValueType::TypeVar(name) => write!(f, "{}", name),
             ValueType::Unknown => write!(f, "Unknown"),
         }
     }
@@ -365,6 +366,8 @@ pub enum ValueType {
     Wakati,
     /// Raw memory address; used by syscall and kiungo (FFI).
     Anuani,
+    /// Type variable (T, E, U, etc. for generic types).
+    TypeVar(String),
     Unknown,
 }
 

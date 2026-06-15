@@ -16,7 +16,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         Ok(Value::Kamusi(HashMap::new()))
     }));
     m.insert("jozi".to_string(), Box::new(|args: &[Value]| {
-        let a = args.get(0).cloned().unwrap_or(Value::Hamna);
+        let a = args.first().cloned().unwrap_or(Value::Hamna);
         let b = args.get(1).cloned().unwrap_or(Value::Hamna);
         Ok(Value::Jozi(Box::new(a), Box::new(b)))
     }));

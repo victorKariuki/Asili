@@ -59,17 +59,15 @@ fn enforce_docs(root: &Path) -> CliResult {
             Err(_) => {
                 for i in 0..lines.len() {
                     let ln = lines[i].trim();
-                    if ln.starts_with("umma kazi") || ln.starts_with("umma umbo") {
-                        if i == 0 || !lines[i - 1].trim().starts_with("///") {
-                            return Err(CliError::new(
-                                format!(
-                                    "nyaraka zimekosekana kwa item ya umma kwenye {}:{}",
-                                    file.display(),
-                                    i + 1
-                                ),
-                                1,
-                            ));
-                        }
+                    if (ln.starts_with("umma kazi") || ln.starts_with("umma umbo")) && (i == 0 || !lines[i - 1].trim().starts_with("///")) {
+                        return Err(CliError::new(
+                            format!(
+                                "nyaraka zimekosekana kwa item ya umma kwenye {}:{}",
+                                file.display(),
+                                i + 1
+                            ),
+                            1,
+                        ));
                     }
                 }
                 continue;

@@ -31,7 +31,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         {
             let msg = args
                 .first()
-                .and_then(|v| value::as_string(v))
+                .and_then(value::as_string)
                 .unwrap_or_default();
             let display = format_message_for_display(&msg);
             let line = if env::var("ASILI_TELEMETRY").is_ok() {
@@ -50,7 +50,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         {
             let msg = args
                 .first()
-                .and_then(|v| value::as_string(v))
+                .and_then(value::as_string)
                 .unwrap_or_default();
             let display = format_message_for_display(&msg);
             let line = if env::var("ASILI_TELEMETRY").is_ok() {
@@ -67,7 +67,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     m.insert("paparika".to_string(), Box::new(|args: &[Value]| {
         let msg = args
             .first()
-            .and_then(|v| value::as_string(v))
+            .and_then(value::as_string)
             .unwrap_or_else(|| "paparika".to_string());
         Err(EvalError::Panic(msg))
     }));

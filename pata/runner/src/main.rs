@@ -26,7 +26,7 @@ fn main() {
     let asb_path = if path
         .file_name()
         .and_then(|n| n.to_str())
-        .map_or(false, |n| n.ends_with(".build.manifest"))
+        .is_some_and(|n| n.ends_with(".build.manifest"))
     {
         artifact_from_manifest(&path).unwrap_or_else(|e| {
             eprintln!("{e}");
@@ -35,7 +35,7 @@ fn main() {
     } else if path
         .file_name()
         .and_then(|n| n.to_str())
-        .map_or(false, |n| n.ends_with(".asb"))
+        .is_some_and(|n| n.ends_with(".asb"))
     {
         path
     } else {

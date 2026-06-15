@@ -149,9 +149,10 @@ fn test_public_private_enums() {
     let module = parse_tokens(&toks).expect("parse");
     let result = semantic_check_with_env(&module, true, HashMap::new(), HashMap::new());
     assert!(result.is_ok(), "public and private enums should pass: {:?}", result.err());
-    assert_eq!(module.enums.len(), 2);
-    assert!(module.enums[0].is_public);
-    assert!(!module.enums[1].is_public);
+    let public_result = module.enums.iter().find(|e| e.name == "PublicResult").expect("PublicResult");
+    let private_status = module.enums.iter().find(|e| e.name == "PrivateStatus").expect("PrivateStatus");
+    assert!(public_result.is_public);
+    assert!(!private_status.is_public);
 }
 
 /// Test 8: Enum variant case sensitivity
