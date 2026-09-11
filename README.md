@@ -46,10 +46,12 @@ pata jenga --tenda
 |--------|-------------|
 | `pata jenga` | Build project; output `.asb` (and optional manifest). |
 | `pata jenga --tenda` | Build and run the entrypoint (`kuu`). |
+| `pata tenda <path>` | Run an already-built `.asb`/`.build.manifest` without rebuilding. |
 | `pata jaribu` | Discover and run `#[jaribio]` tests. |
 | `pata jaribu --orodha` | List test names only. |
-| `pata repl` | Start interactive REPL. Use `?mada` for help topics. |
+| `pata repl` | Start interactive REPL. Use `?mada` for help topics, `?lugha en`/`?lugha sw` to switch languages. |
 | `pata njozi <dir>` | Create a new project (e.g. `pata.toml`, `src/kuu.as`). |
+| `pata ongeza <lib>` | Add a dependency to `pata.toml`. |
 | `pata nadhifu` | Format Asili source (line-based, best-effort). |
 | `pata thibitisha` | Check public API documentation. |
 | `pata mwalimu` | Start LSP server (Mwalimu) for editors. |
@@ -59,8 +61,8 @@ pata jenga --tenda
 | Path | Contents |
 |------|----------|
 | `core/` | Lexer, parser, semantic analysis, evaluator, diagnostics. |
-| `driver/` | Target adapters (e.g. Wasm). |
-| `pata/` | CLI (`pata-cli`), runner, LSP. |
+| `driver/` | Target adapters: `wasm` (implemented, browser + WASI); `embedded`, `posix`, `win32` (stub placeholders, not yet in the Cargo workspace). |
+| `pata/` | CLI (`pata-cli`), runner, LSP (`pata-lsp`), formatter (`pata-fmt`), linter (`pata-lint`), package resolver (`pata-package`). |
 | `lib/` | Standard library surface (`lib/std/*.asi` stubs). |
 | `docs/spec/` | Language specification. |
 | `examples/` | Sample Asili programs. |
