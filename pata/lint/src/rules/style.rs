@@ -13,10 +13,10 @@ pub fn check_style_issues(module: &Module) -> Vec<Diagnostic> {
         if func_lines > 50 {
             diags.push(
                 Diagnostic::new("LINT101", format!(
-                    "Function '{}' has {} statements, consider breaking it up",
+                    "kazi '{}' ina kauli {} — fikiria kuigawanya",
                     func.name, func_lines
                 ))
-                .with_stage("lint")
+                .with_stage("ukaguzi")
                 .with_span(func.line, 1)
             );
         }

@@ -2,6 +2,7 @@
 
 mod faili;
 mod hisabati;
+mod kasha_gc;
 mod kiungo;
 mod majira;
 mod matumizi;
@@ -33,6 +34,7 @@ pub fn builtins() -> HashMap<String, BuiltinFn> {
     runtime::register(&mut m);
     sambamba::register(&mut m);
     syscall::register(&mut m);
+    kasha_gc::register(&mut m);
     m
 }
 
@@ -48,6 +50,7 @@ pub fn builtin_names() -> Vec<String> {
     runtime::register(&mut m);
     sambamba::register(&mut m);
     syscall::register(&mut m);
+    kasha_gc::register(&mut m);
 
     let mut names: Vec<String> = m.keys().cloned().collect();
     // Ensure "chapisha" is index 0 for backward compatibility

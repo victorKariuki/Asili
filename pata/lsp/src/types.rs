@@ -166,7 +166,7 @@ pub fn format_type(t: &ValueType) -> String {
         ValueType::NambaSahihi => "NambaSahihi".to_string(),
         ValueType::Wakati => "Wakati".to_string(),
         ValueType::Anuani => "Anuani".to_string(),
-        ValueType::Unknown => "Unknown".to_string(),
+        ValueType::Unknown => "Haijulikani".to_string(),
         ValueType::Chaguo(t) => format!("{}?", format_type(t)),
         ValueType::Tokeo(ok, err) => format!("Tokeo<{}, {}>", format_type(ok), format_type(err)),
         ValueType::Rejeo(t, mutable) => {
@@ -181,6 +181,7 @@ pub fn format_type(t: &ValueType) -> String {
         ValueType::Mfululizo(t) => format!("Mfululizo<{}>", format_type(t)),
         ValueType::Jozi(a, b) => format!("Jozi<{}, {}>", format_type(a), format_type(b)),
         ValueType::Seti(t) => format!("Seti<{}>", format_type(t)),
+        ValueType::KashaGC(t) => format!("Kasha_GC<{}>", format_type(t)),
         ValueType::Struct(name) => name.clone(),
         ValueType::TypeVar(name) => name.clone(),
     }

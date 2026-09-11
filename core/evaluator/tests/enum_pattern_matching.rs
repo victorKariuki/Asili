@@ -176,9 +176,9 @@ fn test_enum_pattern_chaguo() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
         kazi test() -> Namba {
-            weka opt = Chaguo::Some(50.0)
+            weka opt = Chaguo::Kuna(50.0)
             linganisha opt {
-                Chaguo::Some(x) => { rejesha x }
+                Chaguo::Kuna(x) => { rejesha x }
                 Chaguo::Hamna => { rejesha 0.0 }
             }
         }
@@ -193,10 +193,10 @@ fn test_enum_pattern_tokeo() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
         kazi test() -> Ukweli {
-            weka res = Tokeo::Ok(123.0)
+            weka res = Tokeo::Sawa(123.0)
             linganisha res {
-                Tokeo::Ok(_) => { rejesha kweli }
-                Tokeo::Err(_) => { rejesha si_kweli }
+                Tokeo::Sawa(_) => { rejesha kweli }
+                Tokeo::Kosa(_) => { rejesha si_kweli }
             }
         }
     "#;

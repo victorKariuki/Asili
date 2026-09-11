@@ -92,7 +92,7 @@ fn test_parse_chaguo_pattern() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu {
             linganisha opt {
-                Chaguo::Some(x) => { }
+                Chaguo::Kuna(x) => { }
                 Chaguo::Hamna => { }
             }
         }
@@ -108,8 +108,8 @@ fn test_parse_tokeo_pattern() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu {
             linganisha res {
-                Tokeo::Ok(v) => { }
-                Tokeo::Err(e) => { }
+                Tokeo::Sawa(v) => { }
+                Tokeo::Kosa(e) => { }
             }
         }
     "#;

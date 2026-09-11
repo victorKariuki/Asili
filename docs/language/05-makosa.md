@@ -12,7 +12,8 @@ Asili uses two built-in types for safe error handling: `Chaguo<T>` (nullable val
 
 ```asili
 weka val = m.pata("ufunguo")    # returns Chaguo<T>
-weka hakuna: Chaguo<Namba> = Hamna
+weka hakuna = Hamna             # explicit `: Chaguo<Namba>` annotation on a bare Hamna
+                                 # currently fails to type-check (SEM010) — omit it
 ```
 
 ### Kupata Thamani Salama
@@ -41,14 +42,22 @@ weka kipengee = a[1]?     # 10, or propagates if out of bounds
 
 ## Tokeo (Result)
 
-`Tokeo<T,E>` is either `Ok(value)` or `Kosa(error)`. Used for operations that may fail.
+`Tokeo<T,E>` is either `Ok(value)` or `Err(error)`. Used for operations that may fail.
 
 ### Kuunda
 
+A `Tokeo` binding must be consumed — via `linganisha` or `?`/`jaribu` — in the same scope it
+was created in; the checker rejects an assigned-but-unused `Tokeo` (`SEM048`). Calling a Tokeo
+method (`.ni_kosa()`, `.angu()`, etc.) later, on a value stored in a variable, does **not**
+count as consuming it — only `linganisha`/`?`/`jaribu` satisfy the checker.
+
 ```asili
 # Built-in gawio returns Tokeo<Namba, Neno>
-weka jibu = gawio(10, 0)    # Tokeo::Kosa("Haiwezekani kugawanya na sifuri")
-weka jibu2 = gawio(10, 2)   # Tokeo::Ok(5.0)
+linganisha gawio(10, 0) {
+  Tokeo::Sawa(v)  => { chapisha("jibu: " + (v kama Neno)) }
+  Tokeo::Kosa(e) => { chapisha("kushindwa: " + e) }   # "Haiwezekani kugawanya na sifuri"
+}
+weka jibu2 = jaribu gawio(10, 2)   # 5.0 — jaribu unwraps or propagates
 ```
 
 ### jaribu — Kutoa Thamani Salama
@@ -61,6 +70,9 @@ weka matokeo = jaribu gawio(10, 2)    # 5.0
 ```
 
 ### Mfano Kamili
+
+Match `Tokeo::Sawa(v)`/`Tokeo::Kosa(e)` directly — this works against a `Tokeo` returned by any
+function, builtin or user-defined, and binds the wrapped value/error:
 
 ```asili
 leta matumizi
@@ -75,12 +87,23 @@ kazi gawanya(a: Namba, b: Namba) -> Tokeo<Namba, Neno> {
 
 kazi kuu(hoja: Orodha<Neno>) -> Tupu {
   linganisha gawanya(10, 2) {
-    _ => { chapisha("Jibu: " + (jaribu gawanya(10, 2) kama Neno)) }
+    Tokeo::Sawa(v)  => { chapisha("Jibu: " + (v kama Neno)) }
+    Tokeo::Kosa(e) => { chapisha("Kosa: " + e) }
   }
   linganisha gawanya(10, 0) {
-    Hamna => { chapisha("Kosa lilitokea") }
-    _ => {}
+    Tokeo::Sawa(v)  => { chapisha("Jibu: " + (v kama Neno)) }
+    Tokeo::Kosa(e) => { chapisha("Kosa: " + e) }
   }
+}
+```
+
+Method-based checks (`.ni_kosa()`, `.kosa()`) also work, but only against the value where it's
+first produced (calling them later on a value stored in a `weka` doesn't satisfy `SEM048` — see
+above):
+
+```asili
+ikiwa gawanya(10, 0).ni_kosa() {
+  chapisha("Kosa lilitokea")
 }
 ```
 
@@ -92,22 +115,24 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 |--------------------|------------------------------|
 | Thamani inaweza kukosekana | `Chaguo<T>`, angalia na `Hamna` |
 | Operesheni inaweza kushindwa | `Tokeo<T,E>`, tumia `jaribu` |
-| Unataka kusimamisha mara moja | `tupa "ujumbe wa kosa"` |
+| Unataka kusimamisha mara moja | `rejesha kosa(...)` kutoka kazi inayorudisha `Tokeo` |
 | Index inaweza kuwa nje ya mipaka | `a[i]?` kueneza makosa |
 
 ---
 
-## Kosa la Haraka kwa `tupa`
+## Kutoa Kosa Haraka (Early Error Return)
+
+There is no "throw a value" statement — `tupa <jina>` only drops a variable from scope (see
+[03-udhibiti.md](03-udhibiti.md)). To exit early with an error, return `Tokeo`'s `Kosa` variant:
 
 ```asili
-kazi hakikisha_umri(umri: Namba) -> Tupu {
+kazi hakikisha_umri(umri: Namba) -> Tokeo<Namba, Neno> {
   ikiwa umri < 0 {
-    tupa "Umri hauwezi kuwa hasi"
+    rejesha kosa("Umri hauwezi kuwa hasi")
   }
   ikiwa umri > 150 {
-    tupa "Umri si wa kawaida"
+    rejesha kosa("Umri si wa kawaida")
   }
+  rejesha tokeo(umri)
 }
 ```
-
-`tupa` ends execution of the current function and propagates the error value to the caller.

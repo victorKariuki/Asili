@@ -33,12 +33,16 @@ weka hakuna: Tupu = TUPU
 | `INF`       | Namba | ∞       | Alias ya `Ukomo`               |
 | `NAN`       | Namba | NaN     | Alias ya `Siyo_Namba`          |
 
+`chapisha` requires a `Neno` argument, so cast with `kama Neno` first. `kama` binds tighter
+than `==` (see [09-waendeshaji.md](09-waendeshaji.md)), so a comparison being cast needs
+parens.
+
 ```asili
-chapisha(Ukomo)               # inf
-chapisha(-Ukomo)              # -inf
-chapisha(Siyo_Namba)          # NaN
-chapisha(Siyo_Namba == Siyo_Namba kama Neno)  # si_kweli — NaN ≠ NaN
-chapisha(1.0 / 0.0 == Ukomo kama Neno)        # kweli
+chapisha(Ukomo kama Neno)                        # Ukomo
+chapisha(-Ukomo kama Neno)                        # -Ukomo
+chapisha(Siyo_Namba kama Neno)                    # Siyo_Namba
+chapisha((Siyo_Namba == Siyo_Namba) kama Neno)    # si_kweli — NaN ≠ NaN
+chapisha((1.0 / 0.0 == Ukomo) kama Neno)          # kweli
 ```
 
 ## Maadili ya Hisabati (Math Constants)
@@ -60,7 +64,7 @@ chapisha(1.0 / 0.0 == Ukomo kama Neno)        # kweli
 | `EPSILON`   | 2.220446049250313e-16 | Tofauti ndogo zaidi ya float |
 
 ```asili
-weka eneo = PI * duara(5)        # eneo la duara, r=5
+weka eneo = PI * (5 * 5)         # eneo la duara, r=5
 weka g = PHI * PHI - PHI         # ≈ 1.0 (golden ratio identity)
 ```
 
@@ -78,7 +82,7 @@ weka g = PHI * PHI - PHI         # ≈ 1.0 (golden ratio identity)
 chapisha("Toleo: " + TOLEO)
 chapisha("Mfumo: " + JINA_OS)
 
-weka siku_kwa_wiki = SEKUNDE_KWA_SIKU * 7
+weka siku_kwa_wiki = SEKUNDE_KWA_SIKU * 7   # 604800
 ```
 
 > These are truly global — they are the same constants exported by the stdlib modules (`hisabati`, `mfumo`, `majira`, `faili`), but seeded directly into the global environment so they work even without any `leta` statement.

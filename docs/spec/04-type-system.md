@@ -107,7 +107,7 @@ Conversion from values to **Neno** (e.g. `Namba` → `Neno`) is defined via the 
 
 ## Abstraction (Sifa and generics)
 
-- **Sifa (Trait/Interface):** Defines shared behaviour (e.g. `sifa Onyesheka`). Types implement Sifa via `shughuli ya`.
+- **Sifa (Trait/Interface):** Defines shared behaviour (e.g. `sifa Onyesheka`). Types implement Sifa via `shughuli ya X kwa Trait`.
 - **Jumla\<T\> (Generics):** Logic parameterised over type `T`; works for any type that satisfies the required bounds.
 
 ---

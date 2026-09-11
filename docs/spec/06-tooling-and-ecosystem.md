@@ -22,20 +22,29 @@ Previous: [Standard Library](05-standard-library.md) | [Overview](../SPECIFICATI
 |---------|---------|
 | `pata njozi` | Initialize a new project. |
 | `pata ongeza <lib>` | Add a dependency. |
-| `pata jenga` | Compile project into a standalone executable (or bytecode). |
+| `pata jenga` | Compile project into bytecode (`.asb`). |
+| `pata jenga --tenda` | Compile and run the entrypoint (`kuu`) in one step. |
+| `pata tenda <path.asb>` | Run an already-compiled `.asb` artifact directly, without recompiling. |
 | `pata jaribu` | Run internal `jaribio` test blocks. |
 | `pata nadhifu` | Auto-format Swahili code to standard style (line-based; best-effort; idempotent for current rules; AST-based formatter may follow in a later phase). |
+| `pata thibitisha` | Validate public API documentation coverage and formatting compliance. |
+| `pata repl` | Start an interactive REPL (persistent environment; `?topic` shows inline help). |
 | `pata mwalimu` | Start the Mwalimu LSP server (stdio). For use by editors; see [Execution and Roadmap](07-execution-and-roadmap.md) Phase II. |
 
 ---
 
 ## Mwalimu (LSP)
 
-Phase II deliverable. A Language Server Protocol implementation (tower-lsp, Rust) providing diagnostics and hover for Asili (`.as`) sources.
+Phase II deliverable. A Language Server Protocol implementation (tower-lsp, Rust). See
+[mwalimu-design.md](../design/mwalimu-design.md) for architecture details.
 
 - **How to run:** From the project root, run `pata mwalimu` (or the standalone `pata-lsp` binary). Configure your editor to use command `pata` with arguments `["mwalimu"]`, or command `pata-lsp`, with stdio transport.
-- **Makosa (Diagnostics):** Lex, parse, and semantic errors are published as LSP diagnostics (Swahili-centric messages, optional code/source).
-- **Uchambuzi (Hover):** Hover over identifiers and keywords shows short documentation (e.g. keyword, function name). Goto-definition and completion may be added in a later phase.
+- **Makosa (Diagnostics):** Lex, parse, semantic, and lint errors are published as LSP diagnostics (Swahili-centric messages, optional code/source), re-run on every edit.
+- **Uchambuzi (Hover):** Resolves identifiers to semantic type information (variable/function/struct/trait signatures, generic type expansion), not just a bare keyword lookup.
+- **Completion:** Keywords, builtin types/functions, module-level declarations.
+- **Goto-definition, find-references, rename:** Single-document, via symbol resolution.
+- **Symbols:** Document symbols (file outline) and workspace symbols (cross-document search).
+- **Signature help and document formatting** are also implemented.
 
 ---
 

@@ -205,6 +205,7 @@ fn recursion_depth_limit_eval() {
         is_test: false,
         is_public: false,
         line: 1,
+        column: 1,
         attrs: vec![],
     };
     let kuu = Function {
@@ -215,6 +216,7 @@ fn recursion_depth_limit_eval() {
                 name: "Orodha<Neno>".into(),
             },
             line: 1,
+            column: 1,
         }],
         return_type: TypeExpr {
             name: "Tupu".into(),
@@ -225,6 +227,7 @@ fn recursion_depth_limit_eval() {
         is_test: false,
         is_public: false,
         line: 1,
+        column: 1,
         attrs: vec![],
     };
     let module = Module {

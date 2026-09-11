@@ -16,7 +16,7 @@ fn test_tokeo_ok_value() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
         kazi test() -> Tupu {
-            weka res = Tokeo::Ok(42.0)
+            weka res = Tokeo::Sawa(42.0)
         }
     "#;
     let v = parse_and_eval(src, "test");
@@ -29,7 +29,7 @@ fn test_tokeo_err_value() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
         kazi test() -> Tupu {
-            weka res = Tokeo::Err("error")
+            weka res = Tokeo::Kosa("error")
         }
     "#;
     let v = parse_and_eval(src, "test");
@@ -42,7 +42,7 @@ fn test_tokeo_ni_kosa_ok() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
         kazi test() -> Ukweli {
-            weka res = Tokeo::Ok(100.0)
+            weka res = Tokeo::Sawa(100.0)
             rejesha res.ni_kosa()
         }
     "#;
@@ -56,7 +56,7 @@ fn test_tokeo_ni_kosa_err() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
         kazi test() -> Ukweli {
-            weka res = Tokeo::Err("something failed")
+            weka res = Tokeo::Kosa("something failed")
             rejesha res.ni_kosa()
         }
     "#;
@@ -70,7 +70,7 @@ fn test_tokeo_extract_error() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
         kazi test() -> Neno {
-            weka res = Tokeo::Err("failed")
+            weka res = Tokeo::Kosa("failed")
             rejesha res.kosa()
         }
     "#;
@@ -84,7 +84,7 @@ fn test_tokeo_angu_ok() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
         kazi test() -> Namba {
-            weka res = Tokeo::Ok(50.0)
+            weka res = Tokeo::Sawa(50.0)
             rejesha res.angu(0.0)
         }
     "#;
@@ -98,7 +98,7 @@ fn test_tokeo_angu_err() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
         kazi test() -> Namba {
-            weka res = Tokeo::Err("problem")
+            weka res = Tokeo::Kosa("problem")
             rejesha res.angu(99.0)
         }
     "#;
@@ -112,7 +112,7 @@ fn test_tokeo_propagate() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
         kazi may_fail() -> Tokeo {
-            rejesha Tokeo::Err("oops")
+            rejesha Tokeo::Kosa("oops")
         }
         kazi test() -> Tupu {
             weka res = may_fail()
@@ -128,7 +128,7 @@ fn test_chaguo_some() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
         kazi test() -> Tupu {
-            weka opt = Chaguo::Some(42.0)
+            weka opt = Chaguo::Kuna(42.0)
         }
     "#;
     let v = parse_and_eval(src, "test");
@@ -154,7 +154,7 @@ fn test_chaguo_ni_po() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
         kazi test() -> Ukweli {
-            weka opt = Chaguo::Some(10.0)
+            weka opt = Chaguo::Kuna(10.0)
             rejesha opt.ni_po()
         }
     "#;

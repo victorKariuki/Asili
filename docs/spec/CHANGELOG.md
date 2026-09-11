@@ -4,8 +4,8 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
-- Implementation (Nuru comparison plan): Phase A (docs/howto, install UX, examples), B (LSP split, builtins split), D (REPL, docs/repl + ?topic), E (VSCode extension), F2 (DAP doc note). Phase C (eval/value split) and E2/F1 deferred. See [docs/design/dap-later.md](../docs/design/dap-later.md) for DAP.
-- Architecture, standard library, tooling, execution ([02-architecture-and-files.md](02-architecture-and-files.md), [05-standard-library.md](05-standard-library.md), [06-tooling-and-ecosystem.md](06-tooling-and-ecosystem.md), [07-execution-and-roadmap.md](07-execution-and-roadmap.md)): clarified stdlib (built-in + lib/std surface) and third-party modules (tegemezi). See [docs/nuru-comparison.md](../docs/nuru-comparison.md) for tooling/structure comparison.
+- Implementation (Nuru comparison plan): Phase A (docs/howto, install UX, examples), B (LSP split, builtins split), D (REPL, docs/repl + ?topic), E (VSCode extension), F2 (DAP doc note). Phase C (eval/value split) and E2/F1 deferred. See [docs/design/dap-later.md](../design/dap-later.md) for DAP.
+- Architecture, standard library, tooling, execution ([02-architecture-and-files.md](02-architecture-and-files.md), [05-standard-library.md](05-standard-library.md), [06-tooling-and-ecosystem.md](06-tooling-and-ecosystem.md), [07-execution-and-roadmap.md](07-execution-and-roadmap.md)): clarified stdlib (built-in + lib/std surface) and third-party modules (tegemezi). See [docs/design/implementation-status.md](../design/implementation-status.md) for current tooling/structure status.
 - Tooling ([06-tooling-and-ecosystem.md](06-tooling-and-ecosystem.md)): Phase II Mwalimu (LSP) and Wasm: `pata mwalimu` and `pata-lsp` binary; LSP provides diagnostics and hover for `.as` files. Wasm: evaluator and `asili-wasm` driver build for `wasm32-unknown-unknown` with spec-compliant I/O stubs; `run_source` entry point; CI workflow for wasm32 build.
 - Tooling ([06-tooling-and-ecosystem.md](06-tooling-and-ecosystem.md)): `pata nadhifu` documented as line-based, best-effort; AST-based formatter may follow. Phase II: mfumo builtin stubs, test runner (exit codes, summary, `--list`), docs/examples, evaluator undefined-variable message improved to quote name.
 - Execution and roadmap ([07-execution-and-roadmap.md](07-execution-and-roadmap.md)): Phase I feature–phase map updated to reflect core complete (umbo, shughuli ya, Orodha index, Kamusi, Herufi, Jozi, linganisha struct/Jozi).
@@ -20,6 +20,21 @@ All notable changes to the Asili specification are recorded here.
 - Overview and maintenance ([../SPECIFICATION.md](../SPECIFICATION.md), [00-maintenance.md](00-maintenance.md)): quick reference now includes `Panic` and `Ownership` rows; maintenance now explicitly classifies GC-default to ownership-default as a major substrate shift.
 - Operator and numeric-edge model ([03-syntax.md](03-syntax.md), [04-type-system.md](04-type-system.md), [05-standard-library.md](05-standard-library.md), [08-resolved-decisions.md](08-resolved-decisions.md)): added complete operator families (including `siyo_biti`, compound assignment, and `wakati milele`), IEEE-754 edge-state vocabulary (`Ukomo`, `Siyo_Namba`), friction terms (`Mfuriko`, `Ufinyu`), and `hisabati` helpers (`duara`, `absolute`) with fallible math signatures normalized to `Tokeo<Namba, Kosa>`.
 - Consistency fixes ([SPECIFICATION.md](../SPECIFICATION.md), [07-execution-and-roadmap.md](07-execution-and-roadmap.md), [08-resolved-decisions.md](08-resolved-decisions.md), [04-type-system.md](04-type-system.md), [05-standard-library.md](05-standard-library.md)): aligned master title to v1.1, clarified Phase II as opt-in managed/GC module work, removed ownership/lifetime deferral contradiction, and made fixed-width arithmetic semantics normative (wrapping by default; checked flows via `Tokeo`).
+- Type system ([04-type-system.md](04-type-system.md)): corrected trait-implementation syntax
+  from bare `shughuli ya` to `shughuli ya X kwa Trait`.
+- Tooling ([06-tooling-and-ecosystem.md](06-tooling-and-ecosystem.md)): added `pata jenga
+  --tenda`, `pata tenda`, `pata thibitisha`, and `pata repl` to the command table (previously
+  undocumented despite existing); expanded the Mwalimu (LSP) feature list to include
+  completion, goto-definition, find-references, rename, workspace symbols, and signature help
+  (previously described as diagnostics/hover only).
+- Standard library ([05-standard-library.md](05-standard-library.md)): added a dedicated
+  `Kasha_GC<T>` subsection under Moduli ya Msingi (previously only referenced in passing from
+  the roadmap doc).
+- Spec directory moved from top-level `spec/` to `docs/spec/`, and `SPECIFICATION.md` to
+  `docs/SPECIFICATION.md`, consolidating all documentation (spec, design, language, REPL,
+  howto) under one `docs/` tree; all internal and external cross-references updated. Root-level
+  `PHASE_I.md`/`PHASE_II.md` (superseded, redundant with
+  [docs/design/implementation-status.md](../design/implementation-status.md)) removed.
 
 ## 1.1
 

@@ -37,7 +37,7 @@ weka z = zao(3, 5)            # 15
 weka g = jaribu gawio(10, 2)  # 5 (Tokeo)
 
 weka mz = jaribu mizizi(9)    # 3.0 (Tokeo; fails if n < 0)
-weka d = duara(7)             # 49
+weka d = duara(7.4)           # 7 (round to nearest — not "square")
 weka k = jaribu kipeo(2, 10)  # 1024 (Tokeo)
 
 weka ab = absolute(-5)        # 5
@@ -95,13 +95,23 @@ leta majira
 weka wakati_sasa = sasa()              # Wakati: current timestamp
 weka sek = sekunde(wakati_sasa)        # Namba: seconds since epoch
 weka w2 = kutoka_sekunde(1700000000)   # Wakati: from epoch seconds
-weka umbizwa = umbiza(wakati_sasa, "%Y-%m-%d")  # formatted string
-lala(1000)                              # sleep for 1000 milliseconds
+weka umbizwa = umbiza(wakati_sasa)     # formatted string (no format-string argument today —
+                                        # umbiza takes exactly 1 arg: a Wakati)
+lala(1)                                 # sleep for 1 second (argument is seconds, not ms)
 
 weka sasa_namba = majira()             # Namba: raw seconds since epoch (not Wakati)
 ```
 
-> `majira()` returns `Namba` (raw float seconds). `sasa()` returns `Wakati` (a structured value with `.sekunde()` method and `umbiza()` support). Use `sasa()` when you need formatting or method access; use `majira()` for simple elapsed-time arithmetic.
+> `majira()` returns `Namba` (raw float seconds). `sasa()` returns `Wakati` — a plain opaque
+> time value with **no methods of its own**; `sekunde(w)` and `umbiza(w)` are free functions
+> that take a `Wakati` argument (`w.sekunde()`/`w.umbiza()` do not exist and fail to compile:
+> `SEM039: aina 'Wakati' haina njia`). Use `sasa()` + the free functions above when you need
+> formatting; use `majira()` for simple elapsed-time arithmetic.
+>
+> **Known bug:** `umbiza()`'s calendar-date formatting is inaccurate — it uses fixed 30-day
+> months and no leap-year handling, so the date portion can be off by more than two weeks
+> depending on the time of year (the time-of-day portion is correct). See
+> [implementation-status.md](../design/implementation-status.md).
 
 **Maadili ya majira** — available after `leta majira`:
 
@@ -139,7 +149,8 @@ chapisha(arch())           # e.g. "x86_64"
 chapisha(ni_debug() kama Neno)   # kweli / si_kweli
 chapisha(ni_wasm() kama Neno)    # kweli / si_kweli
 weka env = mazingira()     # Kamusi<Neno,Neno> of all env vars
-weka ms = muda_wa_kuanza() # milliseconds since process start
+weka w = muda_wa_kuanza()  # Wakati: seconds since Unix epoch, captured once at process
+                            # start (not milliseconds, not relative to process start time)
 ```
 
 ### kiungo — FFI
@@ -159,6 +170,41 @@ leta sambamba
 weka mwendo = anza_mwendo(hesabu_kubwa)
 weka jibu = subiri_mwendo(mwendo)
 ```
+
+### kasha_gc — Managed Memory (Kasha_GC\<T\>)
+
+Opt-in reference-counted shared wrapper, layered on top of the default ownership model — not a
+replacement for it, and not a tracing/cycle-collecting garbage collector (a `Kasha_GC<T>` that
+references itself, directly or through others, leaks; there is no cycle detection).
+
+```asili
+leta kasha_gc
+
+weka a = kasha_gc_unda(0.0)     # wrap a value: Kasha_GC<Namba>
+weka b = a.shirikisha()         # explicit share: b and a point at the same cell (like Rust's Rc::clone)
+
+b.weka(42.0)                    # mutate through b...
+chapisha(a.pata() kama Neno)    # ...visible through a too: "42"
+
+chapisha(a.idadi() kama Neno)   # live handle count sharing this cell: "2"
+tupa b                          # dropping a handle decrements the count, same as any other `tupa`
+chapisha(a.idadi() kama Neno)   # "1"
+```
+
+`weka b = a` alone (without `.shirikisha()`) still **moves** `a`, exactly like any other value —
+Kasha_GC does not change move-checking. Sharing a cell always goes through `.shirikisha()`, mirroring
+how Rust's own `Rc<T>` requires an explicit `.clone()` rather than sharing on plain assignment.
+
+| Method | Effect |
+|---|---|
+| `kasha_gc_unda(v)` | Wrap `v`, returning a new `Kasha_GC<T>` handle. |
+| `.pata()` | Read a snapshot of the current inner value (a copy, not a live view). |
+| `.weka(v)` | Replace the inner value; visible through every other live handle to the same cell. |
+| `.shirikisha()` | Share this cell: returns a new handle with its own binding, same underlying cell. |
+| `.idadi()` | Number of live handles currently sharing this cell. |
+
+`==` on two `Kasha_GC<T>` handles compares **identity** (do they share the same cell?), not
+contents — two separately-`kasha_gc_unda`'d handles with equal inner values are not `==`.
 
 ---
 

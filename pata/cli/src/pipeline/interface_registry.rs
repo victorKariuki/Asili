@@ -143,7 +143,7 @@ impl InterfaceRegistry {
         for entry in fs::read_dir(&std_path)
             .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", std_path.display()), 1))?
         {
-            let entry = entry.map_err(|e| CliError::new(format!("hitilafu ya entry: {e}"), 1))?;
+            let entry = entry.map_err(|e| CliError::new(format!("hitilafu ya kiingilio: {e}"), 1))?;
             let path = entry.path();
             if path.extension().map(|e| e == "asi").unwrap_or(false) {
                 let name = path

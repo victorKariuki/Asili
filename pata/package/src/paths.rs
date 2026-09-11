@@ -12,9 +12,9 @@ pub struct Paths {
     pub asili_dir: PathBuf,
     /// .asili/packages/ for external packages
     pub packages_dir: PathBuf,
-    /// .asili/target/ for build cache
+    /// .asili/kilele/ for build cache
     pub build_cache_dir: PathBuf,
-    /// target/ for final build artifacts
+    /// kilele/ for final build artifacts
     pub target_dir: PathBuf,
     /// lib/ for local packages
     pub lib_dir: PathBuf,
@@ -28,8 +28,8 @@ impl Paths {
         let root = root.as_ref().to_path_buf();
         let asili_dir = root.join(".asili");
         let packages_dir = asili_dir.join("packages");
-        let build_cache_dir = asili_dir.join("target");
-        let target_dir = root.join("target");
+        let build_cache_dir = asili_dir.join("kilele");
+        let target_dir = root.join("kilele");
         let lib_dir = root.join("lib");
         let src_dir = root.join("src");
 
@@ -90,12 +90,12 @@ impl Paths {
 
     /// Create .gitignore content for workspace
     pub fn gitignore_content() -> &'static str {
-        r#"# Build outputs
-/target/
+        r#"# Kilele za ujenzi
+/kilele/
 /.asili/packages/
-/.asili/target/
+/.asili/kilele/
 
-# Lock file (optional: track for reproducible builds)
+# Faili ya lock (hiari: fuatilia kwa ujenzi unaoweza kurudiwa)
 # Asili.lock
 
 # IDE
@@ -134,7 +134,7 @@ mod tests {
         assert_eq!(paths.root, temp.path());
         assert_eq!(paths.asili_dir, temp.path().join(".asili"));
         assert_eq!(paths.packages_dir, temp.path().join(".asili/packages"));
-        assert_eq!(paths.target_dir, temp.path().join("target"));
+        assert_eq!(paths.target_dir, temp.path().join("kilele"));
     }
 
     #[test]
@@ -186,7 +186,7 @@ mod tests {
         assert!(gitignore.exists());
 
         let content = std::fs::read_to_string(&gitignore).unwrap();
-        assert!(content.contains("target/"));
+        assert!(content.contains("kilele/"));
         assert!(content.contains(".asili/packages/"));
     }
 }

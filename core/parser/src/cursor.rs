@@ -86,7 +86,7 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn err_here(&mut self, code: &'static str, msg: &str) {
-        let mut d = Diagnostic::new(code, msg).with_stage("parse");
+        let mut d = Diagnostic::new(code, msg).with_stage("uchanganuzi");
         if !self.is_eof() {
             d = d.with_span(self.peek().line, self.peek().column);
         }

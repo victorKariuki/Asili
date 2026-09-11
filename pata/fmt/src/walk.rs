@@ -16,7 +16,7 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         let path = entry.path();
 
         // Skip target directories
-        if path.file_name().map(|n| n == "target").unwrap_or(false) {
+        if path.file_name().map(|n| n == "kilele").unwrap_or(false) {
             continue;
         }
 

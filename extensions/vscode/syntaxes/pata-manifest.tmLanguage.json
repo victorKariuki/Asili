@@ -1,0 +1,85 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Pata Manifest",
+  "scopeName": "source.pata-manifest",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#table-header" },
+    { "include": "#key-value" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.pata-manifest"
+    },
+    "table-header": {
+      "match": "^\\s*(\\[\\[?)\\s*([A-Za-z0-9_.\\-]+)\\s*(\\]\\]?)",
+      "captures": {
+        "1": { "name": "punctuation.definition.table.begin.pata-manifest" },
+        "2": { "name": "entity.name.section.pata-manifest" },
+        "3": { "name": "punctuation.definition.table.end.pata-manifest" }
+      }
+    },
+    "key-value": {
+      "begin": "^\\s*([A-Za-z0-9_\\-]+)\\s*(=)",
+      "beginCaptures": {
+        "1": { "name": "variable.other.key.pata-manifest" },
+        "2": { "name": "keyword.operator.assignment.pata-manifest" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#string" },
+        { "include": "#boolean" },
+        { "include": "#number" },
+        { "include": "#inline-table" },
+        { "include": "#array" }
+      ]
+    },
+    "string": {
+      "match": "\"(?:[^\"\\\\]|\\\\.)*\"",
+      "name": "string.quoted.double.pata-manifest"
+    },
+    "boolean": {
+      "match": "\\b(true|false)\\b",
+      "name": "constant.language.boolean.pata-manifest"
+    },
+    "number": {
+      "match": "\\b[0-9]+(\\.[0-9]+)?\\b",
+      "name": "constant.numeric.pata-manifest"
+    },
+    "inline-table": {
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": { "0": { "name": "punctuation.definition.inline-table.begin.pata-manifest" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.inline-table.end.pata-manifest" } },
+      "patterns": [
+        {
+          "match": "([A-Za-z0-9_\\-]+)\\s*(=)",
+          "captures": {
+            "1": { "name": "variable.other.key.pata-manifest" },
+            "2": { "name": "keyword.operator.assignment.pata-manifest" }
+          }
+        },
+        { "include": "#string" },
+        { "include": "#boolean" },
+        { "include": "#number" },
+        { "include": "#array" }
+      ]
+    },
+    "array": {
+      "begin": "\\[",
+      "end": "\\]",
+      "beginCaptures": { "0": { "name": "punctuation.definition.array.begin.pata-manifest" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.array.end.pata-manifest" } },
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#string" },
+        { "include": "#boolean" },
+        { "include": "#number" },
+        { "include": "#inline-table" },
+        { "include": "#array" }
+      ]
+    }
+  }
+}

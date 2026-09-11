@@ -19,6 +19,7 @@ pub struct Constant {
     pub ty: TypeExpr,
     pub value: Expr,
     pub line: usize,
+    pub column: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -27,6 +28,7 @@ pub struct EnumDecl {
     pub generics: Vec<String>,
     pub variants: Vec<EnumVariant>,
     pub line: usize,
+    pub column: usize,
     pub is_public: bool,
     pub attrs: Vec<Attribute>,
 }
@@ -36,6 +38,7 @@ pub struct EnumVariant {
     pub name: String,
     pub data: Option<TypeExpr>,
     pub line: usize,
+    pub column: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -64,6 +67,8 @@ pub struct StructDecl {
     /// Field names and optional types. Order is declaration order.
     pub fields: Vec<(String, Option<TypeExpr>)>,
     pub line: usize,
+    // column of `name` — see the Expr::Ident NOTE below; same reasoning for LSP semantic tokens.
+    pub column: usize,
     pub attrs: Vec<Attribute>,
     pub is_public: bool,
 }
@@ -72,6 +77,7 @@ pub struct StructDecl {
 pub struct TraitDecl {
     pub name: String,
     pub line: usize,
+    pub column: usize,
     pub attrs: Vec<Attribute>,
     pub is_public: bool,
 }
@@ -95,6 +101,7 @@ pub struct Function {
     pub is_test: bool,
     pub is_public: bool,
     pub line: usize,
+    pub column: usize,
     pub attrs: Vec<Attribute>,
 }
 
@@ -103,6 +110,7 @@ pub struct Param {
     pub name: String,
     pub ty: TypeExpr,
     pub line: usize,
+    pub column: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -123,12 +131,17 @@ pub enum Stmt {
         ty: Option<TypeExpr>,
         value: Expr,
         line: usize,
+        // `column` of `name` — added for LSP semantic-token highlighting (pata/lsp/src/semantic.rs)
+        // so declarations/usages can be colored at their real position, not just column 1.
+        column: usize,
     },
     Assign {
         name: String,
         op: AssignOp,
         value: Expr,
         line: usize,
+        // see `column` note on `Let` above.
+        column: usize,
     },
     If {
         cond: Expr,
@@ -146,6 +159,7 @@ pub enum Stmt {
     For {
         label: Option<String>,
         var: String,
+        var_column: usize,
         mode: ForMode,
         body: Block,
         line: usize,
@@ -203,15 +217,27 @@ pub struct MatchArm {
 pub enum Pattern {
     Wildcard,
     Literal(Expr),
-    Ident(String),
+    // NOTE(syntax-highlighting): mirrors the Expr::Ident change above — carries its own
+    // position so a match-arm binding (`n` in `Fulani(n) => ...`) can be tracked as a real
+    // scoped local by pata/lsp/src/semantic.rs, not just left uncolored.
+    Ident {
+        name: String,
+        line: usize,
+        column: usize,
+    },
     Struct {
         struct_name: String,
+        line: usize,
+        column: usize,
         fields: Vec<(String, Pattern)>,
     },
     Enum {
         enum_name: String,
         variant_name: String,
         data: Option<Box<Pattern>>,
+        // position of `variant_name` specifically — used to emit an enumMember token.
+        variant_line: usize,
+        variant_column: usize,
     },
     Jozi(Box<Pattern>, Box<Pattern>),
 }
@@ -222,7 +248,15 @@ pub enum Expr {
     String(String),
     Bool(bool),
     Char(char),
-    Ident(String),
+    // NOTE(syntax-highlighting): Ident used to be a bare Ident(String). It now carries its own
+    // line/column so the LSP can emit a semantic-highlight token at every *usage* of a name, not
+    // just its declaration site (pata/lsp/src/semantic.rs). If you're touching Expr::Ident call
+    // sites elsewhere (attrs.rs extraction, etc.), match with `Expr::Ident { name, .. }`.
+    Ident {
+        name: String,
+        line: usize,
+        column: usize,
+    },
     Hamna,
     Group(Box<Expr>),
     Unary {
@@ -263,6 +297,12 @@ pub enum Expr {
     StructLiteral {
         struct_name: String,
         fields: Vec<(String, Expr)>,
+        // Parallel to `fields` (index-aligned) — the (line, column) of each field *name* at
+        // this construction site, e.g. `x` in `Point { x: 1, y: 2 }`. Kept separate from
+        // `fields` itself rather than widening its tuple, since `fields` is destructured by
+        // position in several other places (evaluator, semantic analyzer) that have no need
+        // for a position and would otherwise all need updating for no benefit to them.
+        field_positions: Vec<(usize, usize)>,
         line: usize,
     },
     EnumConstruct {
@@ -270,11 +310,16 @@ pub enum Expr {
         variant_name: String,
         data: Option<Box<Expr>>,
         line: usize,
+        // column of `variant_name` (line is already the variant name's own line).
+        column: usize,
     },
     FieldAccess {
         receiver: Box<Expr>,
         field: String,
         line: usize,
+        // line/column of `field` itself (not the receiver) — for LSP semantic "property" tokens.
+        field_line: usize,
+        field_column: usize,
     },
     Index {
         base: Box<Expr>,
@@ -344,6 +389,7 @@ impl fmt::Display for ValueType {
             ValueType::Struct(name) => write!(f, "{}", name),
             ValueType::Wakati => write!(f, "Wakati"),
             ValueType::Anuani => write!(f, "Anuani"),
+            ValueType::KashaGC(t) => write!(f, "Kasha_GC<{}>", t),
             ValueType::TypeVar(name) => write!(f, "{}", name),
             ValueType::Unknown => write!(f, "Unknown"),
         }
@@ -374,6 +420,8 @@ pub enum ValueType {
     Wakati,
     /// Raw memory address; used by syscall and kiungo (FFI).
     Anuani,
+    /// Reference-counted shared wrapper (opt-in `leta kasha_gc`); see spec's managed-memory module.
+    KashaGC(Box<ValueType>),
     /// Type variable (T, E, U, etc. for generic types).
     TypeVar(String),
     Unknown,

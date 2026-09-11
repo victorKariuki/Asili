@@ -3,5 +3,29 @@
   "asili.serverArgs": ["mwalimu"],
   "[asili]": {
     "editor.semanticHighlighting.enabled": true
+  },
+  // Scoped to Asili only via the ":asili" language suffix — doesn't touch other languages.
+  // Without this, parameters render in the same pink as keywords under the default theme,
+  // since it defines no semantic rule for "parameter" and it falls back to a color close to
+  // "keyword". Pin explicit, distinct colors instead of leaving it to whatever theme happens
+  // to be active.
+  "editor.semanticTokenColorCustomizations": {
+    "rules": {
+      "parameter:asili": "#82AAFF",
+      "property:asili": "#89DDFF",
+      "variable.readonly:asili": {
+        "foreground": "#A1CDA8",
+        "fontStyle": "italic"
+      },
+      // Enum variants (Some, Ok, Err, custom ones) are values, not types — give them their
+      // own color so they read differently from real struct/enum type names, which the
+      // grammar's capitalized-identifier rule would otherwise lump them in with.
+      "enumMember:asili": "#F78C6C",
+      // Builtins (chapisha, orodha, ...) vs. user-defined functions of the same visual weight.
+      "function.defaultLibrary:asili": {
+        "foreground": "#82AAFF",
+        "fontStyle": "italic"
+      }
+    }
   }
 }

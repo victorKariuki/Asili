@@ -11,18 +11,18 @@ use walk::collect_asili_files;
 
 #[derive(Parser)]
 #[command(name = "pata fmt")]
-#[command(about = "Format Asili source files", long_about = None)]
+#[command(about = "Nadhifisha faili za chanzo za Asili", long_about = None)]
 struct Cli {
-    /// File or directory to format
-    #[arg(value_name = "PATH")]
+    /// Faili au saraka ya kunadhifisha
+    #[arg(value_name = "NJIA")]
     path: Option<PathBuf>,
 
-    /// Check formatting without modifying files
-    #[arg(short, long)]
+    /// Kagua mfumo bila kubadilisha faili
+    #[arg(short = 'k', long = "kagua")]
     check: bool,
 
-    /// Print diffs for non-conforming files
-    #[arg(short, long)]
+    /// Onyesha tofauti za faili zisizofuata mfumo
+    #[arg(short = 't', long = "tofauti")]
     diff: bool,
 }
 
@@ -80,10 +80,10 @@ fn format_files(files: &[PathBuf], check_only: bool, show_diff: bool) -> Result<
 
 fn print_diff(original: &str, formatted: &str, path: &Path) {
     println!("\n--- {}", path.display());
-    println!("+++ {} (formatted)", path.display());
+    println!("+++ {} (nadhifu)", path.display());
     for (i, (orig_line, fmt_line)) in original.lines().zip(formatted.lines()).enumerate() {
         if orig_line != fmt_line {
-            println!("@@ line {} @@", i + 1);
+            println!("@@ mstari {} @@", i + 1);
             println!("- {}", orig_line);
             println!("+ {}", fmt_line);
         }

@@ -1,17 +1,17 @@
 leta msingi
 leta matumizi
 leta majira
+leta runtime
 
 kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     chapisha("=== Phase I Interactive Demo ===")
     chapisha("")
 
-    chapisha("Ingiza jina lako: ")
-    weka jina = omba()
+    weka jina = omba("Ingiza jina lako: ")
     chapisha("Habari, " + jina + "!")
 
     chapisha("")
-    chapisha("Wakati wa sasa: " + umbiza(majira()))
+    chapisha("Wakati wa sasa: " + umbiza(sasa()))
 
     chapisha("")
     chapisha("Sifa za mfumo:")
@@ -25,6 +25,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     orodha.kila_mmoja("chapisha_namba")
 }
 
+# Renders a boolean as "Ndiyo"/"Hapana" (Yes/No).
 kazi kweli_au_siyo(k: Ukweli) -> Neno {
     ikiwa k {
         rejesha "Ndiyo"
@@ -32,10 +33,12 @@ kazi kweli_au_siyo(k: Ukweli) -> Neno {
     rejesha "Hapana"
 }
 
+# Prints one number from the demo list, spelled out.
 kazi chapisha_namba(n: Namba) -> Tupu {
     chapisha("  - " + namba_kuwa_neno(n))
 }
 
+# Spells out a small whole number (1-5) in Swahili; anything else returns a fallback.
 kazi namba_kuwa_neno(n: Namba) -> Neno {
     ikiwa n == 1.0 {
         rejesha "moja"

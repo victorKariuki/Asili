@@ -78,33 +78,35 @@ dependencies = [
 
 [[package]]
 name = "asili-diagnostics"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "asili-evaluator"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "asili-diagnostics",
  "asili-lexer",
  "asili-parser",
  "bincode",
+ "getrandom 0.2.17",
  "rand",
  "serde",
  "signal-hook",
  "stacker",
  "unicode-segmentation",
+ "wasm-bindgen",
 ]
 
 [[package]]
 name = "asili-lexer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "asili-diagnostics",
 ]
 
 [[package]]
 name = "asili-parser"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "asili-diagnostics",
  "asili-lexer",
@@ -114,18 +116,20 @@ dependencies = [
 
 [[package]]
 name = "asili-runner"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "asili-evaluator",
 ]
 
 [[package]]
 name = "asili-wasm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "asili-evaluator",
  "asili-lexer",
  "asili-parser",
+ "serde-wasm-bindgen",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -521,8 +525,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "wasi",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -871,7 +877,7 @@ dependencies = [
 
 [[package]]
 name = "pata-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "asili-diagnostics",
@@ -879,13 +885,14 @@ dependencies = [
  "asili-lexer",
  "asili-parser",
  "pata-lsp",
+ "pata-package",
  "pulldown-cmark",
  "sha2 0.11.0",
 ]
 
 [[package]]
 name = "pata-fmt"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "asili-lexer",
@@ -896,7 +903,7 @@ dependencies = [
 
 [[package]]
 name = "pata-lint"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "asili-diagnostics",
@@ -907,19 +914,21 @@ dependencies = [
 
 [[package]]
 name = "pata-lsp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "asili-diagnostics",
+ "asili-evaluator",
  "asili-lexer",
  "asili-parser",
  "pata-lint",
+ "serde_json",
  "tokio",
  "tower-lsp",
 ]
 
 [[package]]
 name = "pata-package"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1114,6 +1123,17 @@ checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
  "serde_derive",
+]
+
+[[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
 ]
 
 [[package]]

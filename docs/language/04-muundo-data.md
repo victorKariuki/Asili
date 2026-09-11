@@ -55,8 +55,12 @@ A key-value store. Keys can be any hashable type.
 
 ```asili
 weka m = kamusi_tupu()              # empty dictionary
-weka m2 = {"jina": "Amara", "umri": 30}   # literal syntax
+weka m2 = {"jina": "Amara", "mji": "Nairobi"}   # literal syntax
 ```
+
+**Note:** `{...}` map literals (like `[...]` list literals) require all values to share one
+type — `{"jina": "Amara", "umri": 30}` mixes `Neno` and `Namba` values and fails to compile
+(`SEM100`). Use `kamusi_tupu()` + `.ingiza(...)` calls to build a dict with mixed value types.
 
 ### Njia (Methods)
 
@@ -71,7 +75,8 @@ weka m = kamusi_tupu()
 m.ingiza("mji", "Nairobi")
 m.ingiza("idadi", 5000000)
 
-weka mji = m.pata("mji") kama Neno          # "Nairobi"
+weka mji = m.pata("mji").angu("")           # "Nairobi" — kama Neno does NOT unwrap
+                                             # a Chaguo<Neno>; use .angu() instead
 weka idadi = m.pata("idadi").angu(0)        # 5000000
 weka nchi = m.pata("nchi").angu("Haijulikani")  # "Haijulikani"
 ```
@@ -144,10 +149,12 @@ weka m2 = Mtu { jina: m.jina, umri: m.umri + 1, hai: m.hai }
 
 ### Shughuli za Umbo (Methods)
 
+The method's first parameter must be named `self` (typed with the struct it belongs to):
+
 ```asili
 shughuli ya Mtu {
-  kazi salamu(hii: Mtu) -> Neno {
-    rejesha "Habari, " + hii.jina
+  kazi salamu(self: Mtu) -> Neno {
+    rejesha "Habari, " + self.jina
   }
 }
 

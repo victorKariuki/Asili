@@ -146,7 +146,7 @@ fn parses_method_call() {
     let kuu = module.functions.iter().find(|f| f.name == "kuu").unwrap();
     if let Stmt::Let { value, .. } = &kuu.body.statements[1] {
         if let Expr::MethodCall { receiver, method_name, args, .. } = value {
-            if let Expr::Ident(r) = &**receiver {
+            if let Expr::Ident { name: r, .. } = &**receiver {
                 assert_eq!(r, "x");
             } else {
                 panic!("expected Ident receiver");
@@ -275,7 +275,7 @@ fn method_call_type_checking_is_implemented() {
         if let Expr::MethodCall { receiver, method_name, args, .. } = value {
             assert_eq!(method_name, "urefu");
             assert!(args.is_empty());
-            assert!(matches!(receiver.as_ref(), Expr::Ident(_)));
+            assert!(matches!(receiver.as_ref(), Expr::Ident { .. }));
         } else {
             panic!("expected MethodCall");
         }
