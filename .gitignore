@@ -5,6 +5,7 @@ target
 # Asili build outputs
 *.asb
 *.asm
+kilele/
 
 # IDE / editor
 .idea/

@@ -31,6 +31,14 @@ struct Analyzer<'a> {
     unconsumed_tokeo: Vec<HashSet<String>>,
     /// Per-scope set of variable names that have been dropped.
     dropped_vars: Vec<HashSet<String>>,
+    /// `leta` targets accepted in addition to the builtin-module whitelist (SEM007) — module
+    /// names a project resolver has already confirmed exist (user modules, path dependencies).
+    resolved_modules: HashSet<String>,
+    /// This module's own top-level `thabiti` constants (by name). Distinct from
+    /// `extern_constants`, which holds constants imported *from other* modules — without this,
+    /// a file referencing its own module-level constant failed with SEM045 "jina halijulikani",
+    /// even though the same constant worked fine when imported into a different file.
+    local_constants: HashMap<String, ValueType>,
 }
 
 use super::types::parse_value_type;
@@ -50,10 +58,15 @@ impl<'a> Analyzer<'a> {
         require_main: bool,
         extern_fn_map: HashMap<String, FnContract>,
         extern_constants: HashMap<String, ValueType>,
+        resolved_modules: HashSet<String>,
     ) -> Self {
         let mut fn_map = HashMap::new();
         for f in &module.functions {
             fn_map.insert(f.name.clone(), f);
+        }
+        let mut local_constants = HashMap::new();
+        for c in &module.constants {
+            local_constants.insert(c.name.clone(), parse_value_type(&c.ty.name));
         }
         Self {
             module,
@@ -65,6 +78,8 @@ impl<'a> Analyzer<'a> {
             loop_depth: 0,
             unconsumed_tokeo: Vec::new(),
             dropped_vars: Vec::new(),
+            resolved_modules,
+            local_constants,
         }
     }
 
@@ -79,7 +94,7 @@ impl<'a> Analyzer<'a> {
 
     fn collect_idents_from_expr(expr: &Expr) -> Vec<String> {
         match expr {
-            Expr::Ident(n) => vec![n.clone()],
+            Expr::Ident { name: n, .. } => vec![n.clone()],
             Expr::Group(e) => Self::collect_idents_from_expr(e),
             Expr::Unary { expr: e, .. } => Self::collect_idents_from_expr(e),
             Expr::Binary { left, right, .. } => {
@@ -135,6 +150,86 @@ impl<'a> Analyzer<'a> {
         }
     }
 
+    // #[inline(never)]: keeps this out of check_stmt's stack frame — check_stmt recurses once
+    // per nesting level of control flow, so a large frame there is disproportionately expensive
+    // for deeply-nested source (see phase1_evaluation_depth).
+    #[inline(never)]
+    fn bind_struct_pattern(
+        &self,
+        struct_name: &str,
+        fields: &[(String, Pattern)],
+        scopes: &mut [HashMap<String, Binding>],
+        line: usize,
+    ) {
+        let field_tys: Vec<(String, ValueType)> = self
+            .module
+            .structs
+            .iter()
+            .find(|s| s.name == struct_name)
+            .map(|s| {
+                s.fields
+                    .iter()
+                    .map(|(fname, fty)| {
+                        let ty = fty
+                            .as_ref()
+                            .map(|t| self.type_from_decl(&t.name))
+                            .unwrap_or(ValueType::Unknown);
+                        (fname.clone(), ty)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        for (fname, sub_pat) in fields {
+            if let Pattern::Ident { name: bind_name, .. } = sub_pat {
+                let ty = field_tys
+                    .iter()
+                    .find(|(n, _)| n == fname)
+                    .map(|(_, t)| t.clone())
+                    .unwrap_or(ValueType::Unknown);
+                if let Some(scope) = scopes.last_mut() {
+                    scope.insert(bind_name.clone(), Binding {
+                        ty,
+                        mutable: true,
+                        moved: false,
+                        imm_borrows: 0,
+                        mut_borrowed: false,
+                        created_at: Span { line, column: 1 },
+                        moved_at: None,
+                        borrowed_at: Vec::new(),
+                        dropped_at: None,
+                    });
+                }
+            }
+        }
+    }
+
+    #[inline(never)]
+    fn bind_jozi_pattern(
+        &self,
+        first: &Pattern,
+        second: &Pattern,
+        scopes: &mut [HashMap<String, Binding>],
+        line: usize,
+    ) {
+        for sub_pat in [first, second] {
+            if let Pattern::Ident { name: bind_name, .. } = sub_pat {
+                if let Some(scope) = scopes.last_mut() {
+                    scope.insert(bind_name.clone(), Binding {
+                        ty: ValueType::Unknown,
+                        mutable: true,
+                        moved: false,
+                        imm_borrows: 0,
+                        mut_borrowed: false,
+                        created_at: Span { line, column: 1 },
+                        moved_at: None,
+                        borrowed_at: Vec::new(),
+                        dropped_at: None,
+                    });
+                }
+            }
+        }
+    }
+
     fn run(&mut self) {
         let mut has_main = false;
         let allowed_attrs = ["jaribio", "sharti", "ndani", "kiunganishi"];
@@ -146,12 +241,12 @@ impl<'a> Analyzer<'a> {
             let allowed = matches!(
                 mod_name,
                 "msingi" | "mfumo" | "majira" | "matumizi" | "faili" | "hisabati"
-                    | "runtime" | "syscall" | "kiungo" | "sambamba"
-            );
+                    | "runtime" | "syscall" | "kiungo" | "sambamba" | "kasha_gc"
+            ) || self.resolved_modules.contains(mod_name);
             if !allowed {
                 self.errors.push(
                     Diagnostic::new("SEM007", format!("moduli haijulikani: {}", mod_name))
-                        .with_stage("semantic")
+                        .with_stage("semantiki")
                         .with_span(imp.line, 1),
                 );
             }
@@ -171,8 +266,8 @@ impl<'a> Analyzer<'a> {
             for variant in &e.variants {
                 if !seen.insert(&variant.name) {
                     self.errors.push(
-                        Diagnostic::new("SEM093", format!("jenum '{}' ina variant mara mbili: {}", e.name, variant.name))
-                            .with_stage("semantic")
+                        Diagnostic::new("SEM093", format!("jenum '{}' ina kigezo mara mbili: {}", e.name, variant.name))
+                            .with_stage("semantiki")
                             .with_span(e.line, 1),
                     );
                 }
@@ -185,7 +280,7 @@ impl<'a> Analyzer<'a> {
                 if !seen.insert(fname) {
                     self.errors.push(
                         Diagnostic::new("SEM092", format!("umbo '{}' ina uga mara mbili: {}", s.name, fname))
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(s.line, 1),
                     );
                 }
@@ -200,15 +295,15 @@ impl<'a> Analyzer<'a> {
                 if let Some(first) = f.params.first() {
                     if first.name != "self" {
                         self.errors.push(
-                            Diagnostic::new("SEM100", "njia ya shughuli inahitaji param ya kwanza 'self'")
-                                .with_stage("semantic")
+                            Diagnostic::new("SEM100", "njia ya shughuli inahitaji hoja ya kwanza 'self'")
+                                .with_stage("semantiki")
                                 .with_span(f.line, 1),
                         );
                     }
                 } else {
                     self.errors.push(
-                        Diagnostic::new("SEM101", "njia ya shughuli inahitaji angalau param 'self'")
-                            .with_stage("semantic")
+                        Diagnostic::new("SEM101", "njia ya shughuli inahitaji angalau hoja 'self'")
+                            .with_stage("semantiki")
                             .with_span(f.line, 1),
                     );
                 }
@@ -217,7 +312,7 @@ impl<'a> Analyzer<'a> {
 
         if self.require_main && !has_main {
             self.errors
-                .push(Diagnostic::new("SEM000", "hakuna kazi kuu iliyoonekana").with_stage("semantic"));
+                .push(Diagnostic::new("SEM000", "hakuna kazi kuu iliyoonekana").with_stage("semantiki"));
         }
     }
 
@@ -225,8 +320,8 @@ impl<'a> Analyzer<'a> {
         for a in attrs {
             if !allowed.contains(&a.name.as_str()) {
                 self.errors.push(
-                    Diagnostic::new("SEM008", format!("attribute haijulikani: {}", a.name))
-                        .with_stage("semantic")
+                    Diagnostic::new("SEM008", format!("kiambatanisho haijulikani: {}", a.name))
+                        .with_stage("semantiki")
                         .with_span(a.line, 1),
                 );
             }
@@ -237,14 +332,14 @@ impl<'a> Analyzer<'a> {
         if f.return_type.name.trim() != "Tupu" {
             self.errors.push(
                 Diagnostic::new("SEM001", "kazi kuu lazima irudishe Tupu")
-                    .with_stage("semantic")
+                    .with_stage("semantiki")
                     .with_span(f.line, 1),
             );
         }
         if f.params.len() != 1 {
             self.errors.push(
                 Diagnostic::new("SEM002", "sahihi ya kazi kuu ni kazi kuu(hoja: Orodha<Neno>) -> Tupu")
-                    .with_stage("semantic")
+                    .with_stage("semantiki")
                     .with_span(f.line, 1),
             );
             return;
@@ -253,7 +348,7 @@ impl<'a> Analyzer<'a> {
         if p.name != "hoja" || p.ty.name.replace(' ', "") != "Orodha<Neno>" {
             self.errors.push(
                 Diagnostic::new("SEM002", "sahihi ya kazi kuu ni kazi kuu(hoja: Orodha<Neno>) -> Tupu")
-                    .with_stage("semantic")
+                    .with_stage("semantiki")
                     .with_span(f.line, 1),
             );
         }
@@ -266,7 +361,7 @@ impl<'a> Analyzer<'a> {
                     "SEM120",
                     "lifetime inference kamili bado haijatekelezwa kwa return references",
                 )
-                .with_stage("semantic")
+                .with_stage("semantiki")
                 .with_span(f.line, 1),
             );
         }
@@ -301,8 +396,8 @@ impl<'a> Analyzer<'a> {
             for name in set {
                 if let Some(b) = scopes[0].get(name) {
                     self.errors.push(
-                        Diagnostic::new("SEM048", "Tokeo haukutumiwa - lazima ulinganishe au utumie ?")
-                            .with_stage("semantic")
+                        Diagnostic::new("SEM048", "Tokeo haukutumiwa — lazima ulinganishe au utumie ?")
+                            .with_stage("semantiki")
                             .with_span(b.created_at.line, b.created_at.column),
                     );
                 }
@@ -331,8 +426,8 @@ impl<'a> Analyzer<'a> {
                     if let Some(scope) = scopes.last() {
                         if let Some(b) = scope.get(name) {
                             self.errors.push(
-                                Diagnostic::new("SEM048", "Tokeo haukutumiwa - lazima ulinganishe au utumie ?")
-                                    .with_stage("semantic")
+                                Diagnostic::new("SEM048", "Tokeo haukutumiwa — lazima ulinganishe au utumie ?")
+                                    .with_stage("semantiki")
                                     .with_span(b.created_at.line, b.created_at.column),
                             );
                         }
@@ -358,6 +453,7 @@ impl<'a> Analyzer<'a> {
                 ty,
                 value,
                 line,
+                ..
             } => {
                 let inferred = self.check_expr(value, scopes, UseMode::Return);
                 let declared = ty
@@ -367,7 +463,7 @@ impl<'a> Analyzer<'a> {
                 if ty.is_some() && !self.compatible(&declared, &inferred) {
                     self.errors.push(
                         Diagnostic::new("SEM010", "aina ya weka/thabiti haitalingana na thamani")
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                     );
                 }
@@ -401,6 +497,7 @@ impl<'a> Analyzer<'a> {
                 op,
                 value,
                 line,
+                ..
             } => {
                 let rhs_ty = self.check_expr(value, scopes, UseMode::Return);
                 let mut found = false;
@@ -410,14 +507,14 @@ impl<'a> Analyzer<'a> {
                         if !b.mutable {
                             self.errors.push(
                                 Diagnostic::new("SEM011", "haiwezekani kubadilisha thabiti")
-                                    .with_stage("semantic")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         }
                         if b.mut_borrowed {
                             self.errors.push(
-                                Diagnostic::new("SEM012", "haiwezekani kuassign wakati variable imeazimwa")
-                                    .with_stage("semantic")
+                                Diagnostic::new("SEM012", "haiwezekani kuweka thamani wakati jina limeazimwa")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         }
@@ -431,7 +528,7 @@ impl<'a> Analyzer<'a> {
                                     &b.ty,
                                     &rhs_ty,
                                     "SEM013",
-                                    "aina ya assignment haitalingana".to_string(),
+                                    "aina ya thamani mpya haitalingani na aina ya jina".to_string(),
                                     Span { line: *line, column: 1 },
                                 );
                                 b.moved = false;
@@ -446,16 +543,22 @@ impl<'a> Analyzer<'a> {
                                             "SEM014",
                                             "+= inahitaji (Namba, Namba) au (Neno, Neno) pekee",
                                         )
-                                        .with_stage("semantic")
+                                        .with_stage("semantiki")
                                         .with_span(*line, 1),
                                     );
                                 }
                             }
                             _ => {
                                 if b.ty != ValueType::Namba || rhs_ty != ValueType::Namba {
+                                    let op_sym = match op {
+                                        AssignOp::SubAssign => "-=",
+                                        AssignOp::MulAssign => "*=",
+                                        AssignOp::DivAssign => "/=",
+                                        _ => "muundo wa kuchanganya",
+                                    };
                                     self.errors.push(
-                                        Diagnostic::new("SEM014", "compound assignment inahitaji Namba")
-                                            .with_stage("semantic")
+                                        Diagnostic::new("SEM014", format!("{op_sym} inahitaji Namba pande zote mbili"))
+                                            .with_stage("semantiki")
                                             .with_span(*line, 1),
                                     );
                                 }
@@ -467,7 +570,7 @@ impl<'a> Analyzer<'a> {
                 if !found {
                     self.errors.push(
                         Diagnostic::new("SEM015", format!("jina halijulikani: {name}"))
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                     );
                 }
@@ -483,7 +586,7 @@ impl<'a> Analyzer<'a> {
                 if ty != ValueType::Ukweli {
                     self.errors.push(
                         Diagnostic::new("SEM020", "sharti la ikiwa lazima liwe Ukweli")
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                     );
                 }
@@ -493,7 +596,7 @@ impl<'a> Analyzer<'a> {
                     if ty != ValueType::Ukweli {
                         self.errors.push(
                             Diagnostic::new("SEM021", "sharti la au_ikiwa lazima liwe Ukweli")
-                                .with_stage("semantic")
+                                .with_stage("semantiki")
                                 .with_span(*line, 1),
                         );
                     }
@@ -508,7 +611,7 @@ impl<'a> Analyzer<'a> {
                 if ty != ValueType::Ukweli {
                     self.errors.push(
                         Diagnostic::new("SEM022", "sharti la wakati lazima liwe Ukweli")
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                     );
                 }
@@ -538,7 +641,7 @@ impl<'a> Analyzer<'a> {
                         if st != ValueType::Namba || en != ValueType::Namba {
                             self.errors.push(
                                 Diagnostic::new("SEM048", "kwa kutoka/hadi inahitaji Namba")
-                                    .with_stage("semantic")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         }
@@ -571,8 +674,8 @@ impl<'a> Analyzer<'a> {
                         if let Some(scope) = scopes.last() {
                             if let Some(b) = scope.get(name) {
                                 self.errors.push(
-                                    Diagnostic::new("SEM048", "Tokeo haukutumiwa - lazima ulinganishe au utumie ?")
-                                        .with_stage("semantic")
+                                    Diagnostic::new("SEM048", "Tokeo haukutumiwa — lazima ulinganishe au utumie ?")
+                                        .with_stage("semantiki")
                                         .with_span(b.created_at.line, b.created_at.column),
                                 );
                             }
@@ -594,12 +697,12 @@ impl<'a> Analyzer<'a> {
                         Pattern::Literal(e) => {
                             let _ = self.check_expr(e, scopes, UseMode::Move);
                         }
-                        Pattern::Enum { enum_name, variant_name, data } => {
+                        Pattern::Enum { enum_name, variant_name, data, .. } => {
                             // Validate that the enum exists
                             if !self.module.enums.iter().any(|e| &e.name == enum_name) {
                                 self.errors.push(
                                     Diagnostic::new("SEM094", format!("jenum '{enum_name}' haijulikani"))
-                                        .with_stage("semantic")
+                                        .with_stage("semantiki")
                                         .with_span(*line, 1),
                                 );
                             }
@@ -608,7 +711,7 @@ impl<'a> Analyzer<'a> {
                                 if !e.variants.iter().any(|v| &v.name == variant_name) {
                                     self.errors.push(
                                         Diagnostic::new("SEM095", format!("kigezo '{variant_name}' haipo katika jenum '{enum_name}'"))
-                                            .with_stage("semantic")
+                                            .with_stage("semantiki")
                                             .with_span(*line, 1),
                                     );
                                 }
@@ -619,7 +722,7 @@ impl<'a> Analyzer<'a> {
                                         .and_then(|v| v.data.as_ref())
                                         .map(|ty| self.type_from_decl(&ty.name))
                                         .unwrap_or(ValueType::Unknown);
-                                    if let Pattern::Ident(bind_name) = data_pat.as_ref() {
+                                    if let Pattern::Ident { name: bind_name, .. } = data_pat.as_ref() {
                                         if let Some(scope) = scopes.last_mut() {
                                             scope.insert(bind_name.clone(), Binding {
                                                 ty: inner_ty,
@@ -637,7 +740,13 @@ impl<'a> Analyzer<'a> {
                                 }
                             }
                         }
-                        Pattern::Wildcard | Pattern::Ident(_) | Pattern::Struct { .. } | Pattern::Jozi(_, _) => {}
+                        Pattern::Struct { struct_name, fields, .. } => {
+                            self.bind_struct_pattern(struct_name, fields, scopes, *line);
+                        }
+                        Pattern::Jozi(first, second) => {
+                            self.bind_jozi_pattern(first, second, scopes, *line);
+                        }
+                        Pattern::Wildcard | Pattern::Ident { .. } => {}
                     }
                     self.check_block(&a.body, scopes, return_type, false);
                     scopes.pop();
@@ -645,12 +754,12 @@ impl<'a> Analyzer<'a> {
                 if arms.is_empty() {
                     self.errors.push(
                         Diagnostic::new("SEM023", "linganisha inahitaji angalau mkono mmoja")
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                     );
                 } else {
                     let has_wildcard = arms.iter().any(|a| matches!(a.pattern, Pattern::Wildcard));
-                    let has_ident_catch = arms.iter().any(|a| matches!(a.pattern, Pattern::Ident(_)));
+                    let has_ident_catch = arms.iter().any(|a| matches!(a.pattern, Pattern::Ident { .. }));
                     if !has_wildcard && !has_ident_catch {
                         // Check if all variants of the matched enum are covered
                         let enum_name_from_arms = arms.iter().find_map(|a| {
@@ -675,8 +784,8 @@ impl<'a> Analyzer<'a> {
                         };
                         if !all_covered {
                             self.errors.push(
-                                Diagnostic::new("SEM023", "linganisha inaweza kutokuwa na kufanya kazi kwa kesi zote — ongeza _ => {} kwa kawaida")
-                                    .with_stage("semantic")
+                                Diagnostic::new("SEM023", "linganisha haishughulikii kesi zote zinazowezekana — ongeza _ => {} kama chaguo-msingi")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         }
@@ -686,8 +795,8 @@ impl<'a> Analyzer<'a> {
             Stmt::Break { label: _, line } => {
                 if self.loop_depth == 0 {
                     self.errors.push(
-                        Diagnostic::new("SEM024", "vunja inatumika nje ya loop")
-                            .with_stage("semantic")
+                        Diagnostic::new("SEM024", "vunja inatumika nje ya kitanzi")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                     );
                 }
@@ -695,8 +804,8 @@ impl<'a> Analyzer<'a> {
             Stmt::Continue { line, .. } => {
                 if self.loop_depth == 0 {
                     self.errors.push(
-                        Diagnostic::new("SEM025", "endelea inatumika nje ya loop")
-                            .with_stage("semantic")
+                        Diagnostic::new("SEM025", "endelea inatumika nje ya kitanzi")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                     );
                 }
@@ -740,13 +849,13 @@ impl<'a> Analyzer<'a> {
                 if !found {
                     self.errors.push(
                         Diagnostic::new("SEM027", format!("tupa inatumia jina lisilojulikana: {name}"))
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                     );
                 } else if already_dropped {
                     self.errors.push(
                         Diagnostic::new("SEM029", format!("'{name}' tayari imetupwa — haiwezekani kutupa tena"))
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                     );
                 } else {
@@ -775,7 +884,7 @@ impl<'a> Analyzer<'a> {
             Expr::Char(_) => ValueType::Herufi,
             Expr::Hamna => ValueType::Hamna,
             Expr::Group(e) => self.check_expr(e, scopes, mode),
-            Expr::Ident(name) => self.use_ident(name, scopes, mode),
+            Expr::Ident { name, .. } => self.use_ident(name, scopes, mode),
             Expr::Unary { op, expr, line } => {
                 let t = match op {
                     UnaryOp::BorrowImm => self.check_expr(expr, scopes, UseMode::BorrowImm),
@@ -788,7 +897,7 @@ impl<'a> Analyzer<'a> {
                         if t != ValueType::Namba {
                             self.errors.push(
                                 Diagnostic::new("SEM030", "- inahitaji Namba")
-                                    .with_stage("semantic")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         }
@@ -798,7 +907,7 @@ impl<'a> Analyzer<'a> {
                         if t != ValueType::Ukweli {
                             self.errors.push(
                                 Diagnostic::new("SEM031", "siyo inahitaji Ukweli")
-                                    .with_stage("semantic")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         }
@@ -808,7 +917,7 @@ impl<'a> Analyzer<'a> {
                         if t != ValueType::Namba {
                             self.errors.push(
                                 Diagnostic::new("SEM036", "siyo_biti inahitaji Namba")
-                                    .with_stage("semantic")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         }
@@ -822,7 +931,7 @@ impl<'a> Analyzer<'a> {
                         _ => {
                             self.errors.push(
                                 Diagnostic::new("SEM032", "jaribu inahitaji Tokeo/Chaguo")
-                                    .with_stage("semantic")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                             ValueType::Unknown
@@ -835,9 +944,14 @@ impl<'a> Analyzer<'a> {
                 let r = self.check_expr(right, scopes, UseMode::BorrowImm);
                 match op {
                     BinaryOp::Add => {
-                        if l == ValueType::Neno && r == ValueType::Neno {
+                        // TypeVar/Unknown are unresolved-generic placeholders (e.g. a pattern
+                        // binding for Tokeo<T,E>'s `E`) — treat them as a wildcard here too,
+                        // matching `compatible()`'s existing rule, so a genuinely-Neno value
+                        // whose static type couldn't be resolved isn't rejected by +.
+                        let is_wild = |t: &ValueType| matches!(t, ValueType::TypeVar(_) | ValueType::Unknown);
+                        if (l == ValueType::Neno || is_wild(&l)) && (r == ValueType::Neno || is_wild(&r)) && !(is_wild(&l) && is_wild(&r)) {
                             ValueType::Neno
-                        } else if l == ValueType::Namba && r == ValueType::Namba {
+                        } else if (l == ValueType::Namba || is_wild(&l)) && (r == ValueType::Namba || is_wild(&r)) && !(is_wild(&l) && is_wild(&r)) {
                             ValueType::Namba
                         } else {
                             self.errors.push(
@@ -845,7 +959,7 @@ impl<'a> Analyzer<'a> {
                                     "SEM033",
                                     "opereta '+' inahitaji (Namba, Namba) au (Neno, Neno) pekee",
                                 )
-                                .with_stage("semantic")
+                                .with_stage("semantiki")
                                 .with_span(*line, 1),
                             );
                             ValueType::Unknown
@@ -859,7 +973,7 @@ impl<'a> Analyzer<'a> {
                         if l != ValueType::Namba || r != ValueType::Namba {
                             self.errors.push(
                                 Diagnostic::new("SEM033", "opereta wa hisabati unahitaji Namba")
-                                    .with_stage("semantic")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         }
@@ -869,7 +983,7 @@ impl<'a> Analyzer<'a> {
                         if !self.compatible(&l, &r) {
                             self.errors.push(
                                 Diagnostic::new("SEM034", "ulinganisho unahitaji aina zinazolingana")
-                                    .with_stage("semantic")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         }
@@ -884,7 +998,7 @@ impl<'a> Analyzer<'a> {
                                     "SEM034",
                                     "opereta wa kulinganisha (<, >, <=, >=) inahitaji (Namba, Namba) au (Neno, Neno) pekee",
                                 )
-                                .with_stage("semantic")
+                                .with_stage("semantiki")
                                 .with_span(*line, 1),
                             );
                         }
@@ -894,7 +1008,7 @@ impl<'a> Analyzer<'a> {
                         if l != ValueType::Ukweli || r != ValueType::Ukweli {
                             self.errors.push(
                                 Diagnostic::new("SEM035", "na/au inahitaji Ukweli")
-                                    .with_stage("semantic")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         }
@@ -904,7 +1018,7 @@ impl<'a> Analyzer<'a> {
                         if l != ValueType::Namba || r != ValueType::Namba {
                             self.errors.push(
                                 Diagnostic::new("SEM037", "opereta wa biti unahitaji Namba")
-                                    .with_stage("semantic")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         }
@@ -924,7 +1038,7 @@ impl<'a> Analyzer<'a> {
                 }
             }
             Expr::Call { callee, args, line } => {
-                let callee_name = if let Expr::Ident(n) = &**callee {
+                let callee_name = if let Expr::Ident { name: n, .. } = &**callee {
                     Some(n.clone())
                 } else {
                     None
@@ -943,12 +1057,12 @@ impl<'a> Analyzer<'a> {
                         if f.params.len() != args.len() {
                             self.errors.push(
                                 Diagnostic::new("SEM036", format!("mwito wa {name} una idadi tofauti ya hoja"))
-                                    .with_stage("semantic")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         } else {
                             for (arg, param) in args.iter().zip(f.params.iter()) {
-                                if let Expr::Ident(n) = arg {
+                                if let Expr::Ident { name: n, .. } = arg {
                                     let pt = self.type_from_decl(&param.ty.name);
                                     if matches!(pt, ValueType::Tokeo(_, _)) {
                                         self.mark_tokeo_consumed(scopes, std::slice::from_ref(n));
@@ -971,7 +1085,7 @@ impl<'a> Analyzer<'a> {
                                     "SEM046",
                                     format!("mwito wa {name} una idadi tofauti ya hoja (stdlib)"),
                                 )
-                                .with_stage("semantic")
+                                .with_stage("semantiki")
                                 .with_span(*line, 1),
                             );
                         } else if !variadic {
@@ -984,11 +1098,11 @@ impl<'a> Analyzer<'a> {
                                             "SEM047",
                                             format!("aina ya hoja #{idx} kwenye {name} haitalingana"),
                                         )
-                                        .with_stage("semantic")
+                                        .with_stage("semantiki")
                                         .with_span(*line, 1),
                                     );
                                 }
-                                if let Expr::Ident(n) = &args[idx] {
+                                if let Expr::Ident { name: n, .. } = &args[idx] {
                                     if matches!(want, ValueType::Tokeo(_, _)) {
                                         self.mark_tokeo_consumed(scopes, std::slice::from_ref(n));
                                     }
@@ -1022,7 +1136,7 @@ impl<'a> Analyzer<'a> {
                     }
                     self.errors.push(
                         Diagnostic::new("SEM037", format!("kazi haijulikani: {name}"))
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                     );
                     return ValueType::Unknown;
@@ -1031,8 +1145,8 @@ impl<'a> Analyzer<'a> {
                     ValueType::Unknown
                 } else {
                     self.errors.push(
-                        Diagnostic::new("SEM038", "mwito wa kazi unahitaji identifier")
-                            .with_stage("semantic")
+                        Diagnostic::new("SEM038", "mwito wa kazi unahitaji jina")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                     );
                     ValueType::Unknown
@@ -1054,13 +1168,14 @@ impl<'a> Analyzer<'a> {
                     ValueType::Jozi(_, _) => "Jozi".to_string(),
                     ValueType::Chaguo(_) => "Chaguo".to_string(),
                     ValueType::Tokeo(_, _) => "Tokeo".to_string(),
+                    ValueType::KashaGC(_) => "Kasha_GC".to_string(),
                     _ => {
                         self.errors.push(
                             Diagnostic::new(
                                 "SEM039",
                                 format!("aina '{}' haina njia", receiver_ty),
                             )
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                         );
                         return ValueType::Unknown;
@@ -1068,7 +1183,7 @@ impl<'a> Analyzer<'a> {
                 };
                 let is_enum = self.module.enums.iter().any(|e| e.name == receiver_ty_name);
                 let _is_struct = self.module.structs.iter().any(|s| s.name == receiver_ty_name);
-                let is_builtin = matches!(receiver_ty, ValueType::Neno | ValueType::Orodha(_) | ValueType::Kamusi(_, _) | ValueType::Jozi(_, _) | ValueType::Chaguo(_) | ValueType::Tokeo(_, _));
+                let is_builtin = matches!(receiver_ty, ValueType::Neno | ValueType::Orodha(_) | ValueType::Kamusi(_, _) | ValueType::Jozi(_, _) | ValueType::Chaguo(_) | ValueType::Tokeo(_, _) | ValueType::KashaGC(_));
                 if is_builtin {
                     for arg in args {
                         let _ = self.check_expr(arg, scopes, UseMode::Move);
@@ -1087,18 +1202,24 @@ impl<'a> Analyzer<'a> {
                         (ValueType::Orodha(ref t), "clona") => ValueType::Orodha(t.clone()),
                         (ValueType::Orodha(_), "urefu") => ValueType::Namba,
                         (ValueType::Orodha(_), "ongeza") => ValueType::Tupu,
+                        (ValueType::Orodha(_), "ingiza") => ValueType::Tupu,
                         (ValueType::Orodha(ref t), "ondoa") => ValueType::Chaguo(t.clone()),
                         (ValueType::Orodha(_), "kila_mmoja") => ValueType::Tupu,
                         (ValueType::Kamusi(ref k, ref v), "clona") => ValueType::Kamusi(k.clone(), v.clone()),
                         (ValueType::Kamusi(_, _), "idadi") => ValueType::Namba,
                         (ValueType::Kamusi(_, ref v), "pata") => ValueType::Chaguo(v.clone()),
-                        (ValueType::Kamusi(_, _), "ingiza") => ValueType::Tupu,
+                        (ValueType::Kamusi(_, _), "ingiza" | "weka_key") => ValueType::Tupu,
                         (ValueType::Kamusi(_, _), "vipo") => ValueType::Ukweli,
+                        (ValueType::Kamusi(ref k, _), "funguo") => ValueType::Orodha(k.clone()),
                         (ValueType::Tokeo(ref t, _), "angu") => *t.clone(),
                         (ValueType::Tokeo(_, _), "ni_kosa" | "ni_sawa") => ValueType::Ukweli,
                         (ValueType::Tokeo(_, ref e), "kosa") => *e.clone(),
                         (ValueType::Chaguo(ref t), "angu" | "hakikisha") => *t.clone(),
                         (ValueType::Chaguo(_), "ni_po" | "ni_tupu") => ValueType::Ukweli,
+                        (ValueType::KashaGC(ref t), "pata") => *t.clone(),
+                        (ValueType::KashaGC(_), "weka") => ValueType::Tupu,
+                        (ValueType::KashaGC(_), "idadi") => ValueType::Namba,
+                        (ValueType::KashaGC(ref t), "shirikisha") => ValueType::KashaGC(t.clone()),
                         _ => ValueType::Unknown,
                     };
                 }
@@ -1108,7 +1229,7 @@ impl<'a> Analyzer<'a> {
                             "SEM104",
                             format!("njia inaweza tu kuwa juu ya umbo au jenum, si '{}'", receiver_ty_name),
                         )
-                        .with_stage("semantic")
+                        .with_stage("semantiki")
                         .with_span(*line, 1),
                     );
                     return ValueType::Unknown;
@@ -1158,7 +1279,7 @@ impl<'a> Analyzer<'a> {
                             "SEM040",
                             format!("njia '{}' haipo kwa '{}'", method_name, receiver_ty_name),
                         )
-                        .with_stage("semantic")
+                        .with_stage("semantiki")
                         .with_span(*line, 1),
                     );
                     return ValueType::Unknown;
@@ -1176,7 +1297,7 @@ impl<'a> Analyzer<'a> {
                                 args.len()
                             ),
                         )
-                        .with_stage("semantic")
+                        .with_stage("semantiki")
                         .with_span(*line, 1),
                     );
                     return self.type_from_decl(&func.return_type.name);
@@ -1207,11 +1328,12 @@ impl<'a> Analyzer<'a> {
                 struct_name,
                 fields,
                 line,
+                ..
             } => {
                 let Some(st) = self.module.structs.iter().find(|s| s.name == *struct_name) else {
                     self.errors.push(
                         Diagnostic::new("SEM093", format!("umbo haijulikani: {}", struct_name))
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                     );
                     return ValueType::Unknown;
@@ -1221,13 +1343,13 @@ impl<'a> Analyzer<'a> {
                     if !st.fields.iter().any(|(n, _)| n == fname) {
                         self.errors.push(
                             Diagnostic::new("SEM094", format!("umbo '{}' halina uga '{}'", struct_name, fname))
-                                .with_stage("semantic")
+                                .with_stage("semantiki")
                                 .with_span(*line, 1),
                         );
                     } else if !seen.insert(fname) {
                         self.errors.push(
                             Diagnostic::new("SEM095", format!("uga '{}' limeorodheshwa mara mbili", fname))
-                                .with_stage("semantic")
+                                .with_stage("semantiki")
                                 .with_span(*line, 1),
                         );
                     }
@@ -1236,8 +1358,8 @@ impl<'a> Analyzer<'a> {
                         let want = self.type_from_decl(&fty.name);
                         if !self.compatible(&want, &ft) {
                             self.errors.push(
-                                Diagnostic::new("SEM096", format!("uga '{}' aina hailingani", fname))
-                                    .with_stage("semantic")
+                                Diagnostic::new("SEM096", format!("aina ya uga '{}' hailingani na thamani iliyotolewa", fname))
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         }
@@ -1247,7 +1369,7 @@ impl<'a> Analyzer<'a> {
                     if !fields.iter().any(|(n, _)| n == fname) {
                         self.errors.push(
                             Diagnostic::new("SEM097", format!("umbo '{}' linahitaji uga '{}'", struct_name, fname))
-                                .with_stage("semantic")
+                                .with_stage("semantiki")
                                 .with_span(*line, 1),
                         );
                     }
@@ -1259,12 +1381,13 @@ impl<'a> Analyzer<'a> {
                 variant_name: _,
                 data,
                 line,
+                ..
             } => {
                 let _en = self.module.enums.iter().find(|e| e.name == *enum_name);
                 if _en.is_none() {
                     self.errors.push(
                         Diagnostic::new("SEM098", format!("jenum haijulikani: {}", enum_name))
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(*line, 1),
                     );
                     return ValueType::Unknown;
@@ -1282,7 +1405,7 @@ impl<'a> Analyzer<'a> {
                         if idx_ty != ValueType::Namba && idx_ty != ValueType::Unknown {
                             self.errors.push(
                                 Diagnostic::new("SEM102", "fahirisi inahitaji Namba")
-                                    .with_stage("semantic")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                         }
@@ -1295,14 +1418,14 @@ impl<'a> Analyzer<'a> {
                     _ => {
                         self.errors.push(
                             Diagnostic::new("SEM103", "fahirisi inahitaji Orodha au Kamusi")
-                                .with_stage("semantic")
+                                .with_stage("semantiki")
                                 .with_span(*line, 1),
                         );
                         ValueType::Unknown
                     }
                 }
             }
-            Expr::FieldAccess { receiver, field, line } => {
+            Expr::FieldAccess { receiver, field, line, .. } => {
                 let rec_ty = self.check_expr(receiver, scopes, UseMode::BorrowImm);
                 match &rec_ty {
                     ValueType::Struct(name) => {
@@ -1312,7 +1435,7 @@ impl<'a> Analyzer<'a> {
                         if !st.fields.iter().any(|(n, _)| n == field) {
                             self.errors.push(
                                 Diagnostic::new("SEM098", format!("umbo '{}' halina uga '{}'", name, field))
-                                    .with_stage("semantic")
+                                    .with_stage("semantiki")
                                     .with_span(*line, 1),
                             );
                             ValueType::Unknown
@@ -1325,7 +1448,7 @@ impl<'a> Analyzer<'a> {
                     _ => {
                         self.errors.push(
                             Diagnostic::new("SEM099", "uga unahitaji kitu cha aina ya umbo")
-                                .with_stage("semantic")
+                                .with_stage("semantiki")
                                 .with_span(*line, 1),
                         );
                         ValueType::Unknown
@@ -1342,7 +1465,7 @@ impl<'a> Analyzer<'a> {
                     _ => {
                         self.errors.push(
                             Diagnostic::new("SEM039", "? inahitaji Tokeo/Chaguo")
-                                .with_stage("semantic")
+                                .with_stage("semantiki")
                                 .with_span(*line, 1),
                         );
                         ValueType::Unknown
@@ -1357,7 +1480,7 @@ impl<'a> Analyzer<'a> {
                         ty = ety;
                     } else if !self.compatible(&ty, &ety) {
                         self.errors.push(Diagnostic::new("SEM099", "orodha inahitaji aina moja ya vipengele")
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(*line, 1));
                     }
                 }
@@ -1373,7 +1496,7 @@ impl<'a> Analyzer<'a> {
                     if matches!(vty, ValueType::Unknown) { vty = vety.clone(); }
                     if !self.compatible(&kty, &kety) || !self.compatible(&vty, &vety) {
                         self.errors.push(Diagnostic::new("SEM100", "kamusi inahitaji aina moja ya ufunguo na thamani")
-                            .with_stage("semantic")
+                            .with_stage("semantiki")
                             .with_span(*line, 1));
                     }
                 }
@@ -1388,10 +1511,27 @@ impl<'a> Analyzer<'a> {
         scopes: &mut [HashMap<String, Binding>],
         mode: UseMode,
     ) -> ValueType {
-        if name == "Ukomo" || name == "Siyo_Namba" {
+        if matches!(
+            name,
+            "Ukomo" | "Siyo_Namba" | "INF" | "NAN" | "PI" | "E" | "PHI" | "TAU" | "LN2" | "LN10"
+                | "LOG2E" | "LOG10E" | "KIPEUO1_2" | "KIPEUO2" | "KIPEUO3" | "KIPEUO5" | "EPSILON"
+                | "SEKUNDE_KWA_SIKU" | "MWANZO_WA_ZAMANI"
+        ) {
             return ValueType::Namba;
         }
+        if matches!(name, "TOLEO" | "JINA_OS" | "NJIA_SEPARATOR") {
+            return ValueType::Neno;
+        }
+        if matches!(name, "KWELI" | "SIYO_KWELI") {
+            return ValueType::Ukweli;
+        }
+        if name == "TUPU" {
+            return ValueType::Tupu;
+        }
         if let Some(ty) = self.extern_constants.get(name) {
+            return ty.clone();
+        }
+        if let Some(ty) = self.local_constants.get(name) {
             return ty.clone();
         }
 
@@ -1400,8 +1540,8 @@ impl<'a> Analyzer<'a> {
                 if let Some(set) = self.dropped_vars.last() {
                     if set.contains(name) {
                         self.errors.push(
-                            Diagnostic::new("SEM028", format!("{name} tupwa na haipaswi kutumiwa"))
-                                .with_stage("semantic")
+                            Diagnostic::new("SEM028", format!("'{name}' tayari tupwa — haipaswi kutumiwa tena"))
+                                .with_stage("semantiki")
                                 .with_span(b.created_at.line, b.created_at.column),
                         );
                         return b.ty.clone();
@@ -1416,8 +1556,8 @@ impl<'a> Analyzer<'a> {
                         dropped_at: b.dropped_at.clone(),
                     };
                     self.errors.push(
-                        Diagnostic::new("SEM040", format!("matumizi baada ya move: {name}"))
-                            .with_stage("semantic")
+                        Diagnostic::new("SEM040", format!("matumizi baada ya kuhamisha: {name}"))
+                            .with_stage("semantiki")
                             .with_context_map(map),
                     );
                     return b.ty.clone();
@@ -1427,8 +1567,8 @@ impl<'a> Analyzer<'a> {
                     UseMode::BorrowImm => {
                         if b.mut_borrowed {
                             self.errors.push(
-                                Diagnostic::new("SEM041", format!("haiwezi azima wakati mutable borrow ipo: {name}"))
-                                    .with_stage("semantic"),
+                                Diagnostic::new("SEM041", format!("haiwezi azima wakati azima_tenda ipo: {name}"))
+                                    .with_stage("semantiki"),
                             );
                         }
                         b.imm_borrows += 1;
@@ -1441,14 +1581,14 @@ impl<'a> Analyzer<'a> {
                     UseMode::BorrowMut => {
                         if !b.mutable {
                             self.errors.push(
-                                Diagnostic::new("SEM042", format!("azima_tenda inahitaji variable mutable: {name}"))
-                                    .with_stage("semantic"),
+                                Diagnostic::new("SEM042", format!("azima_tenda inahitaji jina linalobadilika: {name}"))
+                                    .with_stage("semantiki"),
                             );
                         }
                         if b.mut_borrowed || b.imm_borrows > 0 {
                             self.errors.push(
-                                Diagnostic::new("SEM043", format!("migongano ya borrowing kwa: {name}"))
-                                    .with_stage("semantic"),
+                                Diagnostic::new("SEM043", format!("migongano ya kuazima kwa: {name}"))
+                                    .with_stage("semantiki"),
                             );
                         }
                         b.mut_borrowed = true;
@@ -1462,8 +1602,8 @@ impl<'a> Analyzer<'a> {
                         if !self.is_copy_type(&b.ty) && b.mut_borrowed {
                             // TODO(Phase III): Re-enable immutable borrow check once lifetimes are modeled.
                             self.errors.push(
-                                Diagnostic::new("SEM044", format!("haiwezi move wakati mutable borrow ipo: {name}"))
-                                    .with_stage("semantic"),
+                                Diagnostic::new("SEM044", format!("haiwezi kuhamisha wakati azima_tenda ipo: {name}"))
+                                    .with_stage("semantiki"),
                             );
                         }
                         if !self.is_copy_type(&b.ty) {
@@ -1478,8 +1618,8 @@ impl<'a> Analyzer<'a> {
                     UseMode::Return => {
                         if !self.is_copy_type(&b.ty) && b.mut_borrowed {
                             self.errors.push(
-                                Diagnostic::new("SEM044", format!("haiwezi rejesha wakati mutable borrow ipo: {name}"))
-                                    .with_stage("semantic"),
+                                Diagnostic::new("SEM044", format!("haiwezi rejesha wakati azima_tenda ipo: {name}"))
+                                    .with_stage("semantiki"),
                             );
                         }
                         if !self.is_copy_type(&b.ty) {
@@ -1496,7 +1636,7 @@ impl<'a> Analyzer<'a> {
         }
 
         self.errors.push(
-            Diagnostic::new("SEM045", format!("jina halijulikani: {name}")).with_stage("semantic"),
+            Diagnostic::new("SEM045", format!("jina halijulikani: {name}")).with_stage("semantiki"),
         );
         ValueType::Unknown
     }
@@ -1565,19 +1705,22 @@ impl<'a> Analyzer<'a> {
         }
 
         if matches!(expected, ValueType::Unknown) || matches!(actual, ValueType::Unknown) {
-            // Production type checkers should log inference failures here.
-            self.errors.push(
-                Diagnostic::new("SEM-INF", "aina haikuweza kubainishwa (inference failure)")
-                    .with_stage("semantic")
-                    .with_span(span.line, span.column),
-            );
-            return true; // Assume compatibility to avoid cascading errors
+            // Assume compatibility to avoid cascading errors — this is the correct behavior for
+            // unresolved-generic results (e.g. `kamusi_tupu().pata(k).angu(default)`; msingi's
+            // generic constructors don't propagate real type params, so their results are
+            // ValueType::Unknown until narrowed). This used to also push a "SEM-INF" diagnostic
+            // here, but a pushed diagnostic still fails the whole `semantic_check_with_env` call
+            // (there is no non-blocking/warning severity in this Vec<Diagnostic> design) —
+            // directly contradicting the "assume compatible" comment and rejecting valid
+            // programs that legitimately hit this path. Don't record one; only bail (return
+            // false) on a genuine, both-sides-concrete mismatch below.
+            return true;
         }
 
         if !self.compatible(expected, actual) {
             self.errors.push(
                 Diagnostic::new(error_code, message)
-                    .with_stage("semantic")
+                    .with_stage("semantiki")
                     .with_span(span.line, span.column),
             );
             return false;
@@ -1603,7 +1746,21 @@ pub(crate) fn run_semantic_check(
     extern_functions: HashMap<String, FnContract>,
     extern_constants: HashMap<String, ValueType>,
 ) -> Vec<Diagnostic> {
-    let mut a = Analyzer::new(module, require_main, extern_functions, extern_constants);
+    run_semantic_check_with_modules(module, require_main, extern_functions, extern_constants, HashSet::new())
+}
+
+/// Like `run_semantic_check`, but `resolved_modules` names additional `leta` targets to accept
+/// beyond the fixed builtin-module whitelist (SEM007) — e.g. user/path-dependency modules that a
+/// project resolver has already confirmed exist. Callers with no resolver (LSP single-file
+/// checks, standalone `semantic_check`) pass an empty set, preserving prior behavior.
+pub(crate) fn run_semantic_check_with_modules(
+    module: &Module,
+    require_main: bool,
+    extern_functions: HashMap<String, FnContract>,
+    extern_constants: HashMap<String, ValueType>,
+    resolved_modules: HashSet<String>,
+) -> Vec<Diagnostic> {
+    let mut a = Analyzer::new(module, require_main, extern_functions, extern_constants, resolved_modules);
     a.run();
     std::mem::take(&mut a.errors)
 }

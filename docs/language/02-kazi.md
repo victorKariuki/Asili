@@ -38,9 +38,12 @@ kazi ongeza(a: Namba, b: Namba) -> Namba {
 }
 
 kazi umbiza_jibu(a: Namba, b: Namba, neno: Neno) -> Neno {
-  rejesha (a + b kama Neno) + " " + neno
+  rejesha ((a + b) kama Neno) + " " + neno
 }
 ```
+
+`kama` binds tighter than `+` (see [09-waendeshaji.md](09-waendeshaji.md)), so casting the
+*sum* requires explicit parens — `a + b kama Neno` would parse as `a + (b kama Neno)`.
 
 ## Kujumuisha Moduli (Importing Modules)
 
@@ -73,10 +76,11 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 }
 ```
 
-`hoja` receives command-line arguments passed after `--`:
+`hoja` receives command-line arguments passed after the entrypoint. The CLI does **not**
+strip a `--` separator — anything after `--tenda` is passed through literally, `--` included:
 
 ```bash
-pata jenga --tenda -- hello world
+pata jenga --tenda hello world
 ```
 
 ## Kazi za Muundo (Struct Methods)
@@ -87,8 +91,8 @@ Use `shughuli ya TypeName` to attach methods:
 umbo Mduara { r: Namba }
 
 shughuli ya Mduara {
-  kazi eneo(hii: Mduara) -> Namba {
-    rejesha 3.14159 * hii.r * hii.r
+  kazi eneo(self: Mduara) -> Namba {
+    rejesha 3.14159 * self.r * self.r
   }
 }
 

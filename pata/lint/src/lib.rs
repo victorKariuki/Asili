@@ -12,12 +12,12 @@ use asili_lexer::tokenize;
 pub fn lint_source(source: &str) -> Result<Vec<Diagnostic>, String> {
     let tokens = match tokenize(source) {
         Ok(t) => t,
-        Err(diags) => return Err(format!("Tokenization failed: {} errors", diags.len())),
+        Err(diags) => return Err(format!("leksika imeshindwa: makosa {}", diags.len())),
     };
 
     let module = match parse_tokens(&tokens) {
         Ok(m) => m,
-        Err(diags) => return Err(format!("Parse failed: {} errors", diags.len())),
+        Err(diags) => return Err(format!("uchanganuzi umeshindwa: makosa {}", diags.len())),
     };
 
     let mut lints = Vec::new();

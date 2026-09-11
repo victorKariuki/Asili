@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, semantic_check_with_env};
 
@@ -179,4 +180,46 @@ fn test_constants_explicit_types() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     assert_eq!(module.constants.len(), 3, "should parse three constants with types");
+}
+
+/// Test 11: a module-level constant is actually bound at runtime (not just parsed/type-checked).
+/// Regression test: `thabiti` constants used to be recognized by the semantic analyzer but never
+/// seeded into the evaluator's environment, so referencing one by name failed with UndefinedVar.
+#[test]
+fn test_constant_is_usable_at_runtime() {
+    let src = r#"
+        thabiti PI: Namba = 3.14159
+
+        kazi kuu(hoja: Orodha<Neno>) -> Namba {
+            rejesha PI
+        }
+    "#;
+    let toks = tokenize(src).expect("tokenize");
+    let module = parse_tokens(&toks).expect("parse");
+    let result = run_function(&module, "kuu", vec![Value::Orodha(vec![])])
+        .expect("kuu should run and return PI");
+    match result {
+        Value::Namba(n) => assert!((n - 3.14159).abs() < 1e-9, "expected PI, got {n}"),
+        other => panic!("expected Namba(3.14159), got {other:?}"),
+    }
+}
+
+/// Test 12: a constant expression (not just a literal) evaluates before it's used.
+#[test]
+fn test_constant_expression_is_evaluated_before_use() {
+    let src = r#"
+        thabiti DOUBLE_PI: Namba = 3.14159 * 2.0
+
+        kazi kuu(hoja: Orodha<Neno>) -> Namba {
+            rejesha DOUBLE_PI
+        }
+    "#;
+    let toks = tokenize(src).expect("tokenize");
+    let module = parse_tokens(&toks).expect("parse");
+    let result = run_function(&module, "kuu", vec![Value::Orodha(vec![])])
+        .expect("kuu should run and return DOUBLE_PI");
+    match result {
+        Value::Namba(n) => assert!((n - 6.28318).abs() < 1e-9, "expected 6.28318, got {n}"),
+        other => panic!("expected Namba(6.28318), got {other:?}"),
+    }
 }

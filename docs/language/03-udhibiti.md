@@ -140,13 +140,24 @@ lebo 'nje: wakati milele {
 }
 ```
 
-## Kutupa Thamani (Throwing Values)
+## Kutupa (Drop)
 
-`tupa` exits the current function by propagating a value as an error:
+`tupa <jina>` removes a variable from scope entirely — it is **not** an error-throwing
+construct (there is no "throw a value" statement). To signal an error, return `Tokeo<T, E>`
+and let the caller handle it with `jaribu`/`?` or a `linganisha` — see
+[05-makosa.md](05-makosa.md).
 
 ```asili
-kazi gawio_salama(a: Namba, b: Namba) -> Namba {
-  ikiwa b == 0 { tupa "Haiwezekani kugawanya na sifuri" }
-  rejesha a / b
+kazi gawio_salama(a: Namba, b: Namba) -> Tokeo<Namba, Neno> {
+  ikiwa b == 0 { rejesha kosa("Haiwezekani kugawanya na sifuri") }
+  rejesha tokeo(a / b)
 }
+```
+
+```asili
+weka jibu = jaribu gawio_salama(10, 2)   # unwrap Tokeo (jaribu propagates Kosa)
+chapisha(jibu kama Neno)                 # 5
+
+weka x = 5
+tupa x   # x is no longer accessible after this point
 ```

@@ -6,7 +6,7 @@ use asili_parser::parse_tokens;
 fn test_chaguo_enum_available() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu {
-            acha opt = Chaguo::Some(42.0)
+            acha opt = Chaguo::Kuna(42.0)
         }
     "#;
     let toks = tokenize(src).expect("tokenize");
@@ -25,7 +25,7 @@ fn test_chaguo_variants() {
     let module = parse_tokens(&toks).expect("parse");
     let chaguo = module.enums.iter().find(|e| e.name == "Chaguo").expect("Chaguo");
     assert_eq!(chaguo.variants.len(), 2);
-    assert_eq!(chaguo.variants[0].name, "Some");
+    assert_eq!(chaguo.variants[0].name, "Kuna");
     assert_eq!(chaguo.variants[1].name, "Hamna");
 }
 
@@ -48,7 +48,7 @@ fn test_chaguo_generic() {
 fn test_tokeo_enum_available() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu {
-            acha res = Tokeo::Ok(10.0)
+            acha res = Tokeo::Sawa(10.0)
         }
     "#;
     let toks = tokenize(src).expect("tokenize");
@@ -67,8 +67,8 @@ fn test_tokeo_variants() {
     let module = parse_tokens(&toks).expect("parse");
     let tokeo = module.enums.iter().find(|e| e.name == "Tokeo").expect("Tokeo");
     assert_eq!(tokeo.variants.len(), 2);
-    assert_eq!(tokeo.variants[0].name, "Ok");
-    assert_eq!(tokeo.variants[1].name, "Err");
+    assert_eq!(tokeo.variants[0].name, "Sawa");
+    assert_eq!(tokeo.variants[1].name, "Kosa");
 }
 
 /// Test 6: Tokeo is generic with T and E parameters
@@ -91,7 +91,7 @@ fn test_tokeo_generic() {
 fn test_chaguo_some_with_data() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu {
-            acha opt = Chaguo::Some("hello")
+            acha opt = Chaguo::Kuna("hello")
         }
     "#;
     let toks = tokenize(src).expect("tokenize");
@@ -117,7 +117,7 @@ fn test_chaguo_hamna_no_data() {
 fn test_tokeo_ok_with_data() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu {
-            acha res = Tokeo::Ok(100.0)
+            acha res = Tokeo::Sawa(100.0)
         }
     "#;
     let toks = tokenize(src).expect("tokenize");
@@ -130,7 +130,7 @@ fn test_tokeo_ok_with_data() {
 fn test_tokeo_err_with_data() {
     let src = r#"
         kazi kuu(hoja: Orodha<Neno>) -> Tupu {
-            acha res = Tokeo::Err("error message")
+            acha res = Tokeo::Kosa("error message")
         }
     "#;
     let toks = tokenize(src).expect("tokenize");

@@ -128,7 +128,7 @@ pub fn emit_asb_from_tir(tir: &TypedIrModule, source: &str) -> String {
 pub fn validate_module(module: &Module) -> Result<(), Vec<Diagnostic>> {
     if module.functions.is_empty() {
         return Err(vec![Diagnostic::new("EVAL001", "moduli haina kazi yoyote")
-            .with_stage("evaluator")]);
+            .with_stage("kitekelezi")]);
     }
     Ok(())
 }

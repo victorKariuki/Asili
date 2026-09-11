@@ -2,6 +2,7 @@ leta matumizi
 
 # This file demonstrates the enhanced syntax highlighting
 
+# Adds two numbers together.
 #[sharti(os = "linux", toleo = 1)]
 kazi jumla(x: Namba, y: Namba) -> Namba {
   # Function parameters (x, y) are visually distinct from regular variables
@@ -9,6 +10,7 @@ kazi jumla(x: Namba, y: Namba) -> Namba {
   rejesha ufumbuzi
 }
 
+# Raises msingi to the power of kielelezo.
 kazi hesabu_nguvu(msingi: Namba, kielelezo: Namba) -> Namba {
   weka matokeo = msingi ** kielelezo
   rejesha matokeo
@@ -20,6 +22,7 @@ umbo Mtu {
   ni_hai: Ukweli
 }
 
+# Returns a person's full name from their Mtu struct.
 kazi jina_kamili(mtu: Mtu) -> Neno {
   # Member access: mtu.jina gets variable.other.member scope
   weka sehemu_a: Neno = mtu.jina
@@ -31,7 +34,6 @@ kazi jina_kamili(mtu: Mtu) -> Neno {
 # - Comparison: == != < > <= >=
 # - Logical: && ||
 # - Bitwise: na_biti au_biti xor_biti
-
 kazi onyesha_waendeshaji() -> Tupu {
   weka idadi = 10
 

@@ -46,4 +46,4 @@ Or use the **Asili VS Code extension** from the repo: open [extensions/vscode/](
 
 ## Spec reference
 
-See [spec/06-tooling-and-ecosystem.md](../spec/06-tooling-and-ecosystem.md) (Mwalimu section) and [pata/lsp/README.md](../../pata/lsp/README.md).
+See [spec/06-tooling-and-ecosystem.md](spec/06-tooling-and-ecosystem.md) (Mwalimu section) and [pata/lsp/README.md](../../pata/lsp/README.md).

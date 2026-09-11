@@ -12,10 +12,10 @@ pub fn check_naming_conventions(module: &Module) -> Vec<Diagnostic> {
         if !is_snake_case(&func.name) && !is_swahili(&func.name) {
             diags.push(
                 Diagnostic::new("LINT001", format!(
-                    "Function name '{}' should be snake_case or Swahili",
+                    "jina la kazi '{}' linapaswa kuwa snake_case au Kiswahili",
                     func.name
                 ))
-                .with_stage("lint")
+                .with_stage("ukaguzi")
                 .with_span(func.line, 1)
             );
         }
@@ -26,10 +26,10 @@ pub fn check_naming_conventions(module: &Module) -> Vec<Diagnostic> {
         if !is_pascal_case(&s.name) {
             diags.push(
                 Diagnostic::new("LINT002", format!(
-                    "Struct name '{}' should be PascalCase",
+                    "jina la umbo '{}' linapaswa kuwa PascalCase",
                     s.name
                 ))
-                .with_stage("lint")
+                .with_stage("ukaguzi")
                 .with_span(s.line, 1)
             );
         }
@@ -40,10 +40,10 @@ pub fn check_naming_conventions(module: &Module) -> Vec<Diagnostic> {
         if !is_upper_case(&constant.name) {
             diags.push(
                 Diagnostic::new("LINT003", format!(
-                    "Constant name '{}' should be UPPER_CASE",
+                    "jina la thabiti '{}' linapaswa kuwa UPPER_CASE",
                     constant.name
                 ))
-                .with_stage("lint")
+                .with_stage("ukaguzi")
                 .with_span(constant.line, 1)
             );
         }

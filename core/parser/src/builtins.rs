@@ -3,7 +3,7 @@
 use crate::{FnContract, ValueType};
 use std::collections::HashMap;
 
-pub const BUILTIN_MODULE_NAMES: &[&str] = &["msingi", "mfumo", "majira", "matumizi", "faili", "hisabati", "runtime", "syscall", "kiungo", "sambamba"];
+pub const BUILTIN_MODULE_NAMES: &[&str] = &["msingi", "mfumo", "majira", "matumizi", "faili", "hisabati", "runtime", "syscall", "kiungo", "sambamba", "kasha_gc"];
 
 /// Export table: functions and constants for a builtin module.
 #[derive(Clone, Debug, Default)]
@@ -22,7 +22,7 @@ fn namba_namba_namba() -> FnContract {
 fn namba_namba_tokeo_namba() -> FnContract {
     FnContract {
         params: vec![ValueType::Namba, ValueType::Namba],
-        ret: ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Unknown)),
+        ret: ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno)),
     }
 }
 
@@ -36,14 +36,14 @@ fn namba_namba() -> FnContract {
 fn namba_tokeo_namba() -> FnContract {
     FnContract {
         params: vec![ValueType::Namba],
-        ret: ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Unknown)),
+        ret: ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno)),
     }
 }
 
 fn namba_namba_tokeo_namba_opt() -> FnContract {
     FnContract {
         params: vec![ValueType::Namba, ValueType::Namba],
-        ret: ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Unknown)),
+        ret: ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno)),
     }
 }
 
@@ -351,21 +351,21 @@ pub fn faili_exports() -> BuiltinExportTable {
         "soma_faili".to_string(),
         FnContract {
             params: vec![ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Unknown)),
+            ret: ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
         },
     );
     functions.insert(
         "andika_faili".to_string(),
         FnContract {
             params: vec![ValueType::Neno, ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Unknown)),
+            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
         },
     );
     functions.insert(
         "ongeza".to_string(),
         FnContract {
             params: vec![ValueType::Neno, ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Unknown)),
+            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
         },
     );
     functions.insert(
@@ -379,7 +379,7 @@ pub fn faili_exports() -> BuiltinExportTable {
         "futa".to_string(),
         FnContract {
             params: vec![ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Unknown)),
+            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
         },
     );
     functions.insert(
@@ -478,6 +478,61 @@ pub fn runtime_exports() -> BuiltinExportTable {
             ret: ValueType::Neno,
         },
     );
+    // These were already implemented (core/evaluator/src/builtins/runtime.rs) and callable at
+    // runtime, but missing from this export table — so `leta runtime` alone was never enough to
+    // actually use them: the semantic checker rejected every call with SEM037 "kazi haijulikani".
+    functions.insert(
+        "arch".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Neno,
+        },
+    );
+    functions.insert(
+        "ni_debug".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Ukweli,
+        },
+    );
+    functions.insert(
+        "ni_wasm".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Ukweli,
+        },
+    );
+    functions.insert(
+        "mazingira".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Kamusi(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
+        },
+    );
+    functions.insert(
+        "muda_wa_kuanza".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Wakati,
+        },
+    );
+    BuiltinExportTable {
+        functions,
+        constants: HashMap::new(),
+    }
+}
+
+/// Kasha_GC (managed memory): reference-counted shared wrapper. Requires `leta kasha_gc`. Not in
+/// the default prelude — opt-in, layered on top of the ownership model (see spec's roadmap).
+pub fn kasha_gc_exports() -> BuiltinExportTable {
+    let mut functions = HashMap::new();
+    functions.insert(
+        "kasha_gc_unda".to_string(),
+        FnContract {
+            params: vec![ValueType::Unknown],
+            ret: ValueType::KashaGC(Box::new(ValueType::Unknown)),
+        },
+    );
     BuiltinExportTable {
         functions,
         constants: HashMap::new(),
@@ -497,6 +552,7 @@ pub fn builtin_module_exports(name: &str) -> Option<BuiltinExportTable> {
         "syscall" => Some(syscall_exports()),
         "kiungo" => Some(kiungo_exports()),
         "sambamba" => Some(sambamba_exports()),
+        "kasha_gc" => Some(kasha_gc_exports()),
         _ => None,
     }
 }

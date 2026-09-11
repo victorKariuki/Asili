@@ -27,10 +27,19 @@ impl std::fmt::Display for Dependency {
 #[derive(Clone, Debug)]
 pub struct ProjectConfig {
     pub name: String,
+    // Parsed from pata.toml but not yet consumed anywhere: `asili_version` isn't checked against
+    // the running toolchain (see the TODO on load_project_config below), and `version` stopped
+    // feeding the lockfile once write_lockfile moved to pata_package::LockFile, whose schema
+    // tracks dependency locks only (like Cargo.lock, not the root project's own version).
+    #[allow(dead_code)]
     pub version: String,
+    #[allow(dead_code)]
     pub asili_version: String,
     pub entrypoint: PathBuf,
     pub dependencies: BTreeMap<String, Dependency>,
+    /// `[jenga] lengo = "..."` — the manifest-declared build target (e.g. "wasm"). `None` means
+    /// unset; the CLI defaults to "native" unless `--target` overrides it.
+    pub target: Option<String>,
 }
 
 pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
@@ -44,6 +53,7 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
     let mut asili_version = String::new();
     let mut entry = PathBuf::from("src/kuu.as");
     let mut deps: BTreeMap<String, Dependency> = BTreeMap::new();
+    let mut target: Option<String> = None;
 
     for raw in content.lines() {
         let line = raw.trim();
@@ -89,6 +99,9 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
             "chanzo" if key == "kuingia" => {
                 entry = PathBuf::from(value);
             }
+            "jenga" if key == "lengo" => {
+                target = Some(value);
+            }
             _ => {}
         }
     }
@@ -112,6 +125,7 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
         asili_version,
         entrypoint: root.join(entry),
         dependencies: deps,
+        target,
     })
 }
 
@@ -199,73 +213,64 @@ pub fn update_dependency(root: &Path, dep: &str, version: &str) -> Result<(), Cl
     Ok(())
 }
 
+/// Convert a CLI-facing `Dependency` into the `pata-package` crate's manifest representation, so
+/// resolution/locking can delegate to `pata_package::resolver::Resolver` and
+/// `pata_package::lock::LockFile` instead of hand-rolling version resolution and checksums.
+fn to_package_dependency(dep: &Dependency) -> pata_package::manifest::Dependency {
+    match dep {
+        Dependency::Version(v) => pata_package::manifest::Dependency::Version(v.clone()),
+        Dependency::Path(p) => pata_package::manifest::Dependency::Table(pata_package::manifest::DependencyTable {
+            version: "0.0.0".to_string(),
+            path: Some(p.to_string_lossy().to_string()),
+            git: None,
+            branch: None,
+        }),
+    }
+}
+
 /// Read pata.lock when present and return locked dependency versions for deterministic builds.
+/// Delegates parsing to `pata_package::lock::LockFile` (real TOML, per-dependency SHA-256
+/// checksums) instead of the previous hand-rolled `[dependencies]` line parser, which could not
+/// round-trip path dependencies (their `{ path = "..." }` table syntax was unparseable on read).
 pub fn read_lockfile(root: &Path) -> Result<Option<BTreeMap<String, Dependency>>, CliError> {
     let path = root.join("pata.lock");
-    let content = match fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(_) => return Ok(None),
-    };
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let lock = pata_package::LockFile::load(&path)
+        .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", path.display()), 1))?;
     let mut deps: BTreeMap<String, Dependency> = BTreeMap::new();
-    let mut in_deps = false;
-    for raw in content.lines() {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if line.starts_with('[') && line.ends_with(']') {
-            in_deps = line == "[dependencies]";
-            continue;
-        }
-        if in_deps {
-            if let Some((k, v)) = line.split_once('=') {
-                let key = k.trim().trim_matches('"').to_string();
-                let value = v.trim().trim_matches('"').to_string();
-                deps.insert(key, Dependency::Version(value));
-            }
-        }
+    for (name, locked) in &lock.dependencies {
+        let dep = match &locked.path {
+            Some(p) => Dependency::Path(PathBuf::from(p)),
+            None => Dependency::Version(locked.version.clone()),
+        };
+        deps.insert(name.clone(), dep);
     }
     Ok(Some(deps))
 }
 
+/// Resolve `cfg.dependencies` and write pata.lock via `pata_package`'s resolver/lock format.
 pub fn write_lockfile(root: &Path, cfg: &ProjectConfig) -> Result<(), CliError> {
-    let mut checksum_src = format!("{}|{}|{}", cfg.name, cfg.version, cfg.asili_version);
-    for (k, v) in &cfg.dependencies {
-        checksum_src.push('|');
-        checksum_src.push_str(k);
-        checksum_src.push('|');
-        match v {
-            Dependency::Version(ver) => checksum_src.push_str(ver),
-            Dependency::Path(path) => checksum_src.push_str(&path.to_string_lossy()),
+    let pkg_deps: BTreeMap<String, pata_package::manifest::Dependency> = cfg
+        .dependencies
+        .iter()
+        .map(|(k, v)| (k.clone(), to_package_dependency(v)))
+        .collect();
+    let existing = pata_package::LockFile::load(root.join("pata.lock")).ok();
+    let mut lock = pata_package::Resolver::resolve(&pkg_deps, existing.as_ref())
+        .map_err(|e| CliError::new(format!("imeshindwa kutatua tegemezi: {e}"), 1))?;
+    // Keep the existing timestamp when the resolved dependency set is unchanged, so re-running
+    // `pata jenga`/`pata ongeza` without dependency changes doesn't churn pata.lock every build.
+    if let Some(prev) = &existing {
+        if prev.dependencies == lock.dependencies {
+            lock.locked_at = prev.locked_at.clone();
         }
-    }
-    let checksum = simple_hash(&checksum_src);
-
-    let mut content = String::new();
-    content.push_str("format = \"pata-lock-v1\"\n");
-    content.push_str(&format!("project = \"{}\"\n", cfg.name));
-    content.push_str(&format!("asili = \"{}\"\n", cfg.asili_version));
-    content.push_str(&format!("checksum = \"{checksum:016x}\"\n\n"));
-    content.push_str("[dependencies]\n");
-    for (k, v) in &cfg.dependencies {
-        content.push_str(&format!("{k} = {v}\n"));
     }
 
     let path = root.join("pata.lock");
-    fs::write(&path, content)
+    lock.save(&path)
         .map_err(|e| CliError::new(format!("imeshindwa kuandika {}: {e}", path.display()), 1))
-}
-
-// HACK: simple_hash is a FNV-1a variant used for the pata.lock checksum. It is not
-// cryptographically secure — a malicious pata.toml could be crafted to produce a collision.
-// For lock file integrity use a proper hash (SHA-256 via the `sha2` crate) to detect tampering.
-fn simple_hash(s: &str) -> u64 {
-    let mut hash = 1469598103934665603u64;
-    for b in s.as_bytes() {
-        hash ^= *b as u64;
-        hash = hash.wrapping_mul(1099511628211);
-    }
-    hash
 }
 
 #[cfg(test)]
@@ -288,6 +293,7 @@ mod tests {
             asili_version: "1.1".into(),
             entrypoint: PathBuf::from("src/kuu.as"),
             dependencies: deps,
+            target: None,
         };
         write_lockfile(&tmp, &cfg).expect("lock 1");
         let a = fs::read_to_string(tmp.join("pata.lock")).expect("read a");

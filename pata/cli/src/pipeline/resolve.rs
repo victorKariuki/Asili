@@ -1,12 +1,9 @@
 //! Module loader: resolve imports, build export tables, detect cycles.
 //
-// TODO: build_export_table only exports public functions. Constants declared at module level
-// with `thabiti` are never added to the export table (the `constants` field is always empty
-// for user modules). Programs that `leta` a module expecting its constants will get Unknown type.
-//
-// TODO: merge_for_eval only merges functions from imported modules — not structs, traits, or impls.
-// A program that imports a struct definition from another module cannot use it at runtime because
-// the struct is not present in the merged Module passed to the evaluator.
+// Note: build_export_table exports all module-level `thabiti` constants (there is no visibility
+// modifier on constants yet, so every one is treated as exported) and merge_for_eval merges
+// structs/traits/impls from imported modules in addition to functions — both were once TODOs
+// here but are already implemented below.
 
 use crate::pipeline::interface_registry::{InterfaceRegistry, StdlibEnv};
 use crate::pipeline::project::Dependency;
@@ -80,6 +77,19 @@ pub fn find_module_file(
         }
     }
 
+    // A version dependency resolves against the vendored package cache (.asili/packages/<name>),
+    // populated out-of-band (there is no registry/fetch backend yet — see pata-package's
+    // Resolver). If it isn't vendored there, resolution falls through to the generic candidates
+    // below and ultimately reports RES002 with the full searched-path list.
+    if matches!(dependencies.get(name), Some(Dependency::Version(_))) {
+        let vendored = pata_package::Paths::new(root)
+            .package_src_path(name)
+            .join(format!("{name}.as"));
+        if vendored.is_file() {
+            return Some((vendored, false));
+        }
+    }
+
     let candidates = [
         (root.join(format!("{name}.as")), false),
         (root.join("lib").join(format!("{name}.as")), false),
@@ -110,7 +120,7 @@ fn resolve_one(
     if loading.contains(name) {
         errors.push(
             Diagnostic::new("RES001", "mzunguko wa moduli: moduli imejirejea")
-                .with_stage("resolve"),
+                .with_stage("utatuzi"),
         );
         return;
     }
@@ -147,7 +157,7 @@ fn resolve_one(
             );
             errors.push(
                 Diagnostic::new("RES002", format!("moduli '{name}' haikupatikana: {searched}"))
-                    .with_stage("resolve"),
+                    .with_stage("utatuzi"),
             );
             return;
         },
@@ -180,7 +190,7 @@ fn resolve_one(
             }
             Err(e) => {
                 errors.push(
-                    Diagnostic::new("RES003", e.message.clone()).with_stage("resolve"),
+                    Diagnostic::new("RES003", e.message.clone()).with_stage("utatuzi"),
                 );
             }
         }
@@ -192,7 +202,7 @@ fn resolve_one(
         Err(e) => {
             errors.push(
                 Diagnostic::new("RES003", format!("imeshindwa kusoma {}: {e}", path.display()))
-                    .with_stage("resolve"),
+                    .with_stage("utatuzi"),
             );
             loading.remove(name);
             return;
@@ -266,59 +276,14 @@ pub fn resolve_all(
 }
 
 /// Merge entrypoint + resolved modules into one module for evaluation (imported names only).
+/// Delegates to `asili_parser::merge_modules`, shared with `driver/wasm`'s in-memory bundler so
+/// the merge rules live in exactly one place.
 fn merge_for_eval(entrypoint: &Module, resolved: &HashMap<String, ResolvedModule>) -> Module {
-    let mut functions = entrypoint.functions.clone();
-    let mut structs = entrypoint.structs.clone();
-    let mut traits = entrypoint.traits.clone();
-    let mut impls = entrypoint.impls.clone();
-    for imp in &entrypoint.imports {
-        let (module_name, names_to_import) = match &imp.path {
-            ImportPath::Full(name) => (name.as_str(), None as Option<Vec<String>>),
-            ImportPath::Selective { module: name, names } => (name.as_str(), Some(names.clone())),
-        };
-        let Some(res) = resolved.get(module_name) else { continue };
-        for f in &res.module.functions {
-            let include = match &names_to_import {
-                None => f.is_public,
-                Some(names) => names.contains(&f.name),
-            };
-            if include && !functions.iter().any(|x| x.name == f.name) {
-                functions.push(f.clone());
-            }
-        }
-        for s in &res.module.structs {
-            let include = match &names_to_import {
-                None => s.is_public,
-                Some(names) => names.contains(&s.name),
-            };
-            if include && !structs.iter().any(|x| x.name == s.name) {
-                structs.push(s.clone());
-            }
-        }
-        for t in &res.module.traits {
-            let include = match &names_to_import {
-                None => t.is_public,
-                Some(names) => names.contains(&t.name),
-            };
-            if include && !traits.iter().any(|x| x.name == t.name) {
-                traits.push(t.clone());
-            }
-        }
-        for imp_decl in &res.module.impls {
-            if !impls.iter().any(|x| x.target == imp_decl.target) {
-                impls.push(imp_decl.clone());
-            }
-        }
-    }
-    Module {
-        imports: entrypoint.imports.clone(),
-        constants: entrypoint.constants.clone(),
-        enums: entrypoint.enums.clone(),
-        functions,
-        structs,
-        traits,
-        impls,
-    }
+    let modules: HashMap<String, Module> = resolved
+        .iter()
+        .map(|(name, res)| (name.clone(), res.module.clone()))
+        .collect();
+    asili_parser::merge_modules(entrypoint, &modules)
 }
 
 /// Build merged extern env for semantic: prelude (msingi) + for each import, add that module's exported names.
@@ -418,7 +383,7 @@ pub fn check_duplicate_imports(
                     if *from != "msingi" || !res.is_stdlib {
                         errors.push(
                             Diagnostic::new("SEM090", format!("jina lamerudia: '{name}' limetoka {from} na {module_name}"))
-                                .with_stage("semantic")
+                                .with_stage("semantiki")
                                 .with_span(imp.line, 1),
                         );
                     }
@@ -434,7 +399,7 @@ pub fn check_duplicate_imports(
                     if *from != "msingi" || !res.is_stdlib {
                         errors.push(
                             Diagnostic::new("SEM091", format!("jina lamerudia: '{name}' (thabiti) limetoka {from}"))
-                                .with_stage("semantic")
+                                .with_stage("semantiki")
                                 .with_span(imp.line, 1),
                         );
                     }

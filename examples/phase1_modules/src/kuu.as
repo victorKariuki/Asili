@@ -1,38 +1,46 @@
 leta msingi
 leta matumizi
 
-umbo Namba {
+# A boxed number with methods (self: Kisanduku) — kept as a struct (not named `Namba`,
+# to avoid shadowing the primitive type) to demonstrate `shughuli ya`.
+umbo Kisanduku {
     thamani: Namba
 }
 
-shughuli ya Namba {
-    kazi mara_mbili(self) -> Namba {
+shughuli ya Kisanduku {
+    # Doubles the boxed value.
+    kazi mara_mbili(self: Kisanduku) -> Namba {
         rejesha self.thamani + self.thamani
     }
 
-    kazi jumlisha(self, nyingine: Namba) -> Namba {
+    # Adds another number to the boxed value.
+    kazi jumlisha(self: Kisanduku, nyingine: Namba) -> Namba {
         rejesha self.thamani + nyingine
     }
 
-    chapisha_self(self) -> Tupu {
+    # Prints the boxed value.
+    kazi chapisha_self(self: Kisanduku) -> Tupu {
         chapisha("Namba: " + namba_kuwa_neno(self.thamani))
     }
 }
 
+# A 2D coordinate pair.
 umbo Jozi {
     x: Namba
     y: Namba
 }
 
 shughuli ya Jozi {
-    kazi jumla_kuratibu(self) -> Namba {
+    # Sum of the two coordinates.
+    kazi jumla_kuratibu(self: Jozi) -> Namba {
         rejesha self.x + self.y
     }
 
-    kazi umbali(self) -> Namba {
+    # Euclidean distance from the origin.
+    kazi umbali(self: Jozi) -> Namba {
         weka dx = self.x
         weka dy = self.y
-        rejesha mizizi(dx * dx + dy * dy)
+        rejesha jaribu mizizi(dx * dx + dy * dy)
     }
 }
 
@@ -40,8 +48,8 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     chapisha("=== Phase I Module System Demo ===")
     chapisha("")
 
-    chapisha("Umbo 1: Namba")
-    weka n = Namba { thamani: 5.0 }
+    chapisha("Umbo 1: Kisanduku")
+    weka n = Kisanduku { thamani: 5.0 }
     n.chapisha_self()
     chapisha("  Mara mbili: " + namba_kuwa_neno(n.mara_mbili()))
     chapisha("  Jumlisha na 3: " + namba_kuwa_neno(n.jumlisha(3.0)))
@@ -54,6 +62,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     chapisha("  Umbali: " + namba_kuwa_neno(p.umbali()))
 }
 
+# Spells out a small whole number (0-10) in Swahili; anything else returns a fallback.
 kazi namba_kuwa_neno(n: Namba) -> Neno {
     ikiwa n == 0.0 {
         rejesha "sifuri"
@@ -87,9 +96,6 @@ kazi namba_kuwa_neno(n: Namba) -> Neno {
     }
     ikiwa n == 10.0 {
         rejesha "kumi"
-    }
-    ikiwa n == 5.0 {
-        rejesha "tano"
     }
     rejesha "namba nyingine"
 }

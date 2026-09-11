@@ -1,7 +1,10 @@
 leta matumizi
 leta hisabati
 
+thabiti FUNGUO_MWANZO: Neno = "0,0"
+thabiti KITENGANISHI: Neno = ","
 
+# Manhattan (L1) distance heuristic between two grid cells.
 kazi manhattan(x1: Namba, y1: Namba, x2: Namba, y2: Namba) -> Namba {
     rejesha absolute(x1 - x2) + absolute(y1 - y2)
 }
@@ -25,7 +28,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     weka openlist = [startpos]
 
     weka gcosts: Kamusi<Neno, Namba> = {}
-    gcosts["0,0"] = 0.0
+    gcosts[FUNGUO_MWANZO] = 0.0
 
     weka parents: Kamusi<Neno, Neno> = {}
     weka found = si_kweli
@@ -41,7 +44,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
             weka px = pos.kwanza()
             weka py = pos.pili()
 
-            weka key = (px kama Neno) + "," + (py kama Neno)
+            weka key = (px kama Neno) + KITENGANISHI + (py kama Neno)
             weka g = gcosts.pata(key).angu(1000000.0)
             weka h = manhattan(px, py, goalx, goaly)
             weka f = g + h
@@ -76,8 +79,8 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
                 weka val = row[nx]?
 
                 ikiwa val == 0.0 {
-                    weka nkey = (nx kama Neno) + "," + (ny kama Neno)
-                    weka ckey = (cx kama Neno) + "," + (cy kama Neno)
+                    weka nkey = (nx kama Neno) + KITENGANISHI + (ny kama Neno)
+                    weka ckey = (cx kama Neno) + KITENGANISHI + (cy kama Neno)
 
                     weka g_cx_cy = gcosts.pata(ckey.clona()).angu(0.0)
                     weka newg = g_cx_cy + 1.0
@@ -96,12 +99,12 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 
     ikiwa found {
         chapisha("Path found!")
-        weka curr = (goalx kama Neno) + "," + (goaly kama Neno)
-        wakati curr != "0,0" {
+        weka curr = (goalx kama Neno) + KITENGANISHI + (goaly kama Neno)
+        wakati curr != FUNGUO_MWANZO {
             chapisha(curr.clona())
             curr = parents.pata(curr).angu("")
         }
-        chapisha("0,0")
+        chapisha(FUNGUO_MWANZO)
     } vinginevyo {
         chapisha("No path found.")
     }

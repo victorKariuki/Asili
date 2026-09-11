@@ -74,7 +74,7 @@ fn payload_slice(bytes: &[u8]) -> Result<&[u8], AsbLoadError> {
         .windows(PAYLOAD_MARKER.len())
         .position(|w| w == PAYLOAD_MARKER)
         .ok_or_else(|| {
-            AsbLoadError::InvalidFormat("PAYLOAD marker not found; recompile for runnable artifact".to_string())
+            AsbLoadError::InvalidFormat("alama ya PAYLOAD haipo; jenga upya ili kupata kilele kinachotendeka".to_string())
         })?;
     Ok(&bytes[pos + PAYLOAD_MARKER.len()..])
 }

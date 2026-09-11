@@ -37,6 +37,15 @@ Default-imported. No OS dependency. The Phase I interpreter provides selected st
 
 - `orodha.ongeza()`, `orodha.ondoa()`, `orodha.kila_mmoja()`.
 
+### Kasha_GC\<T\> (opt-in managed memory)
+
+Not default-imported — requires `leta kasha_gc`. A minimal, deliberately small reference-counted
+wrapper (`Rc<RefCell<Value>>`), the concrete realization of the "managed/GC modules" concept in
+[07-execution-and-roadmap.md](07-execution-and-roadmap.md). Sharing is explicit via
+`.shirikisha()` (like Rust's `Rc::clone`) — a plain `weka b = a` still moves, so wrapping in
+`Kasha_GC<T>` never silently changes the language's default move semantics. Not a
+tracing/cycle-collecting GC: a self-referential `Kasha_GC<T>` leaks, by design.
+
 ---
 
 ## Moduli ya Mfumo (System)

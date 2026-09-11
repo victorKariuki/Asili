@@ -5,13 +5,13 @@ use pata_lint::lint_source;
 
 #[derive(Parser)]
 #[command(name = "pata-lint")]
-#[command(about = "Linter for Asili source code", long_about = None)]
+#[command(about = "Ukaguzi wa chanzo cha Asili", long_about = None)]
 struct Args {
-    /// File or directory to lint
+    /// Faili au saraka ya kukagua
     path: Option<PathBuf>,
 
-    /// Only report errors, not warnings
-    #[arg(long)]
+    /// Ripoti makosa tu, si maonyo
+    #[arg(long = "makosa-tu")]
     errors_only: bool,
 }
 
@@ -21,14 +21,14 @@ fn main() {
 
     if path.is_file() {
         if let Err(e) = lint_file(&path, args.errors_only) {
-            eprintln!("Error: {}", e);
+            eprintln!("Kosa: {}", e);
         }
     } else if path.is_dir() {
         if let Err(e) = lint_directory(&path, args.errors_only) {
-            eprintln!("Error: {}", e);
+            eprintln!("Kosa: {}", e);
         }
     } else {
-        eprintln!("Error: {} is not a file or directory", path.display());
+        eprintln!("Kosa: {} si faili wala saraka", path.display());
     }
 }
 
@@ -37,10 +37,10 @@ fn lint_file(path: &PathBuf, errors_only: bool) -> Result<(), Box<dyn std::error
     match lint_source(&source) {
         Ok(diags) => {
             if diags.is_empty() {
-                println!("✓ {} - No issues found", path.display());
+                println!("✓ {} - hakuna tatizo lililopatikana", path.display());
             } else {
                 for diag in diags {
-                    if errors_only && diag.stage == "lint" {
+                    if errors_only && diag.stage == "ukaguzi" {
                         continue;
                     }
                     let location = match &diag.span {
@@ -58,21 +58,39 @@ fn lint_file(path: &PathBuf, errors_only: bool) -> Result<(), Box<dyn std::error
             }
             Ok(())
         }
-        Err(e) => Err(format!("Failed to lint {}: {}", path.display(), e).into()),
+        Err(e) => Err(format!("imeshindwa kukagua {}: {}", path.display(), e).into()),
     }
 }
 
 fn lint_directory(dir: &PathBuf, errors_only: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut had_error = false;
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
 
-        if path.is_file() && (path.extension().map(|e| e == "as" || e == "asi").unwrap_or(false)) {
-            lint_file(&path, errors_only)?;
-        } else if path.is_dir() && !path.file_name().map(|n| n == "target").unwrap_or(false) {
-            lint_directory(&path, errors_only)?;
+        // `.asi` files are interface *stubs* — bare signatures like
+        // `kazi chapisha(ujumbe: Neno) -> Tupu` with no body, meant for
+        // `InterfaceRegistry`'s own lenient line-based reader, not the full `.as` grammar (see
+        // the matching NOTE in pata/lsp/src/lib.rs::is_interface_stub). Linting one with the
+        // real parser always fails — a real `kazi ... -> T` with no `{ }` is a parse error —
+        // and there's nothing a style/naming/complexity linter meaningfully checks on a bare
+        // signature anyway.
+        if path.is_file() && path.extension().map(|e| e == "as").unwrap_or(false) {
+            // Don't let one unparseable file stop the rest of the tree from being linted —
+            // report it and keep going, matching how a linter is expected to behave.
+            if let Err(e) = lint_file(&path, errors_only) {
+                eprintln!("{e}");
+                had_error = true;
+            }
+        } else if path.is_dir() && !path.file_name().map(|n| n == "kilele").unwrap_or(false) {
+            if lint_directory(&path, errors_only).is_err() {
+                had_error = true;
+            }
         }
     }
 
+    if had_error {
+        return Err("faili moja au zaidi imeshindwa kukaguliwa".into());
+    }
     Ok(())
 }

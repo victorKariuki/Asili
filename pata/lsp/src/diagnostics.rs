@@ -2,9 +2,10 @@
 
 use asili_diagnostics::Diagnostic as AsiliDiagnostic;
 use asili_lexer::tokenize;
-use asili_parser::{extern_env_from_imports, parse_tokens, semantic_check_with_env};
+use asili_parser::{extern_env_from_imports, merge_modules, parse_tokens, semantic_check_with_env_and_modules};
 use pata_lint::lint_source;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
+use crate::workspace::WorkspaceIndex;
 
 /// Extract a symbol name from a diagnostic message of the form "prefix: name".
 fn extract_symbol_from_message(msg: &str) -> Option<&str> {
@@ -87,7 +88,13 @@ pub fn asili_diagnostics_to_lsp_with_source(diags: &[AsiliDiagnostic], source: &
 }
 
 
-pub fn run_lex_parse(text: &str) -> Vec<AsiliDiagnostic> {
+/// `workspace` is the project's resolved cross-file index (see `crate::workspace`), when one
+/// is available — `None` degrades to the old stdlib-only behavior (e.g. before the first
+/// workspace scan completes, or for a file outside any known project). Without it, a call into
+/// your own sibling `.as` file falsely reports as an undefined function/unknown module, and a
+/// struct/trait defined there is unrecognized entirely: the stdlib-only extern env and
+/// `resolved_modules` set have no way to know that module exists.
+pub fn run_lex_parse(text: &str, workspace: Option<&WorkspaceIndex>) -> Vec<AsiliDiagnostic> {
     let mut out = Vec::new();
     let tokens = match tokenize(text) {
         Ok(t) => t,
@@ -104,7 +111,27 @@ pub fn run_lex_parse(text: &str) -> Vec<AsiliDiagnostic> {
         }
     };
     let (extern_fns, extern_consts) = extern_env_from_imports(&module);
-    if let Err(sem_errors) = semantic_check_with_env(&module, false, extern_fns, extern_consts) {
+
+    // Structs/traits/impls have no extern-signature equivalent in the semantic checker (unlike
+    // functions/constants, there's no HashMap<String, ...> parameter for them) — so a
+    // project-local struct defined in another file can't be recognized the way a project-local
+    // *function* can just by feeding its signature in. Instead, mirror exactly what
+    // `pata-cli`'s own compile pipeline does for this (`pipeline/compile.rs`'s
+    // `merged_for_eval` checks): merge every module this file actually `leta`s into one Module
+    // via `merge_modules`, and semantic-check *that* — cross-file structs/traits/impls are then
+    // just structs/traits/impls already sitting in the module being checked. Building the merge
+    // from the current file's own `imports` (not unconditionally from every resolved module)
+    // also fixes a real gap the previous function/constant-only merge had: it used to expose
+    // every project-local function to every file regardless of whether that file actually
+    // imported it, so a missing `leta` was never caught.
+    let (semantic_module, resolved_modules) = match workspace {
+        Some(ws) => {
+            let module_map = ws.modules.iter().map(|(k, v)| (k.clone(), v.module.clone())).collect();
+            (merge_modules(&module, &module_map), ws.resolved_module_names())
+        }
+        None => (module, Default::default()),
+    };
+    if let Err(sem_errors) = semantic_check_with_env_and_modules(&semantic_module, false, extern_fns, extern_consts, resolved_modules) {
         out.extend(sem_errors);
     }
 

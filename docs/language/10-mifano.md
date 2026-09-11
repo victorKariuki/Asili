@@ -17,7 +17,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
   weka j = jumla(2, 3)
   chapisha("jumla(2, 3) = " + (j kama Neno))
 
-  weka d = duara(4)
+  weka d = duara(4)   # round-to-nearest, not square — 4 rounds to itself
   chapisha("duara(4) = " + (d kama Neno))
 }
 ```
@@ -40,14 +40,14 @@ umbo Jozi {
 }
 
 shughuli ya Jozi {
-  kazi jumla_kuratibu(hii: Jozi) -> Namba {
-    rejesha hii.x + hii.y
+  kazi jumla_kuratibu(self: Jozi) -> Namba {
+    rejesha self.x + self.y
   }
 
-  kazi umbali(hii: Jozi) -> Namba {
-    weka dx = hii.x
-    weka dy = hii.y
-    rejesha mizizi(dx * dx + dy * dy)
+  kazi umbali(self: Jozi) -> Namba {
+    weka dx = self.x
+    weka dy = self.y
+    rejesha jaribu mizizi(dx * dx + dy * dy)
   }
 }
 
@@ -165,10 +165,9 @@ leta hisabati
 leta matumizi
 
 kazi gawanya_salama(a: Namba, b: Namba) -> Neno {
-  weka matokeo = gawio(a, b)
-  linganisha matokeo {
-    Hamna => { rejesha "Kosa: gawanya na sifuri" }
-    _     => { rejesha "Jibu: " + (jaribu gawio(a, b) kama Neno) }
+  linganisha gawio(a, b) {
+    Tokeo::Sawa(v)  => { rejesha "Jibu: " + (v kama Neno) }
+    Tokeo::Kosa(e) => { rejesha "Kosa: " + e }
   }
 }
 
@@ -186,7 +185,7 @@ kazi kipengele_cha_tatu(a: Orodha<Namba>) -> Namba {
 
 kazi kuu(hoja: Orodha<Neno>) -> Tupu {
   chapisha(gawanya_salama(10, 2))    # Jibu: 5
-  chapisha(gawanya_salama(10, 0))    # Kosa: gawanya na sifuri
+  chapisha(gawanya_salama(10, 0))    # Kosa: gawio kwa sifuri
 
   weka usanidi = kamusi_tupu()
   usanidi.ingiza("bandari", "3000")
@@ -230,17 +229,18 @@ Full source: [examples/astar/src/kuu.as](../../examples/astar/src/kuu.as)
 A reference showing every type in action:
 
 ```asili
-# Integer overflow is a Chaguo
-weka b8 = jaribu (1000 kama Biti8)   # Hamna — 1000 overflows Biti8
+# Integer overflow is a Chaguo — don't use jaribu here, it panics on Hamna;
+# check the Chaguo directly instead
+weka b8 = 1000 kama Biti8   # Chaguo(Hamna) — 1000 overflows Biti8
 
 # Herufi conversion
 weka h = 65 kama Herufi     # 'A'
 weka s = h kama Neno        # "A"
 
-# Struct cast to Neno
+# Struct cast to Neno — produces the internal Debug representation, not a pretty-printed form
 umbo Pika { x: Namba, y: Neno }
 weka p = Pika { x: 1, y: "a" }
-weka repr = p kama Neno     # "Pika { x: 1, y: \"a\" }"
+weka repr = p kama Neno     # Struct("Pika", [("x", Namba(1.0)), ("y", Neno("a"))])
 
 # Orodha of structs
 weka a = orodha()
@@ -264,11 +264,12 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
   chapisha("Habari, " + jina + "!")
 
   weka wakati_sasa = sasa()
-  chapisha("Wakati wa sasa: " + umbiza(wakati_sasa, "%Y-%m-%d %H:%M:%S"))
+  chapisha("Wakati wa sasa: " + umbiza(wakati_sasa))   # umbiza takes exactly 1 arg
+                                                          # (no format-string argument today)
 }
 ```
 
-**Mifumo inayoonyeshwa:** `omba` (readline), `sasa`, `umbiza` with format string.
+**Mifumo inayoonyeshwa:** `omba` (readline), `sasa`, `umbiza`.
 
 ---
 

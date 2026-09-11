@@ -7,14 +7,9 @@ use rand::Rng;
 use crate::value::{self, Value};
 use super::BuiltinFn;
 
+// Plain Neno, matching gawio/mizizi/kipeo's error shape (Tokeo<T, Neno> throughout hisabati).
 fn kosa_h(msg: impl Into<String>) -> Value {
-    Value::Struct(
-        "Kosa_Hisabati".to_string(),
-        vec![
-            ("aina".to_string(), Value::Neno("hisabati".into())),
-            ("ujumbe".to_string(), Value::Neno(msg.into())),
-        ],
-    )
+    Value::Neno(msg.into())
 }
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {

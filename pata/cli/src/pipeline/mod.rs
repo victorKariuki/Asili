@@ -4,3 +4,4 @@ pub mod format;
 pub mod interface_registry;
 pub mod project;
 pub mod resolve;
+pub mod sharti;

@@ -112,6 +112,10 @@ pub fn parse_value_type(s: &str) -> ValueType {
         let inner = s[5..s.len() - 1].trim();
         return ValueType::Seti(Box::new(parse_value_type(inner)));
     }
+    if s.starts_with("Kasha_GC<") && s.ends_with('>') {
+        let inner = s[9..s.len() - 1].trim();
+        return ValueType::KashaGC(Box::new(parse_value_type(inner)));
+    }
     if s == "Herufi" {
         return ValueType::Herufi;
     }

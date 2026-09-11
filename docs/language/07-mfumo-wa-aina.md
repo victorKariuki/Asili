@@ -14,7 +14,7 @@ umma umbo Mtu {
   umri: Namba
 }
 
-umma jenum Rangi { Nyekundu; Kijani; Bluu }
+umma jenum Rangi { Nyekundu, Kijani, Bluu }
 ```
 
 ## Thabiti za Moduli (Module-Level Constants)
@@ -48,8 +48,8 @@ umbo Sanduku<T> {
 }
 
 jenum Matokeo<T, E> {
-  Sawa(T)
-  Kosa(E)
+  Sawa(T),
+  Kosa(E),
 }
 ```
 
@@ -61,7 +61,7 @@ Declare a trait (interface) with `sifa`:
 
 ```asili
 sifa Inayoonyeshwa {
-  kazi onyesha(hii: Self) -> Neno
+  kazi onyesha(self: Self) -> Neno
 }
 ```
 
@@ -71,13 +71,18 @@ Implement a trait for a struct using `shughuli ya ... kwa ...`:
 umbo Paka { jina: Neno }
 
 shughuli ya Paka kwa Inayoonyeshwa {
-  kazi onyesha(hii: Paka) -> Neno {
-    rejesha "Paka(" + hii.jina + ")"
+  kazi onyesha(self: Paka) -> Neno {
+    rejesha "Paka(" + self.jina + ")"
   }
 }
 ```
 
-> Note: Trait dispatch is currently structural (duck typing at runtime). Full static dispatch is in progress.
+> **Known bug, not just "in progress":** calling a method defined inside `shughuli ya X kwa
+> Trait` (e.g. `pk.onyesha()` above) currently fails with `SEM040: njia 'onyesha' haipo kwa
+> 'Paka'` — trait-impl methods are not wired into method dispatch at all. The identical method
+> body under a plain `shughuli ya Paka { ... }` (no `kwa Trait`) works and dispatches
+> correctly. Use a plain impl block until this is fixed; see
+> [implementation-status.md](../design/implementation-status.md).
 
 ## Waendeshaji wa Muundo (Compound Assignment Operators)
 
@@ -96,10 +101,14 @@ n /= 4    # n = 6
 ```asili
 weka x = 42
 weka r = azima x          # immutable reference
-weka rm = azima_tenda x   # mutable reference
 ```
 
-> Note: Borrow semantics are parsed and represented in the AST. Runtime enforcement is in progress.
+> Note: conflicting borrows are already caught at **compile time** (semantic analysis), not
+> just parsed/represented — e.g. taking both `azima x` and `azima_tenda x` for the same `x` in
+> the same scope raises `SEM043: migongano ya borrowing kwa: x`. The move/borrow checker
+> (`Binding` tracking in `core/parser/src/semantic/analyzer.rs`) is real and enforced today;
+> what's still missing is a runtime backing for moves (the evaluator clones regardless) — see
+> [implementation-status.md](../design/implementation-status.md).
 
 ## Kuacha Vigeuzi (Drop)
 
@@ -122,13 +131,14 @@ weka p = Pika { x: 3, y: 4 }
 linganisha p {
   Pika { x: 0, y: _ } => { chapisha("kwenye mstari wa y") }
   Pika { x: a, y: b } => { chapisha("(" + (a kama Neno) + ", " + (b kama Neno) + ")") }
+  _ => {}   # exhaustiveness checker requires this even though the two arms above cover p
 }
 ```
 
 ### Jenum (Enum Destructuring)
 
 ```asili
-jenum Jibu { Sawa(Namba); Kosa(Neno) }
+jenum Jibu { Sawa(Namba), Kosa(Neno) }
 
 weka j = Jibu::Sawa(42)
 
@@ -147,6 +157,7 @@ weka p = jozi(10, "moja")
 linganisha p {
   (0, _)    => { chapisha("sifuri kwanza") }
   (n, neno) => { chapisha((n kama Neno) + " ni " + (neno kama Neno)) }
+  _ => {}   # exhaustiveness checker requires this even though the two arms above cover p
 }
 ```
 
@@ -157,6 +168,8 @@ weka b = kweli
 linganisha b {
   kweli    => { chapisha("ndio") }
   si_kweli => { chapisha("hapana") }
+  _ => {}   # the exhaustiveness checker doesn't recognize kweli/si_kweli as covering all
+            # of Ukweli, so this is required even though the two arms above are exhaustive
 }
 ```
 
@@ -168,9 +181,9 @@ kazi mtihani_jumla() -> Ukweli {
   rejesha 2 + 2 == 4
 }
 
-#[sharti(os = "linux")]
-kazi tekeleza_linux() -> Tupu {
-  # only compiled on linux
+#[sharti(lengo = "native")]
+kazi tekeleza_native() -> Tupu {
+  # only compiled when building for the "native" target
 }
 
 #[ndani]
@@ -187,6 +200,6 @@ kazi kutoka_c() -> Namba {
 | Sifa          | Maelezo                                         |
 |---------------|-------------------------------------------------|
 | `#[jaribio]`  | Mark as a test function (run by `pata jaribu`)  |
-| `#[sharti(...)]` | Conditional compilation (e.g. `os = "linux"`) |
+| `#[sharti(...)]` | Conditional compilation; only key `lengo` is recognized (e.g. `lengo = "wasm"`), values OR'd with `\|` — see [implementation-status.md](../design/implementation-status.md) |
 | `#[ndani]`    | Internal / not exported                          |
 | `#[kiunganishi]` | FFI linkage annotation                        |
