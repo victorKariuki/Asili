@@ -11,7 +11,7 @@
 - **Syntax:** Swahili keywords (`kazi`, `weka`, `ikiwa`, `linganisha`, `rejesha`, …).
 - **Types:** Primitives (`Namba`, `Neno`, `Ukweli`), collections (`Orodha<T>`, `Kamusi<K,V>`), `Chaguo<T>`, `Tokeo<T,E>`, structs and impls.
 - **Stdlib:** Modular built-ins (msingi, mfumo, majira, matumizi, faili, hisabati, runtime, syscall, kiungo, sambamba) plus `lib/std` interface stubs.
-- **Spec:** [SPECIFICATION.md](SPECIFICATION.md) and [spec/](spec/) define the language and execution model.
+- **Spec:** [docs/SPECIFICATION.md](docs/SPECIFICATION.md) and [docs/spec/](docs/spec/) define the language and execution model.
 
 ## Prerequisites
 
@@ -62,7 +62,7 @@ pata jenga --tenda
 | `driver/` | Target adapters (e.g. Wasm). |
 | `pata/` | CLI (`pata-cli`), runner, LSP. |
 | `lib/` | Standard library surface (`lib/std/*.asi` stubs). |
-| `spec/` | Language specification. |
+| `docs/spec/` | Language specification. |
 | `examples/` | Sample Asili programs. |
 | `docs/` | How-to and design notes. |
 
@@ -83,14 +83,26 @@ Available via `leta <moduli>` (e.g. `leta matumizi`):
 
 ## Documentation
 
-- **Language reference:** [docs/language/](docs/language/) — syntax, functions, control flow, data structures, error handling, modules.
-- **REPL help:** [docs/repl/](docs/repl/) — topic docs usable via `?mada` in `pata repl`.
-- **How-to:** [docs/howto/](docs/howto/) — getting started, tests, LSP.
-- **Design:** [docs/design/](docs/design/) — Mwalimu (LSP), phase decisions.
-- **Spec:** [spec/](spec/) and [SPECIFICATION.md](SPECIFICATION.md).
-- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md).
-- **Changelog:** [CHANGELOG.md](CHANGELOG.md).
-- **Security:** [SECURITY.md](SECURITY.md).
+Two top-level locations, split by what kind of question you're asking:
+
+- **[docs/spec/](docs/spec/)** (entry point: [docs/SPECIFICATION.md](docs/SPECIFICATION.md)) — the formal, normative
+  language and ecosystem specification: syntax, type system, stdlib contract, tooling contract,
+  execution model, resolved design decisions. Changes here define what Asili *is*.
+- **[docs/](docs/)** — implementation status, tutorials, and reference material for using what
+  exists today:
+  - [docs/design/implementation-status.md](docs/design/implementation-status.md) — **start
+    here** for "is X actually done" — phase-by-phase checklist, known gaps, recommended order
+    of work. The single progress/status doc; supersedes any older phase-status file.
+  - [docs/language/](docs/language/) — language tutorial (syntax, functions, control flow,
+    data structures, error handling, modules).
+  - [docs/repl/](docs/repl/) — REPL topic docs (Swahili in `sw/`, English in `en/`), shown via
+    `?mada` in `pata repl`; switch languages with `?lugha en`/`?lugha sw`.
+  - [docs/howto/](docs/howto/) — getting started, running tests, using the LSP.
+  - [docs/design/](docs/design/) — implementation-level design docs (e.g. Mwalimu/LSP
+    architecture) that don't belong in the normative spec.
+
+Root-level, project meta rather than language docs: [CONTRIBUTING.md](CONTRIBUTING.md),
+[CHANGELOG.md](CHANGELOG.md), [SECURITY.md](SECURITY.md).
 
 ## License
 

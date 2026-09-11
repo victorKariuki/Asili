@@ -15,10 +15,15 @@ kubwa
 
 ## Linganisha
 
+`linganisha` is a statement, not a value-producing expression — it cannot be assigned
+(`weka r = linganisha ... ` fails to parse) and a bare value inside an arm is just a discarded
+expression statement, not a returned result. Call `chapisha` (or another side-effecting
+statement) inside each arm instead:
+
 ```
 > weka n = 2
-> linganisha n { 1 => { "moja" } 2 => { "mbili" } _ => { "nyingine" } }
-Neno("mbili")
+> linganisha n { 1 => { chapisha("moja") } 2 => { chapisha("mbili") } _ => { chapisha("nyingine") } }
+mbili
 ```
 
 ## Mzunguko
@@ -54,4 +59,4 @@ Namba(15.0)
 
 - `?kazi` — msaada wa kufafanua kazi
 - `?orodha` — msaada wa orodha
-- `?linganisha` — (tazama 03-udhibiti.md katika docs/language/)
+- For more on `linganisha`, see `docs/language/03-udhibiti.md`.

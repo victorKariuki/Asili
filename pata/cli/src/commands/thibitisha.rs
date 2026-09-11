@@ -15,14 +15,14 @@ use std::path::Path;
 //   - Trait completeness: every sifa listed in [tegemezi] must be fully implemented
 //   - Test coverage threshold: at minimum N% of public kazi must have #[jaribio] coverage
 pub fn run(_args: &[String]) -> CliResult {
-    compile_project(Path::new("."))?;
+    compile_project(Path::new("."), None)?;
     enforce_docs(Path::new("."))?;
 
     let files = collect_asili_files(Path::new("."))?;
     let (_, changed) = check_or_write(&files, true)?;
     if changed > 0 {
         return Err(CliError::new(
-            "nadhifu check imefeli: tumia `pata nadhifu` kwanza",
+            "mafaili hayajafuata muundo sahihi: tumia `pata nadhifu` kwanza",
             1,
         ));
     }
@@ -90,7 +90,7 @@ fn enforce_docs(root: &Path) -> CliResult {
             if s.is_public && !has_doc_before(&lines, s.line) {
                 return Err(CliError::new(
                     format!(
-                        "nyaraka zimekosekana kwa umbo ya umma '{}' kwenye {}:{}",
+                        "nyaraka zimekosekana kwa umbo la umma '{}' kwenye {}:{}",
                         s.name,
                         file.display(),
                         s.line

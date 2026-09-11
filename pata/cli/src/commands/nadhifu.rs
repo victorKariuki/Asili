@@ -32,13 +32,16 @@ fn parse_args(args: &[String]) -> Result<(bool, Option<String>), CliError> {
     let mut i = 0usize;
     while i < args.len() {
         match args[i].as_str() {
-            "--check" => {
+            "--kagua" => {
                 check = true;
                 i += 1;
             }
             other if !other.starts_with('-') => {
                 if path.is_some() {
-                    return Err(CliError::new("tolea njia moja tu", 2));
+                    return Err(CliError::new(
+                        format!("nadhifu inakubali njia moja tu, umetoa nyingine: {other}"),
+                        2,
+                    ));
                 }
                 path = Some(other.to_string());
                 i += 1;
@@ -69,7 +72,7 @@ mod tests {
         std::env::set_current_dir(&root).expect("chdir");
         fs::write("src/kuu.as", "leta matumizi\nkazi  kuu(){chapisha(\"x\")}\n").expect("write");
 
-        let err = run(&["--check".into()]).expect_err("should fail check");
+        let err = run(&["--kagua".into()]).expect_err("should fail check");
         assert_eq!(err.exit_code, 1);
 
         std::env::set_current_dir(&original).expect("restore");
