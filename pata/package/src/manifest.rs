@@ -108,7 +108,7 @@ impl WorkspaceConfig {
             for member in members {
                 let member_path = root.join(member);
                 if !member_path.exists() {
-                    anyhow::bail!("Mtaa {} haupo: {}", member, member_path.display());
+                    anyhow::bail!("Mwanachama {} haupo: {}", member, member_path.display());
                 }
                 let manifest_path = member_path.join("Asili.toml");
                 if !manifest_path.exists() {

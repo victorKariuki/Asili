@@ -20,7 +20,7 @@ pub struct LockFile {
 }
 
 /// A locked (resolved) dependency
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LockedDependency {
     pub version: String,
     pub checksum: String,
@@ -64,7 +64,7 @@ impl LockFile {
     /// Write lock file to pata.lock
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
         let content = toml::to_string_pretty(self)
-            .with_context(|| "hitilafu ya kubadili lock file kuwa TOML")?;
+            .with_context(|| "hitilafu ya kubadili pata.lock kuwa TOML")?;
         fs::write(&path, content)
             .with_context(|| "imeshindwa kuandika pata.lock")
     }

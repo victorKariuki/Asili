@@ -1,4 +1,6 @@
-//! REPL: read-eval-print loop with persistent env. Use `?topic` to show docs from docs/repl/{topic}.md.
+//! REPL: read-eval-print loop with persistent env. Use `?topic` to show docs from
+//! docs/repl/{lang}/{topic}.md. `?lugha en`/`?lugha sw` switches the help language
+//! for the rest of the session (default: sw).
 
 use super::{CliError, CliResult};
 use asili_evaluator::{run_block_in_env_with_telemetry, Env, Value};
@@ -14,12 +16,13 @@ const PROMPT: &str = "> ";
 pub fn run(_args: &[String]) -> CliResult {
     let mut env = Env::new();
     env.seed_global_constants();
+    let mut lang = "sw".to_string();
 
     let stdin = io::stdin();
     let mut stdout = io::stdout();
     let mut lines = stdin.lock().lines();
 
-    writeln!(stdout, "Asili REPL. Andika 'toka' au 'exit' kuondoka. ?mada = msaada (mf. ?hisabati).").map_err(|e| CliError::new(e.to_string(), 1))?;
+    writeln!(stdout, "Asili REPL. Andika 'toka' au 'exit' kuondoka. ?mada = msaada (mf. ?hisabati). ?lugha en/sw = badilisha lugha ya msaada.").map_err(|e| CliError::new(e.to_string(), 1))?;
     loop {
         write!(stdout, "{}", PROMPT).map_err(|e| CliError::new(e.to_string(), 1))?;
         stdout.flush().map_err(|e| CliError::new(e.to_string(), 1))?;
@@ -34,7 +37,18 @@ pub fn run(_args: &[String]) -> CliResult {
         }
         if let Some(topic) = line.strip_prefix('?') {
             let topic = topic.trim();
-            if let Err(e) = show_repl_doc(topic, &mut stdout) {
+            if let Some(requested) = topic.strip_prefix("lugha") {
+                let requested = requested.trim();
+                match requested {
+                    "en" | "sw" => {
+                        lang = requested.to_string();
+                        println!("lugha ya msaada: {}", lang);
+                    }
+                    _ => eprintln!("tumia ?lugha en au ?lugha sw"),
+                }
+                continue;
+            }
+            if let Err(e) = show_repl_doc(topic, &lang, &mut stdout) {
                 eprintln!("{}", e);
             }
             continue;
@@ -94,17 +108,17 @@ fn parse_repl_line(line: &str) -> Result<(asili_parser::Module, asili_parser::Bl
     Ok((module, body))
 }
 
-/// Print and render content of docs/repl/{topic}.md if it exists. Path is relative to current dir.
-fn show_repl_doc(topic: &str, out: &mut impl Write) -> Result<(), String> {
+/// Print and render content of docs/repl/{lang}/{topic}.md if it exists. Path is relative to current dir.
+fn show_repl_doc(topic: &str, lang: &str, out: &mut impl Write) -> Result<(), String> {
     if topic.is_empty() || topic.contains('/') || topic.contains('\\') {
         return Err("jina la mada si sahihi".to_string());
     }
-    let path = Path::new("docs").join("repl").join(format!("{}.md", topic));
+    let path = Path::new("docs").join("repl").join(lang).join(format!("{}.md", topic));
     let content = std::fs::read_to_string(&path).map_err(|e| {
         if path.exists() {
             e.to_string()
         } else {
-            format!("hakuna mada '{}' (tazama docs/repl/)", topic)
+            format!("hakuna mada '{}' (tazama docs/repl/{})", topic, lang)
         }
     })?;
 

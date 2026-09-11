@@ -29,7 +29,7 @@ impl Workspace {
 
         // Validate members exist
         config.validate_members(&root)
-            .with_context(|| "Mtaa haupo au hauna Asili.toml")?;
+            .with_context(|| "mwanachama haupo au hauna Asili.toml")?;
 
         // Load all members
         let members_vec = config.load_members(&root)

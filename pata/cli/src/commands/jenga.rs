@@ -12,9 +12,11 @@ Jenga mradi kutoka pata.toml au faili moja (bila mradi).
 
 Chagua:
   --tenda          Baada ya kujenga, tenda kazi kuu na hoja zinazofuata.
-  --pato <njia> (au --out)  Mahali pa kuweka kilele (default: target/).
-  --namna <dev|release|embedded> (au --profile)  Namna ya kujenga (haijatumika bado).
-  --msaada, -h (au --help)   Onyesha ujumbe huu.
+  --pato <njia>    Mahali pa kuweka kilele (default: kilele/).
+  --namna <dev|release|embedded>  Namna ya kujenga (haijatumika bado).
+  --lengo <lengo>  Lengo la kujenga (mf. "native", "wasm"). Hupita
+                   [jenga] lengo katika pata.toml; default "native".
+  --msaada         Onyesha ujumbe huu.
 
 Hoja za kuu: Kila neno lisilokuwa chagua linapewa kwa kuu(hoja: Orodha<Neno>).
 
@@ -29,12 +31,12 @@ Mifano:
 pub fn run(args: &[String]) -> CliResult {
     if args
         .iter()
-        .any(|a| a == "--help" || a == "-h" || a == "--msaada")
+        .any(|a| a == "--msaada")
     {
         print!("{JENGA_USAGE}");
         return Ok(());
     }
-    let (_profile, out, do_run, single_file, program_args) = parse_args(args)?;
+    let (_profile, out, do_run, single_file, program_args, build_target) = parse_args(args)?;
     if let Some(ref path) = single_file {
         if !path.exists() {
             return Err(CliError::new(
@@ -57,7 +59,7 @@ pub fn run(args: &[String]) -> CliResult {
             .unwrap_or_else(|| PathBuf::from("."));
         let target = out
             .clone()
-            .unwrap_or_else(|| root.join("target"));
+            .unwrap_or_else(|| root.join("kilele"));
         let name = path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -65,7 +67,7 @@ pub fn run(args: &[String]) -> CliResult {
         let source = fs::read_to_string(path).map_err(|e| {
             CliError::new(format!("imeshindwa kusoma {}: {e}", path.display()), 1)
         })?;
-        let key = cache_key(name, &source);
+        let key = cache_key(name, &source, build_target.as_deref().unwrap_or("native"));
         let cache_path = target.join(".asb-cache").join(format!("{key}.asb"));
         if cache_path.exists() {
             fs::create_dir_all(&target).map_err(|e| {
@@ -75,7 +77,7 @@ pub fn run(args: &[String]) -> CliResult {
                 CliError::new(format!("imeshindwa kusoma cache {}: {e}", cache_path.display()), 1)
             })?;
             let module = load_asb(&asb_bytes).map_err(|e| {
-                CliError::new(format!("kuipakua asb: {e}"), 1)
+                CliError::new(format!("kuipakia asb: {e}"), 1)
             })?;
             let artifact = target.join(format!("{name}.asb"));
             fs::write(&artifact, &asb_bytes).map_err(|e| {
@@ -83,7 +85,7 @@ pub fn run(args: &[String]) -> CliResult {
             })?;
             let meta = target.join(format!("{name}.build.manifest"));
             let manifest = format!(
-                "project={name}\nentry={}\nfunctions={}\nartifact={name}.asb\n",
+                "mradi={name}\nkuingia={}\nkazi={}\nkilele={name}.asb\n",
                 path.display(),
                 module.functions.len()
             );
@@ -96,11 +98,11 @@ pub fn run(args: &[String]) -> CliResult {
             }
             return Ok(());
         }
-        let compiled = compile_single_file(path)?;
+        let compiled = compile_single_file(path, build_target.as_deref())?;
         (root, compiled)
     } else {
         let root = Path::new(".");
-        let compiled = compile_project(root)?;
+        let compiled = compile_project(root, build_target.as_deref())?;
         (root.to_path_buf(), compiled)
     };
 
@@ -108,7 +110,7 @@ pub fn run(args: &[String]) -> CliResult {
         let target = out
             .as_ref()
             .cloned()
-            .unwrap_or_else(|| root.join("target"));
+            .unwrap_or_else(|| root.join("kilele"));
         let a = target.join(format!("{}.asb", compiled.config.name));
         println!("imejengwa (cache): {}", a.display());
         a
@@ -128,28 +130,36 @@ pub fn run(args: &[String]) -> CliResult {
 #[allow(clippy::type_complexity)]
 pub fn parse_args(
     args: &[String],
-) -> Result<(String, Option<PathBuf>, bool, Option<PathBuf>, Vec<String>), CliError> {
+) -> Result<(String, Option<PathBuf>, bool, Option<PathBuf>, Vec<String>, Option<String>), CliError> {
 
     let mut profile = String::from("dev");
     let mut out = None;
     let mut do_run = false;
     let mut single_file = None;
     let mut program_args = Vec::new();
+    let mut target = None;
     let mut i = 0usize;
     while i < args.len() {
         match args[i].as_str() {
-            "--profile" | "--namna" => {
+            "--namna" => {
                 let Some(p) = args.get(i + 1) else {
-                    return Err(CliError::new("--profile/--namna inahitaji thamani", 2));
+                    return Err(CliError::new("--namna inahitaji thamani", 2));
                 };
                 profile = p.clone();
                 i += 2;
             }
-            "--out" | "--pato" => {
+            "--pato" => {
                 let Some(p) = args.get(i + 1) else {
-                    return Err(CliError::new("--out/--pato inahitaji njia", 2));
+                    return Err(CliError::new("--pato inahitaji njia", 2));
                 };
                 out = Some(PathBuf::from(p));
+                i += 2;
+            }
+            "--lengo" => {
+                let Some(t) = args.get(i + 1) else {
+                    return Err(CliError::new("--lengo inahitaji thamani", 2));
+                };
+                target = Some(t.clone());
                 i += 2;
             }
             "--tenda" => {
@@ -166,7 +176,7 @@ pub fn parse_args(
             }
         }
     }
-    Ok((profile, out, do_run, single_file, program_args))
+    Ok((profile, out, do_run, single_file, program_args, target))
 }
 
 #[cfg(test)]
@@ -183,18 +193,18 @@ mod tests {
         let root = temp_project();
         std::env::set_current_dir(&root).expect("chdir");
         run(&[]).expect("jenga ok");
-        let asb_bytes = fs::read("target/app.asb").expect("artifact");
+        let asb_bytes = fs::read("kilele/app.asb").expect("artifact");
         assert!(
             asb_bytes.starts_with(b"ASB-STUB"),
             "asb should have ASB-STUB header"
         );
         let module = asili_evaluator::load_asb(&asb_bytes).expect("load_asb");
         assert!(!module.functions.is_empty(), "asb should contain merged module");
-        let manifest = fs::read_to_string("target/app.build.manifest").expect("per-artifact manifest");
-        assert!(manifest.contains("project=app"), "manifest should have project=app");
-        assert!(manifest.contains("entry="));
-        assert!(manifest.contains("functions="));
-        assert!(manifest.contains("artifact=app.asb"), "manifest should point at .asb");
+        let manifest = fs::read_to_string("kilele/app.build.manifest").expect("per-artifact manifest");
+        assert!(manifest.contains("mradi=app"), "manifest should have mradi=app");
+        assert!(manifest.contains("kuingia="));
+        assert!(manifest.contains("kazi="));
+        assert!(manifest.contains("kilele=app.asb"), "manifest should point at .asb");
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(&root);
     }
@@ -212,10 +222,10 @@ mod tests {
         )
         .expect("write other.as");
         run(&["other.as".into()]).expect("jenga single file ok");
-        let app_manifest = fs::read_to_string("target/app.build.manifest").expect("app manifest");
-        let other_manifest = fs::read_to_string("target/other.build.manifest").expect("other manifest");
-        assert!(app_manifest.contains("project=app") && app_manifest.contains("artifact=app.asb"));
-        assert!(other_manifest.contains("project=other") && other_manifest.contains("artifact=other.asb"));
+        let app_manifest = fs::read_to_string("kilele/app.build.manifest").expect("app manifest");
+        let other_manifest = fs::read_to_string("kilele/other.build.manifest").expect("other manifest");
+        assert!(app_manifest.contains("mradi=app") && app_manifest.contains("kilele=app.asb"));
+        assert!(other_manifest.contains("mradi=other") && other_manifest.contains("kilele=other.asb"));
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(&root);
     }
