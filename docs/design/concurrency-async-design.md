@@ -1,11 +1,14 @@
 # Concurrency and async design: `tenda`/`njia`/`fungo`, `sawia`/`subiri`
 
-**Status: not started (concurrency), blocked on concurrency (async).** Phase IV, per
-[docs/spec/07-execution-and-roadmap.md](../spec/07-execution-and-roadmap.md)'s feature–phase
-map, which also states the real ordering constraint directly: *"no async without runtime"* —
-`sawia`/`subiri` cannot be implemented before `tenda`/`njia`/`fungo` establish a working
-executor. This doc is forward-looking; there is no working concurrency/async code to describe,
-only an important naming/model discrepancy to flag and the open design questions ahead.
+**Status: concurrency (`tenda`/`njia`/`fungo`) is now implemented — see
+[concurrency-design.md](concurrency-design.md) for the real architecture, decisions made, and
+why. This doc's concurrency-half content below is preserved as the historical record of the
+naming discrepancy this doc first found and the open questions it framed (both now resolved),
+not as current status.** Async (`sawia`/`subiri`) remains not started, per
+[docs/spec/07-execution-and-roadmap.md](../spec/07-execution-and-roadmap.md)'s explicit ordering
+constraint — *"no async without runtime"* — which is no longer a blocker on concurrency itself
+(that part is done) but is still unaddressed on its own terms; nothing below the async section
+should be read as current guidance for that half.
 
 ## An existing discrepancy that needs resolving first
 

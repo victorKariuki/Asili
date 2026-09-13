@@ -2,8 +2,8 @@ use asili_diagnostics::{ContextMap, Diagnostic, Span};
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    AssignOp, Attribute, Block, Expr, FnContract, ForMode, Function, ImportPath, Module, Pattern,
-    Stmt, UnaryOp, BinaryOp, ValueType,
+    AssignOp, Attribute, Block, Expr, FnContract, ForMode, Function, ImplDecl, ImportPath, Module,
+    Pattern, Stmt, TypeExpr, UnaryOp, BinaryOp, ValueType,
 };
 
 #[derive(Clone)]
@@ -308,6 +308,7 @@ impl<'a> Analyzer<'a> {
                     );
                 }
             }
+            self.check_trait_completeness(i);
         }
 
         if self.require_main && !has_main {
@@ -323,6 +324,61 @@ impl<'a> Analyzer<'a> {
                     Diagnostic::new("SEM008", format!("kiambatanisho haijulikani: {}", a.name))
                         .with_stage("semantiki")
                         .with_span(a.line, 1),
+                );
+            }
+        }
+    }
+
+    /// Every method a `sifa` declares must have a matching (name, param types, return type)
+    /// entry in an `impl` that names it — `Self` in the trait's signature resolves to the
+    /// impl's own `target` type name for this comparison. A trait unknown to this module (e.g.
+    /// typo'd `trait_name`, or a trait imported from elsewhere without its signature visible
+    /// here) is skipped, not flagged — SEM007-style "unknown identifier" checking is a separate
+    /// concern from completeness.
+    fn check_trait_completeness(&mut self, imp: &ImplDecl) {
+        let Some(trait_name) = &imp.trait_name else {
+            return;
+        };
+        let Some(trait_decl) = self.module.traits.iter().find(|t| &t.name == trait_name) else {
+            return;
+        };
+        for req in &trait_decl.methods {
+            let resolved_params: Vec<TypeExpr> = req
+                .params
+                .iter()
+                .map(|p| {
+                    if p.ty.name == "Self" {
+                        TypeExpr { name: imp.target.clone() }
+                    } else {
+                        p.ty.clone()
+                    }
+                })
+                .collect();
+            let resolved_return = if req.return_type.name == "Self" {
+                TypeExpr { name: imp.target.clone() }
+            } else {
+                req.return_type.clone()
+            };
+            let satisfied = imp.body.iter().any(|f| {
+                f.name == req.name
+                    && f.params.len() == req.params.len()
+                    && f.params
+                        .iter()
+                        .zip(resolved_params.iter())
+                        .all(|(actual, expected)| actual.ty == *expected)
+                    && f.return_type == resolved_return
+            });
+            if !satisfied {
+                self.errors.push(
+                    Diagnostic::new(
+                        "SEM105",
+                        format!(
+                            "njia '{}' ya sifa '{}' haijatekelezwa kwa '{}'",
+                            req.name, trait_name, imp.target
+                        ),
+                    )
+                    .with_stage("semantiki")
+                    .with_span(imp.line, 1),
                 );
             }
         }
@@ -942,6 +998,47 @@ impl<'a> Analyzer<'a> {
             Expr::Binary { left, op, right, line } => {
                 let l = self.check_expr(left, scopes, UseMode::BorrowImm);
                 let r = self.check_expr(right, scopes, UseMode::BorrowImm);
+                // Namba_Kuu/Namba_Sahihi arithmetic widens the same way the evaluator's
+                // big_numeric_binary_op does at runtime: Namba paired with either widens to
+                // match; Namba_Kuu paired with Namba_Sahihi promotes to Namba_Sahihi. Checked
+                // before the plain-Namba arms below so `weka a: Namba_Kuu = ...; a + a` isn't
+                // rejected as "requires Namba."
+                let is_big = |t: &ValueType| matches!(t, ValueType::NambaKuu | ValueType::NambaSahihi);
+                if is_big(&l) || is_big(&r) {
+                    let both_namba_ish = (l == ValueType::Namba || is_big(&l)) && (r == ValueType::Namba || is_big(&r));
+                    if !both_namba_ish {
+                        self.errors.push(
+                            Diagnostic::new(
+                                "SEM033",
+                                "operesheni ya Namba_Kuu/Namba_Sahihi inahitaji Namba, Namba_Kuu, au Namba_Sahihi pande zote mbili",
+                            )
+                            .with_stage("semantiki")
+                            .with_span(*line, 1),
+                        );
+                        return ValueType::Unknown;
+                    }
+                    return match op {
+                        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem | BinaryOp::Pow => {
+                            if l == ValueType::NambaSahihi || r == ValueType::NambaSahihi {
+                                ValueType::NambaSahihi
+                            } else {
+                                ValueType::NambaKuu
+                            }
+                        }
+                        BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Gt | BinaryOp::Lt | BinaryOp::Ge | BinaryOp::Le => ValueType::Ukweli,
+                        _ => {
+                            self.errors.push(
+                                Diagnostic::new(
+                                    "SEM033",
+                                    "opereta huyu hatumiki kwa Namba_Kuu/Namba_Sahihi",
+                                )
+                                .with_stage("semantiki")
+                                .with_span(*line, 1),
+                            );
+                            ValueType::Unknown
+                        }
+                    };
+                }
                 match op {
                     BinaryOp::Add => {
                         // TypeVar/Unknown are unresolved-generic placeholders (e.g. a pattern
@@ -1027,10 +1124,15 @@ impl<'a> Analyzer<'a> {
                 }
             }
             Expr::Cast { expr, ty, .. } => {
-                let _ = self.check_expr(expr, scopes, UseMode::Move);
+                let source = self.check_expr(expr, scopes, UseMode::Move);
                 let target = self.type_from_decl(&ty.name);
                 let s = ty.name.replace(' ', "");
-                let fallible = s.starts_with("Biti") || s.starts_with("uBiti");
+                // Fallible: Biti*/uBiti* (may not fit the fixed width), and Namba_Kuu/
+                // Namba_Sahihi -> Namba (may exceed f64's finite range/precision — the reverse
+                // direction, Namba -> Namba_Kuu/Namba_Sahihi, is infallible widening).
+                let fallible = s.starts_with("Biti")
+                    || s.starts_with("uBiti")
+                    || (s == "Namba" && matches!(source, ValueType::NambaKuu | ValueType::NambaSahihi));
                 if fallible {
                     ValueType::Chaguo(Box::new(target))
                 } else {
@@ -1073,7 +1175,10 @@ impl<'a> Analyzer<'a> {
                         return self.type_from_decl(&f.return_type.name);
                     }
                     if let Some(sig) = self.extern_fn_map.get(&name).cloned() {
-                        let variadic = name == "orodha";
+                        // TODO: variadic-by-name is a hardcoded special case, not a general
+                        // FnContract flag — matches the existing "orodha" precedent rather than
+                        // introducing new arity-checking machinery for this one addition.
+                        let variadic = name == "orodha" || name == "seti" || name == "tenda";
                         // Evaluate all arg types upfront for both validation and generic instantiation.
                         let arg_types: Vec<ValueType> = args
                             .iter()
@@ -1169,6 +1274,13 @@ impl<'a> Analyzer<'a> {
                     ValueType::Chaguo(_) => "Chaguo".to_string(),
                     ValueType::Tokeo(_, _) => "Tokeo".to_string(),
                     ValueType::KashaGC(_) => "Kasha_GC".to_string(),
+                    ValueType::Faili => "Faili".to_string(),
+                    ValueType::Mkondo => "Mkondo".to_string(),
+                    ValueType::Kumbukumbu(_) => "Kumbukumbu".to_string(),
+                    ValueType::Seti(_) => "Seti".to_string(),
+                    ValueType::NjiaTx(_) => "NjiaTx".to_string(),
+                    ValueType::NjiaRx(_) => "NjiaRx".to_string(),
+                    ValueType::Fungo(_) => "Fungo".to_string(),
                     _ => {
                         self.errors.push(
                             Diagnostic::new(
@@ -1183,7 +1295,7 @@ impl<'a> Analyzer<'a> {
                 };
                 let is_enum = self.module.enums.iter().any(|e| e.name == receiver_ty_name);
                 let _is_struct = self.module.structs.iter().any(|s| s.name == receiver_ty_name);
-                let is_builtin = matches!(receiver_ty, ValueType::Neno | ValueType::Orodha(_) | ValueType::Kamusi(_, _) | ValueType::Jozi(_, _) | ValueType::Chaguo(_) | ValueType::Tokeo(_, _) | ValueType::KashaGC(_));
+                let is_builtin = matches!(receiver_ty, ValueType::Neno | ValueType::Orodha(_) | ValueType::Kamusi(_, _) | ValueType::Jozi(_, _) | ValueType::Chaguo(_) | ValueType::Tokeo(_, _) | ValueType::KashaGC(_) | ValueType::Faili | ValueType::Mkondo | ValueType::Kumbukumbu(_) | ValueType::Seti(_) | ValueType::NjiaTx(_) | ValueType::NjiaRx(_) | ValueType::Fungo(_));
                 if is_builtin {
                     for arg in args {
                         let _ = self.check_expr(arg, scopes, UseMode::Move);
@@ -1191,6 +1303,7 @@ impl<'a> Analyzer<'a> {
                     return match (receiver_ty, method_name.as_str()) {
                         (ValueType::Neno, "clona") => ValueType::Neno,
                         (ValueType::Neno, "urefu" | "biti_ngapi") => ValueType::Namba,
+                        (ValueType::Neno, "herufi_kwa") => ValueType::Chaguo(Box::new(ValueType::Herufi)),
                         (ValueType::Neno, "kwa_herufi_ndogo" | "kwa_herufi_kubwa" | "badilisha") => ValueType::Neno,
                         (ValueType::Neno, "anza_na" | "maliza_na") => ValueType::Ukweli,
                         (ValueType::Neno, "gawanya") => ValueType::Orodha(Box::new(ValueType::Neno)),
@@ -1220,6 +1333,25 @@ impl<'a> Analyzer<'a> {
                         (ValueType::KashaGC(_), "weka") => ValueType::Tupu,
                         (ValueType::KashaGC(_), "idadi") => ValueType::Namba,
                         (ValueType::KashaGC(ref t), "shirikisha") => ValueType::KashaGC(t.clone()),
+                        (ValueType::Faili, "soma") => ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
+                        (ValueType::Faili, "andika") => ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
+                        (ValueType::Faili, "funga") => ValueType::Tupu,
+                        (ValueType::Mkondo, "soma") => ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
+                        (ValueType::Mkondo, "andika") => ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
+                        (ValueType::Mkondo, "funga") => ValueType::Tupu,
+                        (ValueType::Kumbukumbu(ref t), "pata") => *t.clone(),
+                        (ValueType::Seti(ref t), "clona") => ValueType::Seti(t.clone()),
+                        (ValueType::Seti(_), "ongeza") => ValueType::Tupu,
+                        (ValueType::Seti(_), "ondoa") => ValueType::Ukweli,
+                        (ValueType::Seti(_), "ina") => ValueType::Ukweli,
+                        (ValueType::Seti(_), "urefu") => ValueType::Namba,
+                        (ValueType::Seti(ref t), "orodha") => ValueType::Orodha(t.clone()),
+                        (ValueType::NjiaTx(_), "tuma") => ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
+                        (ValueType::NjiaRx(ref t), "pokea") => ValueType::Tokeo(t.clone(), Box::new(ValueType::Neno)),
+                        (ValueType::Fungo(_), "funga") => ValueType::Tupu,
+                        (ValueType::Fungo(_), "fungua") => ValueType::Tupu,
+                        (ValueType::Fungo(ref t), "pata") => *t.clone(),
+                        (ValueType::Fungo(_), "weka") => ValueType::Tupu,
                         _ => ValueType::Unknown,
                     };
                 }
@@ -1641,9 +1773,10 @@ impl<'a> Analyzer<'a> {
         ValueType::Unknown
     }
 
-    // TODO(Phase III): Herufi and Tupu should also be Copy. Neno, Orodha, Kamusi, and Struct
-    // are non-Copy but are currently treated as moved only at the semantic level — the evaluator
-    // clones them unconditionally, so move semantics are not enforced at runtime.
+    // TODO(Phase III): Neno, Orodha, Kamusi, and Struct are non-Copy but are currently treated
+    // as moved only at the semantic level — the evaluator clones them unconditionally, so move
+    // semantics are not enforced at runtime. No runtime backing exists until real reference
+    // semantics land (see eval/expr.rs's BorrowImm/BorrowMut TODO).
     fn is_copy_type(&self, ty: &ValueType) -> bool {
         matches!(
             ty,

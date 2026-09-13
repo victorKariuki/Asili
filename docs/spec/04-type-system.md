@@ -28,10 +28,15 @@ Used inside `wazi` blocks or when performance/memory is critical. Map directly t
 
 ### Safu ya Ukubwa (scale / arbitrary precision)
 
-| Swahili | Technical |
-|---------|------------|
-| **Namba_Kuu** | BigInt |
-| **Namba_Sahihi** | BigDecimal |
+| Swahili | Technical | Notes |
+|---------|------------|--------|
+| **Namba_Kuu** | BigInt (`num-bigint`) | No literal syntax — construct via `namba_kuu_kutoka(neno)` (`Tokeo<Namba_Kuu, Neno>`, `leta hisabati`) or infallibly via `namba kama Namba_Kuu` (truncates toward zero). The reverse cast (`kama Namba`) is fallible: `Chaguo<Namba>`. |
+| **Namba_Sahihi** | BigDecimal (`bigdecimal`) | Same construction story: `namba_sahihi_kutoka(neno)`, or infallible `kama Namba_Sahihi` from `Namba`; `kama Namba` back is fallible. Arithmetic is exact decimal, not `f64` — `namba_sahihi_kutoka("0.1") + namba_sahihi_kutoka("0.2")` equals exactly `0.3`, unlike plain `Namba` arithmetic. |
+
+Mixed arithmetic (`Namba_Kuu`/`Namba_Sahihi` with a plain `Namba`, or the two big types with
+each other) widens automatically: a `Namba` operand widens to match the other side; `Namba_Kuu`
+mixed with `Namba_Sahihi` promotes to `Namba_Sahihi`. Two `Namba_Kuu` operands (or `Namba_Kuu`
+mixed only with `Namba`) stay in exact integer arithmetic.
 
 ---
 
@@ -107,7 +112,7 @@ Conversion from values to **Neno** (e.g. `Namba` → `Neno`) is defined via the 
 
 ## Abstraction (Sifa and generics)
 
-- **Sifa (Trait/Interface):** Defines shared behaviour (e.g. `sifa Onyesheka`). Types implement Sifa via `shughuli ya X kwa Trait`.
+- **Sifa (Trait/Interface):** Defines shared behaviour as a set of required method signatures (e.g. `sifa Onyesheka { kazi onyesha(self: Self) -> Neno }` — no bodies, just signatures). Types implement Sifa via `shughuli ya X kwa Trait { ... }` (or `shughuli ya X: Trait { ... }`); the compiler checks every required method is present with a matching signature (`Self` resolves to the implementing type), diagnostic `SEM105` on a gap. Trait objects/dynamic dispatch (a value typed generically as "any `Sifa`") are not implemented — a trait's only role today is this completeness check plus disambiguating which impl block a method call resolves through. See [faili-mkondo-design.md](../design/faili-mkondo-design.md) and [sifa-traits-design.md](../design/sifa-traits-design.md) for implementation detail.
 - **Jumla\<T\> (Generics):** Logic parameterised over type `T`; works for any type that satisfies the required bounds.
 
 ---
@@ -141,9 +146,9 @@ Lifetimes are inferred by default; explicit lifetime annotations are only requir
 | Swahili | Technical | Notes |
 |---------|------------|--------|
 | **Chaguo\<T\>** | Option\<T\> | Variants `Kuna(T)` \| `Hamna`; see 08 for relation to `T?`. |
-| **Mfululizo** | Slice `[T]` | View into `Orodha` or buffer |
+| **Mfululizo** | Slice `[T]` | View into `Orodha` or buffer — type-recognized, no runtime implementation yet (blocked on the borrow-checker lifetime-strategy decision; see [phase3-self-hosting-borrow-checker-design.md](../design/phase3-self-hosting-borrow-checker-design.md)) |
 | **Jozi** | Tuple | Grouping without a named `umbo`, e.g. `(Namba, Ukweli)` |
-| **Seti** | Set | Unique collection of values |
+| **Seti\<T\>** | Set (`HashSet`-backed) | Unique collection of values; `seti(v1, v2, ...)`/`seti_tupu()` constructors, `.ongeza(v)`, `.ondoa(v) -> Ukweli`, `.ina(v) -> Ukweli`, `.urefu()`, `.orodha() -> Orodha<T>`. Always in scope via `msingi`, no `leta` needed. Iteration order is unspecified (std `HashSet`). |
 
 ---
 

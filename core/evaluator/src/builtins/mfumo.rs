@@ -3,8 +3,6 @@
 use std::collections::HashMap;
 
 use crate::signal;
-#[cfg(not(unix))]
-use crate::value::MapKey;
 use crate::value::{self, Value};
 use super::BuiltinFn;
 
@@ -42,13 +40,11 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             let sig_id = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
             let kazi_name = value::as_string(args.get(1).unwrap_or(&Value::Hamna)).unwrap_or_default();
             signal::register_handler(sig_id, kazi_name);
-            Ok(Value::Tupu)
+            Ok(Value::Tokeo(Ok(Box::new(Value::Tupu))))
         }
         #[cfg(not(unix))]
         {
-            let mut err_map = HashMap::new();
-            err_map.insert(MapKey::Neno("ujumbe".to_string()), Value::Neno("sikiliza_ishara: sifa haipo kwenye jukwaa hili".to_string()));
-            Ok(Value::Tokeo(Err(Box::new(Value::Kamusi(err_map)))))
+            Ok(Value::Tokeo(Err(Box::new(Value::Neno("sikiliza_ishara: sifa haipo kwenye jukwaa hili".to_string())))))
         }
     }));
     m.insert("rejesha_ishara".to_string(), Box::new(|args: &[Value]| {
@@ -56,13 +52,11 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         {
             let sig_id = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
             signal::clear_handler(sig_id);
-            Ok(Value::Tupu)
+            Ok(Value::Tokeo(Ok(Box::new(Value::Tupu))))
         }
         #[cfg(not(unix))]
         {
-            let mut err_map = HashMap::new();
-            err_map.insert(MapKey::Neno("ujumbe".to_string()), Value::Neno("rejesha_ishara: sifa haipo kwenye jukwaa hili".to_string()));
-            Ok(Value::Tokeo(Err(Box::new(Value::Kamusi(err_map)))))
+            Ok(Value::Tokeo(Err(Box::new(Value::Neno("rejesha_ishara: sifa haipo kwenye jukwaa hili".to_string())))))
         }
     }));
 }

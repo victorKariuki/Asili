@@ -5,8 +5,8 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::runtime::Runtime;
 use crate::value::{
-    self, binary_cmp_neno, binary_f64, binary_f64_cmp, parse_number, EvalError, EvalOut, MapKey,
-    Value,
+    self, big_numeric_binary_op, binary_cmp_neno, binary_f64, binary_f64_cmp, parse_number,
+    EvalError, EvalOut, MapKey, Value,
 };
 use std::cmp::Ordering;
 use std::rc::Rc;
@@ -263,6 +263,17 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 }
                 _ => super::eval_expr_impl(right, rt)?,
             };
+            // Namba_Kuu/Namba_Sahihi arithmetic short-circuits before the plain-f64 path below —
+            // a Namba operand mixed with either widens (infallibly) to match, matching the cast
+            // direction documented for these types (Namba -> Namba_Kuu/Namba_Sahihi is
+            // infallible; the reverse is fallible and goes through `kama`, not here).
+            if matches!(l, Value::NambaKuu(_) | Value::NambaSahihi(_))
+                || matches!(r, Value::NambaKuu(_) | Value::NambaSahihi(_))
+            {
+                if let Some(result) = big_numeric_binary_op(&l, op, &r)? {
+                    return Ok(result);
+                }
+            }
             match op {
                 BinaryOp::Add => {
                     match (value::as_string(&l), value::as_string(&r)) {
@@ -361,13 +372,50 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
         Expr::Cast { expr, ty, .. } => {
             let v = super::eval_expr_impl(expr, rt)?;
             let t = ty.name.replace(' ', "");
-            if t == "Namba" {
+            if t == "Namba" && !matches!(v, Value::NambaKuu(_) | Value::NambaSahihi(_)) {
                 let n = value::as_f64(&v)
                     .or_else(|| match &v { Value::Ukweli(b) => Some(if *b { 1.0 } else { 0.0 }), _ => None })
                     .or_else(|| value::as_string(&v).and_then(|s| s.parse::<f64>().ok()))
                     .or_else(|| value::as_char(&v).map(|c| c as u32 as f64))
                     .or_else(|| match &v { Value::Chaguo(Some(inner)) => value::as_f64(inner), _ => None });
                 Ok(Value::Namba(n.unwrap_or(0.0)))
+            } else if t == "Namba" {
+                // Namba_Kuu/Namba_Sahihi -> Namba is fallible (may not fit in f64's precision or
+                // range) — Chaguo<Namba>, matching the Biti8-style fallible-cast precedent below.
+                use num_traits::ToPrimitive;
+                let n = match &v {
+                    Value::NambaKuu(b) => b.to_f64(),
+                    Value::NambaSahihi(b) => {
+                        use std::str::FromStr;
+                        f64::from_str(&b.to_string()).ok()
+                    }
+                    _ => None,
+                };
+                Ok(match n {
+                    Some(n) if n.is_finite() => Value::Chaguo(Some(Box::new(Value::Namba(n)))),
+                    _ => Value::Chaguo(None),
+                })
+            } else if t == "Namba_Kuu" {
+                // Namba -> Namba_Kuu is infallible (widening); truncates toward zero, matching
+                // BinaryOp's own Namba-widening-into-Namba_Kuu behavior in big_numeric_binary_op.
+                use crate::value::BigInt;
+                let big = match &v {
+                    Value::NambaKuu(b) => b.clone(),
+                    Value::Namba(n) => BigInt::from(*n as i64),
+                    _ => value::as_f64(&v).map(|n| BigInt::from(n as i64)).unwrap_or_default(),
+                };
+                Ok(Value::NambaKuu(big))
+            } else if t == "Namba_Sahihi" {
+                use crate::value::BigDecimal;
+                use num_traits::FromPrimitive;
+                let dec = match &v {
+                    Value::NambaSahihi(b) => b.clone(),
+                    Value::NambaKuu(b) => BigDecimal::from(b.clone()),
+                    _ => value::as_f64(&v)
+                        .and_then(BigDecimal::from_f64)
+                        .unwrap_or_default(),
+                };
+                Ok(Value::NambaSahihi(dec))
             } else if t == "Neno" {
                 Ok(Value::Neno(match &v {
                     Value::Namba(n) if n.is_nan() => "Siyo_Namba".to_string(),
@@ -380,6 +428,8 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     Value::Herufi(c) => c.to_string(),
                     Value::Wakati(secs) => secs.to_string(),
                     Value::Anuani(a) => a.to_string(),
+                    Value::NambaKuu(b) => b.to_string(),
+                    Value::NambaSahihi(b) => b.to_string(),
                     _ => format!("{v:?}"),
                 }))
             } else if t == "Herufi" {
@@ -430,6 +480,14 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 .map(|a| super::eval_expr_impl(a, rt))
                 .collect::<Result<_, _>>()?;
             if let Expr::Ident { name, .. } = &**callee {
+                // tenda needs the current Module to spawn a thread running a named kazi from
+                // it — unlike every other builtin, which is a plain Fn(&[Value]) with no
+                // access to rt. Intercepted here, before the generic builtins dispatch, rather
+                // than trying to thread Module access through BuiltinFn's signature for this
+                // one function.
+                if name == "tenda" {
+                    return crate::builtins::sambamba::tenda(rt.module, &args_val);
+                }
                 if let Some(f) = rt.builtins.get(name) {
                     return f(&args_val);
                 }
@@ -468,6 +526,18 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             match (&recv, method_name.as_str()) {
                 (Value::Neno(s), "clona") => Ok(Value::Neno(s.clone())),
                 (Value::Neno(s), "urefu") => Ok(Value::Namba(s.graphemes(true).count() as f64)),
+                (Value::Neno(s), "herufi_kwa") => {
+                    // Grapheme-indexed, matching .urefu()'s existing counting convention (not
+                    // byte or codepoint index) — a tokenizer walking "what's at position N"
+                    // wants the same units .urefu() reports N in.
+                    let idx = args_val.first().and_then(value::as_f64).map(|n| n as i64).unwrap_or(-1);
+                    let ch = if idx >= 0 {
+                        s.graphemes(true).nth(idx as usize).and_then(|g| g.chars().next())
+                    } else {
+                        None
+                    };
+                    Ok(Value::Chaguo(ch.map(|c| Box::new(Value::Herufi(c)))))
+                }
                 (Value::Neno(s), "biti_ngapi") => Ok(Value::Namba(s.len() as f64)),
                 (Value::Neno(s), "unganisha") => {
                     let out = match args_val.first() {
@@ -628,6 +698,36 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     let key = MapKey::try_from_value(key_val)?;
                     Ok(Value::Ukweli(m.contains_key(&key)))
                 }
+                (Value::Seti(s), "ongeza") => {
+                    let v = args_val.first().ok_or_else(|| EvalError::TypeErr("ongeza inahitaji thamani".into()))?;
+                    let key = MapKey::try_from_value(v)?;
+                    let mut new_s = s.clone();
+                    new_s.insert(key);
+                    if let Expr::Ident { name, .. } = &**receiver {
+                        rt.env.set(name, Value::Seti(new_s));
+                    }
+                    Ok(Value::Tupu)
+                }
+                (Value::Seti(s), "ondoa") => {
+                    let v = args_val.first().ok_or_else(|| EvalError::TypeErr("ondoa inahitaji thamani".into()))?;
+                    let key = MapKey::try_from_value(v)?;
+                    let mut new_s = s.clone();
+                    let removed = new_s.remove(&key);
+                    if let Expr::Ident { name, .. } = &**receiver {
+                        rt.env.set(name, Value::Seti(new_s));
+                    }
+                    Ok(Value::Ukweli(removed))
+                }
+                (Value::Seti(s), "ina") => {
+                    let v = args_val.first().ok_or_else(|| EvalError::TypeErr("ina inahitaji thamani".into()))?;
+                    let key = MapKey::try_from_value(v)?;
+                    Ok(Value::Ukweli(s.contains(&key)))
+                }
+                (Value::Seti(s), "urefu") => Ok(Value::Namba(s.len() as f64)),
+                (Value::Seti(s), "clona") => Ok(Value::Seti(s.clone())),
+                (Value::Seti(s), "orodha") => {
+                    Ok(Value::Orodha(s.iter().map(MapKey::to_value).collect()))
+                }
                 (Value::Chaguo(opt), "angu") => {
                     let mbadala = args_val.first().cloned().unwrap_or(Value::Hamna);
                     Ok(match opt {
@@ -785,6 +885,147 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 // caller would actually observe (e.g. via other live `weka` bindings).
                 (Value::KashaGC(cell), "idadi") => Ok(Value::Namba((Rc::strong_count(cell) - 1) as f64)),
                 (Value::KashaGC(cell), "shirikisha") => Ok(Value::KashaGC(Rc::clone(cell))),
+                (Value::Faili(cell), "soma") => {
+                    use std::io::Read;
+                    let mut guard = cell.borrow_mut();
+                    match guard.0.as_mut() {
+                        Some(f) => {
+                            let mut s = String::new();
+                            match f.read_to_string(&mut s) {
+                                Ok(_) => Ok(Value::Tokeo(Ok(Box::new(Value::Neno(s))))),
+                                Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+                            }
+                        }
+                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno("faili: imefungwa tayari".into()))))),
+                    }
+                }
+                (Value::Faili(cell), "andika") => {
+                    use std::io::Write;
+                    let data = value::as_string(args_val.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
+                    let mut guard = cell.borrow_mut();
+                    match guard.0.as_mut() {
+                        Some(f) => match f.write_all(data.as_bytes()) {
+                            Ok(()) => Ok(Value::Tokeo(Ok(Box::new(Value::Tupu)))),
+                            Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+                        },
+                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno("faili: imefungwa tayari".into()))))),
+                    }
+                }
+                (Value::Faili(cell), "funga") => {
+                    cell.borrow_mut().0.take();
+                    Ok(Value::Tupu)
+                }
+                (Value::Mkondo(cell), "soma") => {
+                    use std::io::Read;
+                    let mut guard = cell.borrow_mut();
+                    match guard.0.as_mut() {
+                        Some(s) => {
+                            let mut buf = String::new();
+                            match s.read_to_string(&mut buf) {
+                                Ok(_) => Ok(Value::Tokeo(Ok(Box::new(Value::Neno(buf))))),
+                                Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+                            }
+                        }
+                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno("mkondo: imefungwa tayari".into()))))),
+                    }
+                }
+                (Value::Mkondo(cell), "andika") => {
+                    use std::io::Write;
+                    let data = value::as_string(args_val.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
+                    let mut guard = cell.borrow_mut();
+                    match guard.0.as_mut() {
+                        Some(s) => match s.write_all(data.as_bytes()) {
+                            Ok(()) => Ok(Value::Tokeo(Ok(Box::new(Value::Tupu)))),
+                            Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+                        },
+                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno("mkondo: imefungwa tayari".into()))))),
+                    }
+                }
+                (Value::Mkondo(cell), "funga") => {
+                    cell.borrow_mut().0.take();
+                    Ok(Value::Tupu)
+                }
+                // Kumbukumbu<T> is a plain owning Box, not a shared/interior-mutable cell like
+                // Kasha_GC<T> — `.pata()` reads a clone of the boxed value; there is no `.weka()`
+                // (in-place mutation) since `recv` here is already a clone of the binding, and
+                // mutating that clone's Box would not affect the original `weka`-bound value.
+                // Reassign the whole Kumbukumbu (`weka k = kumbukumbu_unda(newval)`) instead.
+                (Value::Kumbukumbu(v), "pata") => Ok((**v).clone()),
+                (Value::NjiaTx(tx), "tuma") => {
+                    let v = args_val.first().cloned().unwrap_or(Value::Hamna);
+                    match v.try_into_send() {
+                        Some(sv) => {
+                            let sent = tx.lock().unwrap().send(sv).is_ok();
+                            Ok(Value::Tokeo(if sent {
+                                Ok(Box::new(Value::Tupu))
+                            } else {
+                                Err(Box::new(Value::Neno("njia: upande wa pili umefungwa".into())))
+                            }))
+                        }
+                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                            "tuma: thamani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)".into(),
+                        ))))),
+                    }
+                }
+                (Value::NjiaRx(rx), "pokea") => {
+                    let guard = rx.lock().unwrap();
+                    match guard.recv() {
+                        Ok(sv) => Ok(Value::Tokeo(Ok(Box::new(sv.into_value())))),
+                        Err(_) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                            "pokea: upande wa kutuma umefungwa".into(),
+                        ))))),
+                    }
+                }
+                // .funga()/.fungua() are an explicit, best-effort lock/unlock pair for holding
+                // the lock across several operations — Asili has no closures to scope a critical
+                // section with, so unlike .pata()/.weka() below (self-contained, atomic, and the
+                // usual way to use a Fungo), there is no way to statically verify a .fungua()
+                // call is paired with a prior .funga() on the same logical "holder." Calling
+                // .fungua() without holding the lock is a genuine Asili-level programming error,
+                // reported as a panic (not silently ignored, not undefined behavior at the Rust
+                // level — see FungoCell's `unlock()` safety contract in core/evaluator/src/
+                // value/mod.rs, which this dispatch arm is responsible for upholding).
+                (Value::Fungo(cell), "funga") => {
+                    cell.lock();
+                    Ok(Value::Tupu)
+                }
+                (Value::Fungo(cell), "fungua") => {
+                    if cell.try_lock() {
+                        // try_lock() just acquired a lock nothing was holding — .fungua() was
+                        // called without a matching .funga(). Release what we just took (this
+                        // call's own successful try_lock), then report the misuse.
+                        unsafe { cell.unlock() };
+                        Err(EvalError::Panic(
+                            "fungua: haikuwa imefungwa (hakuna .funga() iliyotangulia)".into(),
+                        ))
+                    } else {
+                        // Locked by someone — assume it's this call's own prior .funga() (the
+                        // only sound assumption available without per-holder tracking) and
+                        // release it.
+                        unsafe { cell.unlock() };
+                        Ok(Value::Tupu)
+                    }
+                }
+                // .pata()/.weka() are self-contained: lock, act, unlock, all in one call — the
+                // safe, usual way to use a Fungo, not requiring .funga()/.fungua() at all.
+                (Value::Fungo(cell), "pata") => {
+                    cell.lock();
+                    let v = unsafe { cell.read() };
+                    unsafe { cell.unlock() };
+                    Ok(v.into_value())
+                }
+                (Value::Fungo(cell), "weka") => {
+                    let new_val = args_val.first().cloned().unwrap_or(Value::Hamna);
+                    let Some(sv) = new_val.try_into_send() else {
+                        return Err(EvalError::TypeErr(
+                            "fungo: weka: thamani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)".into(),
+                        ));
+                    };
+                    cell.lock();
+                    unsafe { cell.write(sv) };
+                    unsafe { cell.unlock() };
+                    Ok(Value::Tupu)
+                }
                 (Value::Enum(enum_name, _, _), _) => {
                     let method = rt
                         .module

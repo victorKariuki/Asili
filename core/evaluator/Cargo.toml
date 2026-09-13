@@ -1,6 +1,6 @@
 [package]
 name = "asili-evaluator"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
@@ -12,6 +12,11 @@ serde = { version = "1", features = ["derive"] }
 unicode-segmentation = "1.11"
 stacker = "0.1.24"
 wasm-bindgen = { version = "0.2", optional = true }
+num-bigint = "0.4"
+bigdecimal = "0.4"
+num-traits = "0.2"
+parking_lot = "0.12"
+lock_api = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"

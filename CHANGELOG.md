@@ -6,6 +6,109 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0]
+
+### Added
+
+- **`pata thibitisha --kiwango-cha-jaribio <0-100>`**: optional test-coverage-ratio gate (percent
+  of `#[jaribio]` test functions relative to public `kazi`). Not enforced unless the flag is
+  passed, so existing projects aren't broken by default.
+- **`Faili`/`Mkondo`/`Kumbukumbu<T>` resource-handle types** (previously spec'd but entirely
+  unimplemented — see `docs/design/faili-mkondo-design.md`). `faili_fungua(njia, hali)` (via the
+  existing `leta faili`) and `mkondo_unganisha(anwani)` (via `leta mfumo`) return handles with
+  `.soma()`/`.andika(data)`/`.funga()` methods; `kumbukumbu_unda(v)` (always in scope, no `leta`
+  needed) wraps a value in a heap box with `.pata()`. `Faili`/`Mkondo` close their underlying OS
+  handle automatically on scope exit — not just on explicit `tupa`/`.funga()` — via a real Rust
+  `Drop` impl on the handle's wrapper type, since `Env::pop_scope` (ordinary block/function exit)
+  bypasses `Env::drop` entirely and would otherwise leak the handle. New
+  `examples/faili/`; new `docs/repl/{sw,en}/faili.md`.
+- **Sifa (traits) now carry real method signatures and a completeness check**, instead of being
+  nominal-only (a `TraitDecl`'s body used to be discarded entirely at parse time). Every
+  `shughuli ya Target kwa Trait`/`shughuli ya Target: Trait` is checked against its trait's required methods
+  (name/params/return type, `Self` resolved to the implementing type); a gap is a new
+  diagnostic, `SEM105`. `Inasomeka`/`Inandikika` are now real built-in traits (seeded the same
+  way `Chaguo`/`Tokeo` are, not via an `.asi` file — see
+  `docs/design/sifa-traits-design.md` for why). No trait-object/dyn-dispatch — deliberately out
+  of scope. New `examples/sifa/`; new `docs/repl/{sw,en}/sifa.md`.
+- **`Seti<T>` (set)**: `seti(v1, v2, ...)`/`seti_tupu()` constructors, `.ongeza(v)`,
+  `.ondoa(v) -> Ukweli`, `.ina(v) -> Ukweli`, `.urefu()`, `.orodha() -> Orodha<T>`, `.clona()`.
+  Always in scope via `msingi`. `HashSet`-backed, so `.orodha()`'s iteration order is
+  unspecified. Previously type-recognized (`ValueType::Seti` parsed and displayed correctly)
+  but had zero runtime backing — see `docs/design/data-shapes-design.md`. New `examples/seti/`;
+  new `docs/repl/{sw,en}/seti.md`.
+- **`Namba_Kuu` (arbitrary-precision integer) / `Namba_Sahihi` (arbitrary-precision decimal)**:
+  `num-bigint`/`bigdecimal`-backed. `namba_kuu_kutoka(neno)`/`namba_sahihi_kutoka(neno)` (via
+  `leta hisabati`) parse a decimal string; `namba kama Namba_Kuu`/`kama Namba_Sahihi` widens
+  infallibly from `Namba`, the reverse narrows fallibly (`Chaguo<Namba>`). Mixed arithmetic with
+  `Namba` auto-widens; two `Namba_Kuu` operands stay in exact integer arithmetic (not silently
+  promoted to decimal). No literal syntax by design — construction is exclusively through the
+  constructors/casts above. Previously type-recognized only, zero runtime backing — see
+  `docs/design/data-shapes-design.md`. New `examples/namba_kuu/`; new
+  `docs/repl/{sw,en}/namba-kuu-sahihi.md`.
+- **`Neno.herufi_kwa(i) -> Chaguo<Herufi>`**: character at grapheme position `i` (the same
+  counting convention `.urefu()` already uses), `Hamna` if out of range. The narrow, real gap in
+  string-manipulation coverage that
+  `docs/design/phase3-self-hosting-borrow-checker-design.md`'s Phase III groundwork review
+  identified — `.kata()`'s byte-range slicing can split a multi-byte character if the boundary
+  is chosen wrong; this is the correct way to inspect one character at a time.
+- **Decided the borrow-checker lifetime-inference strategy** (region-based inference with a
+  narrow, named-region annotation surface for the two "complex structural boundary" cases
+  `docs/spec/04-type-system.md` already commits to — `Rejeo`/`Rejeo_Tenda` stored in `umbo`
+  fields, and function returns whose reference lifetime isn't inferable from a single parameter)
+  — a decision, not an implementation; unblocks `Mfululizo<T>` and the real-reference-semantics
+  work tracked in `docs/design/phase3-self-hosting-borrow-checker-design.md`, neither of which
+  is implemented yet.
+- **Concurrency: `tenda`/`njia`/`fungo`** (via `leta sambamba`), previously a complete
+  non-functional stub under mismatched names (`anza_mwendo`/`subiri_mwendo`, matching nothing in
+  the spec). 1:1 OS-thread model — `tenda(kazi_jina, hoja...)` spawns a real `std::thread`
+  running the named module-level `kazi`, returning a handle; `subiri_tenda(id)` joins it,
+  reporting only `Tokeo<Tupu, Neno>` (success/panic) — a spawned function's actual return value
+  does not cross back this way, by design; communicate results via `njia` instead. `njia()`
+  creates a channel (`.tuma()`/`.pokea()`); `fungo(v)` wraps a value behind a mutex
+  (`.pata()`/`.weka()` lock-act-unlock atomically; `.funga()`/`.fungua()` are separate explicit
+  lock/unlock for holding across several operations, matching the spec's literal naming).
+  `Kasha_GC<T>`/`Faili`/`Mkondo` (or anything containing one) are rejected from crossing the
+  thread boundary at all, checked recursively. Required a new `SendValue` type
+  (`core/evaluator/src/value/mod.rs`) — a structural, compiler-checked `Send`-safe mirror of
+  `Value` — after `unsafe impl Send` was considered and rejected on soundness/maintenance
+  grounds; and the `parking_lot`/`lock_api` crates for `fungo`'s real manual lock/unlock (a
+  `std::sync::Mutex` guard can't span two separate Asili-level calls). See
+  `docs/design/concurrency-design.md` for the full architecture. New `examples/sambamba/`; new
+  `docs/repl/{sw,en}/sambamba.md`.
+
+### Fixed
+
+- **`shughuli ya Target kwa Trait { ... }` (the `kwa`-keyword trait-impl syntax) never actually
+  dispatched its methods** — `parse_impl_decl` had `target`/`trait_name` swapped for this syntax
+  specifically, so `imp.target` held the *trait* name instead of the struct name and nothing
+  method dispatch looks at ever matched. The `:`-colon syntax (`shughuli ya Target: Trait { }`)
+  was always correct; only `kwa` was broken. This was previously documented as a known bug in
+  `docs/language/07-mfumo-wa-aina.md` — found while building the Sifa completeness checker
+  above, fixed, and now covered by regression tests (`core/evaluator/tests/traits.rs`).
+- `pata thibitisha`'s public-doc-coverage check was flagging the newly-seeded `Inasomeka`/
+  `Inandikika` traits as "missing documentation," since they have no real source location a doc
+  comment could ever precede. Fixed to skip language-seeded declarations (recognized by their
+  synthetic `line: 0`).
+- **`mfumo::sikiliza_ishara`/`rejesha_ishara` return-type contract violation on non-Unix
+  platforms.** The declared type contract said these return `Tupu`, but the non-Unix
+  (`#[cfg(not(unix))]`) code path actually returned `Tokeo(Kosa(...))` — a real type mismatch
+  between what the semantic analyzer promised and what the evaluator produced at runtime on
+  Windows. Fixed by making both platforms consistent: both now return `Tokeo<Tupu, Neno>`, with
+  the Unix success path wrapped in `Tokeo(Sawa(Tupu))` and the type contract in
+  `core/parser/src/builtins.rs` updated to match.
+- Deleted a stale TODO comment in `core/evaluator/src/signal.rs` claiming signal dispatch is
+  "registered but never polled" — this was already fixed (confirmed: `eval/stmt.rs` and
+  `eval/mod.rs` both call `signal::take_pending()` on every statement); the comment just never
+  got removed after the fix landed. The real remaining signal-handling gap (silent no-op on
+  non-Unix, now fixed above) is the only thing that TODO should have described.
+
+### Changed
+
+- `core/parser/src/semantic/analyzer.rs`'s `is_copy_type` TODO comment corrected — it claimed
+  `Herufi`/`Tupu` still needed to be added as Copy types, but they already were; the comment was
+  stale, not the logic. Reworded to describe the actual remaining gap (no runtime move-semantics
+  enforcement).
+
 ## [0.2.1]
 
 ### Added

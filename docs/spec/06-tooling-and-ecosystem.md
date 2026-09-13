@@ -27,7 +27,7 @@ Previous: [Standard Library](05-standard-library.md) | [Overview](../SPECIFICATI
 | `pata tenda <path.asb>` | Run an already-compiled `.asb` artifact directly, without recompiling. |
 | `pata jaribu` | Run internal `jaribio` test blocks. |
 | `pata nadhifu` | Auto-format Swahili code to standard style (line-based; best-effort; idempotent for current rules; AST-based formatter may follow in a later phase). |
-| `pata thibitisha` | Validate public API documentation coverage and formatting compliance. |
+| `pata thibitisha` | Validate public API documentation coverage, formatting compliance, and (opt-in, `--kiwango-cha-jaribio <0-100>`) test coverage ratio. |
 | `pata repl` | Start an interactive REPL (persistent environment; `?topic` shows inline help). |
 | `pata mwalimu` | Start the Mwalimu LSP server (stdio). For use by editors; see [Execution and Roadmap](07-execution-and-roadmap.md) Phase II. |
 

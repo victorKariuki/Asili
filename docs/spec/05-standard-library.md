@@ -66,20 +66,20 @@ Requires `leta mfumo`. OS-dependent.
 
 ### Resource handles and traits
 
-System resources are represented by explicit handle types that own their underlying OS or hardware resource and release it on drop:
+System resources are represented by explicit handle types that own their underlying OS or hardware resource and release it on drop. `Faili`/`Mkondo` are available via `leta faili`/`leta mfumo` (no separate opt-in module); `Kumbukumbu<T>` is always in scope via `msingi`, like `Orodha`/`Kamusi`.
 
-- `Faili` — file handle for filesystem operations.
-- `Mkondo` — network stream or socket.
-- `Kumbukumbu<T>` — heap-allocated box owning a value of type `T`.
+- **`Faili`** — file handle. `faili_fungua(njia, hali) -> Tokeo<Faili, Neno>` opens a file; `hali` is `"soma"`, `"andika"`, or `"ongeza"`. Methods: `.soma() -> Tokeo<Neno, Neno>`, `.andika(data: Neno) -> Tokeo<Tupu, Neno>`, `.funga() -> Tupu` (idempotent — closing an already-closed handle is a safe no-op).
+- **`Mkondo`** — TCP client stream. `mkondo_unganisha(anwani) -> Tokeo<Mkondo, Neno>` connects. Same `.soma()`/`.andika()`/`.funga()` methods as `Faili`.
+- **`Kumbukumbu<T>`** — heap-allocated box owning a value of type `T`, no OS resource. `kumbukumbu_unda(thamani) -> Kumbukumbu<T>` constructs; `.pata() -> T` reads a clone of the boxed value. No in-place mutation method (`.weka()`) — a method call receives a clone of its receiver, so mutating that clone's box would not be visible through the original binding; reassign the whole `Kumbukumbu` instead (`weka k = kumbukumbu_unda(thamani_mpya)`). This is a real difference from `Kasha_GC<T>`, which shares its allocation and supports true in-place mutation through any live handle.
 
-These types implement deterministic cleanup: when the owner goes out of scope (or `tupa` is called), the underlying handle is closed or freed.
+`Faili`/`Mkondo` implement deterministic cleanup: the underlying OS handle is closed when the owner goes out of scope, whether by explicit `tupa`, an explicit `.funga()` call, or ordinary block/function exit with no explicit cleanup at all — implemented as a real destructor on the handle's wrapper type (not a hook triggered only by explicit `tupa`), so it fires on every code path uniformly. See [faili-mkondo-design.md](../design/faili-mkondo-design.md) for the mechanism.
 
 Common behaviours are expressed via Sifa (traits), for example:
 
 - `Inasomeka` — any type that can be read from (e.g. `Faili`, `Mkondo`).
 - `Inandikika` — any type that can be written to.
 
-These traits allow generic I/O functions to work over multiple resource types while preserving ownership and borrowing rules.
+These traits allow generic I/O functions to work over multiple resource types while preserving ownership and borrowing rules. `Sifa` now carry real method signatures and a completeness check (see [faili-mkondo-design.md](../design/faili-mkondo-design.md)); `Inasomeka`/`Inandikika` are seeded built-in traits, and `Faili`/`Mkondo` satisfy them **by fiat**, not via a checked `impl` block — `Faili`/`Mkondo` are builtin `ValueType`s whose methods are hardcoded Rust dispatch, a different mechanism from user-declared `umbo`/`shughuli ya`, and the completeness checker only inspects real `module.impls` entries (which can only target user-declared structs/enums today). No generic-over-trait function parameters exist yet either (e.g. a function taking "any `Inasomeka`" polymorphically) — that needs a trait-object `Value` representation this interpreter doesn't have.
 
 ---
 
@@ -128,12 +128,28 @@ Panic (`paparika`) is reserved for unrecoverable critical conditions (for exampl
 
 ## Concurrency primitives (tenda, njia, fungo)
 
-Used with **tenda** (green threads) for multi-threaded execution.
+Available via `leta sambamba`. **1:1 OS-thread model** (one `tenda` spawns one real OS thread via
+`std::thread`, not a green-thread scheduler — see [Resolved Decisions](08-resolved-decisions.md)
+and [concurrency-design.md](../design/concurrency-design.md) for why).
 
-- **njia (Channel):** Send data between threads (e.g. `njia.unda()`, `njia.tuma()`, `njia.pokea()`). Exact API is defined at implementation.
-- **fungo (Mutex/Lock):** Protect shared data from data races (e.g. `fungo.funga()`, `fungo.fungua()`).
+- **`tenda(kazi_jina, hoja...) -> Tokeo<Namba, Neno>`** — spawns the named module-level `kazi` on
+  a new thread, returning a handle id. Arguments must be `Send`-safe: `Kasha_GC<T>`/`Faili`/
+  `Mkondo` (or anything containing one) are rejected with `Kosa`, not silently allowed or
+  undefined behavior. A spawned function's own return value does not come back through
+  `subiri_tenda` — communicate results via `njia`.
+- **`subiri_tenda(id) -> Tokeo<Tupu, Neno>`** — joins the thread, reporting whether it finished
+  cleanly or panicked.
+- **njia (Channel):** `njia() -> Jozi<NjiaTx<T>, NjiaRx<T>>` creates a channel (infallible — a
+  channel can't fail to construct). `tx.tuma(v) -> Tokeo<Tupu, Neno>` sends; `rx.pokea() ->
+  Tokeo<T, Neno>` receives (blocking), `Kosa` once every sender is dropped.
+- **fungo (Mutex/Lock):** `fungo(thamani) -> Tokeo<Fungo<T>, Neno>` wraps a `Send`-safe value.
+  `f.pata() -> T` / `f.weka(v) -> Tupu` lock, act, and unlock atomically in one call — the usual
+  way to use a `Fungo`. `f.funga() -> Tupu` / `f.fungua() -> Tupu` are separate, explicit
+  lock/unlock for holding the lock across several operations; calling `.fungua()` without a
+  matching prior `.funga()` is a programming error (reported as a panic).
 
-Full concurrency model (M:N vs 1:1, happens-before) is fixed in [Resolved Decisions](08-resolved-decisions.md) when the feature is implemented.
+Full concurrency model: **1:1 scheduling** is the resolved decision (see
+[Resolved Decisions](08-resolved-decisions.md)).
 
 ---
 

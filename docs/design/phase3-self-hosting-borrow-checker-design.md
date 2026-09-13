@@ -1,11 +1,12 @@
 # Phase III design: self-hosting and the runtime borrow checker
 
-**Status: not started, not yet implementable.** This doc is forward-looking — it exists to
-capture the real blockers and existing groundwork so a future implementer doesn't have to
-re-derive them, per [implementation-status.md](implementation-status.md#phase-iii--resolution-self-hosting-borrow-checker--not-started),
+**Status: lifetime-inference strategy decided (see below); no implementation started.** This doc
+is forward-looking — it exists to capture the real blockers and existing groundwork so a future
+implementer doesn't have to re-derive them, per
+[implementation-status.md](implementation-status.md#phase-iii--resolution-self-hosting-borrow-checker--not-started),
 whose findings this doc expands on. Unlike the design docs for already-built subsystems
 ([mwalimu-design.md](mwalimu-design.md) etc.), there is no working code to describe here — only
-what exists to build on, what's missing, and what decisions have to be made first.
+what exists to build on, what's missing, and (now) the decision that was blocking further work.
 
 Two distinct goals are bundled into "Phase III" by the roadmap
 ([docs/spec/07-execution-and-roadmap.md](../spec/07-execution-and-roadmap.md)): self-hosting (a
@@ -69,29 +70,76 @@ What doesn't exist:
    as what `azima`/`azima_tenda` "desugar to" in prose — no actual `ValueType::Rejeo` variant
    carrying lifetime information exists to check against.
 
-## The decision that has to happen before either blocker is worked
+## The decision: region-based inference with a narrow annotation surface
 
 The roadmap doc itself (per `implementation-status.md`'s summary) already warns not to start the
-runtime borrow checker before deciding the lifetime-inference strategy. That decision doesn't
-exist yet and isn't merely an implementation detail — it changes what's representable in the
-type system:
+runtime borrow checker before deciding the lifetime-inference strategy. This was framed as a
+three-way open choice (full explicit lifetimes / fully inferred with no annotation surface /
+something in between), but re-reading `docs/spec/04-type-system.md`'s existing normative text
+(line 132, already resolved, not something this doc gets to relitigate) narrows it to one
+option: **"Lifetimes are inferred by default; explicit lifetime annotations are only required
+when references cross complex structural boundaries (e.g. stored in `umbo` fields or returned
+from functions with non-obvious relationships)."** That sentence rules out both of the other two
+candidates directly — full explicit lifetimes contradicts "inferred by default"; fully inferred
+with zero annotation surface contradicts "annotations are only required when..." (which asserts
+they exist and are sometimes mandatory). So the decision was already made at the spec level; what
+was missing was making it concrete enough to implement against. That's what this section does.
 
-- **Full explicit lifetimes** (Rust-style `'a` annotations) — most expressive, most complexity
-  for users; contradicts the spec's stated default of "lifetimes are inferred by default"
-  (`04-type-system.md`).
-- **Fully inferred, no annotation surface at all** — simplest for users, but inference algorithms
-  that handle all the cases Rust needs explicit annotations for are a substantial undertaking,
-  and the spec's own hedge ("explicit lifetime annotations are only required when references
-  cross complex structural boundaries") implies *some* annotation surface will exist — which one
-  is undecided.
-- **Region-based/scoped inference with a narrower annotation surface** (something between the
-  two) — plausible middle ground, but "narrower" needs to be specified concretely (which cases
-  need annotation, what the annotation syntax is) before any AST/analyzer work starts.
+**Scope of what's inferred (no annotation, the common case):**
+- Any borrow (`azima`/`azima_tenda`) whose lifetime is bounded by a single function body — a
+  reference created and used entirely within one `kazi`, including passed into nested block
+  scopes, loops, and calls to other functions *as long as the callee doesn't store it past the
+  call* (ordinary "borrow a value, use it, done" code, which is the overwhelming majority of
+  real borrow usage). This is inferred purely from the existing scope-tree structure the
+  semantic analyzer's `Binding` tracking (`created_at`/`moved_at`/`borrowed_at`/`dropped_at`)
+  already has — no new syntax, no new AST node, for this case.
 
-Whichever is chosen determines: whether `Muda_wa_Kuishi` needs to exist in the AST at all (only
-if some annotation surface exists), what `SEM120`'s eventual replacement check looks like, and
-whether `Rejeo<T>`/`Rejeo_Tenda<T>` need a lifetime parameter or can stay lifetime-erased with a
-simpler (but less expressive) escape-analysis-style check.
+**Scope of what requires an explicit annotation (the spec's "complex structural boundaries"):**
+1. **A `Rejeo<T>`/`Rejeo_Tenda<T>` stored as an `umbo` field.** A struct holding a reference
+   necessarily outlives (or is bounded by) whatever it borrowed from — the relationship isn't
+   locally inferable from the struct definition alone, it depends on every call site that
+   constructs an instance.
+2. **A function that returns `Rejeo<T>`/`Rejeo_Tenda<T>` where the returned reference's lifetime
+   isn't syntactically obvious from a single parameter** (i.e., not simply "returns a borrow of
+   its only reference parameter," which the region inference can resolve on its own — mirroring
+   Rust's own successful "lifetime elision" precedent for the single-input-reference case).
+
+Both cases require exactly one thing: a way to say "this reference's lifetime is tied to *that*
+named region." Proposed concrete syntax, modeled on Rust's `'a` but consistent with Asili's
+keyword style (a leading tick reads oddly against Swahili keywords, so use a named parameter
+introduced by `muda`, matching the `Muda_wa_Kuishi` spec name directly rather than inventing a
+new short-hand token):
+
+```asili
+umbo Kiashiria_kwa<muda M> {
+    thamani: Rejeo<Namba, M>
+}
+
+kazi kubwa_kuliko<muda M>(a: Rejeo<Namba, M>, b: Rejeo<Namba, M>) -> Rejeo<Namba, M> {
+    ikiwa (jaribu a) > (jaribu b) { rejesha a } vinginevyo { rejesha b }
+}
+```
+
+`Rejeo<T, M>`/`Rejeo_Tenda<T, M>` gain an optional second type parameter carrying the region name
+`M` — omitted (`Rejeo<T>`, today's syntax) when a reference is function-local and fully inferred;
+required when it crosses one of the two boundary cases above. `M` is declared the same way a
+generic type parameter already is (`kazi f<T>(...)`), via a new `muda` keyword marking it as a
+lifetime parameter rather than a type parameter, so the parser can tell the two apart without new
+punctuation.
+
+**What this determines for implementation** (not scheduled here, but now unambiguous when it is):
+- `Muda_wa_Kuishi` becomes `ValueType::Rejeo(Box<ValueType>, bool, Option<String>)` — extending
+  the existing `Rejeo(Box<ValueType>, bool)` (target type, mutability) with an optional named
+  region, rather than a wholesale new type. `None` is the inferred/local case; `Some(name)` is
+  the annotated case.
+- `SEM120`'s "lifetime inference not yet implemented" blanket rejection of reference-returning
+  functions gets replaced with: accept if the returned reference's region is inferable (single
+  reference parameter, elision-style) or explicitly annotated; reject only the genuinely
+  ambiguous case (multiple reference parameters, no annotation, no way to know which one the
+  return value is tied to) — which is a **narrower** rejection than today's blanket one.
+- `core/evaluator/src/eval/expr.rs:217`'s `BorrowImm`/`BorrowMut` TODO (today: clone, not a real
+  reference) is the actual runtime-semantics work this decision unblocks, but implementing it is
+  a separate, larger task from making the decision — not undertaken in this pass.
 
 ## What self-hosting additionally needs, beyond the borrow checker
 
@@ -103,16 +151,30 @@ descent parsing, tree constructions via `umbo`/`jenum`, deep pattern matching vi
 No design decision is needed for this today — it's a large implementation effort gated entirely
 on the two blockers above, not an open design question of its own.
 
+## `Mfululizo<T>`'s stopgap: not taken
+
+`docs/design/data-shapes-design.md` flags `Mfululizo<T>` (a borrowed slice/view into an
+`Orodha`) as blocked on this exact decision, with a fallback option: an `Rc<[Value]>`-backed
+"fake it" stopgap that gets *a* `Mfululizo` shipped without waiting for real reference
+semantics. **Not taken, deliberately.** Now that the lifetime-inference strategy above is
+decided, `Mfululizo<T>` is the concrete first user of the `Rejeo`-with-optional-region-parameter
+shape once `eval/expr.rs:217`'s real-reference-semantics work lands (a `Mfululizo<T>` *is*,
+semantically, a `Rejeo<Orodha<T>, M>`-shaped view, not an unrelated type) — building it on `Rc`
+sharing now would mean rebuilding it again once real borrows exist, rather than sharing that
+work. `Mfululizo<T>` stays deferred, tracked in `docs/design/data-shapes-design.md`, until the
+runtime-reference-semantics implementation (order-of-work item 3 below) actually lands — not
+implemented as part of this decision pass.
+
 ## Order of work, if this phase starts
 
-1. Decide the lifetime-inference strategy (the real blocker — nothing else in this doc can start
-   until this is settled).
+1. ~~Decide the lifetime-inference strategy~~ — **done, see above.**
 2. Add per-character string indexing (narrow, contained — a new `Value::Neno` method-dispatch
-   arm, likely `.herufi_kwa(i) -> Chaguo<Herufi>`, grapheme- or codepoint-indexed per whichever
-   the decision favors).
-3. Add `Muda_wa_Kuishi` to the AST/type system if the chosen strategy needs it; wire
-   `Rejeo`/`Rejeo_Tenda` to carry real reference semantics in the evaluator (replacing the
-   `BorrowImm`/`BorrowMut`-clones-a-copy behavior at `eval/expr.rs:217`).
+   arm, `.herufi_kwa(i) -> Chaguo<Herufi>`, grapheme-indexed to match `.urefu()`'s existing
+   grapheme-count convention rather than switching to codepoints for this one method).
+3. Add the `muda`-parameter/region-name syntax to the parser and `ValueType::Rejeo`'s new
+   `Option<String>` field; wire `Rejeo`/`Rejeo_Tenda` to carry real reference semantics in the
+   evaluator (replacing the `BorrowImm`/`BorrowMut`-clones-a-copy behavior at `eval/expr.rs:217`).
+   `Mfululizo<T>` becomes buildable once this lands (see above).
 4. Only then attempt a self-hosted lexer as the first real stress test.
 
 ## Cross-references

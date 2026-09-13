@@ -25,6 +25,7 @@ Neno ni mfululizo wa herufi za UTF-8.
 | `s.kwa_herufi_kubwa()` | Badilisha kuwa herufi kubwa             | `"habari".kwa_herufi_kubwa()` → `"HABARI"` |
 | `s.anza_na(p)`      | `kweli` ikiwa `s` inaanza na `p`          | `"Habari".anza_na("Hab")` → `kweli` |
 | `s.maliza_na(p)`    | `kweli` ikiwa `s` inamalizika na `p`      | `"Habari".maliza_na("ari")` → `kweli` |
+| `s.herufi_kwa(i)`   | Herufi katika nafasi ya `i` (kama `urefu()` inavyohesabu); `Chaguo<Herufi>` | `"café".herufi_kwa(3)` → `Chaguo(Kuna(Herufi('é')))` |
 
 ## Kushirikiana
 

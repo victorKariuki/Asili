@@ -68,6 +68,25 @@ weka n = nasibu()             # random float [0,1)
 | `Ukomo`    | ∞                          | Ukomo (alias ya INF)         |
 | `Siyo_Namba`| NaN                       | Siyo Namba (alias ya NAN)    |
 
+**Namba_Kuu / Namba_Sahihi** (usahihi usio na kikomo, pia baada ya `leta hisabati`):
+
+```asili
+leta hisabati
+
+weka kubwa = jaribu (namba_kuu_kutoka("999999999999999999999999999999999999999999999999"))
+weka moja = jaribu (namba_kuu_kutoka("1"))
+chapisha((kubwa + moja) kama Neno)   # halisi, si iliyozungushwa na f64
+
+weka a = jaribu (namba_sahihi_kutoka("0.1"))
+weka b = jaribu (namba_sahihi_kutoka("0.2"))
+chapisha((a + b) kama Neno)          # "0.3" halisi -- kinyume na 0.1 + 0.2 ya Namba ya kawaida
+```
+
+Hakuna sintaksia ya kihalisia (literal) — ujenzi ni kupitia `namba_kuu_kutoka`/
+`namba_sahihi_kutoka` (`Tokeo<T, Neno>`) pekee, au ubadilishaji usio na hitilafu kutoka `Namba`
+(`namba kama Namba_Kuu`). Ubadilishaji wa kurudi (`kama Namba`) unaweza kushindwa —
+`Chaguo<Namba>`.
+
 ### mfumo — System
 
 ```asili
@@ -76,8 +95,10 @@ leta mfumo
 weka hoja = vigezo()                # Orodha<Neno> of CLI args
 weka path = pata_env("PATH")       # Chaguo<Neno>
 toka(1)                             # exit with code
-sikiliza_ishara(2, shimla)          # register signal handler (e.g. SIGINT = 2)
-rejesha_ishara(2)                   # reset signal handler to default
+jaribu sikiliza_ishara(2, shimla)   # register signal handler (e.g. SIGINT = 2); returns
+                                     # Tokeo<Tupu, Neno> — Kosa on platforms with no signal
+                                     # support (non-Unix)
+jaribu rejesha_ishara(2)            # reset signal handler to default; same Tokeo contract
 ```
 
 **Maadili ya mfumo** — available after `leta mfumo`:
@@ -86,6 +107,21 @@ rejesha_ishara(2)                   # reset signal handler to default
 |----------|---------------------------------|
 | `TOLEO`  | Toleo la sasa la Asili (Neno)   |
 | `JINA_OS`| Jina la mfumo wa uendeshaji (Neno) |
+
+**Kishikizo cha Mkondo** (TCP client stream, also available after `leta mfumo`):
+
+```asili
+leta mfumo
+
+weka m = jaribu (mkondo_unganisha("127.0.0.1:8080"))
+jaribu (m.andika("GET / HTTP/1.0\r\n\r\n"))
+weka jibu = jaribu (m.soma())
+m.funga()
+```
+
+`mkondo_unganisha(anwani)` inarejesha `Tokeo<Mkondo, Neno>`. Kishikizo hufungwa kiotomatiki
+kikitoka nje ya wigo, kama `Faili` — tazama
+[faili-mkondo-design.md](../design/faili-mkondo-design.md).
 
 ### majira — Time
 
@@ -138,6 +174,25 @@ jaribu futa("temp.txt")
 |------------------|---------------------------------------------|
 | `NJIA_SEPARATOR` | Kitenganishi cha njia (`/` au `\` kwenye OS) |
 
+**Kishikizo cha Faili** (handle-based, also available after `leta faili`) — kwa matumizi ya
+mara kwa mara badala ya kufungua/kufunga faili kila wakati:
+
+```asili
+leta faili
+
+weka w = jaribu (faili_fungua("data.txt", "andika"))
+jaribu (w.andika("mstari mmoja\n"))
+w.funga()
+
+weka r = jaribu (faili_fungua("data.txt", "soma"))
+weka maudhui = jaribu (r.soma())
+```
+
+`faili_fungua(njia, hali)` inarejesha `Tokeo<Faili, Neno>`; `hali` ni `"soma"`, `"andika"`, au
+`"ongeza"`. Kishikizo hufungwa kiotomatiki `w`/`r` yanapotoka nje ya wigo (hata bila `.funga()`
+au `tupa` wazi), si tu wakati zinapofungwa kwa mkono — tazama
+[faili-mkondo-design.md](../design/faili-mkondo-design.md).
+
 ### runtime
 
 ```asili
@@ -164,12 +219,70 @@ weka matokeo = wito_kiungo(handle, "my_function", orodha(1, 2))
 
 ### sambamba — Concurrency
 
+1:1 mfumo wa nyuzi za OS halisi (si nyuzi za kijani/mratibu) — `tenda` moja huanzisha uzi mmoja
+wa OS. Tazama [concurrency-design.md](../design/concurrency-design.md) kwa uamuzi kamili.
+
 ```asili
 leta sambamba
+leta matumizi
 
-weka mwendo = anza_mwendo(hesabu_kubwa)
-weka jibu = subiri_mwendo(mwendo)
+kazi mfanyakazi(tx: NjiaTx<Namba>, n: Namba) -> Tupu {
+    weka jumla = n * n
+    jaribu (tx.tuma(jumla))
+}
+
+kazi kuu(hoja: Orodha<Neno>) -> Tupu {
+    weka p = njia()
+    weka tx = p.kwanza()
+    weka rx = p.pili()
+
+    weka id = jaribu (tenda("mfanyakazi", tx, 5))
+    weka jibu = jaribu (rx.pokea())
+    chapisha(jibu kama Neno)          // "25"
+    jaribu (subiri_tenda(id))
+}
 ```
+
+`tenda(kazi_jina, hoja...)` inatafuta `kazi` ya kiwango cha moduli kwa jina lake (`Neno`, si
+rejeleo la moja kwa moja la kazi) na kuianzisha kwenye uzi mpya, ikirejesha `Tokeo<Namba, Neno>`
+(kitambulisho cha uzi). **Thamani inayorejeshwa na kazi iliyoanzishwa haiwezi kupitia
+`subiri_tenda` moja kwa moja** — `subiri_tenda(id)` inarejesha tu `Tokeo<Tupu, Neno>` (uzi
+ulikamilika kwa usalama au ulianguka), si matokeo halisi. Tumia `njia` kutuma matokeo kurudi.
+
+**Hoja za `tenda` lazima ziweze kuvuka nyuzi salama** — `Kasha_GC<T>`, `Faili`, `Mkondo` (au
+chochote kinachozibeba) hukataliwa na `Kosa` badala ya kuruhusiwa kimya kimya:
+
+```asili
+weka g = kasha_gc_unda(1.0)
+linganisha tenda("kazi_yoyote", g) {
+    Tokeo::Sawa(_) => { }
+    Tokeo::Kosa(ujumbe) => { chapisha(ujumbe) }   // "tenda: hoja ina thamani isiyoweza kuvuka nyuzi..."
+}
+```
+
+**njia (Channel):**
+
+| Njia          | Maelezo                                          |
+|---------------|-----------------------------------------------------|
+| `njia()`      | Unda jozi mpya ya `NjiaTx<T>`/`NjiaRx<T>` — haiwezi kushindwa |
+| `tx.tuma(v)`  | Tuma `v`; `Tokeo<Tupu, Neno>` — `Kosa` ikiwa upande wa kupokea umefungwa |
+| `rx.pokea()`  | Pokea (inasubiri); `Tokeo<T, Neno>` — `Kosa` mara zote za kutuma zinapokuwa zimefungwa |
+
+**fungo (Mutex):**
+
+```asili
+weka f = jaribu (fungo(0.0))
+f.weka(42.0)
+chapisha(f.pata() kama Neno)   // "42"
+```
+
+| Njia          | Maelezo                                          |
+|---------------|-----------------------------------------------------|
+| `fungo(v)`    | Funga `v` kwenye `Fungo<T>`; `Tokeo<Fungo<T>, Neno>` |
+| `f.pata()`    | Funga, soma, fungua — hatua moja salama         |
+| `f.weka(v)`   | Funga, andika, fungua — hatua moja salama       |
+| `f.funga()`   | Funga wazi, bila kufungua — kwa shughuli kadhaa zinazohitaji kufungwa pamoja |
+| `f.fungua()`  | Fungua; kuita bila `.funga()` iliyotangulia ni kosa la programu (huripotiwa kama paparika) |
 
 ### kasha_gc — Managed Memory (Kasha_GC\<T\>)
 
@@ -205,6 +318,26 @@ how Rust's own `Rc<T>` requires an explicit `.clone()` rather than sharing on pl
 
 `==` on two `Kasha_GC<T>` handles compares **identity** (do they share the same cell?), not
 contents — two separately-`kasha_gc_unda`'d handles with equal inner values are not `==`.
+
+### Kumbukumbu\<T\> — Heap Box
+
+Always in scope (via `msingi`, no `leta` inahitajika) — jozi na `Kasha_GC<T>`, lakini **hakuna**
+sifa ya kushirikiana wala kubadilisha mahali pale:
+
+```asili
+weka k = kumbukumbu_unda(42.0)  # box a value: Kumbukumbu<Namba>
+chapisha(k.pata() kama Neno)     # "42" — a clone of the boxed value
+```
+
+| Method | Effect |
+|---|---|
+| `kumbukumbu_unda(v)` | Box `v`, returning a new `Kumbukumbu<T>`. |
+| `.pata()` | Read a clone of the boxed value. |
+
+**Hakuna `.weka()`** — `Kumbukumbu<T>` haishirikiani kama `Kasha_GC<T>`; kuita njia yoyote
+hupokea nakala ya kishikizo, hivyo kuibadilisha ndani ya njia hiyo hakuonekani kwenye jina la
+asili. Ili kubadilisha, kabidhi upya jina zima: `weka k = kumbukumbu_unda(thamani_mpya)`. Tumia
+`Kasha_GC<T>` badala yake ikiwa unahitaji kubadilisha mahali pale kupitia vishikizo vingi.
 
 ---
 

@@ -123,6 +123,27 @@ pub fn msingi_exports() -> BuiltinExportTable {
             ret: ValueType::Chaguo(Box::new(ValueType::Unknown)),
         },
     );
+    functions.insert(
+        "kumbukumbu_unda".to_string(),
+        FnContract {
+            params: vec![ValueType::Unknown],
+            ret: ValueType::Kumbukumbu(Box::new(ValueType::Unknown)),
+        },
+    );
+    functions.insert(
+        "seti".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Seti(Box::new(ValueType::Unknown)),
+        },
+    );
+    functions.insert(
+        "seti_tupu".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Seti(Box::new(ValueType::Unknown)),
+        },
+    );
     let mut constants = HashMap::new();
     constants.insert("KWELI".to_string(), ValueType::Ukweli);
     constants.insert("SIYO_KWELI".to_string(), ValueType::Ukweli);
@@ -132,6 +153,20 @@ pub fn msingi_exports() -> BuiltinExportTable {
 
 pub fn hisabati_exports() -> BuiltinExportTable {
     let mut functions = HashMap::new();
+    functions.insert(
+        "namba_kuu_kutoka".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno],
+            ret: ValueType::Tokeo(Box::new(ValueType::NambaKuu), Box::new(ValueType::Neno)),
+        },
+    );
+    functions.insert(
+        "namba_sahihi_kutoka".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno],
+            ret: ValueType::Tokeo(Box::new(ValueType::NambaSahihi), Box::new(ValueType::Neno)),
+        },
+    );
     functions.insert("jumla".to_string(), namba_namba_namba());
     functions.insert("tofauti".to_string(), namba_namba_namba());
     functions.insert("zao".to_string(), namba_namba_namba());
@@ -233,14 +268,21 @@ pub fn mfumo_exports() -> BuiltinExportTable {
         "sikiliza_ishara".to_string(),
         FnContract {
             params: vec![ValueType::Namba, ValueType::Neno],
-            ret: ValueType::Tupu,
+            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
         },
     );
     functions.insert(
         "rejesha_ishara".to_string(),
         FnContract {
             params: vec![ValueType::Namba],
-            ret: ValueType::Tupu,
+            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
+        },
+    );
+    functions.insert(
+        "mkondo_unganisha".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno],
+            ret: ValueType::Tokeo(Box::new(ValueType::Mkondo), Box::new(ValueType::Neno)),
         },
     );
     let mut constants = HashMap::new();
@@ -389,26 +431,56 @@ pub fn faili_exports() -> BuiltinExportTable {
             ret: ValueType::Namba,
         },
     );
+    functions.insert(
+        "faili_fungua".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno, ValueType::Neno],
+            ret: ValueType::Tokeo(Box::new(ValueType::Faili), Box::new(ValueType::Neno)),
+        },
+    );
     let mut constants = HashMap::new();
     constants.insert("NJIA_SEPARATOR".to_string(), ValueType::Neno);
     BuiltinExportTable { functions, constants }
 }
 
-/// Sambamba (concurrency): anza_mwendo, subiri_mwendo. Requires `leta sambamba`. Stub.
+/// Sambamba (concurrency): tenda/subiri_tenda (thread spawn/join, 1:1 OS-thread model), njia
+/// (channel), fungo (mutex). Requires `leta sambamba`. `tenda` is variadic (kazi name + however
+/// many args that kazi takes) — special-cased by name in the analyzer's arity check, matching
+/// the existing `orodha`/`seti` precedent, not a general FnContract flag.
 pub fn sambamba_exports() -> BuiltinExportTable {
     let mut functions = HashMap::new();
     functions.insert(
-        "anza_mwendo".to_string(),
+        "tenda".to_string(),
         FnContract {
-            params: vec![ValueType::Neno, ValueType::Orodha(Box::new(ValueType::Unknown))],
-            ret: ValueType::Namba,
+            params: vec![ValueType::Neno],
+            ret: ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno)),
         },
     );
     functions.insert(
-        "subiri_mwendo".to_string(),
+        "subiri_tenda".to_string(),
         FnContract {
             params: vec![ValueType::Namba],
             ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
+        },
+    );
+    functions.insert(
+        "njia".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Jozi(
+                Box::new(ValueType::NjiaTx(Box::new(ValueType::Unknown))),
+                Box::new(ValueType::NjiaRx(Box::new(ValueType::Unknown))),
+            ),
+        },
+    );
+    functions.insert(
+        "fungo".to_string(),
+        FnContract {
+            params: vec![ValueType::Unknown],
+            ret: ValueType::Tokeo(
+                Box::new(ValueType::Fungo(Box::new(ValueType::Unknown))),
+                Box::new(ValueType::Neno),
+            ),
         },
     );
     BuiltinExportTable {
