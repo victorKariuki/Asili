@@ -2,13 +2,15 @@
 
 Use `?topic` inside the REPL to show help (e.g. `?hisabati`, `?orodha`).
 
-All 11 topic files exist today (`?topic` on a missing topic just fails to find the file —
+All 16 topic files exist today (`?topic` on a missing topic just fails to find the file —
 there's no placeholder).
 
 | Topic         | File              | Description                      |
 |---------------|-------------------|-----------------------------------|
 | `aina`        | aina.md           | Types, casting, special values   |
+| `faili`       | faili.md          | Faili, Mkondo, Kumbukumbu (resource handles) |
 | `hisabati`    | hisabati.md       | Math module functions            |
+| `namba-kuu-sahihi` | namba-kuu-sahihi.md | Namba_Kuu and Namba_Sahihi (arbitrary precision) |
 | `jozi`        | jozi.md           | Pair creation and methods        |
 | `kamusi`      | kamusi.md         | Dictionary creation and methods  |
 | `kazi`        | kazi.md           | Expressions/statements in the REPL (functions can't be defined interactively — see below) |
@@ -16,6 +18,9 @@ there's no placeholder).
 | `neno`        | neno.md           | String methods and operations    |
 | `orodha`      | orodha.md         | List creation and methods        |
 | `udhibiti`    | udhibiti.md       | Control flow in the REPL         |
+| `seti`        | seti.md           | Set creation and methods         |
+| `sambamba`    | sambamba.md       | tenda/njia/fungo (concurrency, defined in a file) |
+| `sifa`        | sifa.md           | Traits (defined in a file, not interactively — see below) |
 | `umbo`        | umbo.md           | Structs (defined in a file, not interactively — see below) |
 | `waendeshaji` | waendeshaji.md    | Operators, precedence, bitwise   |
 

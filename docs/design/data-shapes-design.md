@@ -1,8 +1,9 @@
 # Data shapes design: `Mfululizo`, `Seti`, `Namba_Kuu`, `Namba_Sahihi`
 
-**Status: not started at the runtime level; further along at the type level than it might
-appear.** Per [implementation-status.md](implementation-status.md#phase-i--catalyst-core-interpreter),
-these four types are the concrete remainder of Phase I's scope, deferred to Phase III. This doc
+**Status: `Seti<T>`, `Namba_Kuu`, `Namba_Sahihi` implemented; `Mfululizo` not started at the
+runtime level, blocked on the borrow-checker lifetime decision.** Per
+[implementation-status.md](implementation-status.md#phase-i--catalyst-core-interpreter), these
+four types are the concrete remainder of Phase I's scope, deferred to Phase III. This doc
 exists to record what already exists to build on (more than the checklist bullet alone
 communicates) and the open design questions for each.
 
@@ -41,21 +42,35 @@ for the analyzer to reason about, but there is no expression that could ever con
 `Value::Seti` — no constructor builtin, no literal syntax, nothing for the evaluator to actually
 produce or operate on. The type system is ahead of the runtime here, not the reverse.
 
-## `Seti<T>` (Set)
+## `Seti<T>` (Set) — implemented
 
-Least architecturally interesting of the four — the note above already specifies the shape
-(`HashSet<MapKey>`, reusing the existing `MapKey` type `Kamusi<K,V>` already uses for hashable
-keys). Open questions, all narrow:
+`Value::Seti(HashSet<MapKey>)` (`core/evaluator/src/value/mod.rs`), reusing the same `MapKey`
+type `Kamusi<K,V>` already uses for hashable keys. Every open question above was resolved as
+predicted:
 
-- Constructor/literal syntax: a builtin function (`seti(...)`, mirroring `orodha(...)`/
-  `kamusi(...)`) is the obvious choice, consistent with how every other collection type is
-  constructed in this language (no dedicated literal syntax beyond `[]`/`{}` for Orodha/Kamusi
-  already exists, and those are arguably special-cased enough already).
-- Method surface: `.ongeza(x)`/`.ina(x)` (contains)/`.ondoa(x)`/`.urefu()`, mirroring `Orodha`'s
-  and `Kamusi`'s existing method-naming conventions.
-- Iteration order: `HashSet` gives none; if `linganisha`/`kwa...katika` iteration needs
-  deterministic order for debugging/testing, an `IndexSet`-style crate might be preferable to
-  std's `HashSet` — a real but small decision, not a blocker.
+- Constructors: `seti(v1, v2, ...)` (variadic — see below) and `seti_tupu()`
+  (`core/evaluator/src/builtins/seti.rs`), mirroring `orodha(...)`/`kamusi_tupu()`.
+- Methods (`core/evaluator/src/eval/expr.rs`, hardcoded dispatch arms like every other builtin
+  collection): `.ongeza(v) -> Tupu`, `.ondoa(v) -> Ukweli` (was a member removed?),
+  `.ina(v) -> Ukweli` (contains), `.urefu() -> Namba`, `.clona()`, `.orodha() -> Orodha<T>`
+  (materialize into a list, since `kwa...katika`-style iteration has no direct Seti support).
+  Mutation (`.ongeza`/`.ondoa`) follows `Kamusi.ingiza`'s existing pattern: clone-modify-then-
+  `rt.env.set()` back into the receiver's binding, not true interior mutability.
+- Iteration order: shipped with std `HashSet` (unspecified order) as planned. No `IndexSet`
+  dependency taken — revisit only if deterministic iteration becomes a real, demonstrated need.
+- **One thing not predicted**: `seti`'s `FnContract` (`core/parser/src/builtins.rs`) declares
+  `params: vec![]` (matching `orodha`'s own contract shape), but the analyzer's stdlib-call
+  arity check (`SEM046`) rejects any call whose arg count doesn't match `params.len()` —
+  `orodha`'s variadic-ness is a hardcoded `name == "orodha"` special case in
+  `core/parser/src/semantic/analyzer.rs`, not a general "this FnContract is variadic" flag.
+  `seti` needed the same hardcoded exception added (`name == "orodha" || name == "seti"`) to
+  compile at all. Worth knowing if a future variadic stdlib function needs the same treatment —
+  the special-case list, not a systematic mechanism, is exactly where to look.
+
+Always in scope via `msingi` (no `leta seti` gate), matching `Kumbukumbu<T>`'s decision, not
+`Kasha_GC<T>`'s opt-in one — the spec's Data Shapes table doesn't flag `Seti` as opt-in.
+
+See `core/evaluator/tests/seti.rs` for test coverage, `examples/seti/` for an end-to-end example.
 
 ## `Mfululizo<T>` (Slice)
 
@@ -79,44 +94,52 @@ slice is fundamentally a *borrowed view* into an `Orodha`'s backing storage. Bui
 This is the one item in this doc that's genuinely blocked on another design doc's open question
 (the lifetime-inference strategy), not just unstarted.
 
-## `Namba_Kuu` (BigInt) / `Namba_Sahihi` (BigDecimal)
+## `Namba_Kuu` (BigInt) / `Namba_Sahihi` (BigDecimal) — implemented
 
-Two separate types, same shape of work: wrap an external arbitrary-precision crate
-(`num-bigint`'s `BigInt` is explicitly named in the evaluator's own TODO comment;
-`num-bigint`'s `BigDecimal`-equivalent or a separate `bigdecimal` crate would cover
-`Namba_Sahihi`). Design questions:
+`Value::NambaKuu(num_bigint::BigInt)` / `Value::NambaSahihi(bigdecimal::BigDecimal)`
+(`core/evaluator/src/value/mod.rs`). Every open question above resolved as predicted:
 
-- **Arithmetic operator overloading.** Today's `BinaryOp::Add`/`Sub`/etc. dispatch through
-  `binary_f64` (see `core/evaluator/src/eval/expr.rs`), which unconditionally coerces both
-  operands to `f64` via `value::as_f64`. `Namba_Kuu`/`Namba_Sahihi` values can't round-trip
-  through `f64` without losing the entire point of arbitrary precision — the binary-operator
-  dispatch needs a new arm per operator that recognizes `Value::NambaKuu`/`Value::NambaSahihi`
-  operands *before* falling through to the `f64` path, not just a `value::as_f64` coercion added
-  to the existing helper.
-- **Casting.** `04-type-system.md`'s casting rules (`kama`) would need explicit
-  `Namba`↔`Namba_Kuu`↔`Namba_Sahihi` conversion semantics — is `42 kama Namba_Kuu` infallible
-  (always succeeds, `Namba` is a strict subset)? Is `namba_kuu_val kama Namba` fallible (a
-  `Chaguo`/`Tokeo`, since a huge `Namba_Kuu` can't fit in `f64` precision)? The existing `Biti8`-
-  style fallible-cast pattern (`Chaguo<T>` return, `core/evaluator/src/eval/expr.rs`'s Cast
-  handling) is the closest precedent to reuse for the narrowing direction.
-- **Literal syntax.** Does a `Namba_Kuu` literal need its own suffix (e.g. Rust's `123u128`-style
-  suffix), or is it always constructed via an explicit cast/constructor from a `Neno` (parsing a
-  decimal-digit string, the way genuinely-arbitrary-precision values are usually entered)? The
-  latter avoids any lexer/grammar changes at all — a real simplification worth taking if nothing
-  else forces literal syntax.
+- **Arithmetic operator overloading**: `core/evaluator/src/value/numeric.rs`'s
+  `big_numeric_binary_op` is checked before `BinaryOp::Add`/etc. fall through to `binary_f64`
+  (`core/evaluator/src/eval/expr.rs`). Widening rule: a plain `Namba` operand widens infallibly
+  to match whichever big type the other side is; if both sides are `Namba_Kuu` (or `Namba_Kuu`
+  mixed with `Namba`), arithmetic stays in `BigInt` — preserving exact integer division/modulo,
+  not silently promoting to decimal; a `Namba_Sahihi` on either side promotes both to
+  `BigDecimal`. `/`/`%` by zero return `EvalError::DivByZero` (the same clean error path
+  ordinary `Namba` division-by-zero doesn't even need anymore — this is a different call site).
+  `**` uses `BigInt::pow(u32)` / `BigDecimal::powi(i64)` — integer exponents only, since neither
+  crate defines a general fractional big-number power.
+  **The semantic analyzer needed the identical extension separately** — its own
+  `Expr::Binary`/`BinaryOp::Add` type-checking (`core/parser/src/semantic/analyzer.rs`) is a
+  wholly separate code path from the evaluator's runtime dispatch and required its own
+  `Namba_Kuu`/`Namba_Sahihi`-aware arm before the plain-`Namba` checks, or `weka a: Namba_Kuu =
+  ...; a + a` would be rejected at compile time (`SEM033`) despite the evaluator supporting it
+  perfectly well at runtime.
+- **Casting**: `Namba -> Namba_Kuu`/`Namba_Sahihi` is infallible (widening) — `Namba_Kuu`
+  truncates toward zero (an integer type can't represent a fraction), `Namba_Sahihi` uses
+  `BigDecimal::from_f64` so the exact IEEE-754 value round-trips rather than a lossy
+  decimal-string reformat. `Namba_Kuu`/`Namba_Sahihi -> Namba` is fallible (`Chaguo<Namba>`),
+  reusing the `Biti8`-style fallible-cast pattern exactly as anticipated — **this needed the
+  analyzer's `Expr::Cast` type-inference extended too**: it previously hardcoded `fallible =
+  s.starts_with("Biti") || s.starts_with("uBiti")` (target-type-name-only, no knowledge of the
+  *source* expression's type), so a `Namba_Kuu -> Namba` cast's static type came out as `Namba`
+  even though the runtime value was `Chaguo(Namba)` — the analyzer now also checks the source
+  expression's inferred type when the target is `Namba`.
+- **Literal syntax**: no lexer/grammar changes, as predicted — construction is exclusively via
+  `namba_kuu_kutoka(neno) -> Tokeo<Namba_Kuu, Neno>` / `namba_sahihi_kutoka(neno) ->
+  Tokeo<Namba_Sahihi, Neno>` (`core/evaluator/src/builtins/hisabati.rs`, gated behind `leta
+  hisabati` like the rest of that module), parsing a decimal-digit string via each crate's own
+  `FromStr`.
 
-None of these three questions are hard blockers the way `Mfululizo`'s lifetime dependency is —
-they're implementation-shaped decisions that can be made independently, in either order, whenever
-this work is picked up.
+See `core/evaluator/tests/namba_kuu_sahihi.rs` for test coverage — notably
+`namba_sahihi_addition`, which asserts `0.1 + 0.2 == 0.3` exactly (no f64 rounding artifact),
+the actual point of the type.
 
-## Order of work, if this phase starts
+## `Mfululizo<T>` — still not started
 
-1. `Seti<T>` first — no blockers, most similar to existing `Orodha`/`Kamusi` patterns.
-2. `Namba_Kuu`/`Namba_Sahihi` — independent of `Seti`, needs the operator-dispatch and
-   casting-semantics decisions above made first, but no cross-doc dependency.
-3. `Mfululizo<T>` last — genuinely blocked on the lifetime-inference decision in
-   [phase3-self-hosting-borrow-checker-design.md](phase3-self-hosting-borrow-checker-design.md),
-   unless the `Rc`-based "fake it" approach is chosen deliberately as a stopgap.
+Genuinely blocked on the borrow-checker lifetime-strategy decision in
+[phase3-self-hosting-borrow-checker-design.md](phase3-self-hosting-borrow-checker-design.md),
+unless the `Rc`-based "fake it" stopgap is chosen deliberately.
 
 ## Cross-references
 

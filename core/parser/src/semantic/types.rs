@@ -116,6 +116,28 @@ pub fn parse_value_type(s: &str) -> ValueType {
         let inner = s[9..s.len() - 1].trim();
         return ValueType::KashaGC(Box::new(parse_value_type(inner)));
     }
+    if s.starts_with("Kumbukumbu<") && s.ends_with('>') {
+        let inner = s[11..s.len() - 1].trim();
+        return ValueType::Kumbukumbu(Box::new(parse_value_type(inner)));
+    }
+    if s.starts_with("NjiaTx<") && s.ends_with('>') {
+        let inner = s[7..s.len() - 1].trim();
+        return ValueType::NjiaTx(Box::new(parse_value_type(inner)));
+    }
+    if s.starts_with("NjiaRx<") && s.ends_with('>') {
+        let inner = s[7..s.len() - 1].trim();
+        return ValueType::NjiaRx(Box::new(parse_value_type(inner)));
+    }
+    if s.starts_with("Fungo<") && s.ends_with('>') {
+        let inner = s[6..s.len() - 1].trim();
+        return ValueType::Fungo(Box::new(parse_value_type(inner)));
+    }
+    if s == "Faili" {
+        return ValueType::Faili;
+    }
+    if s == "Mkondo" {
+        return ValueType::Mkondo;
+    }
     if s == "Herufi" {
         return ValueType::Herufi;
     }

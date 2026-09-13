@@ -6,7 +6,7 @@ use std::mem;
 use crate::{
     AssignOp, Attribute, BinaryOp, Block, Constant, EnumDecl, EnumVariant, Expr, ForMode,
     Function, Import, ImportPath, ImplDecl, MatchArm, Module, Param, Pattern, Stmt, StructDecl,
-    TraitDecl, TypeExpr, UnaryOp,
+    TraitDecl, TraitMethodSig, TypeExpr, UnaryOp,
 };
 use crate::cursor::Parser;
 
@@ -109,6 +109,7 @@ impl<'a> Parser<'a> {
         }
 
         enums.extend(self.standard_enums());
+        traits.extend(self.standard_traits());
 
         Module {
             imports,
@@ -201,22 +202,6 @@ impl<'a> Parser<'a> {
         }
         let _ = self.consume(">", "PAR086", "orodha ya jumla inahitaji '>'");
         gens
-    }
-
-    fn skip_body(&mut self) {
-        if !self.match_tok("{") {
-            return;
-        }
-        let mut depth = 1usize;
-        while !self.is_eof() && depth > 0 {
-            if self.match_tok("{") {
-                depth += 1;
-            } else if self.match_tok("}") {
-                depth -= 1;
-            } else {
-                self.pos += 1;
-            }
-        }
     }
 
     fn parse_struct_decl(&mut self, is_public: bool, attrs: Vec<Attribute>) -> Option<StructDecl> {
@@ -313,9 +298,10 @@ impl<'a> Parser<'a> {
         let name = self.consume_ident("PAR903", "sifa inahitaji jina")?;
         let line = name.line;
         let column = name.column;
-        self.skip_body();
+        let methods = self.parse_trait_method_sigs();
         Some(TraitDecl {
             name: name.lexeme,
+            methods,
             line,
             column,
             attrs,
@@ -323,16 +309,63 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parse a trait body: zero or more bodiless `kazi name(params) -> ReturnType` signatures
+    /// inside `{ }`. No `{ }` at all (e.g. a forward-declared/empty trait) yields no methods.
+    fn parse_trait_method_sigs(&mut self) -> Vec<TraitMethodSig> {
+        let mut methods = Vec::new();
+        if !self.match_tok("{") {
+            return methods;
+        }
+        while self.match_tok("kazi") {
+            let Some(name_tok) = self.consume_ident("PAR906", "njia ya sifa inahitaji jina")
+            else {
+                break;
+            };
+            let line = name_tok.line;
+            if self.consume("(", "PAR907", "njia ya sifa inahitaji '('").is_none() {
+                break;
+            }
+            let params = self.parse_params();
+            if self
+                .consume(")", "PAR908", "njia ya sifa inahitaji ')' baada ya hoja")
+                .is_none()
+            {
+                break;
+            }
+            let return_type = if self.match_tok("->") {
+                self.parse_type()
+            } else {
+                TypeExpr { name: "Tupu".to_string() }
+            };
+            methods.push(TraitMethodSig {
+                name: name_tok.lexeme,
+                params,
+                return_type,
+                line,
+            });
+            if self.check("}") {
+                break;
+            }
+        }
+        let _ = self.match_tok("}");
+        methods
+    }
+
     fn parse_impl_decl(&mut self, attrs: Vec<Attribute>) -> Option<ImplDecl> {
         let first = self.consume_ident("PAR904", "shughuli ya inahitaji jina la aina")?;
         let line = first.line;
         let mut trait_name = None;
-        let mut target = first.lexeme.clone();
+        let target = first.lexeme.clone();
         if self.match_tok("kwa") {
-            // "shughuli ya Trait kwa Target { }" — kwa keyword syntax
-            trait_name = Some(first.lexeme);
-            if let Some(t) = self.consume_ident("PAR905", "shughuli ya kwa inahitaji jina la aina") {
-                target = t.lexeme;
+            // "shughuli ya Target kwa Trait { }" — kwa keyword syntax. `first` (before `kwa`)
+            // is the type being implemented on (already defaulted into `target` above); the
+            // identifier after `kwa` is the trait name. Was previously swapped (trait_name set
+            // to `first`, target overwritten with the post-`kwa` identifier), which meant a
+            // trait-impl's `target` never actually matched its struct's name anywhere method
+            // dispatch looks it up — see docs/language/07-mfumo-wa-aina.md's now-resolved
+            // "known bug" note.
+            if let Some(t) = self.consume_ident("PAR905", "shughuli ya kwa inahitaji jina la sifa") {
+                trait_name = Some(t.lexeme);
             }
         } else if self.match_tok(":") {
             // "shughuli ya Target: Trait { }" — colon syntax
@@ -1353,6 +1386,59 @@ impl<'a> Parser<'a> {
                         column: 0,
                     },
                 ],
+                line: 0,
+                column: 0,
+                is_public: true,
+                attrs: Vec::new(),
+            },
+        ]
+    }
+
+    /// Built-in traits seeded into every module, the same way `standard_enums()` seeds
+    /// `Chaguo`/`Tokeo`. Not defined in an `.asi` file: `lib/std`'s `.asi` loader
+    /// (`pata/cli/src/pipeline/interface_registry.rs`) is a line-by-line text parser, not the
+    /// real lexer/parser, and cannot reliably parse a multi-line `sifa { ... }` body.
+    pub(crate) fn standard_traits(&self) -> Vec<TraitDecl> {
+        vec![
+            TraitDecl {
+                name: "Inasomeka".to_string(),
+                methods: vec![TraitMethodSig {
+                    name: "soma".to_string(),
+                    params: vec![Param {
+                        name: "self".to_string(),
+                        ty: TypeExpr { name: "Self".to_string() },
+                        line: 0,
+                        column: 0,
+                    }],
+                    return_type: TypeExpr { name: "Tokeo<Neno, Neno>".to_string() },
+                    line: 0,
+                }],
+                line: 0,
+                column: 0,
+                is_public: true,
+                attrs: Vec::new(),
+            },
+            TraitDecl {
+                name: "Inandikika".to_string(),
+                methods: vec![TraitMethodSig {
+                    name: "andika".to_string(),
+                    params: vec![
+                        Param {
+                            name: "self".to_string(),
+                            ty: TypeExpr { name: "Self".to_string() },
+                            line: 0,
+                            column: 0,
+                        },
+                        Param {
+                            name: "data".to_string(),
+                            ty: TypeExpr { name: "Neno".to_string() },
+                            line: 0,
+                            column: 0,
+                        },
+                    ],
+                    return_type: TypeExpr { name: "Tokeo<Tupu, Neno>".to_string() },
+                    line: 0,
+                }],
                 line: 0,
                 column: 0,
                 is_public: true,

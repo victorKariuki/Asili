@@ -2,13 +2,15 @@
 
 Tumia `?mada` ndani ya REPL kuonyesha msaada (mf. `?hisabati`, `?orodha`).
 
-Mada zote 11 zipo leo (`?mada` kwa mada isiyokuwepo itashindwa tu kupata faili —
+Mada zote 16 zipo leo (`?mada` kwa mada isiyokuwepo itashindwa tu kupata faili —
 hakuna nafasi tupu ya akiba).
 
 | Mada          | Faili             | Maelezo                          |
 |---------------|-------------------|----------------------------------|
 | `aina`        | aina.md           | Aina, ubadilishaji wa aina, maadili maalum |
+| `faili`       | faili.md          | Faili, Mkondo, Kumbukumbu (vishikizo vya rasilimali) |
 | `hisabati`    | hisabati.md       | Kazi za moduli ya hisabati       |
+| `namba-kuu-sahihi` | namba-kuu-sahihi.md | Namba_Kuu na Namba_Sahihi (usahihi usio na kikomo) |
 | `jozi`        | jozi.md           | Kuunda na njia za jozi           |
 | `kamusi`      | kamusi.md         | Kuunda na njia za kamusi         |
 | `kazi`        | kazi.md           | Semi/kauli kwenye REPL (kazi haziwezi kutamkwa moja kwa moja — tazama chini) |
@@ -16,6 +18,9 @@ hakuna nafasi tupu ya akiba).
 | `neno`        | neno.md           | Njia na shughuli za neno         |
 | `orodha`      | orodha.md         | Kuunda na njia za orodha         |
 | `udhibiti`    | udhibiti.md       | Udhibiti wa mtiririko kwenye REPL |
+| `seti`        | seti.md           | Kuunda na njia za seti           |
+| `sambamba`    | sambamba.md       | tenda/njia/fungo (concurrency, linaundwa kwenye faili) |
+| `sifa`        | sifa.md           | Sifa (linaundwa kwenye faili, si moja kwa moja — tazama chini) |
 | `umbo`        | umbo.md           | Umbo (linaundwa kwenye faili, si moja kwa moja — tazama chini) |
 | `waendeshaji` | waendeshaji.md    | Waendeshaji, kipaumbele, biti    |
 

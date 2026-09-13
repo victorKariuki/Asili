@@ -112,6 +112,35 @@ weka b = ndani.pili() kama Namba      # 2
 
 ---
 
+## Seti (Set)
+
+Mkusanyiko wa thamani za kipekee (hakuna marudio). Daima iko katika wigo (kupitia `msingi`,
+hauitaji `leta`).
+
+### Kuunda (Creation)
+
+```asili
+weka s = seti(1, 2, 3, 2, 1)   # marudio yanapuuzwa: idadi 3
+weka tupu2 = seti_tupu()
+```
+
+### Njia (Methods)
+
+```asili
+weka s = seti_tupu()
+s.ongeza(1)                # ongeza mwanachama
+weka ipo = s.ina(1)         # Ukweli: kweli
+weka ilitolewa = s.ondoa(1) # Ukweli: kweli ikiwa ilikuwepo
+weka idadi_w = s.urefu()    # Namba
+weka orodha_w = s.orodha()  # badilisha kuwa Orodha<T>
+weka nakala = s.clona()
+```
+
+**Mpangilio wa uorodheshaji haujabainishwa** — `Seti` hutumia `HashSet` ya Rust ndani, hivyo
+`.orodha()` haihakikishi mpangilio uleule kati ya matoleo.
+
+---
+
 ## Umbo (Struct)
 
 User-defined record type with named fields.

@@ -24,7 +24,15 @@ Per [spec/07-execution-and-roadmap.md](../spec/07-execution-and-roadmap.md)'s ph
 - [x] Orodha index `expr[index]`, Kamusi (`kamusi_tupu()`/`.ingiza`/`.pata`), Jozi (`jozi(a,b)`),
       Herufi casts, `linganisha` pattern matching on structs/Jozi/enums
 - [x] `vunja`/`endelea`/`lebo` (break/continue/labeled loops)
-- [ ] `Mfululizo`, `Seti`, `Namba_Kuu`, `Namba_Sahihi`, full borrow checker — Phase III, not started
+- [x] `Seti<T>` — `HashSet<MapKey>`-backed set, `seti(...)`/`seti_tupu()`, always in scope via
+      `msingi`. See [data-shapes-design.md](data-shapes-design.md).
+- [x] `Namba_Kuu`/`Namba_Sahihi` — `num-bigint`/`bigdecimal`-backed. `namba_kuu_kutoka(neno)`/
+      `namba_sahihi_kutoka(neno)` (via `leta hisabati`); infallible widening from `Namba`,
+      fallible narrowing back (`Chaguo<Namba>`). Mixed arithmetic auto-widens; two `Namba_Kuu`
+      operands stay in exact integer arithmetic rather than promoting to decimal. Needed a
+      matching extension to the semantic analyzer's own (separate) binary-op and cast
+      type-checking, not just the evaluator. See [data-shapes-design.md](data-shapes-design.md).
+- [ ] `Mfululizo`, full borrow checker — Phase III, not started
 
 ### Phase II — Synthesis (LSP, Wasm, tooling)
 
@@ -55,56 +63,95 @@ Per [spec/07-execution-and-roadmap.md](../spec/07-execution-and-roadmap.md)'s ph
 - [x] Mwalimu (LSP) — see [mwalimu-design.md](mwalimu-design.md); substantially more built than
       that doc used to claim (completion, goto-def, references, rename, workspace symbols all
       exist, not just diagnostics/hover).
+- [x] `Faili`/`Mkondo`/`Kumbukumbu<T>` — resource handles, previously spec'd
+      (`docs/spec/05-standard-library.md`) but entirely unimplemented. `Faili`/`Mkondo` close
+      their OS handle on scope exit via a real `Drop` impl on the handle wrapper, not an
+      `Env`-level hook (`Env::pop_scope` bypasses `Env::drop`, so a hook there would have missed
+      ordinary scope exit). Not opt-in — available via the existing `leta faili`/`leta mfumo`
+      (`Kumbukumbu<T>` via always-in-scope `msingi`), unlike `Kasha_GC<T>`. Satisfy
+      `Inasomeka`/`Inandikika` by fiat, not via a checked `impl` — see the Sifa entry below for
+      why. See [faili-mkondo-design.md](faili-mkondo-design.md) for the full architecture.
+- [x] **Sifa (traits) — method-signature completeness.** `TraitDecl` now carries real method
+      signatures (`sifa X { kazi f(self: Self) -> T }`, no bodies) instead of discarding its
+      body at parse time; every `shughuli ya Target kwa/​: Trait` is checked against that list
+      (`SEM105` on a missing/mismatched method). Deliberately no trait-object/dyn-dispatch — a
+      trait only disambiguates method dispatch and gates completeness, not a value typed
+      generically as "any Sifa." Found and fixed a real, previously-documented bug along the
+      way: the `kwa`-keyword impl syntax had `target`/`trait_name` swapped, so a `kwa`-style
+      trait impl's methods never dispatched at all (the `:`-colon syntax was always correct).
+      `Inasomeka`/`Inandikika` are seeded built-in traits (like `Chaguo`/`Tokeo` via
+      `standard_enums()`, not an `.asi` file — `.asi`'s loader is a line-by-line text parser
+      that can't reliably parse a multi-line `sifa { }` body); `Faili`/`Mkondo` satisfy them
+      *by fiat* (same method names/signatures), not via a real checked `impl`, since builtin
+      `ValueType`s dispatch through hardcoded Rust match arms that never reach the
+      `module.impls` lookup the completeness checker walks. See
+      [sifa-traits-design.md](sifa-traits-design.md) for the full architecture.
 - [ ] DAP (debugger) — not started; see [dap-later.md](dap-later.md).
 
-### Phase III — Resolution (self-hosting, borrow checker) — not started
+### Phase III — Resolution (self-hosting, borrow checker) — decision made, implementation not started
 
-Researched, not built. Two blockers found that reorder the roadmap's own sequencing:
+Researched, decided, not built.
 
-- **Self-hosting is farther away than "next phase" implies, though less so than earlier noted
-  here.** `Value::Neno` already has `.urefu()`/`.biti_ngapi()` (length), `.kata()` (byte-range
-  slice), `.gawanya()` (split), `.badilisha()` (replace), and `.tafuta()` (find) — a real prior
-  version of this entry claimed none of these existed, which was wrong. What's actually still
-  missing: **per-character indexing** — there is no way to ask "what is the character at
-  position N" without byte-slicing, which can split a multi-byte UTF-8 character. A tokenizer
-  needs this far more than substring slicing. See
-  [phase3-self-hosting-borrow-checker-design.md](phase3-self-hosting-borrow-checker-design.md)
-  for the full picture.
-- **The borrow checker has a real foundation, but two hard walls remain.** The semantic analyzer
-  already tracks per-binding `moved`/`mut_borrowed`/`imm_borrows` (`core/parser/src/semantic/analyzer.rs`,
-  `Binding` struct) with real diagnostics (SEM040–044) — this is a working move-checker today.
-  But: (1) it's semantic-analysis-only — the evaluator clones everything regardless (explicit
-  `TODO(Phase III)` in the code, move semantics have no runtime backing), and (2) any function
-  returning a reference is flatly rejected today (`SEM120`, "lifetime inference not yet
-  implemented") — there is no `Muda_wa_Kuishi` (lifetime) type anywhere, not even in the AST.
-  The roadmap doc itself already warns not to start this without first deciding the
-  lifetime-inference strategy — that decision hasn't been made yet. See
-  [phase3-self-hosting-borrow-checker-design.md](phase3-self-hosting-borrow-checker-design.md)
-  for the candidate strategies and what each implies.
+- [x] **Per-character string indexing** — `Neno.herufi_kwa(i) -> Chaguo<Herufi>`, grapheme-
+      indexed (matching `.urefu()`'s counting). This was the one genuinely missing piece of
+      string-manipulation coverage (`.urefu()`/`.biti_ngapi()`/`.kata()`/`.gawanya()`/
+      `.badilisha()`/`.tafuta()` already existed — an earlier version of this entry wrongly
+      claimed none of these existed).
+- [x] **Lifetime-inference strategy decided**: region-based inference with a narrow, named-
+      region (`muda M`) annotation surface, required only for the two cases
+      `docs/spec/04-type-system.md` already names as needing explicit annotation (`Rejeo`/
+      `Rejeo_Tenda` stored in `umbo` fields; function returns whose reference lifetime isn't
+      inferable from a single parameter). This was framed as an open three-way choice, but the
+      spec's own already-normative text ("lifetimes are inferred by default; explicit
+      annotations are only required when references cross complex structural boundaries")
+      ruled out the other two candidates directly — the decision was concretizing what the
+      spec already committed to, not picking among genuinely open options. See
+      [phase3-self-hosting-borrow-checker-design.md](phase3-self-hosting-borrow-checker-design.md)
+      for the full syntax proposal and what it determines for implementation.
+- [ ] **Runtime reference semantics — not implemented.** The semantic analyzer already tracks
+      per-binding `moved`/`mut_borrowed`/`imm_borrows` (`core/parser/src/semantic/analyzer.rs`,
+      `Binding` struct) with real diagnostics (SEM040–044) — a working compile-time move-checker.
+      But the evaluator still clones everything regardless (`eval/expr.rs:217`'s
+      `BorrowImm`/`BorrowMut` TODO) — move/borrow rules are enforced at compile time with no
+      runtime backing yet. Unblocked by the decision above, not yet built.
+- [ ] **`Mfululizo<T>`** — deliberately not given an `Rc`-based stopgap (considered and rejected;
+      see the design doc) since it's the natural first user of the real-reference-semantics work
+      once that lands. Still blocked, but on implementation now, not decision.
+- [ ] Self-hosting itself (a lexer/parser/analyzer written in Asili) — not started, gated on the
+      two items above.
 
-### Phase IV — Nguvu (LLVM, embedded, concurrency, FFI) — not started
+### Phase IV — Nguvu (LLVM, embedded, concurrency, FFI) — partially started
 
-- **`syscall` (raw syscall stub, `core/evaluator/src/builtins/syscall.rs`) is callable from
-  anywhere via `leta syscall` with no `wazi`-block gating**, even though the spec positions raw
-  hardware/syscall-level access as `wazi`-only. A stub today (`FIXME(Phase IV)`, always returns
-  `Anuani(0)`), so nothing is broken, but this needs a decision before real syscall dispatch is
-  implemented. See [wazi-hardware-design.md](wazi-hardware-design.md).
-- `kiungo` (FFI) is a documented stub: `core/evaluator/src/builtins/kiungo.rs` unconditionally
-  returns `Err` from both exported functions, with a `TODO(Phase IV)` comment about
-  `libloading`. Correctly scoped to this phase, not a surprise gap.
-- `.asb` is not real bytecode — `core/evaluator/src/asb.rs` bincode-serializes the parsed AST
-  `Module`; running an `.asb` file re-interprets the AST via the tree-walk evaluator. A separate,
-  genuinely-started-but-incomplete bytecode VM (`core/evaluator/src/bytecode.rs`,
-  `core/evaluator/src/tir.rs`) exists with a real TODO trail (it names exactly which opcodes are
-  missing), but nothing in `pata jenga`'s default pipeline ever emits `format=bytecode` — it's
-  disconnected from the path anyone actually uses.
-- **`sambamba` (concurrency stub, `core/evaluator/src/builtins/sambamba.rs`,
-  `anza_mwendo`/`subiri_mwendo`) exists and is in the module whitelist, but appears nowhere in
-  the spec** — the spec instead describes `tenda`/`njia`/`fungo` under different names. Both are
-  non-functional stubs today (confirmed: `anza_mwendo` always returns a dummy handle, never
-  spawns anything), so nothing is broken yet, but this needs a deliberate resolution (is
-  `sambamba` an earlier name for `tenda`, or a separate surface?) before real logic is written.
-  See [concurrency-async-design.md](concurrency-async-design.md).
+- [x] **Concurrency (`tenda`/`njia`/`fungo`) — implemented**, despite the spec's own Phase IV
+      placement (kept here rather than re-filed under Phase II, since the checklist above is
+      organized by spec phase and this is the one exception). The naming discrepancy flagged in
+      an earlier pass (`sambamba.rs`'s stub used `anza_mwendo`/`subiri_mwendo`, matching nothing
+      in the spec) is resolved: functions renamed to `tenda`/`subiri_tenda` (module name
+      `sambamba` kept). 1:1 OS-thread model (`std::thread`), not M:N green threads — a
+      deliberate, recorded decision (`docs/spec/08-resolved-decisions.md`), not a stopgap. A
+      spawned function's return value does not cross back through `subiri_tenda` (`Tokeo<Tupu,
+      Neno>` only — success/panic); results flow through `njia`. `Kasha_GC<T>`/`Faili`/`Mkondo`
+      rejected from crossing the thread boundary at all (checked recursively). Needed a new
+      `SendValue` type (`core/evaluator/src/value/mod.rs`) — a structural, compiler-checked
+      `Send`-safe mirror of `Value` — after discovering `unsafe impl Send` would have been
+      required otherwise, and rejecting that route on soundness/maintenance grounds. `fungo`'s
+      `.funga()`/`.fungua()` needed the `parking_lot`/`lock_api` crates for real manual
+      lock/unlock (`std::sync::Mutex`'s guard can't span two separate calls). See
+      [concurrency-design.md](concurrency-design.md) for the full architecture.
+- [ ] **`syscall` (raw syscall stub, `core/evaluator/src/builtins/syscall.rs`) is callable from
+      anywhere via `leta syscall` with no `wazi`-block gating**, even though the spec positions
+      raw hardware/syscall-level access as `wazi`-only. A stub today (`FIXME(Phase IV)`, always
+      returns `Anuani(0)`), so nothing is broken, but this needs a decision before real syscall
+      dispatch is implemented. See [wazi-hardware-design.md](wazi-hardware-design.md).
+- [ ] `kiungo` (FFI) is a documented stub: `core/evaluator/src/builtins/kiungo.rs`
+      unconditionally returns `Err` from both exported functions, with a `TODO(Phase IV)`
+      comment about `libloading`. Correctly scoped to this phase, not a surprise gap.
+- [ ] `.asb` is not real bytecode — `core/evaluator/src/asb.rs` bincode-serializes the parsed
+      AST `Module`; running an `.asb` file re-interprets the AST via the tree-walk evaluator. A
+      separate, genuinely-started-but-incomplete bytecode VM (`core/evaluator/src/bytecode.rs`,
+      `core/evaluator/src/tir.rs`) exists with a real TODO trail (it names exactly which opcodes
+      are missing), but nothing in `pata jenga`'s default pipeline ever emits `format=bytecode`
+      — it's disconnected from the path anyone actually uses.
 
 ---
 

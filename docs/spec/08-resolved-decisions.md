@@ -118,9 +118,20 @@ These are the definitive resolutions for the Asili v1.1 **Substrate**, following
 
 ---
 
+## 9.11 Concurrency
+
+| Topic | Decision |
+|-------|----------|
+| **Scheduling model** | **1:1** — one `tenda` spawns one real OS thread (`std::thread`), not an M:N green-thread scheduler. Chosen for buildability: M:N needs a real runtime (stack growth per green thread, a scheduler, a task queue) that nothing in this codebase provides yet, and the spec's own "exact API is defined at implementation" hedge commits to neither model. Revisit only if 1:1's per-thread overhead is a demonstrated problem for a real workload. |
+| **Cross-thread values** | `tenda` arguments and `fungo`-wrapped values must be `Send`-safe. `Kasha_GC<T>`, `Faili`, `Mkondo` (or anything transitively containing one) are rejected with `Tokeo(Kosa(...))`, not silently allowed. `Kasha_GC<T>` stays `Rc`-based and single-threaded rather than switched to `Arc` — see [concurrency-design.md](../design/concurrency-design.md). |
+| **`tenda`'s return value** | A spawned function's own return value does not cross back through `subiri_tenda` (which reports only `Tokeo<Tupu, Neno>` — did the thread finish or panic). Results are communicated back via `njia`. |
+| **`fungo`'s lock/unlock** | `.funga()`/`.fungua()` are explicit and independent calls (not a Rust-style scoped guard, since Asili has no closures to scope a critical section with). `.pata()`/`.weka()` lock-act-unlock atomically in one call and are the safer default; `.fungua()` without a matching prior `.funga()` is a programming error, reported as a panic. |
+
+---
+
 ## Deferred (algorithm/runtime details)
 
-The ownership and borrowing language surface is fixed in 9.10. Deferred items are implementation details: the internal borrow-checker algorithm and full async runtime semantics for **sawia**/**subiri**.
+The ownership and borrowing language surface is fixed in 9.10. Concurrency's scheduling model and cross-thread value rules are fixed in 9.11. Deferred items are implementation details: the internal borrow-checker algorithm, the M:N-vs-1:1 question for a future higher-throughput scheduler if 1:1 proves insufficient, and full async runtime semantics for **sawia**/**subiri**.
 
 ---
 

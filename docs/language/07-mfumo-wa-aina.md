@@ -77,12 +77,10 @@ shughuli ya Paka kwa Inayoonyeshwa {
 }
 ```
 
-> **Known bug, not just "in progress":** calling a method defined inside `shughuli ya X kwa
-> Trait` (e.g. `pk.onyesha()` above) currently fails with `SEM040: njia 'onyesha' haipo kwa
-> 'Paka'` — trait-impl methods are not wired into method dispatch at all. The identical method
-> body under a plain `shughuli ya Paka { ... }` (no `kwa Trait`) works and dispatches
-> correctly. Use a plain impl block until this is fixed; see
-> [implementation-status.md](../design/implementation-status.md).
+Calling a method defined inside `shughuli ya X kwa Trait` (e.g. `pk.onyesha()` above) works —
+this used to fail with `SEM040: njia 'onyesha' haipo kwa 'Paka'` because `parse_impl_decl`
+(`core/parser/src/parse.rs`) had `target`/`trait_name` swapped for the `kwa` syntax specifically
+(the colon syntax, `shughuli ya Target: Trait { }`, was always correct). Fixed.
 
 ## Waendeshaji wa Muundo (Compound Assignment Operators)
 

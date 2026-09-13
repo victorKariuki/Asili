@@ -76,10 +76,24 @@ pub struct StructDecl {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TraitDecl {
     pub name: String,
+    /// Required method signatures (no bodies) — checked for completeness against every
+    /// `ImplDecl` naming this trait. Empty for a trait declared with no body/braces.
+    pub methods: Vec<TraitMethodSig>,
     pub line: usize,
     pub column: usize,
     pub attrs: Vec<Attribute>,
     pub is_public: bool,
+}
+
+/// One required method signature inside a `sifa` body — no body, just the contract an `impl`
+/// must satisfy. `Self` in `params`/`return_type` refers to the implementing type, resolved at
+/// completeness-check time, not parse time (the trait doesn't know its implementers).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TraitMethodSig {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub return_type: TypeExpr,
+    pub line: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -376,8 +390,8 @@ impl fmt::Display for ValueType {
             ValueType::Tupu => write!(f, "Tupu"),
             ValueType::Hamna => write!(f, "Hamna"),
             ValueType::Herufi => write!(f, "Herufi"),
-            ValueType::NambaKuu => write!(f, "NambaKuu"),
-            ValueType::NambaSahihi => write!(f, "NambaSahihi"),
+            ValueType::NambaKuu => write!(f, "Namba_Kuu"),
+            ValueType::NambaSahihi => write!(f, "Namba_Sahihi"),
             ValueType::Chaguo(t) => write!(f, "Chaguo<{}>", t),
             ValueType::Tokeo(t, e) => write!(f, "Tokeo<{}, {}>", t, e),
             ValueType::Rejeo(t, m) => write!(f, "Rejeo<{}, {}>", t, m),
@@ -390,6 +404,12 @@ impl fmt::Display for ValueType {
             ValueType::Wakati => write!(f, "Wakati"),
             ValueType::Anuani => write!(f, "Anuani"),
             ValueType::KashaGC(t) => write!(f, "Kasha_GC<{}>", t),
+            ValueType::Faili => write!(f, "Faili"),
+            ValueType::Mkondo => write!(f, "Mkondo"),
+            ValueType::Kumbukumbu(t) => write!(f, "Kumbukumbu<{}>", t),
+            ValueType::NjiaTx(t) => write!(f, "NjiaTx<{}>", t),
+            ValueType::NjiaRx(t) => write!(f, "NjiaRx<{}>", t),
+            ValueType::Fungo(t) => write!(f, "Fungo<{}>", t),
             ValueType::TypeVar(name) => write!(f, "{}", name),
             ValueType::Unknown => write!(f, "Unknown"),
         }
@@ -422,6 +442,18 @@ pub enum ValueType {
     Anuani,
     /// Reference-counted shared wrapper (opt-in `leta kasha_gc`); see spec's managed-memory module.
     KashaGC(Box<ValueType>),
+    /// File handle (leta faili); owns an OS file descriptor, closed on drop.
+    Faili,
+    /// Network stream/socket handle (leta mfumo); owns an OS socket, closed on drop.
+    Mkondo,
+    /// Heap-allocated box owning a value of type T; no OS resource, plain owning indirection.
+    Kumbukumbu(Box<ValueType>),
+    /// Channel sender half (njia, leta sambamba); crosses the tenda thread boundary.
+    NjiaTx(Box<ValueType>),
+    /// Channel receiver half (njia, leta sambamba).
+    NjiaRx(Box<ValueType>),
+    /// Mutex (fungo, leta sambamba); protects a shared value across tenda threads.
+    Fungo(Box<ValueType>),
     /// Type variable (T, E, U, etc. for generic types).
     TypeVar(String),
     Unknown,

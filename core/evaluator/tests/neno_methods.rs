@@ -159,3 +159,48 @@ fn test_neno_tafuta_not_found() {
     let v = run_function(&module, "test", vec![]).expect("run");
     assert_eq!(v, asili_evaluator::Value::Tupu);
 }
+
+/// Test 13: herufi_kwa (char-at-index) — in range
+#[test]
+fn test_neno_herufi_kwa_in_range() {
+    let src = r#"
+        kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+        kazi test() -> Chaguo<Herufi> { weka s = "habari" rejesha s.herufi_kwa(2) }
+    "#;
+    let v = parse_and_eval(src);
+    assert_eq!(v, asili_evaluator::Value::Chaguo(Some(Box::new(asili_evaluator::Value::Herufi('b')))));
+}
+
+/// Test 14: herufi_kwa — out of range returns Hamna, not a panic
+#[test]
+fn test_neno_herufi_kwa_out_of_range() {
+    let src = r#"
+        kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+        kazi test() -> Chaguo<Herufi> { weka s = "abc" rejesha s.herufi_kwa(99) }
+    "#;
+    let v = parse_and_eval(src);
+    assert_eq!(v, asili_evaluator::Value::Chaguo(None));
+}
+
+/// Test 15: herufi_kwa — negative index is out of range, not a wraparound/panic
+#[test]
+fn test_neno_herufi_kwa_negative_index() {
+    let src = r#"
+        kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+        kazi test() -> Chaguo<Herufi> { weka s = "abc" rejesha s.herufi_kwa(-1) }
+    "#;
+    let v = parse_and_eval(src);
+    assert_eq!(v, asili_evaluator::Value::Chaguo(None));
+}
+
+/// Test 16: herufi_kwa is grapheme-indexed, matching urefu()'s own counting convention —
+/// a multi-byte character (café's é) counts as one position, same as urefu() counts it as one.
+#[test]
+fn test_neno_herufi_kwa_is_grapheme_indexed_not_byte_indexed() {
+    let src = r#"
+        kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+        kazi test() -> Namba { weka s = "café" rejesha s.urefu() }
+    "#;
+    let v = parse_and_eval(src);
+    assert_eq!(v, asili_evaluator::Value::Namba(4.0), "café is 4 graphemes despite é being 2 bytes");
+}

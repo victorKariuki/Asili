@@ -20,6 +20,7 @@ All built-in types support method call syntax: `thamani.njia(hoja...)`.
 | `s.kwa_herufi_kubwa()`  | `Neno`           | Convert to uppercase                                       |
 | `s.anza_na(kiambishi)`  | `Ukweli`         | `kweli` if string starts with `kiambishi`                 |
 | `s.maliza_na(kiishio)`  | `Ukweli`         | `kweli` if string ends with `kiishio`                     |
+| `s.herufi_kwa(i)`       | `Chaguo<Herufi>` | Character at grapheme position `i` (like `urefu()` counts), or `Hamna` if out of range |
 
 ### Mifano
 
@@ -45,10 +46,15 @@ s.badilisha("Dunia", "Asili")    # "Habari Asili"
 
 ```asili
 weka s = "café"
-s.urefu()       # 4  (c, a, f, é — four graphemes)
-s.biti_ngapi()  # 5  (é is two bytes in UTF-8)
-s.kata(0, 3)    # "caf" — byte slice, not grapheme slice; cutting at byte 4 lands
-                #        mid-character (é starts at byte 3) and produces invalid UTF-8
+s.urefu()          # 4  (c, a, f, é — four graphemes)
+s.biti_ngapi()     # 5  (é is two bytes in UTF-8)
+s.kata(0, 3)       # "caf" — byte slice, not grapheme slice; cutting at byte 4 lands
+                   #        mid-character (é starts at byte 3) and produces invalid UTF-8
+s.herufi_kwa(3)    # Chaguo(Kuna(Herufi('é'))) — grapheme-indexed, so this is always
+                   #        the right position regardless of byte width; use this
+                   #        instead of `.kata()` when inspecting one character at a time
+                   #        (e.g. writing a tokenizer)
+s.herufi_kwa(99)   # Chaguo(Hamna) — out of range, not a panic
 ```
 
 ---
