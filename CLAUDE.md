@@ -73,6 +73,17 @@ history is expensive and disruptive (invalidates open PRs, requires everyone wit
 re-sync) — don't rely on a future cleanup to fix a trailer that should never be added in the first
 place.
 
+## Keep the GitHub Project boards current
+
+This repo's work is tracked on two GitHub Projects (v2, owned by `victorKariuki`, not the repo
+itself): project 16 "Asili bug tracker" and project 17 "Asili Feature release". Whenever starting,
+finishing, or discovering work that corresponds to — or should become — an item on either board,
+invoke the `manage-project-boards` skill: move an item's Status as work actually starts/ships
+(don't leave it at `Backlog` once work has begun, don't mark it `Done` before it's actually merged
+and verified), and file+add a new issue for any real, scoped gap discovered along the way rather
+than leaving it undocumented. Do this proactively as part of finishing the work, not only when the
+user explicitly asks to check or update a board.
+
 ## Keep the Pata toolchain in sync with core/ changes
 
 `core/` (lexer, parser, semantic analyzer, evaluator) and `pata/` (CLI, LSP, formatter, linter,
