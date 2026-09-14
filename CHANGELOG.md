@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`pata-dap`: DAP (Debug Adapter Protocol) server, protocol layer complete.** New crate
+  `pata/dap` (lib `pata_dap` + bin `pata-dap`), depending on the real `dap = "=0.4.1-alpha1"`
+  crate (no stable release exists for it; confirmed current via the crates.io API rather than
+  assuming a version). Implements `initialize`/`launch`/`setBreakpoints`/`configurationDone`/
+  `continue`/`stackTrace`/`scopes`/`variables`/`threads`/`disconnect` — the minimum viable DAP
+  surface, not the full spec (no `stepIn`/`stepOut`/watch expressions/conditional breakpoints in
+  this pass). A new `DebugHook` trait (`should_pause`/`resume`/`current_bindings`) is the
+  contract `core/evaluator` will eventually implement for real step-through debugging — genuinely
+  out of scope here, since it needs a hook inside the interpreter's own statement-execution loop,
+  a `core/` change per this repo's established `pata/`-only scope boundary. `pata-dap` runs today
+  against `MockHook`, a real (not test-only) fake with genuine thread-blocking pause/resume, so
+  the protocol layer is complete and verified — 14 tests including one exercising the full stdio
+  loop against real wire-protocol bytes, plus manual verification against the compiled binary
+  over a live pipe — independent of whether `core/evaluator`'s side ever lands. See
+  `docs/design/dap-later.md` for the full status write-up.
 - **Mwalimu (LSP) partial incremental re-resolution** (`docs/design/pata-implementation-spec.md`
   Section 19's scoped design, not a full salsa-style rewrite): two real, independently-verified
   fixes to the "full workspace re-check on every edit/external change" cost.
@@ -200,9 +215,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Not started
 
-Real gaps, no commits addressing them yet: a DAP (Debug Adapter Protocol) server; `pata-fmt`
-line-width/wrap-point support. Tracked as GitHub issues (see the `Asili Feature release` project
-board).
+Real gaps, no commits addressing them yet: `pata-fmt` line-width/wrap-point support;
+`core/evaluator`'s `DebugHook` implementation (real step-through debugging — the `pata-dap`
+protocol layer above is ready for it, but this is `core/`-scope work, not `pata/`). Tracked as
+GitHub issues (see the `Asili Feature release` project board).
 
 ## [0.5.0] — pata-cli; asili-evaluator, pata-package at patch bumps
 

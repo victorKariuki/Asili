@@ -1,0 +1,16 @@
+[package]
+name = "pata-dap"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pata_dap"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pata-dap"
+path = "src/main.rs"
+
+[dependencies]
+dap = "=0.4.1-alpha1"
+serde_json = "1"

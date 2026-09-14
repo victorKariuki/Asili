@@ -2041,7 +2041,20 @@ A's cached analysis was NOT recomputed as a side effect of B's change.
 
 ---
 
-## Section 20: DAP (Debug Adapter Protocol server)
+## Section 20: DAP (Debug Adapter Protocol server) — DONE (protocol layer; see dap-later.md)
+
+**Implemented:** `pata/dap` (new crate, lib `pata_dap` + bin `pata-dap`), depending on the real
+`dap = "=0.4.1-alpha1"` crate (confirmed current via the crates.io API — no stable release exists
+for this crate; pinned the exact alpha rather than assuming `0.4`). `hook.rs` defines the
+`DebugHook` trait exactly as specified below; `mock_hook.rs` is a real (not `#[cfg(test)]`-gated)
+fake with genuine thread-blocking pause/resume (a `Mutex`+`Condvar`, not a stub); `server.rs`
+implements `initialize`/`launch`/`setBreakpoints`/`configurationDone`/`continue`/`stackTrace`/
+`scopes`/`variables`/`threads`/`disconnect` request handling plus the stdio poll loop, using the
+`dap` crate's own `Request::success`/`.ack()`/`.error()` helpers rather than reimplementing them.
+Verified with 14 tests (`cargo test -p pata-dap`) including one exercising the full stdio loop
+against real `Content-Length`-framed wire bytes, and manually against the compiled binary over a
+live pipe. See `docs/design/dap-later.md` for the up-to-date status write-up (that file, not this
+one, is the canonical "what works today" reference per the wiki-sync table).
 
 **Decision made:** a **new binary crate** `pata/dap`, not a module inside `pata-lsp` — DAP and LSP
 are structurally unrelated protocols (different message shapes, different lifecycle, different
