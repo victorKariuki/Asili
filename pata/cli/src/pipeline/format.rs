@@ -51,13 +51,21 @@ pub fn canonical_format(input: &str, file_path: Option<&Path>) -> String {
 }
 
 pub fn check_or_write(files: &[PathBuf], check_only: bool) -> Result<(usize, usize), CliError> {
-    let mut changed = 0usize;
+    let (total, changed_files) = check_or_write_named(files, check_only)?;
+    Ok((total, changed_files.len()))
+}
+
+/// Like `check_or_write`, but also returns which files changed (not just the count) — for
+/// `--json` output, where a CI pipeline or editor needs to know *which* files failed the format
+/// gate, not just how many.
+pub fn check_or_write_named(files: &[PathBuf], check_only: bool) -> Result<(usize, Vec<PathBuf>), CliError> {
+    let mut changed = Vec::new();
     for file in files {
         let original = fs::read_to_string(file)
             .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", file.display()), 1))?;
         let formatted = canonical_format(&original, Some(file));
         if formatted != original {
-            changed += 1;
+            changed.push(file.clone());
             if !check_only {
                 fs::write(file, formatted).map_err(|e| {
                     CliError::new(format!("imeshindwa kuandika {}: {e}", file.display()), 1)

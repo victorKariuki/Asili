@@ -79,6 +79,9 @@ dependencies = [
 [[package]]
 name = "asili-diagnostics"
 version = "0.2.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "asili-evaluator"
