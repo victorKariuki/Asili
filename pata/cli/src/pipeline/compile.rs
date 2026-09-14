@@ -10,6 +10,7 @@ use asili_diagnostics::Diagnostic;
 use asili_evaluator::{emit_asb, load_asb, execute_tests, validate_module, TestResult};
 use asili_lexer::tokenize;
 use asili_parser::{discover_tests, parse_tokens, semantic_check_with_env_and_modules, Function, Module, Target};
+use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashSet};
@@ -291,6 +292,10 @@ pub fn emit_build_artifacts(root: &Path, compiled: &CompileOutput, out_dir: Opti
 }
 
 pub fn run_project_tests(root: &Path, filter: Option<&str>, fail_fast: bool) -> Result<Vec<TestResult>, CliError> {
+    run_project_tests_parallel(root, filter, fail_fast, None)
+}
+
+pub fn run_project_tests_parallel(root: &Path, filter: Option<&str>, fail_fast: bool, num_threads: Option<usize>) -> Result<Vec<TestResult>, CliError> {
     let cfg = load_project_config(root)?;
     let target = resolve_target(None, cfg.target.as_deref());
     let src_dir = cfg
@@ -339,7 +344,36 @@ pub fn run_project_tests(root: &Path, filter: Option<&str>, fail_fast: bool) -> 
     if let Some(f) = filter {
         modules_and_tests.retain(|(_, t)| t.name.contains(f));
     }
-    Ok(execute_tests(&modules_and_tests, fail_fast))
+
+    if modules_and_tests.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    if let Some(threads) = num_threads {
+        let results = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .ok()
+            .map(|pool| {
+                pool.install(|| {
+                    modules_and_tests
+                        .par_iter()
+                        .map(|(m, f)| {
+                            let result = execute_tests(&[(m.clone(), f.clone())], false);
+                            result.into_iter().next().unwrap_or_else(|| TestResult {
+                                name: f.name.clone(),
+                                passed: false,
+                                message: "failed to run test".to_string(),
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .unwrap_or_else(|| execute_tests(&modules_and_tests, fail_fast));
+        Ok(results)
+    } else {
+        Ok(execute_tests(&modules_and_tests, fail_fast))
+    }
 }
 
 /// List test names discovered in the project (no execution). For use with `pata jaribu --list`.

@@ -1,11 +1,11 @@
 use super::{CliError, CliResult};
-use crate::pipeline::compile::{list_project_tests, run_project_tests};
+use crate::pipeline::compile::{list_project_tests, run_project_tests_parallel};
 use std::path::Path;
 
 // Exit codes: 0 = all tests passed; 1 = one or more tests failed; 2 = usage or config error.
 // Contract: ../../commands/jaribu.md
 pub fn run(args: &[String]) -> CliResult {
-    let (filter, fail_fast, list_only, json) = parse_args(args)?;
+    let (filter, fail_fast, list_only, json, num_threads) = parse_args(args)?;
 
     if list_only {
         let names = list_project_tests(Path::new("."))?;
@@ -24,7 +24,7 @@ pub fn run(args: &[String]) -> CliResult {
         return Ok(());
     }
 
-    let results = run_project_tests(Path::new("."), filter.as_deref(), fail_fast)?;
+    let results = run_project_tests_parallel(Path::new("."), filter.as_deref(), fail_fast, num_threads)?;
 
     let mut passed = 0usize;
     let mut failed = 0usize;
@@ -71,11 +71,12 @@ pub fn run(args: &[String]) -> CliResult {
     Ok(())
 }
 
-fn parse_args(args: &[String]) -> Result<(Option<String>, bool, bool, bool), CliError> {
+fn parse_args(args: &[String]) -> Result<(Option<String>, bool, bool, bool, Option<usize>), CliError> {
     let mut filter = None;
     let mut fail_fast = false;
     let mut list_only = false;
     let mut json = false;
+    let mut num_threads = None;
     let mut i = 0usize;
     while i < args.len() {
         match args[i].as_str() {
@@ -98,6 +99,15 @@ fn parse_args(args: &[String]) -> Result<(Option<String>, bool, bool, bool), Cli
                 json = true;
                 i += 1;
             }
+            "--nyuzi-za-jaribio" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(CliError::new("--nyuzi-za-jaribio inahitaji namba", 2));
+                };
+                num_threads = Some(v.parse::<usize>().map_err(|_| {
+                    CliError::new(format!("--nyuzi-za-jaribio: '{}' si namba halali", v), 2)
+                })?);
+                i += 2;
+            }
             other => {
                 return Err(CliError::new(
                     format!("hoja isiyotambuliwa kwenye jaribu: {other}"),
@@ -106,7 +116,7 @@ fn parse_args(args: &[String]) -> Result<(Option<String>, bool, bool, bool), Cli
             }
         }
     }
-    Ok((filter, fail_fast, list_only, json))
+    Ok((filter, fail_fast, list_only, json, num_threads))
 }
 
 #[cfg(test)]
