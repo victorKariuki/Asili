@@ -291,10 +291,6 @@ pub fn emit_build_artifacts(root: &Path, compiled: &CompileOutput, out_dir: Opti
     Ok(artifact)
 }
 
-pub fn run_project_tests(root: &Path, filter: Option<&str>, fail_fast: bool) -> Result<Vec<TestResult>, CliError> {
-    run_project_tests_parallel(root, filter, fail_fast, None, None)
-}
-
 /// Discover every `#[jaribio]` test in the project (compile, resolve, semantic-check every
 /// source file, same as `run_project_tests_parallel`'s own first half) without running any of
 /// them — shared by the normal pass/fail runner and the coverage-mode runner below, so the
