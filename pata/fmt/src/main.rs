@@ -9,7 +9,6 @@ mod config;
 
 use format::canonical_format;
 use walk::collect_asili_files;
-use config::FormatterConfig;
 
 #[derive(Parser)]
 #[command(name = "pata fmt")]
