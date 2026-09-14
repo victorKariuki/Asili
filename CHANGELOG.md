@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`#[kabla]`/`#[baada]` setup/teardown fixtures for `pata jaribu`**: a `#[kabla]`-tagged
+  function runs before every `#[jaribio]` test in the same module (file); a `#[baada]`-tagged one
+  runs after — including when the test itself failed, since teardown exists to release resources
+  regardless of outcome. `asili_evaluator::run_test_with_fixtures` (new) wraps the existing
+  timeout-aware test runner, reached from every one of `pata jaribu`'s execution paths
+  (sequential, parallel, timed) through the shared `execute_tests_with_timeout` entry point, so
+  fixture support didn't need separate wiring per path. Required adding `kabla`/`baada` to
+  `core/parser`'s semantic-analyzer attribute allowlist (`SEM008` previously rejected any
+  attribute name it didn't recognize) — a `core/` change, so `docs/spec/06-tooling-and-
+  ecosystem.md`'s attribute table and `docs/language/07-mfumo-wa-aina.md`'s were updated
+  alongside it, not left to drift.
 - **`pata jaribu --muda <sekunde>`**: per-test wall-clock timeout. `asili_evaluator::
   execute_tests_with_timeout` runs each timed test on its own thread, joined via
   `recv_timeout` — the evaluator has no cooperative cancellation hook, so a timed-out
@@ -163,10 +174,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Not started
 
-Real gaps, no commits addressing them yet: `#[kabla]`/`#[baada]` setup/teardown fixtures for
-`pata jaribu`; a DAP (Debug Adapter Protocol) server; `pata-fmt` line-width/wrap-point support;
-`pata-lint` unused-local-variables rule. Tracked as GitHub issues (see the `Asili Feature
-release` project board).
+Real gaps, no commits addressing them yet: a DAP (Debug Adapter Protocol) server; `pata-fmt`
+line-width/wrap-point support; `pata-lint` unused-local-variables rule. Tracked as GitHub issues
+(see the `Asili Feature release` project board).
 
 ## [0.5.0] — pata-cli; asili-evaluator, pata-package at patch bumps
 

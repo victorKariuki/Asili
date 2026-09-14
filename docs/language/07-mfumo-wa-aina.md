@@ -198,6 +198,8 @@ kazi kutoka_c() -> Namba {
 | Sifa          | Maelezo                                         |
 |---------------|-------------------------------------------------|
 | `#[jaribio]`  | Mark as a test function (run by `pata jaribu`)  |
+| `#[kabla]`    | Setup fixture: runs before every `#[jaribio]` test in the same file (`pata jaribu`) |
+| `#[baada]`    | Teardown fixture: runs after every `#[jaribio]` test in the same file, even if the test failed (`pata jaribu`) |
 | `#[sharti(...)]` | Conditional compilation; only key `lengo` is recognized (e.g. `lengo = "wasm"`), values OR'd with `\|` — see [implementation-status.md](../design/implementation-status.md) |
 | `#[ndani]`    | Internal / not exported                          |
 | `#[kiunganishi]` | FFI linkage annotation                        |

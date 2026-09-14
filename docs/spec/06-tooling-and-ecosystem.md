@@ -25,9 +25,9 @@ Previous: [Standard Library](05-standard-library.md) | [Overview](../SPECIFICATI
 | `pata jenga` | Compile project into bytecode (`.asb`). |
 | `pata jenga --tenda` | Compile and run the entrypoint (`kuu`) in one step. |
 | `pata tenda <path.asb>` | Run an already-compiled `.asb` artifact directly, without recompiling. |
-| `pata jaribu` | Run internal `jaribio` test blocks. |
+| `pata jaribu` | Run internal `jaribio` test blocks, with `#[kabla]`/`#[baada]` setup/teardown fixtures and an optional per-test `--muda <sekunde>` wall-clock timeout. |
 | `pata nadhifu` | Auto-format Swahili code to standard style: a token-stream pretty-printer, idempotent, comment-preserving. See below for the exact rules. |
-| `pata thibitisha` | Validate public API documentation coverage, project-wide trait completeness, `#[kiunganishi]` FFI-signature safety, formatting compliance, and (opt-in, `--kiwango-cha-jaribio <0-100>`) test coverage ratio. |
+| `pata thibitisha` | Validate public API documentation coverage, project-wide trait completeness, `#[kiunganishi]` FFI-signature safety, type stability against the most recent `v<semver>` git tag, formatting compliance, and (opt-in, `--kiwango-cha-jaribio <0-100>`) test coverage ratio. |
 | `pata repl` | Start an interactive REPL (persistent environment; `?topic` shows inline help). |
 | `pata mwalimu` | Start the Mwalimu LSP server (stdio). For use by editors; see [Execution and Roadmap](07-execution-and-roadmap.md) Phase II. |
 
@@ -95,6 +95,8 @@ Directives for the compiler and tooling. Resolved after AST, before or during co
 |-----------|---------|
 | **#[ndani]** | Inline optimization hint |
 | **#[jaribio]** | Unit test marker; discovered and run by `pata jaribu` |
+| **#[kabla]** | Setup fixture: runs before every `#[jaribio]` test in the same module (file), via `pata jaribu` |
+| **#[baada]** | Teardown fixture: runs after every `#[jaribio]` test in the same module (file), via `pata jaribu` — including when the test itself failed |
 | **#[sharti(...)]** | Conditional compilation (e.g. include code only for a given target or config) |
 | **#[kiunganishi]** | FFI: link to external C/C++ libraries |
 

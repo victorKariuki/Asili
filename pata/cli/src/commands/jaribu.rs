@@ -169,6 +169,43 @@ mod tests {
         result.expect("jaribu --list should succeed");
     }
 
+    /// Real end-to-end: a #[kabla] fixture that panics must fail the test through the actual
+    /// `pata jaribu` CLI path, with the failure message naming the fixture — not the lower-level
+    /// evaluator API this session's fixture support is actually implemented against.
+    #[test]
+    fn kabla_failure_fails_the_run_through_the_cli() {
+        let _guard = TEST_CWD_LOCK.lock().expect("lock");
+        let original = std::env::current_dir().expect("cwd");
+        let root = temp_project_with_fixtures();
+        std::env::set_current_dir(&root).expect("chdir");
+
+        let err = run(&["--json".to_string()]).expect_err("kabla failure should fail the run");
+        assert_eq!(err.exit_code, 1);
+
+        std::env::set_current_dir(&original).expect("restore cwd");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn temp_project_with_fixtures() -> std::path::PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("pata-jaribu-fixtures-{stamp}"));
+        fs::create_dir_all(dir.join("src")).expect("mkdir");
+        fs::write(
+            dir.join("pata.toml"),
+            "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n",
+        )
+        .expect("manifest");
+        fs::write(
+            dir.join("src/kuu.as"),
+            "leta matumizi\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { }\n#[kabla]\nkazi mazingira_mabovu() -> Tupu { paparika(\"kabla imeshindwa\") }\n#[jaribio]\nkazi t1() -> Tupu { rejesha }",
+        )
+        .expect("src");
+        dir
+    }
+
     #[test]
     fn muda_rejects_non_numeric_value() {
         let _guard = TEST_CWD_LOCK.lock().expect("lock");

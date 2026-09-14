@@ -232,7 +232,7 @@ impl<'a> Analyzer<'a> {
 
     fn run(&mut self) {
         let mut has_main = false;
-        let allowed_attrs = ["jaribio", "sharti", "ndani", "kiunganishi"];
+        let allowed_attrs = ["jaribio", "sharti", "ndani", "kiunganishi", "kabla", "baada"];
         for imp in &self.module.imports {
             let mod_name = match &imp.path {
                 ImportPath::Full(s) => s.as_str(),

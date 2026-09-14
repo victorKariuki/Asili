@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use asili_evaluator::{eval_expr, run_function, run_function_with_telemetry, run_main, run_test_with_module, execute_tests, execute_tests_with_timeout, Value};
+use asili_evaluator::{eval_expr, run_function, run_function_with_telemetry, run_main, run_test_with_module, execute_tests, execute_tests_with_timeout, run_test_with_fixtures, Value};
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, semantic_check_with_env, FnContract, Module, ValueType};
 
@@ -240,6 +240,105 @@ fn execute_tests_with_timeout_reports_a_real_infinite_loop_as_failed() {
     // The call must return promptly once the timeout elapses, not block forever waiting on the
     // hung thread — this is the actual behavior a timeout exists to provide.
     assert!(elapsed < std::time::Duration::from_secs(2), "took {elapsed:?}, should return shortly after the 200ms timeout");
+}
+
+#[test]
+fn fixture_kabla_runs_before_test_and_test_passes() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[kabla] kazi weka_mazingira() -> Tupu { rejesha }
+         #[jaribio] kazi t1() -> Tupu { rejesha }",
+    );
+    let f = module.functions.iter().find(|x| x.name == "t1").unwrap().clone();
+    let result = run_test_with_fixtures(&module, &f, None);
+    assert!(result.passed, "{}", result.message);
+}
+
+#[test]
+fn fixture_kabla_failure_fails_the_test_and_names_the_fixture() {
+    let module = parse_and_check_with_stdlib(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[kabla] kazi mazingira_mabovu() -> Tupu { paparika(\"kabla imeshindwa kimakusudi\") }
+         #[jaribio] kazi t1() -> Tupu { rejesha }",
+    );
+    let f = module.functions.iter().find(|x| x.name == "t1").unwrap().clone();
+    let result = run_test_with_fixtures(&module, &f, None);
+    assert!(!result.passed, "a failing #[kabla] must fail the test, not let it run");
+    assert!(result.message.contains("mazingira_mabovu"), "{}", result.message);
+    assert!(result.message.contains("kabla"), "{}", result.message);
+}
+
+#[test]
+fn fixture_baada_runs_after_a_passing_test() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t1() -> Tupu { rejesha }
+         #[baada] kazi safisha() -> Tupu { rejesha }",
+    );
+    let f = module.functions.iter().find(|x| x.name == "t1").unwrap().clone();
+    let result = run_test_with_fixtures(&module, &f, None);
+    assert!(result.passed, "{}", result.message);
+}
+
+#[test]
+fn fixture_baada_failure_fails_an_otherwise_passing_test() {
+    let module = parse_and_check_with_stdlib(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t1() -> Tupu { rejesha }
+         #[baada] kazi safisha_mbovu() -> Tupu { paparika(\"baada imeshindwa kimakusudi\") }",
+    );
+    let f = module.functions.iter().find(|x| x.name == "t1").unwrap().clone();
+    let result = run_test_with_fixtures(&module, &f, None);
+    assert!(!result.passed, "a failing #[baada] must fail an otherwise-passing test");
+    assert!(result.message.contains("safisha_mbovu"), "{}", result.message);
+    assert!(result.message.contains("baada"), "{}", result.message);
+}
+
+#[test]
+fn fixture_test_failure_takes_precedence_over_baada_failure_message() {
+    // The test's own failure is the more useful signal -- don't let a teardown failure mask it.
+    let module = parse_and_check_with_stdlib(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t_inashindwa() -> Tupu { paparika(\"jaribio lenyewe limeshindwa\") }
+         #[baada] kazi safisha_mbovu() -> Tupu { paparika(\"baada imeshindwa pia\") }",
+    );
+    let f = module.functions.iter().find(|x| x.name == "t_inashindwa").unwrap().clone();
+    let result = run_test_with_fixtures(&module, &f, None);
+    assert!(!result.passed);
+    assert!(result.message.contains("jaribio lenyewe"), "test's own failure should take precedence, got: {}", result.message);
+}
+
+#[test]
+fn fixture_multiple_baada_all_run_even_if_one_panics() {
+    // Two #[baada] functions in the same module -- a panic in the first must not prevent the
+    // second from running. Verified indirectly: the reported failure must come from whichever
+    // teardown genuinely failed, and execute_tests_with_timeout (which drives this for a whole
+    // suite) must still report a result rather than hang or skip.
+    let module = parse_and_check_with_stdlib(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t1() -> Tupu { rejesha }
+         #[baada] kazi safisha_a() -> Tupu { paparika(\"a imeshindwa\") }
+         #[baada] kazi safisha_b() -> Tupu { rejesha }",
+    );
+    let f = module.functions.iter().find(|x| x.name == "t1").unwrap().clone();
+    let result = run_test_with_fixtures(&module, &f, None);
+    assert!(!result.passed);
+    assert!(result.message.contains("safisha_a"));
+}
+
+#[test]
+fn fixture_functions_are_not_discovered_as_tests_themselves() {
+    // #[kabla]/#[baada] functions must not show up in discover_tests -- they're fixtures, not
+    // tests in their own right, even though they're regular callable functions in the module.
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[kabla] kazi weka_mazingira() -> Tupu { rejesha }
+         #[baada] kazi safisha() -> Tupu { rejesha }
+         #[jaribio] kazi t1() -> Tupu { rejesha }",
+    );
+    let tests = asili_parser::discover_tests(&module);
+    assert_eq!(tests.len(), 1, "only the #[jaribio]-tagged function should be discovered");
+    assert_eq!(tests[0].name, "t1");
 }
 
 #[test]

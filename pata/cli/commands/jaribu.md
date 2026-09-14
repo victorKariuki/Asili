@@ -2,6 +2,15 @@
 
 Purpose: discover and execute test suites.
 
+Fixtures: a `#[kabla]`-tagged function runs immediately before every `#[jaribio]` test in the
+same module (source file); a `#[baada]`-tagged function runs immediately after — including when
+the test itself failed, since teardown exists to release resources setup acquired regardless of
+outcome. A `#[kabla]` failure fails the test without running its body, naming the fixture in the
+message (`kabla '<name>' imeshindwa: ...`); a `#[baada]` failure fails an otherwise-passing test
+the same way (`baada '<name>' imeshindwa: ...`) — a test's own failure always takes precedence
+over a teardown failure's message. Multiple `#[baada]` functions in the same module all run even
+if an earlier one fails. Fixtures are module-scoped, not project-wide or per-test-function.
+
 Flags:
 - `--chuja <pattern>` — run or list only tests whose name contains pattern
 - `--simama-haraka` — stop on first failure
