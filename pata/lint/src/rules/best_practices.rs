@@ -118,3 +118,44 @@ pub fn check_best_practices(module: &Module, source: &str) -> Vec<Diagnostic> {
 
     diags
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use asili_lexer::tokenize;
+    use asili_parser::parse_tokens;
+
+    fn lint(src: &str) -> Vec<Diagnostic> {
+        let tokens = tokenize(src).expect("tokenize");
+        let module = parse_tokens(&tokens).expect("parse");
+        check_best_practices(&module, src)
+    }
+
+    #[test]
+    fn lint202_flags_undocumented_function() {
+        let src = "kazi undocumented() -> Tupu { rejesha Tupu }";
+        let diags = lint(src);
+        assert!(diags.iter().any(|d| d.code == "LINT202"));
+    }
+
+    #[test]
+    fn lint202_accepts_documented_function() {
+        let src = "# This is documented\nkazi documented() -> Tupu { rejesha Tupu }";
+        let diags = lint(src);
+        assert!(!diags.iter().any(|d| d.code == "LINT202"));
+    }
+
+    #[test]
+    fn lint203_flags_unused_imports() {
+        let src = "leta msingi";
+        let diags = lint(src);
+        assert!(diags.iter().any(|d| d.code == "LINT203"));
+    }
+
+    #[test]
+    fn lint203_accepts_used_imports() {
+        let src = "leta msingi\nkazi kuu() -> Tupu { rejesha Tupu }";
+        let diags = lint(src);
+        assert!(!diags.iter().any(|d| d.code == "LINT203"));
+    }
+}

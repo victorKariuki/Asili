@@ -68,3 +68,52 @@ fn is_upper_case(s: &str) -> bool {
 fn is_swahili(s: &str) -> bool {
     s.len() > 0 && !s.chars().all(|c| c.is_ascii())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use asili_lexer::tokenize;
+    use asili_parser::parse_tokens;
+
+    fn lint(src: &str) -> Vec<Diagnostic> {
+        let tokens = tokenize(src).expect("tokenize");
+        let module = parse_tokens(&tokens).expect("parse");
+        check_naming_conventions(&module)
+    }
+
+    #[test]
+    fn lint001_flags_bad_function_name() {
+        let diags = lint("kazi MyFunction() -> Tupu { rejesha Tupu }");
+        assert!(diags.iter().any(|d| d.code == "LINT001"));
+    }
+
+    #[test]
+    fn lint001_accepts_good_function_name() {
+        let diags = lint("kazi jina_sahihi() -> Tupu { rejesha Tupu }");
+        assert!(!diags.iter().any(|d| d.code == "LINT001"));
+    }
+
+    #[test]
+    fn lint002_flags_bad_struct_name() {
+        let diags = lint("umbo not_pascal { }");
+        assert!(diags.iter().any(|d| d.code == "LINT002"));
+    }
+
+    #[test]
+    fn lint002_accepts_good_struct_name() {
+        let diags = lint("umbo GoodStruct { }");
+        assert!(!diags.iter().any(|d| d.code == "LINT002"));
+    }
+
+    #[test]
+    fn lint003_flags_bad_constant_name() {
+        let diags = lint("thabiti notUpper: Namba = 5");
+        assert!(diags.iter().any(|d| d.code == "LINT003"));
+    }
+
+    #[test]
+    fn lint003_accepts_good_constant_name() {
+        let diags = lint("thabiti MAX_SIZE: Namba = 100");
+        assert!(!diags.iter().any(|d| d.code == "LINT003"));
+    }
+}
