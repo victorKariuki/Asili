@@ -12,15 +12,14 @@ use std::path::Path;
 // that names a trait), public-item doc coverage, formatting compliance, project-wide trait
 // completeness (every sifa reachable from an import has at least one impl somewhere in the
 // project — SEM105 alone only catches an impl that names a trait and gets it wrong, not a trait
-// that's never implemented at all), FFI-safety of #[kiunganishi]-tagged signatures, and (opt-in
-// via --kiwango-cha-jaribio) test coverage.
+// that's never implemented at all), FFI-safety of #[kiunganishi]-tagged signatures, type
+// stability against the most recent `v<semver>` git tag (when the project is a git repo with
+// one — see `pipeline::stability`), and (opt-in via --kiwango-cha-jaribio) test coverage.
 //
-// Not implemented: type-stability (breaking public-signature changes between versions) — see
-// `pata semver` (planned) once a git-tag-based baseline exists; full ABI compatibility against a
-// C-signature contract, since #[kiunganishi]/kiungo has no such contract yet (FFI is a
-// documented Phase IV stub, core/evaluator/src/builtins/kiungo.rs). What thibitisha checks today
-// for #[kiunganishi] (FFI-safe types) is the real, checkable prerequisite for that future check,
-// not a placeholder.
+// Not implemented: full ABI compatibility against a C-signature contract, since
+// #[kiunganishi]/kiungo has no such contract yet (FFI is a documented Phase IV stub,
+// core/evaluator/src/builtins/kiungo.rs). What thibitisha checks today for #[kiunganishi]
+// (FFI-safe types) is the real, checkable prerequisite for that future check, not a placeholder.
 pub fn run(args: &[String]) -> CliResult {
     let threshold = parse_args(args)?;
 
@@ -28,6 +27,7 @@ pub fn run(args: &[String]) -> CliResult {
     enforce_docs(Path::new("."))?;
     enforce_trait_completeness(&output.module)?;
     enforce_ffi_signatures(&output.module)?;
+    crate::pipeline::stability::enforce_type_stability(Path::new("."), &output.module)?;
 
     let files = collect_asili_files(Path::new("."))?;
     let (_, changed) = check_or_write(&files, true)?;

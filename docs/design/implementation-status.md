@@ -171,12 +171,17 @@ Found by directly auditing the code this cycle, not from the spec:
   used to just count *all* string literals in a file and call anything over 5 "repeated" — fixed
   this cycle, but the other rules (LINT001-003 naming, LINT101 length, LINT202 docs, LINT203
   unused imports) haven't had the same scrutiny.
-- **`pata thibitisha` checks 2 of the 6 things its own TODO comment says it should** (doc coverage
-  + formatting only; missing type-stability, ABI-compatibility, trait-completeness, and a test-
-  coverage threshold check).
-- **`pata nadhifu` (formatter) is a line-level text transform, not an AST-based formatter** — its
-  own source comments admit it can corrupt string literals containing `{`/`}`/`,` via blind
-  brace/comma replacement.
+- **`pata thibitisha` now checks doc coverage, formatting, trait completeness, FFI-safety
+  (the real, checkable prerequisite short of a full ABI contract — `kiungo`/FFI has no C-signature
+  declaration syntax yet), type stability against the most recent `v<semver>` git tag, and
+  (opt-in) a test-coverage threshold** — see `pata/cli/commands/thibitisha.md` for the exact
+  behavior of each. Full ABI compatibility against a declared C signature remains genuinely
+  blocked on `kiungo`/FFI's own Phase IV design, not deferred by choice.
+- **`pata nadhifu` is a real token-stream printer** (`pata-fmt`, `pata_fmt::canonical_format_with_indent`),
+  not the line-level text transform this note used to describe — that older transform (which
+  could corrupt string literals containing `{`/`}`/`,` via blind brace/comma replacement) has
+  been replaced everywhere it was still live, including a duplicate copy that was still running
+  inside `pata-cli`'s own `pipeline::format` and inside `pata-lsp`'s format-on-save.
 
 ## Real bugs found and fixed this cycle (worth knowing about, not re-introducing)
 

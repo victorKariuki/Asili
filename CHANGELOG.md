@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`pata thibitisha` type-stability check**: when the project is a git repository with at least
+  one `v<semver>` tag (highest by real semver ordering), diffs current public function
+  signatures against that tag's — flags a removed public function, changed parameter count,
+  changed parameter type, or changed return type. No tag / not a git repo means nothing to check,
+  not an error. `pata_cli::pipeline::stability::enforce_type_stability` (previously real code
+  with real logic but zero callers and a placeholder no-op test) is now wired into `thibitisha`'s
+  `run()` and rewritten to auto-discover the latest tag (the prior version required an exact tag
+  name) and check parameter/return types, not just arity.
 - **`pata ongeza --git <url>`**: real dependency fetching. `pata_package::fetch_git` clones via
   `git2` into `.asili/packages/<lib>/`, strips `.git/` metadata, and computes a real SHA-256
   content hash over the fetched tree — written into `pata.lock` as that dependency's checksum.
@@ -132,9 +140,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (gated on `LINT301`'s `is_enabled`, same as every other rule), but the function itself is
   `_module: &Module) -> Vec<Diagnostic> { Vec::new() }` — a genuine no-op, per its own doc
   comment ("placeholder for future depth"). Being *called* is not the same as doing anything.
-- **`pata_cli::pipeline::stability::check_type_stability`** (`pata/cli/src/pipeline/stability.rs`):
-  git-tag-baseline type-stability checking. `pata thibitisha` has no `--baseline` flag and never
-  calls this — `thibitisha.rs`'s own comment still says "Not implemented: type-stability."
 - **`pata_cli::pipeline::coverage::CoverageMetrics`** (`pata/cli/src/pipeline/coverage.rs`):
   function-execution coverage tracking. `pata jaribu` has no `--chanjo`/coverage flag and never
   calls this.
