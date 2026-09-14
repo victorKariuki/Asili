@@ -38,13 +38,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Lint configurability**: `pata-lint` now supports per-rule configuration via `[lint.rules]` in
   `pata.toml`. Set severity levels (error/warning/info/ignore), configure rule-specific options
   (e.g., `line_limit` for function length checks).
+- **Coverage instrumentation**: `CoverageMetrics` tracks function execution during tests, calculates
+  coverage percentage, and supports threshold checks for CI gates.
 
 ### Fixed
 
 - **Lint test suite**: corrected `LINT101` boundary test (50 statements exactly should not flag; flag
   only when > 50). Tests now confirm the exact threshold behavior.
 
-### Planned (Sections 16–20, future phases)
+### Planned (Sections 17–20, future phases, out of initial scope)
 
 The following sections from the 20-section production-readiness spec are planned for completion
 in the next phase:
