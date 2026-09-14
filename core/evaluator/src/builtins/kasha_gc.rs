@@ -20,4 +20,16 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         let inner = args.first().cloned().unwrap_or(Value::Hamna);
         Ok(Value::KashaGC(Rc::new(RefCell::new(inner))))
     }));
+    // Downgrade: Kasha_GC<T> has no cycle collector, so a reference cycle through it leaks
+    // permanently. kasha_gc_dhaifu() is the user-level escape hatch — hold a Dhaifu in the
+    // back-pointer of a cycle-prone structure and .imarisha() (upgrade) only when actually
+    // needed, so the cycle's strong count can still reach zero on the forward direction.
+    m.insert("kasha_gc_dhaifu".to_string(), Box::new(|args: &[Value]| {
+        match args.first() {
+            Some(Value::KashaGC(cell)) => Ok(Value::KashaGCDhaifu(Rc::downgrade(cell))),
+            _ => Err(crate::value::EvalError::TypeErr(
+                "kasha_gc_dhaifu: hoja lazima iwe Kasha_GC<T>".to_string(),
+            )),
+        }
+    }));
 }

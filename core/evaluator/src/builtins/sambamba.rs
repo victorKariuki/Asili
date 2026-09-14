@@ -102,6 +102,14 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             Box::new(Value::NjiaRx(Arc::new(Mutex::new(rx)))),
         ))
     }));
+    m.insert("njia_na_kikomo".to_string(), Box::new(|args: &[Value]| {
+        let kikomo = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0).max(0.0) as usize;
+        let (tx, rx) = mpsc::sync_channel::<value::SendValue>(kikomo);
+        Ok(Value::Jozi(
+            Box::new(Value::NjiaTxBounded(Arc::new(Mutex::new(tx)))),
+            Box::new(Value::NjiaRxBounded(Arc::new(Mutex::new(rx)))),
+        ))
+    }));
     m.insert("fungo".to_string(), Box::new(|args: &[Value]| {
         let inner = args.first().cloned().unwrap_or(Value::Hamna);
         match inner.try_into_send() {

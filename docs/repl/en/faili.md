@@ -45,7 +45,18 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 }
 ```
 
-Same methods as `Faili`: `.soma()`, `.andika(data)`, `.funga()`.
+Same methods as `Faili`: `.soma()`, `.andika(data)`, `.funga()`. Also:
+
+| Method | Description |
+|--------|-------------|
+| `m.soma_bailisi(kikomo)` | Read **once, not to EOF** — up to `kikomo` bytes; returns `Tokeo<Neno, Neno>`. Needed for protocols like HTTP/1.1 keep-alive that must read one message and then read again on the same connection, rather than `.soma()`'s wait-for-EOF |
+
+**Listening (server) and TLS**: `mkondo_sikiliza`, `mkondo_tumikia`, `mkondo_tumikia_http`,
+`tls_sanidi` — see `docs/language/06-moduli.md` (the `mfumo` section) and
+`docs/design/http-server-design.md`.
+
+**JSON**: `kwa_json`/`kutoka_json` (`Value` ↔ JSON `Neno`) — see `docs/language/06-moduli.md` and
+`docs/design/json-codec-design.md`.
 
 ## Kumbukumbu\<T\>
 

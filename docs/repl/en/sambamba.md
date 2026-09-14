@@ -38,7 +38,8 @@ finish or panic). Use `njia` to send the real result back.
 
 | Method        | Description                                          |
 |---------------|---------------------------------------------------------|
-| `njia()`      | Create a new `NjiaTx<T>`/`NjiaRx<T>` pair as a `Jozi` — can't fail |
+| `njia()`      | Create a new `NjiaTx<T>`/`NjiaRx<T>` pair as a `Jozi` — can't fail, unbounded |
+| `njia_na_kikomo(kikomo)` | Like `njia()` but `tx.tuma(v)` **blocks** once `kikomo` is full instead of growing without limit |
 | `tx.tuma(v)`  | Send; `Tokeo<Tupu, Neno>`                            |
 | `rx.pokea()`  | Receive (blocks); `Tokeo<T, Neno>` — `Kosa` once every sender closes |
 

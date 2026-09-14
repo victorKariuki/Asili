@@ -45,7 +45,18 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 }
 ```
 
-Njia sawa na `Faili`: `.soma()`, `.andika(data)`, `.funga()`.
+Njia sawa na `Faili`: `.soma()`, `.andika(data)`, `.funga()`. Pia:
+
+| Njia | Maelezo |
+|------|---------|
+| `m.soma_bailisi(kikomo)` | Soma **moja tu, si mpaka EOF** — hadi `kikomo` baiti; hurejesha `Tokeo<Neno, Neno>`. Inahitajika kwa itifaki kama HTTP/1.1 keep-alive ambazo lazima zisome ujumbe mmoja kisha zisome tena kwenye muunganisho ule ule bila `.soma()` kusubiri EOF isiyokuja |
+
+**Kusikiliza (server)** na **TLS**: `mkondo_sikiliza`, `mkondo_tumikia`, `mkondo_tumikia_http`,
+`tls_sanidi` — tazama `docs/language/06-moduli.md` (sehemu ya `mfumo`) na
+`docs/design/http-server-design.md`.
+
+**JSON**: `kwa_json`/`kutoka_json` (`Value` ↔ Neno ya JSON) — tazama `docs/language/06-moduli.md` na
+`docs/design/json-codec-design.md`.
 
 ## Kumbukumbu\<T\>
 
@@ -62,7 +73,7 @@ Namba(42.0)
 | `kumbukumbu_unda(v)` | Funga `v` kwenye `Kumbukumbu<T>` mpya |
 | `k.pata()`        | Soma nakala ya thamani iliyofungwa |
 
-**Hakuna `.weka()`** — `Kumbukumbu<T>` haishirikiani kama `Kasha_GC<T>` (tazama `?moduli` katika
+**Hakuna `.weka()`** — `Kumbukumbu<T>` haishirikiani kama `Kasha_GC<T>` (tazama
 `docs/language/06-moduli.md`); kubadilisha kunahitaji kukabidhi jina zima upya:
 `weka k = kumbukumbu_unda(thamani_mpya)`.
 

@@ -6,6 +6,81 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] — core/evaluator, core/lexer, core/parser, pata-cli, pata-fmt, pata-lsp
+
+### Fixed
+
+- **`pata nadhifu`**: replaced the naive `String::replace`-based formatter with a real
+  token-stream pretty-printer. Fixes the exact bug class the old implementation had — string/char
+  literals containing `{`/`}`/`,` were previously mangled by layout rules meant for real syntax.
+  Comments (`#`/`//`) are now preserved instead of silently discarded (`asili-lexer` gained an
+  additive `tokenize_with_trivia()`, leaving `tokenize()` and every existing consumer unchanged).
+  Blank lines between top-level declarations are preserved as exactly one blank line. New
+  `docs/design/nadhifu-formatter-design.md`.
+
+### Added
+
+- **`Value` <-> JSON codec**: `kwa_json(thamani) -> Tokeo<Neno, Neno>` / `kutoka_json(neno) ->
+  Tokeo<Kamusi<Neno, Unknown>, Neno>`, exposed from the existing `mfumo` module. Rejects resource
+  handles and concurrency primitives (no JSON representation) with a clear error; guards against
+  unbounded recursion on adversarial input. See `docs/design/json-codec-design.md`.
+- **Structured `EvalError`**: new `EvalError::Coded { kind: ErrorKind, message }` variant
+  (`ErrorKind`: `BadInput`/`NotFound`/`Conflict`/`Internal`/`Unavailable`), additive alongside the
+  six pre-existing variants. A `From<&EvalError> for ErrorKind` fallback maps every pre-existing
+  variant to `Internal`. Lays the groundwork for a future HTTP layer to map errors to status
+  codes without core-evaluator code needing to know about HTTP at all.
+- **`njia_na_kikomo(kikomo: Namba)`**: a bounded-channel constructor alongside the existing
+  unbounded `njia()` — `.tuma()` blocks once `kikomo` unread items are buffered, instead of
+  growing memory without limit under a producer faster than its consumer.
+- **`kasha_gc_dhaifu(kgc) -> Kasha_GC_Dhaifu<T>`** (downgrade) / **`.imarisha() ->
+  Chaguo<Kasha_GC<T>>`** (upgrade): a weak-reference escape hatch for `Kasha_GC<T>`, which has no
+  cycle collector — holding a `Kasha_GC_Dhaifu<T>` in one side of a reference cycle lets the
+  strong count still reach zero.
+- **`mkondo_sikiliza(anwani) -> Tokeo<MkondoSikilizaji, Neno>`** and **`mkondo_tumikia(sikilizaji,
+  kazi_jina, idadi_ya_nyuzi) -> Tokeo<Tupu, Neno>`**: a TCP listening socket and a bounded
+  worker-thread pool to serve it. `mkondo_tumikia` blocks forever, spawning a fixed number of
+  long-lived worker threads that each independently accept connections and invoke
+  `kazi_jina(mkondo: Mkondo) -> Tupu`, which owns the connection via the same `.soma()`/
+  `.andika()`/`.funga()` methods the existing client-side `Mkondo` handle exposes. Every accepted
+  connection gets a fixed read/write timeout; the pool size is itself the concurrent-connection
+  cap. Extends the existing 1:1-OS-thread model rather than introducing an async runtime — see
+  `docs/design/http-server-design.md` for the full bounded-pool-over-async rationale. HTTP/1.1
+  framing is explicitly out of scope for this pass. New `examples/mkondo_server/`; new
+  `docs/design/json-codec-design.md` and `docs/design/http-server-design.md`.
+- **TLS**: `tls_sanidi(cheti_njia, ufunguo_njia) -> Tokeo<TlsUsanidi, Neno>` loads a PEM
+  certificate/key pair (never panics on a bad file/malformed PEM/mismatched key — always
+  `Tokeo(Kosa(...))`); `mkondo_tumikia` gained a 4th, optional `tls: Chaguo<TlsUsanidi>` parameter
+  to serve TLS instead of plaintext, via `rustls` (pure Rust — no system OpenSSL dependency,
+  keeping the WASM/cross-compile story clean; `rustls`/`rustls-pemfile` are scoped to non-`wasm32`
+  targets only). `MkondoHandle` became `Option<MkondoStream>` (an enum over plain/TLS streams)
+  so `.soma()`/`.andika()`/`.funga()` needed zero changes — TLS is fully transparent to
+  `kazi_jina`. A handshake failure drops only that one connection, never the whole worker thread.
+  New `docs/design/tls-design.md`.
+- **HTTP/1.1 framing**: `mkondo_tumikia_http(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls) ->
+  Tokeo<Tupu, Neno>` — a new, separate entry point alongside the raw-bytes `mkondo_tumikia` (not
+  a mode flag, since the two `kazi_jina` contracts are incompatible: `kazi_jina(ombi: OmbiHttp)
+  -> JibuHttp` here, vs. `kazi_jina(mkondo: Mkondo) -> Tupu` for raw bytes). Parses one
+  `Content-Length`-bodied HTTP/1.1 (or 1.0) request per cycle via `httparse` (now a direct
+  dependency), calls `kazi_jina`, writes a real response, and loops for the next request on the
+  same connection under HTTP/1.1 keep-alive — closing only on `Connection: close`, a parse error
+  (`400`), or disconnect. `Transfer-Encoding: chunked` returns `501` (not supported); no
+  pipelining; no `Expect: 100-continue`; no HTTP/2. New `Mkondo` method
+  `.soma_bailisi(kikomo: Namba) -> Tokeo<Neno, Neno>` (one bounded, non-EOF-seeking read) — the
+  prerequisite this needed, since `.soma()`'s read-to-EOF semantics can't support keep-alive.
+  `OmbiHttp`/`JibuHttp` are plain `Value::Struct`s, matched by field shape only (same pattern the
+  JSON codec already uses). New `examples/http_server/`; new
+  `docs/design/http-framing-design.md`.
+- **`pata thibitisha` gained trait-completeness and FFI-safety checks**: every `sifa` reachable
+  from the project (declared locally or via a `leta`-ed dependency's `.asi` stub) must now have
+  at least one implementation somewhere in the project, not just internal consistency for impls
+  that already name a trait (which `SEM105` already covered). `#[kiunganishi]`-tagged function
+  signatures are now checked against the set of types that can safely cross a C ABI boundary
+  (numeric/`Ukweli`/`Herufi`/`Tupu`/`Anuani` only — no heap-owning, GC'd, or generic-container
+  types), rejecting the rest with a clear error rather than allowing a signature that could never
+  be ABI-compatible. `.asi` interface stubs can now declare `sifa { }` blocks, parsed into real
+  `TraitDecl`s so the same completeness check covers trait requirements that arrive via a
+  dependency, not just ones declared in-project.
+
 ## [0.3.0]
 
 ### Added

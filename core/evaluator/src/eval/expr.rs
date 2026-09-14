@@ -488,6 +488,16 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 if name == "tenda" {
                     return crate::builtins::sambamba::tenda(rt.module, &args_val);
                 }
+                // mkondo_tumikia needs the current Module for the same reason tenda does — its
+                // worker threads look up and invoke a named kazi per accepted connection.
+                if name == "mkondo_tumikia" {
+                    return crate::builtins::mkondo::mkondo_tumikia(rt.module, &args_val);
+                }
+                // mkondo_tumikia_http: the HTTP/1.1-framed counterpart, same Module-access
+                // reason. See core/evaluator/src/builtins/http.rs.
+                if name == "mkondo_tumikia_http" {
+                    return crate::builtins::http::mkondo_tumikia_http(rt.module, &args_val);
+                }
                 if let Some(f) = rt.builtins.get(name) {
                     return f(&args_val);
                 }
@@ -885,6 +895,12 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 // caller would actually observe (e.g. via other live `weka` bindings).
                 (Value::KashaGC(cell), "idadi") => Ok(Value::Namba((Rc::strong_count(cell) - 1) as f64)),
                 (Value::KashaGC(cell), "shirikisha") => Ok(Value::KashaGC(Rc::clone(cell))),
+                // Upgrade: Hamna if the strong count already hit zero (every KashaGC handle
+                // dropped), Kuna(KashaGC) otherwise — a fresh strong handle sharing the same
+                // allocation, exactly like .shirikisha() produces from a live KashaGC.
+                (Value::KashaGCDhaifu(weak), "imarisha") => Ok(Value::Chaguo(
+                    weak.upgrade().map(Value::KashaGC).map(Box::new),
+                )),
                 (Value::Faili(cell), "soma") => {
                     use std::io::Read;
                     let mut guard = cell.borrow_mut();
@@ -945,6 +961,41 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     cell.borrow_mut().0.take();
                     Ok(Value::Tupu)
                 }
+                // `.soma()` (read_to_string) reads until EOF — structurally incompatible with
+                // HTTP/1.1 keep-alive, which must read exactly one request's bytes and then be
+                // able to read a *second* request over the same connection. `.soma_bailisi`
+                // (bounded read) is the primitive an HTTP parser loop actually needs: one
+                // Read::read() call, not read-to-EOF, returning whatever bytes were actually
+                // available (possibly fewer than kikomo, possibly zero on a timeout with nothing
+                // sent — surfaced as an empty Neno, not an error, since a zero-byte read isn't
+                // itself a failure). Additive alongside `.soma()`, which keeps its existing
+                // behavior for every current caller (mkondo_unganisha's tests, examples/
+                // mkondo_server/'s one-request-per-connection contract).
+                (Value::Mkondo(cell), "soma_bailisi") => {
+                    use std::io::Read;
+                    let kikomo = value::as_f64(args_val.first().unwrap_or(&Value::Hamna))
+                        .unwrap_or(0.0)
+                        .max(0.0) as usize;
+                    let mut guard = cell.borrow_mut();
+                    match guard.0.as_mut() {
+                        Some(s) => {
+                            let mut buf = vec![0u8; kikomo];
+                            match s.read(&mut buf) {
+                                Ok(n) => {
+                                    // Lossy UTF-8: Neno is a Rust String throughout this
+                                    // interpreter (no Value::Bytes variant exists) — a raw
+                                    // binary body isn't safely round-trippable through this
+                                    // method today, a known, documented limitation of this
+                                    // minimal framing pass (see docs/design/http-framing-design.md).
+                                    let text = String::from_utf8_lossy(&buf[..n]).into_owned();
+                                    Ok(Value::Tokeo(Ok(Box::new(Value::Neno(text)))))
+                                }
+                                Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+                            }
+                        }
+                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno("mkondo: imefungwa tayari".into()))))),
+                    }
+                }
                 // Kumbukumbu<T> is a plain owning Box, not a shared/interior-mutable cell like
                 // Kasha_GC<T> — `.pata()` reads a clone of the boxed value; there is no `.weka()`
                 // (in-place mutation) since `recv` here is already a clone of the binding, and
@@ -968,6 +1019,35 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     }
                 }
                 (Value::NjiaRx(rx), "pokea") => {
+                    let guard = rx.lock().unwrap();
+                    match guard.recv() {
+                        Ok(sv) => Ok(Value::Tokeo(Ok(Box::new(sv.into_value())))),
+                        Err(_) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                            "pokea: upande wa kutuma umefungwa".into(),
+                        ))))),
+                    }
+                }
+                // Bounded njia_na_kikomo: same .tuma()/.pokea() contract as the unbounded njia()
+                // above, except `.tuma()` blocks the caller once the bound is full instead of
+                // growing memory without limit — that backpressure is `SyncSender::send`'s own
+                // behavior, transparent to this dispatch code.
+                (Value::NjiaTxBounded(tx), "tuma") => {
+                    let v = args_val.first().cloned().unwrap_or(Value::Hamna);
+                    match v.try_into_send() {
+                        Some(sv) => {
+                            let sent = tx.lock().unwrap().send(sv).is_ok();
+                            Ok(Value::Tokeo(if sent {
+                                Ok(Box::new(Value::Tupu))
+                            } else {
+                                Err(Box::new(Value::Neno("njia: upande wa pili umefungwa".into())))
+                            }))
+                        }
+                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                            "tuma: thamani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)".into(),
+                        ))))),
+                    }
+                }
+                (Value::NjiaRxBounded(rx), "pokea") => {
                     let guard = rx.lock().unwrap();
                     match guard.recv() {
                         Ok(sv) => Ok(Value::Tokeo(Ok(Box::new(sv.into_value())))),

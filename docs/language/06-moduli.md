@@ -123,6 +123,44 @@ m.funga()
 kikitoka nje ya wigo, kama `Faili` — tazama
 [faili-mkondo-design.md](../design/faili-mkondo-design.md).
 
+**Kusikiliza na kutumikia** (listening socket + bwawa la nyuzi lililowekewa kikomo):
+
+```asili
+leta mfumo
+
+kazi mtumishi(m: Mkondo) -> Tupu {
+    weka ombi = jaribu (m.soma())
+    jaribu (m.andika("umetuma bytes " + (ombi kama Neno)))
+}
+
+kazi kuu(hoja: Orodha<Neno>) -> Tupu {
+    weka sikilizaji = jaribu (mkondo_sikiliza("127.0.0.1:7878"))
+    jaribu (mkondo_tumikia(sikilizaji, "mtumishi", 4.0))
+}
+```
+
+`mkondo_sikiliza(anwani)` inarejesha `Tokeo<MkondoSikilizaji, Neno>`. `mkondo_tumikia(sikilizaji,
+kazi_jina, idadi_ya_nyuzi, tls)` huanzisha bwawa la nyuzi za muda mrefu (idadi maalum, si nyuzi
+moja kwa kila muunganisho) na huzuia mahali ilipoitwa milele. `mkondo_tumikia_http` ni sawa lakini
+hufasiri HTTP/1.1 halisi — `kazi_jina(ombi: OmbiHttp) -> JibuHttp` badala ya
+`kazi_jina(mkondo: Mkondo) -> Tupu`. TLS (hoja ya nne, `tls: Chaguo<TlsUsanidi>`, hiari) hutumia
+`tls_sanidi(cheti_njia, ufunguo_njia)` kupakia cheti/ufunguo. Maelezo kamili:
+[http-server-design.md](../design/http-server-design.md),
+[tls-design.md](../design/tls-design.md), [http-framing-design.md](../design/http-framing-design.md).
+
+**JSON**:
+
+```asili
+leta mfumo
+
+weka jsoni = jaribu (kwa_json(orodha(1.0, 2.0, 3.0)))   // Tokeo<Neno, Neno>
+weka thamani = jaribu (kutoka_json(jsoni))                // Tokeo<Kamusi<Neno, Unknown>, Neno>
+```
+
+Vishikizo vya rasilimali (`Kasha_GC<T>`, `Faili`, `Mkondo`) na miundo ya sambamba (`NjiaTx`/
+`NjiaRx`/`Fungo`) hazina uwakilishi wa JSON — hukataliwa na `Tokeo(Kosa(...))`. Tazama
+[json-codec-design.md](../design/json-codec-design.md).
+
 ### majira — Time
 
 ```asili

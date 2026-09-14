@@ -36,14 +36,19 @@ pata nadhifu src/
 Only one path argument is accepted (`tolea njia moja tu` if you pass more than one); omit it
 to format the whole project from the current directory.
 
-## Known limitation
+## How it works
 
-`pata nadhifu` is a **line-level text transform, not an AST-based formatter** — it doesn't
-parse and re-print the source. This means it can misjudge indentation in some cases (e.g. it
-may strip meaningful leading whitespace inside a function body on some inputs) and, per its own
-source comments, can corrupt string literals containing `{`/`}`/`,` via blind brace/comma
-replacement. Review the diff after running it, especially on files with such content. See
-[implementation-status.md](../design/implementation-status.md) for status.
+`pata nadhifu` is a **token-stream pretty-printer, not a full AST-based formatter** — it
+re-tokenizes the source (capturing comments as trivia, since they aren't part of the AST) and
+re-emits tokens with layout rules driven by token kind and brace/paren nesting depth, rather than
+parsing and re-printing from the AST directly (AST nodes only carry a start line/column today,
+not an end span, so span-slicing the source isn't viable yet). It never rewrites token contents,
+so string/char literals containing `{`/`}`/`,` survive unchanged, and comments are preserved in
+place rather than discarded. On a lex error (e.g. an unterminated string) it returns the input
+unchanged rather than producing a mangled partial rewrite — safe to run on in-progress,
+possibly-invalid source. See [nadhifu-formatter-design.md](../design/nadhifu-formatter-design.md)
+for the full design, and [06-tooling-and-ecosystem.md](../spec/06-tooling-and-ecosystem.md) for
+the exact formatting rules.
 
 ## Before committing
 

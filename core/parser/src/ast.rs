@@ -404,11 +404,16 @@ impl fmt::Display for ValueType {
             ValueType::Wakati => write!(f, "Wakati"),
             ValueType::Anuani => write!(f, "Anuani"),
             ValueType::KashaGC(t) => write!(f, "Kasha_GC<{}>", t),
+            ValueType::KashaGCDhaifu(t) => write!(f, "Kasha_GC_Dhaifu<{}>", t),
             ValueType::Faili => write!(f, "Faili"),
             ValueType::Mkondo => write!(f, "Mkondo"),
+            ValueType::MkondoSikilizaji => write!(f, "MkondoSikilizaji"),
+            ValueType::TlsUsanidi => write!(f, "TlsUsanidi"),
             ValueType::Kumbukumbu(t) => write!(f, "Kumbukumbu<{}>", t),
             ValueType::NjiaTx(t) => write!(f, "NjiaTx<{}>", t),
             ValueType::NjiaRx(t) => write!(f, "NjiaRx<{}>", t),
+            ValueType::NjiaTxBounded(t) => write!(f, "NjiaTxBounded<{}>", t),
+            ValueType::NjiaRxBounded(t) => write!(f, "NjiaRxBounded<{}>", t),
             ValueType::Fungo(t) => write!(f, "Fungo<{}>", t),
             ValueType::TypeVar(name) => write!(f, "{}", name),
             ValueType::Unknown => write!(f, "Unknown"),
@@ -442,16 +447,30 @@ pub enum ValueType {
     Anuani,
     /// Reference-counted shared wrapper (opt-in `leta kasha_gc`); see spec's managed-memory module.
     KashaGC(Box<ValueType>),
+    /// Weak reference to a Kasha_GC<T> (kasha_gc_dhaifu, downgrade); the cycle-breaking escape
+    /// hatch, since Kasha_GC<T> itself has no cycle collector.
+    KashaGCDhaifu(Box<ValueType>),
     /// File handle (leta faili); owns an OS file descriptor, closed on drop.
     Faili,
     /// Network stream/socket handle (leta mfumo); owns an OS socket, closed on drop.
     Mkondo,
+    /// TCP listening socket (mkondo_sikiliza, leta mfumo); shared across mkondo_tumikia's
+    /// worker-pool threads.
+    MkondoSikilizaji,
+    /// Loaded TLS server certificate/key pair (tls_sanidi, leta mfumo); passed to
+    /// mkondo_tumikia's optional TLS parameter.
+    TlsUsanidi,
     /// Heap-allocated box owning a value of type T; no OS resource, plain owning indirection.
     Kumbukumbu(Box<ValueType>),
     /// Channel sender half (njia, leta sambamba); crosses the tenda thread boundary.
     NjiaTx(Box<ValueType>),
     /// Channel receiver half (njia, leta sambamba).
     NjiaRx(Box<ValueType>),
+    /// Bounded channel sender half (njia_na_kikomo, leta sambamba); `.tuma()` blocks once the
+    /// bound is full instead of the unbounded NjiaTx's unlimited growth.
+    NjiaTxBounded(Box<ValueType>),
+    /// Bounded channel receiver half (njia_na_kikomo, leta sambamba).
+    NjiaRxBounded(Box<ValueType>),
     /// Mutex (fungo, leta sambamba); protects a shared value across tenda threads.
     Fungo(Box<ValueType>),
     /// Type variable (T, E, U, etc. for generic types).

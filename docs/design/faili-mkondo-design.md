@@ -128,10 +128,78 @@ Free functions, not method calls, since they don't yet have a receiver:
   (append, creating if absent). An unrecognized `hali` string returns `Tokeo(Kosa(...))` rather
   than panicking or silently defaulting.
 - `mkondo_unganisha(anwani: Neno) -> Tokeo<Mkondo, Neno>` — connects a TCP client stream to
-  `anwani` (e.g. `"127.0.0.1:8080"`). No listening-socket/server variant exists yet — out of
-  scope for this pass; the spec text ("network stream or socket") doesn't commit either way, and
-  nothing currently in the spec or examples calls for a server socket.
+  `anwani` (e.g. `"127.0.0.1:8080"`).
 - `kumbukumbu_unda(thamani) -> Kumbukumbu<T>` — wraps `thamani` in a new box.
+- **`mkondo_sikiliza(anwani: Neno) -> Tokeo<MkondoSikilizaji, Neno>`** — binds a listening TCP
+  socket via `std::net::TcpListener::bind`. Added in a later pass than the rest of this doc (see
+  "Listening sockets and the worker pool" below) — the original constructor list above shipped
+  client-only, with server sockets explicitly out of scope for that pass.
+
+## Listening sockets and the worker pool
+
+`MkondoSikilizaji` and `mkondo_tumikia` close the gap this doc originally left open. See
+`docs/design/http-server-design.md` for the full bounded-thread-pool-over-async decision and how
+this ties into the `Value`-JSON-codec and structured-`EvalError` work that came before it; this
+section covers the `Value`/ownership shape specifically.
+
+**`MkondoSikilizaji(Arc<std::net::TcpListener>)` — `Arc`, not `Rc`, the one exception in this
+family.** `mkondo_tumikia`'s worker pool has every worker thread calling `.accept()` on the same
+listener concurrently — safe, since `TcpListener::accept` takes `&self` and the OS itself
+serializes concurrent accepts on one socket, so no lock is needed on the hot path. This is the
+same reasoning `NjiaTx`/`NjiaRx`/`Fungo` already use for being `Arc` instead of `Rc` (see
+`docs/design/concurrency-design.md`): a channel or a listener's whole purpose is crossing a
+thread boundary, so paying `Arc`'s cost is the exception that proves this codebase's `Rc`-by-
+default rule for everything else in the Faili/Mkondo family, not a departure from it.
+
+**No `.funga()` on `MkondoSikilizaji`.** Unlike `Faili`/`Mkondo`, there is no explicit-close
+method — the "blocks forever" `mkondo_tumikia` model (see below) means closing the listener while
+worker threads still hold `Arc` clones of it would be a footgun (workers mid-`.accept()` on a
+half-torn-down listener), not a useful control. The listener closes only when every clone
+(the caller's own handle plus every worker thread's copy) drops.
+
+**`mkondo_tumikia(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba) ->
+Tokeo<Tupu, Neno>` blocks the calling thread forever**, joining every worker thread it spawns —
+matching the simplest possible "the last statement in `kazi kuu` starts the server" shape.
+There's no separate stop/handle mechanism in this pass; stopping the server means stopping the
+process. A non-blocking, explicitly-stoppable variant is a real future extension, deliberately
+not built here to avoid inventing a second server-lifecycle concept alongside `tenda`'s existing
+handle-id/`subiri_tenda` one.
+
+**The accept loop runs inside each worker thread, not the pool's caller thread** — `mkondo_tumikia`
+spawns `idadi_ya_nyuzi` `std::thread::spawn` calls up front (not per-connection, which is exactly
+the unbounded-thread-spawn resource-exhaustion pattern the original production-readiness survey
+flagged), and each spawned thread independently loops `listener.accept()` → construct a `Mkondo`
+handle from the accepted stream → `run_function(module, kazi_name, vec![mkondo])` → repeat. This
+is the key design payoff of a fixed-size pool over `tenda`-per-connection: **the accepted
+`std::net::TcpStream` is constructed and consumed entirely inside the thread that accepted it —
+it never needs to cross a `SendValue` boundary**, unlike `tenda`'s spawned-function arguments.
+`kazi_jina`'s contract is `kazi_jina(mkondo: Mkondo) -> Tupu`: it receives a real, live `Mkondo`
+handle and owns the whole connection lifecycle itself via the exact same `.soma()`/`.andika()`/
+`.funga()` methods the client-side handle already exposes above — there is no separate
+"listener-side Mkondo" type or method surface to learn.
+
+**Per-connection timeouts are not optional.** Before handing the accepted stream to `kazi_jina`,
+the worker calls `set_read_timeout`/`set_write_timeout` (currently a fixed 30-second constant,
+`CONNECTION_TIMEOUT` in `core/evaluator/src/builtins/mkondo.rs` — configurable timeouts are a
+natural follow-up once real usage data exists, deliberately not built in this pass). Without
+this, a single stalled or malicious peer that never sends/reads anything would permanently
+occupy one of the pool's fixed worker threads, degrading the whole pool over time — exactly the
+gap the original survey flagged as blocking a production listener.
+
+**The pool size is the connection cap, by construction.** A fixed `idadi_ya_nyuzi` worker threads
+means at most that many connections are handled concurrently; anything beyond that queues in the
+OS accept backlog rather than spawning unbounded threads. This directly closes the "unbounded
+thread spawn" resource-exhaustion gap the original survey flagged, without needing separate
+limiting logic layered on top.
+
+**Not a `BuiltinFn`** — `mkondo_tumikia`, like `tenda`, needs the current `Module` to find
+`kazi_jina`, so it's special-cased in `eval/expr.rs`'s `Expr::Call` handling rather than
+registered through the ordinary `Fn(&[Value]) -> Result<Value, EvalError>` builtin table.
+
+**Deferred past this pass** (see `docs/design/http-server-design.md`): TLS (a plaintext listener
+behind a reverse proxy is the recommended interim deployment shape) and real HTTP/1.1 framing
+(request-line/header parsing, `Content-Length`/chunked-encoding, keep-alive) — `kazi_jina`
+currently sees and produces raw bytes over `Mkondo`, not parsed HTTP requests/responses.
 
 ## `wasm32` gating
 
@@ -166,6 +234,17 @@ or network call.
 `connect_write_and_server_receives_it` (a background thread accepts and reads what the Asili
 program wrote), `connecting_to_a_closed_port_returns_kosa`, `double_funga_is_a_safe_no_op`,
 `mkondo_requires_leta_mfumo_or_resolved_module`.
+
+`core/evaluator/tests/mkondo_sikiliza.rs` flips the roles for the listener/pool: the Asili
+program is the server, driven by real `std::net::TcpStream` client connections from the test.
+`accept_and_echo_round_trip` (bind, serve, connect, write, read the echoed response back),
+`concurrent_connections_within_pool_size_all_succeed` (4 concurrent client connections against a
+pool of 4, each getting its own correct response back — proves the pool doesn't just handle one
+connection then stall), `accepted_connections_have_read_and_write_timeouts_set` (end-to-end
+sanity check that a real request/response round trip works with timeouts applied). The timeout
+*value* itself is checked directly in a Rust-level unit test,
+`builtins::mkondo::tests::connection_timeout_is_set_on_accept`, rather than by waiting out a real
+30-second stall in the integration suite.
 
 `core/evaluator/tests/kumbukumbu.rs`: `pata_returns_the_boxed_value`,
 `no_leta_needed_it_is_always_in_scope` (confirms the msingi-default decision above),
