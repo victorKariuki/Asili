@@ -3,6 +3,10 @@ name = "pata-fmt"
 version = "0.3.0"
 edition = "2021"
 
+[lib]
+name = "pata_fmt"
+path = "src/lib.rs"
+
 [[bin]]
 name = "pata-fmt"
 path = "src/main.rs"

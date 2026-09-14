@@ -1,7 +1,7 @@
 //! Single source of truth for interface data (builtins and .asi files). Parse once, retrieve everywhere.
 
-use crate::commands::CliError;
-use crate::pipeline::builtin_modules;
+use crate::builtin_modules;
+use crate::Error;
 use asili_parser::{parse_value_type, FnContract, Param, TraitDecl, TraitMethodSig, TypeExpr, ValueType};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -237,15 +237,15 @@ impl InterfaceRegistry {
     }
 
     /// Scan lib/std for *.asi and parse each; skip names already in registry (builtins win).
-    pub fn load_stdlib(&mut self) -> Result<(), CliError> {
+    pub fn load_stdlib(&mut self) -> Result<(), Error> {
         let std_path = self.root.join("lib/std");
         if !std_path.exists() {
             return Ok(());
         }
         for entry in fs::read_dir(&std_path)
-            .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", std_path.display()), 1))?
+            .map_err(|e| Error::new(format!("imeshindwa kusoma {}: {e}", std_path.display())))?
         {
-            let entry = entry.map_err(|e| CliError::new(format!("hitilafu ya kiingilio: {e}"), 1))?;
+            let entry = entry.map_err(|e| Error::new(format!("hitilafu ya kiingilio: {e}")))?;
             let path = entry.path();
             if path.extension().map(|e| e == "asi").unwrap_or(false) {
                 let name = path
@@ -256,7 +256,7 @@ impl InterfaceRegistry {
                     continue;
                 }
                 let content = fs::read_to_string(&path).map_err(|e| {
-                    CliError::new(format!("imeshindwa kusoma {}: {e}", path.display()), 1)
+                    Error::new(format!("imeshindwa kusoma {}: {e}", path.display()))
                 })?;
                 let (functions, constants, traits) = parse_asi_content(&content);
                 let fp = fingerprint(&content);
@@ -279,12 +279,12 @@ impl InterfaceRegistry {
     }
 
     /// Load and parse an .asi file if not already in registry; return cached or new entry.
-    pub fn get_or_load(&mut self, name: &str, path: &Path) -> Result<Arc<ModuleInterface>, CliError> {
+    pub fn get_or_load(&mut self, name: &str, path: &Path) -> Result<Arc<ModuleInterface>, Error> {
         if let Some(iface) = self.get(name) {
             return Ok(iface);
         }
         let content = fs::read_to_string(path).map_err(|e| {
-            CliError::new(format!("imeshindwa kusoma {}: {e}", path.display()), 1)
+            Error::new(format!("imeshindwa kusoma {}: {e}", path.display()))
         })?;
         let (functions, constants, traits) = parse_asi_content(&content);
         let fp = fingerprint(&content);

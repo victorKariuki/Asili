@@ -1,0 +1,14 @@
+[package]
+name = "pata-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pata_core"
+path = "src/lib.rs"
+
+[dependencies]
+asili-diagnostics = { path = "../../core/diagnostics" }
+asili-lexer = { path = "../../core/lexer" }
+asili-parser = { path = "../../core/parser" }
+pata-package = { path = "../package" }

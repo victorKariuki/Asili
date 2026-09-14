@@ -391,7 +391,7 @@ mod tests {
         .expect("manifest");
         fs::write(
             dir.join("src/kuu.as"),
-            "leta matumizi\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }\n/// Jumlisha namba mbili.\numma kazi jumlisha(a: Namba, b: Namba) -> Namba { rejesha a + b }\n",
+            "leta matumizi\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    chapisha(\"x\")\n}\n\n/// Jumlisha namba mbili.\numma kazi jumlisha(a: Namba, b: Namba) -> Namba {\n    rejesha a + b\n}\n",
         )
         .expect("src");
         dir
@@ -411,7 +411,7 @@ mod tests {
         .expect("manifest");
         fs::write(
             dir.join("src/kuu.as"),
-            "leta matumizi\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }\n",
+            "leta matumizi\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    chapisha(\"x\")\n}\n",
         )
         .expect("src");
         dir
@@ -431,7 +431,7 @@ mod tests {
         .expect("manifest");
         fs::write(
             dir.join("src/kuu.as"),
-            "leta matumizi\n/// Inayoonyeshwa.\nsifa Inayoonyeshwa { kazi onyesha(self: Self) -> Neno }\n/// Paka.\numbo Paka { jina: Neno }\nshughuli ya Paka kwa Inayoonyeshwa { kazi onyesha(self: Paka) -> Neno { rejesha self.jina } }\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }\n",
+            "leta matumizi\n\n/// Inayoonyeshwa.\nsifa Inayoonyeshwa {\n    kazi onyesha(self: Self) -> Neno\n}\n\n/// Paka.\numbo Paka {\n    jina: Neno\n}\nshughuli ya Paka kwa Inayoonyeshwa {\n    kazi onyesha(self: Paka) -> Neno {\n        rejesha self.jina\n    }\n}\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    chapisha(\"x\")\n}\n",
         )
         .expect("src");
         dir

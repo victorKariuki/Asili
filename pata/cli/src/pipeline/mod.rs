@@ -1,9 +1,6 @@
-pub mod builtin_modules;
 pub mod compile;
 pub mod format;
-pub mod interface_registry;
 pub mod project;
-pub mod resolve;
 pub mod sharti;
 pub mod stability;
 pub mod coverage;

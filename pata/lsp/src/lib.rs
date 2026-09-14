@@ -384,7 +384,8 @@ impl LanguageServer for Backend {
             Some(t) => t,
             None => return Ok(None),
         };
-        Ok(format::format_to_edits(&text))
+        let file_path = uri.to_file_path().ok();
+        Ok(format::format_to_edits(&text, file_path.as_deref()))
     }
 
     // ── Code actions ───────────────────────────────────────────────────────────

@@ -3,26 +3,11 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Debug)]
-pub enum Dependency {
-    Version(String),
-    Path(PathBuf),
-}
-
-impl From<&str> for Dependency {
-    fn from(s: &str) -> Self {
-        Dependency::Version(s.to_string())
-    }
-}
-
-impl std::fmt::Display for Dependency {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Dependency::Version(v) => write!(f, "\"{}\"", v),
-            Dependency::Path(p) => write!(f, "{{ path = \"{}\" }}", p.display()),
-        }
-    }
-}
+/// Re-exported from `pata-core` (the shared resolver crate `pata-cli` and `pata-lsp` both
+/// depend on) rather than defined here — kept as a `pub use` so every existing `pata-cli` call
+/// site (`Dependency::Version(...)`, `ProjectConfig.dependencies: BTreeMap<String, Dependency>`,
+/// etc.) keeps compiling unchanged after the pata-core extraction.
+pub use pata_core::Dependency;
 
 #[derive(Clone, Debug)]
 pub struct ProjectConfig {

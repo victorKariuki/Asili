@@ -3,13 +3,9 @@ use clap::Parser;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-mod format;
-mod walk;
-mod config;
-
-use config::FormatterConfig;
-use format::canonical_format_with_indent;
-use walk::collect_asili_files;
+use pata_fmt::config::FormatterConfig;
+use pata_fmt::format::canonical_format_with_indent;
+use pata_fmt::walk::collect_asili_files;
 
 #[derive(Parser)]
 #[command(name = "pata fmt")]

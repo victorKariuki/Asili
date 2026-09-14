@@ -24,6 +24,15 @@ impl CliError {
     }
 }
 
+/// `pata_core::Error` has no concept of a process exit code (a shared library consumed by an
+/// LSP server can't have one) — every conversion into a CLI-facing `CliError` uses exit code 1,
+/// matching how every other I/O/parse failure in this crate's command layer already exits.
+impl From<pata_core::Error> for CliError {
+    fn from(err: pata_core::Error) -> Self {
+        CliError::new(err.message, 1)
+    }
+}
+
 pub type CliResult = Result<(), CliError>;
 
 #[cfg(test)]

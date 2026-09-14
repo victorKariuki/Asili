@@ -1075,12 +1075,24 @@ dependencies = [
  "asili-evaluator",
  "asili-lexer",
  "asili-parser",
+ "pata-core",
+ "pata-fmt",
  "pata-lsp",
  "pata-package",
  "pulldown-cmark",
  "rayon",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "pata-core"
+version = "0.1.0"
+dependencies = [
+ "asili-diagnostics",
+ "asili-lexer",
+ "asili-parser",
+ "pata-package",
 ]
 
 [[package]]
@@ -1118,6 +1130,8 @@ dependencies = [
  "asili-evaluator",
  "asili-lexer",
  "asili-parser",
+ "pata-core",
+ "pata-fmt",
  "pata-lint",
  "serde_json",
  "tokio",

@@ -18,19 +18,24 @@
 //! caches one `WorkspaceIndex` per discovered project root rather than assuming there's only
 //! ever one.
 //!
-//! Deliberately NOT built on top of `pata-cli`'s `pipeline::{resolve, interface_registry,
-//! project}` — reusing that would mean either `pata-lsp` depending on `pata-cli` (impossible:
-//! `pata-cli` is a binary-only crate with no `lib.rs`, and it already depends on `pata-lsp` to
-//! launch it via `pata mwalimu`, so the reverse edge would cycle) or extracting that pipeline
-//! into a new shared crate — a larger structural change than this fix needs, and one that
-//! risks colliding with concurrent work already in flight on those exact files. This covers
-//! path-based same-project imports only: a sibling `.as` file next to the entrypoint, or a
-//! `pata.toml` path dependency's own `src/<name>.as`. Version-resolved / vendored registry
-//! dependencies (anything needing `pata.lock`) are out of scope here.
+//! File-finding now delegates to `pata_core::find_module_file` — the same lookup `pata-cli`'s
+//! own compile pipeline uses, covering path dependencies, version dependencies resolved against
+//! the vendored `.asili/packages/<name>/` cache, and stdlib `.asi` interface stubs. Before the
+//! `pata-core` extraction, this module carried its own smaller reimplementation (sibling-file
+//! and path-dependency lookup only) because `pata-lsp` couldn't depend on `pata-cli` (a
+//! binary-only crate with no `lib.rs`, which itself depends on `pata-lsp` to launch `pata
+//! mwalimu` — the reverse edge would have cycled) and extracting a shared crate was deferred.
+//! `WorkspaceIndex`'s own shape (flat name→module map, reverse-dependency edges for
+//! cross-file find-references) stays LSP-specific rather than adopting `pata_core::
+//! ResolvedProgram`'s shape — the two serve different queries (this module answers "what
+//! imports what," `ResolvedProgram` answers "give me one merged module ready to evaluate") and
+//! forcing one into the other would touch every LSP feature that already depends on this type
+//! (signature help, diagnostics, symbols, rename) for no behavioral gain.
 
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, ImportPath, Module};
-use std::collections::{HashMap, HashSet};
+use pata_core::Dependency;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 const STDLIB_MODULES: &[&str] = &[
@@ -87,19 +92,20 @@ impl WorkspaceIndex {
 }
 
 /// Very small `pata.toml` reader: only `[chanzo] kuingia = "..."` (entrypoint) and
-/// `[tegemezi]` path dependencies (`name = { path = "..." }`) — enough to seed resolution.
-/// Version/registry dependencies aren't understood here (see module doc); a manifest that only
-/// uses those still resolves fine, it just won't pull in anything beyond the entrypoint's own
-/// sibling files.
-fn read_entrypoint_and_path_deps(root: &Path) -> (PathBuf, HashMap<String, PathBuf>) {
+/// `[tegemezi]` entries (both `name = "1.2.3"` version strings and `name = { path = "..." }`
+/// path tables) — enough to seed resolution. Produces a `BTreeMap<String, pata_core::Dependency>`
+/// directly so the actual file-finding below can delegate to `pata_core::find_module_file`
+/// (covering vendored version deps and stdlib `.asi` stubs too, not just path deps as before the
+/// `pata-core` extraction).
+fn read_entrypoint_and_deps(root: &Path) -> (PathBuf, BTreeMap<String, Dependency>) {
     let default_entry = root.join("src").join("kuu.as");
     let manifest = root.join("pata.toml");
     let Ok(content) = std::fs::read_to_string(&manifest) else {
-        return (default_entry, HashMap::new());
+        return (default_entry, BTreeMap::new());
     };
 
     let mut entry = default_entry;
-    let mut deps = HashMap::new();
+    let mut deps: BTreeMap<String, Dependency> = BTreeMap::new();
     let mut section = String::new();
     for raw in content.lines() {
         let line = raw.trim();
@@ -118,37 +124,26 @@ fn read_entrypoint_and_path_deps(root: &Path) -> (PathBuf, HashMap<String, PathB
                 entry = root.join(value.trim_matches('"'));
             }
             "tegemezi" => {
-                // name = { path = "../other" } — only the path form is understood here.
                 if let Some(path_start) = value.find("path") {
+                    // name = { path = "../other" }
                     if let Some(quote_start) = value[path_start..].find('"') {
                         let after = &value[path_start + quote_start + 1..];
                         if let Some(quote_end) = after.find('"') {
                             let rel = &after[..quote_end];
-                            deps.insert(key.to_string(), root.join(rel));
+                            deps.insert(key.to_string(), Dependency::Path(root.join(rel)));
                         }
                     }
+                } else if value.starts_with('"') {
+                    // name = "1.2.3" (or "^1.2", etc.) — a version dependency, resolved by
+                    // pata_core::find_module_file against the vendored package cache.
+                    let version = value.trim_matches('"').to_string();
+                    deps.insert(key.to_string(), Dependency::Version(version));
                 }
             }
             _ => {}
         }
     }
     (entry, deps)
-}
-
-/// Find the file backing `leta <name>`: a sibling `.as` file next to the importing file, or a
-/// path dependency's own `src/<name>.as`.
-fn find_module_file(name: &str, entry_dir: &Path, path_deps: &HashMap<String, PathBuf>) -> Option<PathBuf> {
-    let sibling = entry_dir.join(format!("{name}.as"));
-    if sibling.is_file() {
-        return Some(sibling);
-    }
-    if let Some(dep_root) = path_deps.get(name) {
-        let candidate = dep_root.join("src").join(format!("{name}.as"));
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
 }
 
 /// Walk up from `file_path` (a source file, not necessarily a directory) looking for the
@@ -180,7 +175,7 @@ pub fn find_project_root(file_path: &Path) -> Option<PathBuf> {
 /// (transitively) `leta`s. Synchronous, real disk I/O — callers on the async LSP runtime must
 /// wrap this in `tokio::task::spawn_blocking` rather than calling it inline from a handler.
 pub fn resolve_workspace(root: &Path) -> WorkspaceIndex {
-    let (entry, path_deps) = read_entrypoint_and_path_deps(root);
+    let (entry, path_deps) = read_entrypoint_and_deps(root);
     let mut modules = HashMap::new();
     let mut reverse_deps: HashMap<String, HashSet<String>> = HashMap::new();
     let mut visited: HashSet<PathBuf> = HashSet::new();
@@ -196,7 +191,6 @@ pub fn resolve_workspace(root: &Path) -> WorkspaceIndex {
         let Ok(module) = parse_tokens(&tokens) else { continue };
 
         let name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-        let entry_dir = path.parent().unwrap_or(root).to_path_buf();
         for imp in &module.imports {
             let mod_name = match &imp.path {
                 ImportPath::Full(s) => s.as_str(),
@@ -212,7 +206,12 @@ pub fn resolve_workspace(root: &Path) -> WorkspaceIndex {
             // any module imported from more than one place.
             reverse_deps.entry(mod_name.to_string()).or_default().insert(name.clone());
             if !modules.contains_key(mod_name) {
-                if let Some(dep_path) = find_module_file(mod_name, &entry_dir, &path_deps) {
+                // Always resolved from the project root, matching pata_core::resolve_one's own
+                // (and therefore pata-cli's own) behavior exactly — not relative to whichever
+                // file happens to be doing the importing. Covers path deps, version deps
+                // resolved against the vendored `.asili/packages/<name>/` cache, and stdlib
+                // `.asi` interface stubs, none of which the old per-file-relative lookup saw.
+                if let Some((dep_path, _is_asi)) = pata_core::find_module_file(mod_name, root, &path_deps) {
                     queue.push(dep_path);
                 }
             }

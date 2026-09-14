@@ -5,8 +5,8 @@
 // structs/traits/impls from imported modules in addition to functions — both were once TODOs
 // here but are already implemented below.
 
-use crate::pipeline::interface_registry::{InterfaceRegistry, StdlibEnv};
-use crate::pipeline::project::Dependency;
+use crate::dependency::Dependency;
+use crate::interface_registry::{InterfaceRegistry, StdlibEnv};
 use asili_diagnostics::Diagnostic;
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, parse_value_type, FnContract, ImportPath, Module, ValueType};

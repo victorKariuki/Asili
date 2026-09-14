@@ -8,6 +8,8 @@ asili-diagnostics = { path = "../../core/diagnostics" }
 asili-evaluator = { path = "../../core/evaluator" }
 asili-lexer = { path = "../../core/lexer" }
 asili-parser = { path = "../../core/parser" }
+pata-core = { path = "../core" }
+pata-fmt = { path = "../fmt" }
 pata-lint = { path = "../lint" }
 tower-lsp = "0.20"
 tokio = { version = "1", features = ["full"] }

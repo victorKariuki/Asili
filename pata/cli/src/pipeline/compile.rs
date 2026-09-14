@@ -1,11 +1,11 @@
 use crate::commands::CliError;
-use crate::pipeline::interface_registry::InterfaceRegistry;
 use crate::pipeline::project::{load_project_config, read_lockfile, find_workspace_root, ProjectConfig, Dependency};
-use crate::pipeline::resolve::{
+use crate::pipeline::sharti::filter_module_for_target;
+use pata_core::InterfaceRegistry;
+use pata_core::{
     check_duplicate_imports, dependency_order, find_module_file, merge_for_semantic, resolve_all,
     ResolvedProgram,
 };
-use crate::pipeline::sharti::filter_module_for_target;
 use asili_diagnostics::Diagnostic;
 use asili_evaluator::{emit_asb, load_asb, execute_tests, validate_module, TestResult};
 use asili_lexer::tokenize;
