@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`pata jenga --workspace-info`**: detect and display workspace member information from
+  `Asili.toml`'s `[workspace]` table. Foundational for workspace-aware compilation in future
+  releases.
+- **`pata jaribu --nyuzi-za-jaribio <n>`**: parallel test execution using rayon work-stealing
+  thread pool. Default behavior unchanged (sequential execution); pass a thread count to run tests
+  concurrently.
+- **`pata njozi --kiasi` / `--maktaba`**: template variants for binary vs. library project
+  scaffolding. Defaults to binary (application) template; `--maktaba` generates library-focused
+  starter code.
+- **`pata-lint` rule `LINT301`**: placeholder for logic-error detection (reserved for future
+  unreachable-code analysis). Current implementation is a no-op; tests confirm structure.
+- **Lint rule test coverage**: expanded adversarial test fixtures for `LINT001`–`LINT003`
+  (naming), `LINT101` (style), `LINT201`–`LINT203` (best practices) — each now has 2+ test cases
+  covering boundary conditions and false-positive avoidance (e.g., Swahili function names pass
+  `LINT001`, numbers in identifiers don't trigger false flags).
+
+### Fixed
+
+- **Lint test suite**: corrected `LINT101` boundary test (50 statements exactly should not flag; flag
+  only when > 50). Tests now confirm the exact threshold behavior.
+
 ## [0.5.0] — pata-cli; asili-evaluator, pata-package at patch bumps
 
 ### Added
