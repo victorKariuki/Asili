@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`pata/cli` integration test building every `examples/` project with zero diagnostics**
+  (`pipeline::compile::tests::every_example_project_builds_with_zero_diagnostics`) — the real gap
+  `docs/design/pata-production-readiness.md` item 5 named: `pata`'s own test suite had no test
+  that builds every example, so a regression in the resolver/semantic-checker/formatter layer
+  `pata` depends on could ship silently, caught only by a human running `pata jenga` by hand.
+  Discovers every example with a `pata.toml` at its own root, plus `examples/cross_package`'s
+  nested `app/` project root as the one special case. Runs as a unit test inside `pipeline::
+  compile.rs` itself rather than a separate `pata/cli/tests/*.rs` integration test — `pata-cli`
+  is a binary-only crate with no `[lib]` target, so an external integration test has no way to
+  call `compile_project` at all. All ~18 real example projects currently build clean.
 - **`pata jenga --muda`**: prints phase-latency timings (`kuchanganua` = compile,
   `kutoa` = emit) after a successful build, via `pata_cli::pipeline::performance::
   PerformanceMetrics`/`ScopedTimer` — real code with real unit tests that previously had zero

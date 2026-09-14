@@ -130,20 +130,26 @@ See `pata/cli/src/commands/thibitisha.rs` (`enforce_trait_completeness`/`enforce
 `pata/cli/src/pipeline/interface_registry.rs` (`TraitStub`/`parse_asi_content`'s `sifa` handling),
 and `docs/howto/04-validate-docs.md` for the user-facing writeup.
 
-### 5. Semantic-analyzer test coverage under the surface pata drives
+### 5. Semantic-analyzer test coverage under the surface pata drives — DONE (the pata-side fix)
 
-Technically a `core/` item, but it's on the floor here because it's the one gap that has already
-caused **real, user-facing toolchain bugs** — three of the 22 documented bugs in
-[implementation-status.md](implementation-status.md) were exactly the class of thing `pata jenga`/
-`pata thibitisha` silently shipped wrong (a struct field's type annotation discarded; a struct/pair
-destructuring pattern rejected at compile time; module constants unresolvable). `pata`'s own test
-suite can't catch these because `semantic_check_with_env_and_modules` — the actual entry point
-`pata-cli` calls — has zero direct test callers.
+**Update:** `pata_cli::pipeline::compile::tests::every_example_project_builds_with_zero_diagnostics`
+now builds every real project under `examples/` (discovering `examples/cross_package`'s nested
+`app/` root as the one special case) and asserts `compile_project` succeeds for each — a
+regression in the resolver/semantic-checker/formatter layer `pata` depends on is now caught by
+`pata`'s own test suite (and therefore CI, item 2) rather than discovered by a user running `pata
+jenga` by hand. Lives as a unit test inside `pipeline::compile.rs` itself, not a separate
+`pata/cli/tests/*.rs` integration test — `pata-cli` has no `[lib]` target, so an external
+integration test can't call `compile_project` at all.
 
-**Floor fix:** this doesn't mean fixing all ~50 untested `SEM0xx` codes (that's `core/`'s job and
-out of this doc's scope) — it means `pata/cli` gains integration tests that build every example
-under `examples/` and assert zero diagnostics, so a regression in the layer pata depends on is
-caught by pata's own CI (item 2), not discovered by a user.
+**Original gap:** Technically a `core/` item, but it was on the floor here because it's the one
+gap that had already caused **real, user-facing toolchain bugs** — three of the 22 documented bugs
+in [implementation-status.md](implementation-status.md) were exactly the class of thing `pata
+jenga`/`pata thibitisha` silently shipped wrong (a struct field's type annotation discarded; a
+struct/pair destructuring pattern rejected at compile time; module constants unresolvable).
+`pata`'s own test suite couldn't catch these because `semantic_check_with_env_and_modules` — the
+actual entry point `pata-cli` calls — had zero direct test callers. This fix doesn't mean fixing
+all ~50 untested `SEM0xx` codes (that's still `core/`'s job and out of this doc's scope) — only
+the `pata`-side integration-test gap, which is what's actually done now.
 
 ---
 

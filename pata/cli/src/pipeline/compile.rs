@@ -420,7 +420,7 @@ pub fn run_project_tests_parallel(
     num_threads: Option<usize>,
     timeout: Option<std::time::Duration>,
 ) -> Result<Vec<TestResult>, CliError> {
-    let mut modules_and_tests = discover_project_tests(root, filter)?;
+    let modules_and_tests = discover_project_tests(root, filter)?;
 
     if modules_and_tests.is_empty() {
         return Ok(Vec::new());
@@ -677,5 +677,80 @@ mod tests {
         assert!(loaded.functions.iter().any(|f| f.name == "kuu"));
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Builds every real example project under this repo's `examples/` directory and asserts
+    /// zero diagnostics — `compile_project` returning `Ok` means lex/parse/resolve/semantic-check
+    /// all succeeded cleanly, since any failure there is surfaced as an `Err(CliError)` (see
+    /// `diag_err`). This is the actual `pata/cli` integration-test gap
+    /// `docs/design/pata-production-readiness.md` item 5 named: `pata`'s own test suite had no
+    /// test that builds every example, so a regression in the resolver/semantic-checker/
+    /// formatter layer `pata` depends on could ship silently, caught only by a human running
+    /// `pata jenga` by hand across the example set. Runs in this crate's own suite (not a
+    /// separate `pata/cli/tests/*.rs` integration test) because `pata-cli` is a binary-only
+    /// crate with no `[lib]` target — an external integration test has no way to call
+    /// `compile_project` at all.
+    ///
+    /// Every example directory containing a `pata.toml` at its own root is built directly;
+    /// `examples/cross_package` is the one exception (its real project root is the nested
+    /// `app/` subdirectory, with `mathutil/` as a sibling path dependency — see its own
+    /// `pata.toml`), discovered by walking one level deeper when no `pata.toml` exists at the
+    /// example's own top level.
+    #[test]
+    fn every_example_project_builds_with_zero_diagnostics() {
+        let examples_root = examples_dir();
+        let mut project_roots: Vec<PathBuf> = Vec::new();
+
+        for entry in fs::read_dir(&examples_root).expect("read examples/ dir") {
+            let entry = entry.expect("dir entry");
+            let path = entry.path();
+            if !path.is_dir() {
+                continue; // skip loose files like test_syntax.as
+            }
+            if path.join("pata.toml").is_file() {
+                project_roots.push(path);
+                continue;
+            }
+            // No pata.toml at this level -- check one level deeper (cross_package/app/).
+            let Ok(sub_entries) = fs::read_dir(&path) else { continue };
+            for sub_entry in sub_entries.flatten() {
+                let sub_path = sub_entry.path();
+                if sub_path.is_dir() && sub_path.join("pata.toml").is_file() {
+                    project_roots.push(sub_path);
+                }
+            }
+        }
+
+        assert!(
+            project_roots.len() >= 15,
+            "expected at least 15 example projects to be discovered under {}, found {} -- the \
+             discovery logic itself may be broken, not the examples",
+            examples_root.display(),
+            project_roots.len()
+        );
+
+        let mut failures = Vec::new();
+        for root in &project_roots {
+            if let Err(e) = compile_project(root, None) {
+                failures.push(format!("{}: {}", root.display(), e.message));
+            }
+        }
+
+        assert!(
+            failures.is_empty(),
+            "the following example project(s) failed to build cleanly:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    /// Locate this repo's `examples/` directory from `CARGO_MANIFEST_DIR` (which points at
+    /// `pata/cli/` when this test is compiled) — two levels up, then into `examples/`.
+    fn examples_dir() -> PathBuf {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        manifest_dir
+            .parent() // pata/
+            .and_then(|p| p.parent()) // repo root
+            .expect("pata/cli should be two levels under the repo root")
+            .join("examples")
     }
 }
