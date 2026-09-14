@@ -136,7 +136,7 @@ fn render_markdown_to_terminal(parser: Parser) -> String {
         match event {
             Event::Start(tag) => {
                 match tag {
-                    pulldown_cmark::Tag::Heading(level, _, _) => {
+                    pulldown_cmark::Tag::Heading { level, .. } => {
                         output.push_str("\x1b[1m"); // bold
                         if matches!(level, pulldown_cmark::HeadingLevel::H1 | pulldown_cmark::HeadingLevel::H2) {
                             output.push_str("\x1b[36m"); // cyan
@@ -159,21 +159,21 @@ fn render_markdown_to_terminal(parser: Parser) -> String {
             }
             Event::End(tag) => {
                 match tag {
-                    pulldown_cmark::Tag::Heading(_, _, _) => {
+                    pulldown_cmark::TagEnd::Heading(_) => {
                         output.push_str("\x1b[0m\n"); // reset + newline
                     }
-                    pulldown_cmark::Tag::CodeBlock(_) => {
+                    pulldown_cmark::TagEnd::CodeBlock => {
                         output.push_str("\x1b[0m\n"); // reset + newline
                     }
-                    pulldown_cmark::Tag::Paragraph => {
+                    pulldown_cmark::TagEnd::Paragraph => {
                         if !in_table {
                             output.push('\n');
                         }
                     }
-                    pulldown_cmark::Tag::Table(_) => {
+                    pulldown_cmark::TagEnd::Table => {
                         in_table = false;
                     }
-                    pulldown_cmark::Tag::Emphasis | pulldown_cmark::Tag::Strong => {
+                    pulldown_cmark::TagEnd::Emphasis | pulldown_cmark::TagEnd::Strong => {
                         output.push_str("\x1b[0m"); // reset
                     }
                     _ => {}

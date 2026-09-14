@@ -11,5 +11,5 @@ asili-evaluator = { path = "../../core/evaluator" }
 pata-package = { path = "../package" }
 pata-lsp = { path = "../lsp" }
 sha2 = "0.11.0"
-pulldown-cmark = "0.9"
+pulldown-cmark = "0.13"
 anyhow = "1.0"

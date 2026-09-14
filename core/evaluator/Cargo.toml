@@ -21,7 +21,7 @@ parking_lot = "0.12"
 lock_api = "0.4"
 
 [target.'cfg(unix)'.dependencies]
-signal-hook = "0.3"
+signal-hook = "0.4"
 
 # TLS is a native-listener-only capability (mkondo_sikiliza/mkondo_tumikia are already fully
 # gated out on wasm32 — no raw sockets in a browser), so rustls (and its crypto backend, which
