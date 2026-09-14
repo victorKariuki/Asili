@@ -2,11 +2,16 @@
   "name": "asili",
   "displayName": "Asili",
   "description": "Asili language support: syntax highlighting and LSP (Mwalimu)",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "asili",
+  "icon": "assets/Asili_Logo.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/victorKariuki/Asili.git",
+    "directory": "extensions/vscode"
+  },
   "engines": { "vscode": "^1.80.0" },
   "categories": ["Programming Languages"],
-  "activationEvents": ["onLanguage:asili"],
   "main": "./out/extension.js",
   "contributes": {
     "languages": [
@@ -15,6 +20,12 @@
         "aliases": ["Asili"],
         "extensions": [".as", ".asi"],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "pata-manifest",
+        "aliases": ["Pata Manifest"],
+        "filenames": ["pata.toml", "pata.lock"],
+        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
@@ -22,6 +33,11 @@
         "language": "asili",
         "scopeName": "source.asili",
         "path": "./syntaxes/asili.tmLanguage.json"
+      },
+      {
+        "language": "pata-manifest",
+        "scopeName": "source.pata-manifest",
+        "path": "./syntaxes/pata-manifest.tmLanguage.json"
       }
     ],
     "snippets": [
@@ -42,9 +58,20 @@
           "type": "array",
           "default": ["mwalimu"],
           "description": "Arguments for LSP (e.g. [\"mwalimu\"] when using pata)"
+        },
+        "asili.cliPath": {
+          "type": "string",
+          "default": "pata",
+          "description": "Path to the pata CLI binary, used by \"Run Test\" code lenses. Separate from asili.serverPath since that may point at a bundled pata-lsp with no sibling pata binary."
         }
       }
-    }
+    },
+    "commands": [
+      {
+        "command": "asili.runTest",
+        "title": "Asili: Run Test"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

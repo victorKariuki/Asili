@@ -1,0 +1,10 @@
+[jumla]
+jina = "app"
+toleo = "0.1.0"
+asili = "1.1"
+
+[chanzo]
+kuingia = "src/kuu.as"
+
+[tegemezi]
+mathutil = { path = "../mathutil" }

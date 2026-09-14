@@ -33,11 +33,17 @@ Or use the **Asili VS Code extension** from the repo: open [extensions/vscode/](
 
 ## Features
 
-- **Diagnostics** — Lex, parse, and semantic errors are published as you type. Messages are Swahili-centric and include error codes.
-- **Hover** — Hover over identifiers and keywords for short documentation (e.g. keyword name, function name).
-
-Goto-definition and completion may be added in a later phase.
+- **Diagnostics** — Lex, parse, semantic, and lint errors published as you type with Swahili error codes.
+- **Hover** — Hover over identifiers for type signatures; hover keywords for documentation.
+- **Semantic tokens** — Token-type classifications (keyword, type, function, variable, parameter, property) for rich editor highlighting.
+- **Document formatting** — Format the active `.as` file (e.g. Shift+Alt+F in VS Code).
+- **Completion** — Keyword list, built-in types, built-in functions, and all module-level declarations (functions, structs, traits, constants).
+- **Goto definition** — Jump to the declaration of any function, struct, trait, enum, or constant in the file.
+- **Find references** — List all usages of a symbol across the file (with or without the declaration site).
+- **Document symbols** — File outline showing all top-level declarations with their kinds and fields (visible in VS Code's breadcrumb and Outline panel).
+- **Workspace symbols** — Search symbols by name prefix across all open documents.
+- **Rename** — Rename all occurrences of a symbol in the open document.
 
 ## Spec reference
 
-See [spec/06-tooling-and-ecosystem.md](../spec/06-tooling-and-ecosystem.md) (Mwalimu section) and [pata/lsp/README.md](../../pata/lsp/README.md).
+See [spec/06-tooling-and-ecosystem.md](spec/06-tooling-and-ecosystem.md) (Mwalimu section) and [pata/lsp/README.md](../../pata/lsp/README.md).

@@ -7,7 +7,7 @@ Inputs:
 - optional target directory
 
 Success:
-- creates `pata.toml`, `src/kuu.as`, `.gitignore`, `target/.gitkeep`
+- creates `pata.toml`, `src/kuu.as`, `.gitignore`, `kilele/.gitkeep`
 
 Failures:
 - destination already exists and is non-empty

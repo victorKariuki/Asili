@@ -1,6 +1,6 @@
 [package]
 name = "asili-wasm"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [lib]
@@ -10,3 +10,13 @@ crate-type = ["cdylib", "rlib"]
 asili-lexer = { path = "../../core/lexer" }
 asili-parser = { path = "../../core/parser" }
 asili-evaluator = { path = "../../core/evaluator" }
+wasm-bindgen = { version = "0.2", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+
+[features]
+# Browser target: exposes #[wasm_bindgen] `run`/`runBundle` entry points and routes
+# asili-evaluator's I/O builtins to console.log/console.error.
+wasm-browser = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen", "asili-evaluator/wasm-browser"]
+# WASI target (wasm32-wasip1): asili-evaluator's I/O builtins use std's real io/fs (WASI-backed),
+# no extra dependency needed.
+wasm-wasi = ["asili-evaluator/wasm-wasi"]

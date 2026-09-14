@@ -55,8 +55,8 @@ fn create_scaffold(project_name: &str, destination: &Path) -> CliResult {
 
     fs::create_dir_all(destination.join("src"))
         .map_err(|err| CliError::new(format!("imeshindwa kuunda src/: {err}"), 1))?;
-    fs::create_dir_all(destination.join("target"))
-        .map_err(|err| CliError::new(format!("imeshindwa kuunda target/: {err}"), 1))?;
+    fs::create_dir_all(destination.join("kilele"))
+        .map_err(|err| CliError::new(format!("imeshindwa kuunda kilele/: {err}"), 1))?;
 
     write_file(
         &destination.join("pata.toml"),
@@ -70,9 +70,9 @@ fn create_scaffold(project_name: &str, destination: &Path) -> CliResult {
     )?;
     write_file(
         &destination.join(".gitignore"),
-        "target/*\n!target/.gitkeep\n\n*.asb\n*.asm\n",
+        "kilele/*\n!kilele/.gitkeep\n\n*.asb\n*.asm\n",
     )?;
-    write_file(&destination.join("target/.gitkeep"), "")?;
+    write_file(&destination.join("kilele/.gitkeep"), "")?;
 
     Ok(())
 }
@@ -139,7 +139,7 @@ mod tests {
         assert!(project_path.join("pata.toml").exists());
         assert!(project_path.join("src/kuu.as").exists());
         assert!(project_path.join(".gitignore").exists());
-        assert!(project_path.join("target/.gitkeep").exists());
+        assert!(project_path.join("kilele/.gitkeep").exists());
 
         let _ = fs::remove_dir_all(temp);
     }

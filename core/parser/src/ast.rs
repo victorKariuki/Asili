@@ -5,10 +5,40 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Module {
     pub imports: Vec<Import>,
+    pub constants: Vec<Constant>,
+    pub enums: Vec<EnumDecl>,
     pub functions: Vec<Function>,
     pub structs: Vec<StructDecl>,
     pub traits: Vec<TraitDecl>,
     pub impls: Vec<ImplDecl>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Constant {
+    pub name: String,
+    pub ty: TypeExpr,
+    pub value: Expr,
+    pub line: usize,
+    pub column: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EnumDecl {
+    pub name: String,
+    pub generics: Vec<String>,
+    pub variants: Vec<EnumVariant>,
+    pub line: usize,
+    pub column: usize,
+    pub is_public: bool,
+    pub attrs: Vec<Attribute>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EnumVariant {
+    pub name: String,
+    pub data: Option<TypeExpr>,
+    pub line: usize,
+    pub column: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -37,6 +67,8 @@ pub struct StructDecl {
     /// Field names and optional types. Order is declaration order.
     pub fields: Vec<(String, Option<TypeExpr>)>,
     pub line: usize,
+    // column of `name` — see the Expr::Ident NOTE below; same reasoning for LSP semantic tokens.
+    pub column: usize,
     pub attrs: Vec<Attribute>,
     pub is_public: bool,
 }
@@ -44,9 +76,24 @@ pub struct StructDecl {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TraitDecl {
     pub name: String,
+    /// Required method signatures (no bodies) — checked for completeness against every
+    /// `ImplDecl` naming this trait. Empty for a trait declared with no body/braces.
+    pub methods: Vec<TraitMethodSig>,
     pub line: usize,
+    pub column: usize,
     pub attrs: Vec<Attribute>,
     pub is_public: bool,
+}
+
+/// One required method signature inside a `sifa` body — no body, just the contract an `impl`
+/// must satisfy. `Self` in `params`/`return_type` refers to the implementing type, resolved at
+/// completeness-check time, not parse time (the trait doesn't know its implementers).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TraitMethodSig {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub return_type: TypeExpr,
+    pub line: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -68,6 +115,7 @@ pub struct Function {
     pub is_test: bool,
     pub is_public: bool,
     pub line: usize,
+    pub column: usize,
     pub attrs: Vec<Attribute>,
 }
 
@@ -76,6 +124,7 @@ pub struct Param {
     pub name: String,
     pub ty: TypeExpr,
     pub line: usize,
+    pub column: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -96,12 +145,17 @@ pub enum Stmt {
         ty: Option<TypeExpr>,
         value: Expr,
         line: usize,
+        // `column` of `name` — added for LSP semantic-token highlighting (pata/lsp/src/semantic.rs)
+        // so declarations/usages can be colored at their real position, not just column 1.
+        column: usize,
     },
     Assign {
         name: String,
         op: AssignOp,
         value: Expr,
         line: usize,
+        // see `column` note on `Let` above.
+        column: usize,
     },
     If {
         cond: Expr,
@@ -119,6 +173,7 @@ pub enum Stmt {
     For {
         label: Option<String>,
         var: String,
+        var_column: usize,
         mode: ForMode,
         body: Block,
         line: usize,
@@ -176,10 +231,27 @@ pub struct MatchArm {
 pub enum Pattern {
     Wildcard,
     Literal(Expr),
-    Ident(String),
+    // NOTE(syntax-highlighting): mirrors the Expr::Ident change above — carries its own
+    // position so a match-arm binding (`n` in `Fulani(n) => ...`) can be tracked as a real
+    // scoped local by pata/lsp/src/semantic.rs, not just left uncolored.
+    Ident {
+        name: String,
+        line: usize,
+        column: usize,
+    },
     Struct {
         struct_name: String,
+        line: usize,
+        column: usize,
         fields: Vec<(String, Pattern)>,
+    },
+    Enum {
+        enum_name: String,
+        variant_name: String,
+        data: Option<Box<Pattern>>,
+        // position of `variant_name` specifically — used to emit an enumMember token.
+        variant_line: usize,
+        variant_column: usize,
     },
     Jozi(Box<Pattern>, Box<Pattern>),
 }
@@ -190,7 +262,15 @@ pub enum Expr {
     String(String),
     Bool(bool),
     Char(char),
-    Ident(String),
+    // NOTE(syntax-highlighting): Ident used to be a bare Ident(String). It now carries its own
+    // line/column so the LSP can emit a semantic-highlight token at every *usage* of a name, not
+    // just its declaration site (pata/lsp/src/semantic.rs). If you're touching Expr::Ident call
+    // sites elsewhere (attrs.rs extraction, etc.), match with `Expr::Ident { name, .. }`.
+    Ident {
+        name: String,
+        line: usize,
+        column: usize,
+    },
     Hamna,
     Group(Box<Expr>),
     Unary {
@@ -220,15 +300,40 @@ pub enum Expr {
         args: Vec<Expr>,
         line: usize,
     },
+    List {
+        elements: Vec<Expr>,
+        line: usize,
+    },
+    Map {
+        entries: Vec<(Expr, Expr)>,
+        line: usize,
+    },
     StructLiteral {
         struct_name: String,
         fields: Vec<(String, Expr)>,
+        // Parallel to `fields` (index-aligned) — the (line, column) of each field *name* at
+        // this construction site, e.g. `x` in `Point { x: 1, y: 2 }`. Kept separate from
+        // `fields` itself rather than widening its tuple, since `fields` is destructured by
+        // position in several other places (evaluator, semantic analyzer) that have no need
+        // for a position and would otherwise all need updating for no benefit to them.
+        field_positions: Vec<(usize, usize)>,
         line: usize,
+    },
+    EnumConstruct {
+        enum_name: String,
+        variant_name: String,
+        data: Option<Box<Expr>>,
+        line: usize,
+        // column of `variant_name` (line is already the variant name's own line).
+        column: usize,
     },
     FieldAccess {
         receiver: Box<Expr>,
         field: String,
         line: usize,
+        // line/column of `field` itself (not the receiver) — for LSP semantic "property" tokens.
+        field_line: usize,
+        field_column: usize,
     },
     Index {
         base: Box<Expr>,
@@ -274,6 +379,48 @@ pub enum BinaryOp {
     Or,
 }
 
+use std::fmt;
+
+impl fmt::Display for ValueType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ValueType::Namba => write!(f, "Namba"),
+            ValueType::Neno => write!(f, "Neno"),
+            ValueType::Ukweli => write!(f, "Ukweli"),
+            ValueType::Tupu => write!(f, "Tupu"),
+            ValueType::Hamna => write!(f, "Hamna"),
+            ValueType::Herufi => write!(f, "Herufi"),
+            ValueType::NambaKuu => write!(f, "Namba_Kuu"),
+            ValueType::NambaSahihi => write!(f, "Namba_Sahihi"),
+            ValueType::Chaguo(t) => write!(f, "Chaguo<{}>", t),
+            ValueType::Tokeo(t, e) => write!(f, "Tokeo<{}, {}>", t, e),
+            ValueType::Rejeo(t, m) => write!(f, "Rejeo<{}, {}>", t, m),
+            ValueType::Orodha(t) => write!(f, "Orodha<{}>", t),
+            ValueType::Kamusi(k, v) => write!(f, "Kamusi<{}, {}>", k, v),
+            ValueType::Mfululizo(t) => write!(f, "Mfululizo<{}>", t),
+            ValueType::Jozi(a, b) => write!(f, "Jozi<{}, {}>", a, b),
+            ValueType::Seti(t) => write!(f, "Seti<{}>", t),
+            ValueType::Struct(name) => write!(f, "{}", name),
+            ValueType::Wakati => write!(f, "Wakati"),
+            ValueType::Anuani => write!(f, "Anuani"),
+            ValueType::KashaGC(t) => write!(f, "Kasha_GC<{}>", t),
+            ValueType::KashaGCDhaifu(t) => write!(f, "Kasha_GC_Dhaifu<{}>", t),
+            ValueType::Faili => write!(f, "Faili"),
+            ValueType::Mkondo => write!(f, "Mkondo"),
+            ValueType::MkondoSikilizaji => write!(f, "MkondoSikilizaji"),
+            ValueType::TlsUsanidi => write!(f, "TlsUsanidi"),
+            ValueType::Kumbukumbu(t) => write!(f, "Kumbukumbu<{}>", t),
+            ValueType::NjiaTx(t) => write!(f, "NjiaTx<{}>", t),
+            ValueType::NjiaRx(t) => write!(f, "NjiaRx<{}>", t),
+            ValueType::NjiaTxBounded(t) => write!(f, "NjiaTxBounded<{}>", t),
+            ValueType::NjiaRxBounded(t) => write!(f, "NjiaRxBounded<{}>", t),
+            ValueType::Fungo(t) => write!(f, "Fungo<{}>", t),
+            ValueType::TypeVar(name) => write!(f, "{}", name),
+            ValueType::Unknown => write!(f, "Unknown"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ValueType {
     Namba,
@@ -298,6 +445,36 @@ pub enum ValueType {
     Wakati,
     /// Raw memory address; used by syscall and kiungo (FFI).
     Anuani,
+    /// Reference-counted shared wrapper (opt-in `leta kasha_gc`); see spec's managed-memory module.
+    KashaGC(Box<ValueType>),
+    /// Weak reference to a Kasha_GC<T> (kasha_gc_dhaifu, downgrade); the cycle-breaking escape
+    /// hatch, since Kasha_GC<T> itself has no cycle collector.
+    KashaGCDhaifu(Box<ValueType>),
+    /// File handle (leta faili); owns an OS file descriptor, closed on drop.
+    Faili,
+    /// Network stream/socket handle (leta mfumo); owns an OS socket, closed on drop.
+    Mkondo,
+    /// TCP listening socket (mkondo_sikiliza, leta mfumo); shared across mkondo_tumikia's
+    /// worker-pool threads.
+    MkondoSikilizaji,
+    /// Loaded TLS server certificate/key pair (tls_sanidi, leta mfumo); passed to
+    /// mkondo_tumikia's optional TLS parameter.
+    TlsUsanidi,
+    /// Heap-allocated box owning a value of type T; no OS resource, plain owning indirection.
+    Kumbukumbu(Box<ValueType>),
+    /// Channel sender half (njia, leta sambamba); crosses the tenda thread boundary.
+    NjiaTx(Box<ValueType>),
+    /// Channel receiver half (njia, leta sambamba).
+    NjiaRx(Box<ValueType>),
+    /// Bounded channel sender half (njia_na_kikomo, leta sambamba); `.tuma()` blocks once the
+    /// bound is full instead of the unbounded NjiaTx's unlimited growth.
+    NjiaTxBounded(Box<ValueType>),
+    /// Bounded channel receiver half (njia_na_kikomo, leta sambamba).
+    NjiaRxBounded(Box<ValueType>),
+    /// Mutex (fungo, leta sambamba); protects a shared value across tenda threads.
+    Fungo(Box<ValueType>),
+    /// Type variable (T, E, U, etc. for generic types).
+    TypeVar(String),
     Unknown,
 }
 

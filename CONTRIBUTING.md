@@ -18,12 +18,12 @@ Contributions are welcome. This document outlines how to build, test, and submit
 - **core/** — Language core: lexer, parser, semantic analyzer, evaluator. Add or extend built-ins under `core/evaluator/src/builtins/`. Stdlib export contracts live in `pata/cli/src/pipeline/builtin_modules.rs`.
 - **pata/** — CLI (`pata-cli`), runner, LSP. Entrypoint is `pata/cli/src/main.rs`; commands are in `commands/`, pipeline in `pipeline/`.
 - **lib/std/** — `.asi` interface stubs for the standard library; keep these in sync with built-in modules and `builtin_modules.rs`.
-- **spec/** — Formal language specification. Spec changes should be reflected in [spec/CHANGELOG.md](spec/CHANGELOG.md).
+- **docs/spec/** — Formal language specification. Spec changes should be reflected in [docs/spec/CHANGELOG.md](docs/spec/CHANGELOG.md).
 
 ## Code and style
 
 - **Rust:** Format with `cargo fmt`. Follow existing patterns in each crate (e.g. error handling, naming).
-- **Asili source:** Use Swahili keywords and the style shown in `examples/` and `spec/`.
+- **Asili source:** Use Swahili keywords and the style shown in `examples/` and `docs/spec/`.
 - **Imports:** Keep imports at the top of files; avoid inline imports (see workspace rules if configured).
 
 ## Testing
@@ -59,7 +59,7 @@ This project uses [Git-Flow](https://github.com/nvie/gitflow).
 
 ## Specification and design
 
-- Language and execution semantics are defined in [SPECIFICATION.md](SPECIFICATION.md) and the [spec/](spec/) directory. Proposed language or spec changes are best discussed (e.g. in an issue or PR) before large edits.
+- Language and execution semantics are defined in [docs/SPECIFICATION.md](docs/SPECIFICATION.md) and the [docs/spec/](docs/spec/) directory. Proposed language or spec changes are best discussed (e.g. in an issue or PR) before large edits.
 - Design notes and decisions live under [docs/design/](docs/design/). Significant tooling or architecture changes may warrant an update there or in the spec changelog.
 
 ## Questions

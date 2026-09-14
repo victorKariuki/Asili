@@ -60,4 +60,4 @@ To use `pata` from anywhere:
 2. **Script:** Run `./sh/install.sh` to build and install `pata` and `pata-lsp` into `~/.local/bin`. Or pass a directory: `./sh/install.sh /path/to/bin`.
 3. **Manual:** Build with `cargo build --release`, then copy `target/release/pata` and `target/release/pata-lsp` to a directory on your `PATH`.
 
-See [spec/06-tooling-and-ecosystem.md](../spec/06-tooling-and-ecosystem.md) for the full Pata command reference.
+See [spec/06-tooling-and-ecosystem.md](spec/06-tooling-and-ecosystem.md) for the full Pata command reference.
