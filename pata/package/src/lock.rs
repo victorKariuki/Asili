@@ -118,7 +118,11 @@ impl LockFile {
             hasher.update(&pkg.checksum);
         }
 
-        format!("{:x}", hasher.finalize())
+        hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
     }
 }
 

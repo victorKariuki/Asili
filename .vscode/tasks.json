@@ -35,20 +35,20 @@
       "dependsOn": []
     },
     {
-      "label": "Install pata-lsp → extension bin/",
+      "label": "Package + install VS Code extension",
       "type": "shell",
-      "command": "cargo build --release -p pata-lsp && cp target/release/pata-lsp extensions/vscode/bin/pata-lsp",
+      "command": "make install-ext",
       "group": "build",
       "presentation": { "reveal": "always", "panel": "shared" },
-      "problemMatcher": "$rustc"
+      "problemMatcher": ["$rustc", "$tsc"]
     },
     {
-      "label": "Install all (pata + pata-lsp)",
+      "label": "Install all (pata + VS Code extension)",
       "type": "shell",
-      "command": "cargo build --release && install -m 755 target/release/pata-cli ~/.local/bin/pata && cp target/release/pata-lsp extensions/vscode/bin/pata-lsp",
+      "command": "cargo build --release && install -m 755 target/release/pata-cli ~/.local/bin/pata && make install-ext",
       "group": "build",
       "presentation": { "reveal": "always", "panel": "shared" },
-      "problemMatcher": "$rustc"
+      "problemMatcher": ["$rustc", "$tsc"]
     },
     {
       "label": "Build VSCode extension",
@@ -62,7 +62,7 @@
     {
       "label": "Build + install all",
       "dependsOrder": "sequence",
-      "dependsOn": ["Install all (pata + pata-lsp)", "Build VSCode extension"],
+      "dependsOn": ["Install all (pata + VS Code extension)"],
       "group": { "kind": "build", "isDefault": true },
       "presentation": { "reveal": "always", "panel": "shared" },
       "problemMatcher": []
