@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use rand::Rng;
+use rand::RngExt;
 
 use crate::value::{self, Value};
 use super::BuiltinFn;
@@ -299,12 +299,12 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
                 format!("nasibu: haihitaji hoja, umeweka {}", args.len()),
             ));
         }
-        let r: f64 = rand::thread_rng().gen();
+        let r: f64 = rand::rng().random();
         Ok(Value::Namba(r))
     }));
     m.insert("nasibu_chini".to_string(), Box::new(|args: &[Value]| {
         let (min, max) = value::args_f64_2(args, "nasibu_chini")?;
-        let r: f64 = rand::thread_rng().gen();
+        let r: f64 = rand::rng().random();
         Ok(Value::Namba(min + r * (max - min)))
     }));
 }
