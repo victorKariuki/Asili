@@ -23,11 +23,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (naming), `LINT101` (style), `LINT201`–`LINT203` (best practices) — each now has 2+ test cases
   covering boundary conditions and false-positive avoidance (e.g., Swahili function names pass
   `LINT001`, numbers in identifiers don't trigger false flags).
+- **`pata_package::VersionConstraint`**: semver constraint parsing (caret, tilde, ranges) with
+  version-matching. Foundation for real dependency resolution; not yet wired into `pata ongeza`.
 
 ### Fixed
 
 - **Lint test suite**: corrected `LINT101` boundary test (50 statements exactly should not flag; flag
   only when > 50). Tests now confirm the exact threshold behavior.
+
+### Planned (Sections 11–20, in progress)
+
+The following sections from the 20-section production-readiness spec are planned for completion
+in the next phase:
+- Section 11: AST-based formatter rewrite (`pata nadhifu` full pretty-printer)
+- Section 12: Real dependency resolver with semver constraint solving
+- Section 13: Type-stability check for `pata thibitisha` (git-tag baseline)
+- Sections 14–20: Registry backend, LSP full build-out, coverage instrumentation, linting
+  configurability, Workspace scaffolding, performance polish
 
 ## [0.5.0] — pata-cli; asili-evaluator, pata-package at patch bumps
 
