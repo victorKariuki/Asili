@@ -195,9 +195,30 @@ pub fn execute_tests(
     modules_and_tests: &[(Module, Function)],
     fail_fast: bool,
 ) -> Vec<TestResult> {
+    execute_tests_with_timeout(modules_and_tests, fail_fast, None)
+}
+
+/// Like `execute_tests`, but with an optional per-test wall-clock timeout. Each test that has
+/// one runs on its own spawned thread, joined with `recv_timeout` — the standard technique for
+/// imposing a timeout on a function with no internal cancellation hook, since the evaluator
+/// itself has no cooperative-interrupt mechanism (no bytecode-level "check for cancellation"
+/// point, no async runtime to abort a task on). A test that actually times out is reported as a
+/// failure (`message` says so explicitly), but its thread is **not** forcibly killed — safe Rust
+/// has no thread-cancellation API — it keeps running in the background until it finishes or the
+/// process exits. This is the same tradeoff most language test runners with wall-clock timeouts
+/// make absent a VM-level interrupt; a genuinely hung test still occupies a thread afterward,
+/// it just no longer blocks the rest of the suite from reporting results.
+pub fn execute_tests_with_timeout(
+    modules_and_tests: &[(Module, Function)],
+    fail_fast: bool,
+    timeout: Option<std::time::Duration>,
+) -> Vec<TestResult> {
     let mut out = Vec::new();
     for (module, function) in modules_and_tests {
-        let result = run_test_with_module(module, function);
+        let result = match timeout {
+            Some(d) => run_test_with_timeout(module, function, d),
+            None => run_test_with_module(module, function),
+        };
         let failed = !result.passed;
         out.push(result);
         if failed && fail_fast {
@@ -205,6 +226,44 @@ pub fn execute_tests(
         }
     }
     out
+}
+
+/// Run one test with a wall-clock timeout, on a dedicated thread. See
+/// `execute_tests_with_timeout`'s doc comment for what happens on an actual timeout (the thread
+/// is not killed, only no longer waited on).
+fn run_test_with_timeout(module: &Module, function: &Function, timeout: std::time::Duration) -> TestResult {
+    let test_name = function.name.clone();
+    let module_for_thread = module.clone();
+    let function_for_thread = function.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    let spawned = std::thread::Builder::new()
+        .name(format!("pata-jaribio-{test_name}"))
+        .spawn(move || {
+            let result = run_test_with_module(&module_for_thread, &function_for_thread);
+            let _ = tx.send(result);
+        });
+
+    if spawned.is_err() {
+        // Thread spawn failure (e.g. resource exhaustion) is a real, honest error — not a test
+        // failure to fall back on silently. The caller (execute_tests_with_timeout) still
+        // records it as a failed TestResult so the rest of the suite keeps running, but the
+        // message makes clear this isn't the test's own assertion failing.
+        return TestResult {
+            name: test_name,
+            passed: false,
+            message: "imeshindwa kuanzisha uzi wa jaribio (rasilimali za mfumo)".to_string(),
+        };
+    }
+
+    match rx.recv_timeout(timeout) {
+        Ok(result) => result,
+        Err(_) => TestResult {
+            name: test_name,
+            passed: false,
+            message: format!("muda umekwisha baada ya {:?} (jaribio limeachwa likiendelea kwa nyuma)", timeout),
+        },
+    }
 }
 
 /// Emit .asb as bytes (header + serialized Module). Use for run-from-.asb.

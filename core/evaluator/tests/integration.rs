@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use asili_evaluator::{eval_expr, run_function, run_function_with_telemetry, run_main, run_test_with_module, execute_tests, Value};
+use asili_evaluator::{eval_expr, run_function, run_function_with_telemetry, run_main, run_test_with_module, execute_tests, execute_tests_with_timeout, Value};
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, semantic_check_with_env, FnContract, Module, ValueType};
 
@@ -179,6 +179,87 @@ fn execute_tests_runs_multiple() {
     let results = execute_tests(&tests, false);
     assert_eq!(results.len(), 2);
     assert!(results.iter().all(|r| r.passed));
+}
+
+#[test]
+fn execute_tests_with_timeout_none_behaves_like_execute_tests() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t1() -> Tupu { rejesha }",
+    );
+    let tests: Vec<(Module, asili_parser::Function)> = module
+        .functions
+        .iter()
+        .filter(|f| f.is_test)
+        .map(|f| (module.clone(), f.clone()))
+        .collect();
+    let results = execute_tests_with_timeout(&tests, false, None);
+    assert_eq!(results.len(), 1);
+    assert!(results[0].passed);
+}
+
+#[test]
+fn execute_tests_with_timeout_passes_a_fast_test_within_budget() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi haraka() -> Tupu { rejesha }",
+    );
+    let tests: Vec<(Module, asili_parser::Function)> = module
+        .functions
+        .iter()
+        .filter(|f| f.is_test)
+        .map(|f| (module.clone(), f.clone()))
+        .collect();
+    let results = execute_tests_with_timeout(&tests, false, Some(std::time::Duration::from_secs(5)));
+    assert_eq!(results.len(), 1);
+    assert!(results[0].passed, "{}", results[0].message);
+}
+
+/// A genuinely infinite loop (`wakati milele { }`, no break), not a mock — proves the timeout actually
+/// interrupts *waiting* on a hung test rather than something that merely runs slowly, since the
+/// evaluator itself has no way to be told to stop early.
+#[test]
+fn execute_tests_with_timeout_reports_a_real_infinite_loop_as_failed() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi milele_test() -> Tupu { wakati milele { } }",
+    );
+    let tests: Vec<(Module, asili_parser::Function)> = module
+        .functions
+        .iter()
+        .filter(|f| f.is_test)
+        .map(|f| (module.clone(), f.clone()))
+        .collect();
+    let start = std::time::Instant::now();
+    let results = execute_tests_with_timeout(&tests, false, Some(std::time::Duration::from_millis(200)));
+    let elapsed = start.elapsed();
+
+    assert_eq!(results.len(), 1);
+    assert!(!results[0].passed, "an infinite loop must be reported as a failed (timed-out) test");
+    assert!(results[0].message.contains("muda umekwisha"), "{}", results[0].message);
+    // The call must return promptly once the timeout elapses, not block forever waiting on the
+    // hung thread — this is the actual behavior a timeout exists to provide.
+    assert!(elapsed < std::time::Duration::from_secs(2), "took {elapsed:?}, should return shortly after the 200ms timeout");
+}
+
+#[test]
+fn execute_tests_with_timeout_continues_past_a_timed_out_test() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi milele_test() -> Tupu { wakati milele { } }
+         #[jaribio] kazi baada_yake() -> Tupu { rejesha }",
+    );
+    let tests: Vec<(Module, asili_parser::Function)> = module
+        .functions
+        .iter()
+        .filter(|f| f.is_test)
+        .map(|f| (module.clone(), f.clone()))
+        .collect();
+    let results = execute_tests_with_timeout(&tests, false, Some(std::time::Duration::from_millis(200)));
+    assert_eq!(results.len(), 2, "a timed-out test must not prevent the rest of the suite from running");
+    let by_name: std::collections::HashMap<_, _> = results.iter().map(|r| (r.name.as_str(), r)).collect();
+    assert!(!by_name["milele_test"].passed);
+    assert!(by_name["baada_yake"].passed);
 }
 
 #[test]

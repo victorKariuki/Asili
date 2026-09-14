@@ -7,7 +7,7 @@ use pata_core::{
     ResolvedProgram,
 };
 use asili_diagnostics::Diagnostic;
-use asili_evaluator::{emit_asb, load_asb, execute_tests, validate_module, TestResult};
+use asili_evaluator::{emit_asb, load_asb, execute_tests_with_timeout, validate_module, TestResult};
 use asili_lexer::tokenize;
 use asili_parser::{discover_tests, parse_tokens, semantic_check_with_env_and_modules, Function, Module, Target};
 use rayon::prelude::*;
@@ -292,10 +292,16 @@ pub fn emit_build_artifacts(root: &Path, compiled: &CompileOutput, out_dir: Opti
 }
 
 pub fn run_project_tests(root: &Path, filter: Option<&str>, fail_fast: bool) -> Result<Vec<TestResult>, CliError> {
-    run_project_tests_parallel(root, filter, fail_fast, None)
+    run_project_tests_parallel(root, filter, fail_fast, None, None)
 }
 
-pub fn run_project_tests_parallel(root: &Path, filter: Option<&str>, fail_fast: bool, num_threads: Option<usize>) -> Result<Vec<TestResult>, CliError> {
+pub fn run_project_tests_parallel(
+    root: &Path,
+    filter: Option<&str>,
+    fail_fast: bool,
+    num_threads: Option<usize>,
+    timeout: Option<std::time::Duration>,
+) -> Result<Vec<TestResult>, CliError> {
     let cfg = load_project_config(root)?;
     let target = resolve_target(None, cfg.target.as_deref());
     let src_dir = cfg
@@ -359,7 +365,7 @@ pub fn run_project_tests_parallel(root: &Path, filter: Option<&str>, fail_fast: 
                     modules_and_tests
                         .par_iter()
                         .map(|(m, f)| {
-                            let result = execute_tests(&[(m.clone(), f.clone())], false);
+                            let result = execute_tests_with_timeout(&[(m.clone(), f.clone())], false, timeout);
                             result.into_iter().next().unwrap_or_else(|| TestResult {
                                 name: f.name.clone(),
                                 passed: false,
@@ -369,10 +375,10 @@ pub fn run_project_tests_parallel(root: &Path, filter: Option<&str>, fail_fast: 
                         .collect::<Vec<_>>()
                 })
             })
-            .unwrap_or_else(|| execute_tests(&modules_and_tests, fail_fast));
+            .unwrap_or_else(|| execute_tests_with_timeout(&modules_and_tests, fail_fast, timeout));
         Ok(results)
     } else {
-        Ok(execute_tests(&modules_and_tests, fail_fast))
+        Ok(execute_tests_with_timeout(&modules_and_tests, fail_fast, timeout))
     }
 }
 

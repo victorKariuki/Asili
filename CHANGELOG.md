@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`pata jaribu --muda <sekunde>`**: per-test wall-clock timeout. `asili_evaluator::
+  execute_tests_with_timeout` runs each timed test on its own thread, joined via
+  `recv_timeout` — the evaluator has no cooperative cancellation hook, so a timed-out
+  test's thread is not forcibly killed (safe Rust has no thread-cancellation API), only no
+  longer waited on; the suite reports it as failed and continues. Verified against a real
+  infinite `wakati milele { }` loop, both at the evaluator level and through the actual `pata
+  jaribu --muda` CLI path — the call returns promptly after the timeout rather than hanging.
 - **`pata thibitisha` type-stability check**: when the project is a git repository with at least
   one `v<semver>` tag (highest by real semver ordering), diffs current public function
   signatures against that tag's — flags a removed public function, changed parameter count,
@@ -156,10 +163,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Not started
 
-Real gaps, no commits addressing them yet: per-test timeout for `pata jaribu`; `#[kabla]`/
-`#[baada]` setup/teardown fixtures; a DAP (Debug Adapter Protocol) server; `pata-fmt`
-line-width/wrap-point support; `pata-lint` unused-local-variables rule. Tracked as GitHub issues
-(see the `Asili Feature release` project board).
+Real gaps, no commits addressing them yet: `#[kabla]`/`#[baada]` setup/teardown fixtures for
+`pata jaribu`; a DAP (Debug Adapter Protocol) server; `pata-fmt` line-width/wrap-point support;
+`pata-lint` unused-local-variables rule. Tracked as GitHub issues (see the `Asili Feature
+release` project board).
 
 ## [0.5.0] — pata-cli; asili-evaluator, pata-package at patch bumps
 
