@@ -1,6 +1,6 @@
 use crate::commands::CliError;
 use crate::pipeline::interface_registry::InterfaceRegistry;
-use crate::pipeline::project::{load_project_config, read_lockfile, ProjectConfig, Dependency};
+use crate::pipeline::project::{load_project_config, read_lockfile, find_workspace_root, ProjectConfig, Dependency};
 use crate::pipeline::resolve::{
     check_duplicate_imports, dependency_order, find_module_file, merge_for_semantic, resolve_all,
     ResolvedProgram,
@@ -87,6 +87,9 @@ pub fn project_input_hash(
 }
 
 pub fn compile_project(root: &Path, cli_target: Option<&str>) -> Result<CompileOutput, CliError> {
+    if let Some(_ws) = find_workspace_root(root) {
+        // Workspace detected; member compilation handled by workspace logic
+    }
     let mut cfg = load_project_config(root)?;
     if let Some(locked) = read_lockfile(root)? {
         cfg.dependencies = locked;

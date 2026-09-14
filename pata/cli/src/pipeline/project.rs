@@ -359,3 +359,18 @@ mod tests {
         dir
     }
 }
+
+pub fn find_workspace_root(start: &Path) -> Option<pata_package::Workspace> {
+    let mut dir = start;
+    loop {
+        let asili_toml = dir.join("Asili.toml");
+        if asili_toml.is_file() {
+            if let Ok(ws) = pata_package::Workspace::open(dir) {
+                if ws.is_workspace() {
+                    return Some(ws);
+                }
+            }
+        }
+        dir = dir.parent()?;
+    }
+}

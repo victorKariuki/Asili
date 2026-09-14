@@ -2,6 +2,7 @@ use super::{CliError, CliResult};
 use crate::pipeline::compile::{
     cache_key, compile_project, compile_single_file, emit_build_artifacts,
 };
+use crate::pipeline::project::find_workspace_root;
 use asili_evaluator::{load_asb, run_main};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,12 +12,13 @@ const JENGA_USAGE: &str = r#"matumizi: pata jenga [faili.as] [chagua...] [hoja z
 Jenga mradi kutoka pata.toml au faili moja (bila mradi).
 
 Chagua:
-  --tenda          Baada ya kujenga, tenda kazi kuu na hoja zinazofuata.
-  --pato <njia>    Mahali pa kuweka kilele (default: kilele/).
+  --tenda            Baada ya kujenga, tenda kazi kuu na hoja zinazofuata.
+  --pato <njia>      Mahali pa kuweka kilele (default: kilele/).
   --namna <dev|release|embedded>  Namna ya kujenga (haijatumika bado).
-  --lengo <lengo>  Lengo la kujenga (mf. "native", "wasm"). Hupita
-                   [jenga] lengo katika pata.toml; default "native".
-  --msaada         Onyesha ujumbe huu.
+  --lengo <lengo>    Lengo la kujenga (mf. "native", "wasm"). Hupita
+                     [jenga] lengo katika pata.toml; default "native".
+  --workspace-info   Onyesha wanachama wa workspace na urejeshi.
+  --msaada           Onyesha ujumbe huu.
 
 Hoja za kuu: Kila neno lisilokuwa chagua linapewa kwa kuu(hoja: Orodha<Neno>).
 
@@ -25,6 +27,7 @@ Mifano:
   pata jenga --tenda
   pata jenga --tenda foo bar
   pata jenga script.as --tenda
+  pata jenga --workspace-info
 "#;
 
 // Contract: ../../commands/jenga.md
@@ -34,6 +37,13 @@ pub fn run(args: &[String]) -> CliResult {
         .any(|a| a == "--msaada")
     {
         print!("{JENGA_USAGE}");
+        return Ok(());
+    }
+    if args
+        .iter()
+        .any(|a| a == "--workspace-info")
+    {
+        show_workspace_info()?;
         return Ok(());
     }
     let (_profile, out, do_run, single_file, program_args, build_target) = parse_args(args)?;
@@ -125,6 +135,23 @@ pub fn run(args: &[String]) -> CliResult {
         })?;
     }
     Ok(())
+}
+
+fn show_workspace_info() -> CliResult {
+    let cwd = PathBuf::from(".");
+    match find_workspace_root(&cwd) {
+        Some(ws) => {
+            println!("Workspace: {}", ws.root.display());
+            println!("Wanachama: {}", ws.members.len());
+            for (name, _manifest) in &ws.members {
+                println!("  - {}", name);
+            }
+            Ok(())
+        }
+        None => {
+            Err(CliError::new("Workspace haipo (Asili.toml na [workspace] haipo)", 1))
+        }
+    }
 }
 
 #[allow(clippy::type_complexity)]
