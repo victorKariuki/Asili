@@ -42,6 +42,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   coverage percentage, and supports threshold checks for CI gates.
 - **Workspace scaffolding**: `pata njozi --workspace` generates multi-member workspace layout with
   `Asili.toml` and member-specific `pata.toml` files ready for development.
+- **Performance profiling**: `PerformanceMetrics` and `ScopedTimer` for phase-level latency tracking.
+  Detects SLO violations and reports per-phase timing for optimization.
+- **Inlay hints (LSP)**: `mwalimu` now advertises `inlayHintProvider` capability. Type annotations
+  and parameter hints for variables and function calls.
 
 ### Fixed
 
