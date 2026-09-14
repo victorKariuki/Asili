@@ -25,13 +25,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `LINT001`, numbers in identifiers don't trigger false flags).
 - **`pata_package::VersionConstraint`**: semver constraint parsing (caret, tilde, ranges) with
   version-matching. Foundation for real dependency resolution; not yet wired into `pata ongeza`.
+- **`pata nadhifu` configuration**: support for `[fmt]` section in `pata.toml` with `line_width`,
+  `indent_style` (spaces/tabs), and `indent_width` options. Defaults to 100-char line width, 4-space indent.
+- **Type-stability checking**: `pata thibitisha` now supports `--baseline <tag>` to check for breaking
+  signature changes (function removal, parameter count changes) against a git-tag baseline. Uses
+  `git show <tag>:src/kuu.as` to fetch baseline source, parses, and compares public functions.
 
 ### Fixed
 
 - **Lint test suite**: corrected `LINT101` boundary test (50 statements exactly should not flag; flag
   only when > 50). Tests now confirm the exact threshold behavior.
 
-### Planned (Sections 11–20, in progress)
+### Planned (Sections 13–20, future phases)
 
 The following sections from the 20-section production-readiness spec are planned for completion
 in the next phase:
