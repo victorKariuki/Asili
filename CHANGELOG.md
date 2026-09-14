@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`pata jenga --muda`**: prints phase-latency timings (`kuchanganua` = compile,
+  `kutoa` = emit) after a successful build, via `pata_cli::pipeline::performance::
+  PerformanceMetrics`/`ScopedTimer` — real code with real unit tests that previously had zero
+  callers from any command (confirmed via `cargo build`'s own dead-code warnings, which are gone
+  for this module now). Works on both the normal build path and the single-file cache-hit
+  early-return path (a separate code path with its own report). Verified against the real
+  `pata-cli` binary.
 - **`pata-dap`: DAP (Debug Adapter Protocol) server, protocol layer complete.** New crate
   `pata/dap` (lib `pata_dap` + bin `pata-dap`), depending on the real `dap = "=0.4.1-alpha1"`
   crate (no stable release exists for it; confirmed current via the crates.io API rather than
@@ -202,9 +209,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### output. Verified by reading the actual call sites and function bodies/return values, not by
 ### re-reading commit messages)
 
-- **`pata_cli::pipeline::performance::PerformanceMetrics`/`ScopedTimer`**
-  (`pata/cli/src/pipeline/performance.rs`): phase-latency/SLO tracking. Not called from any
-  command.
 - **`pata_fmt::config::FormatterConfig::line_width`**: parsed and unit-tested, but genuinely
   inert — see the `FormatterConfig` entry above under Added.
 - **`pata_package::VersionConstraint`** (`constraints.rs`, real semver constraint parsing): has

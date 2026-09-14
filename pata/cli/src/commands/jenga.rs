@@ -2,6 +2,7 @@ use super::{CliError, CliResult};
 use crate::pipeline::compile::{
     cache_key, compile_project, compile_single_file, emit_build_artifacts,
 };
+use crate::pipeline::performance::{PerformanceMetrics, ScopedTimer};
 use crate::pipeline::project::find_workspace_root;
 use asili_evaluator::{load_asb, run_main};
 use std::fs;
@@ -18,6 +19,7 @@ Chagua:
   --lengo <lengo>    Lengo la kujenga (mf. "native", "wasm"). Hupita
                      [jenga] lengo katika pata.toml; default "native".
   --workspace-info   Onyesha wanachama wa workspace na urejeshi.
+  --muda             Onyesha muda wa kila awamu ya ujenzi (kuchanganua/kutoa).
   --msaada           Onyesha ujumbe huu.
 
 Hoja za kuu: Kila neno lisilokuwa chagua linapewa kwa kuu(hoja: Orodha<Neno>).
@@ -46,7 +48,9 @@ pub fn run(args: &[String]) -> CliResult {
         show_workspace_info()?;
         return Ok(());
     }
-    let (_profile, out, do_run, single_file, program_args, build_target) = parse_args(args)?;
+    let (_profile, out, do_run, single_file, program_args, build_target, show_timing) = parse_args(args)?;
+    let mut metrics = PerformanceMetrics::new(5000);
+    let total_timer = ScopedTimer::new("jumla");
     if let Some(ref path) = single_file {
         if !path.exists() {
             return Err(CliError::new(
@@ -106,16 +110,25 @@ pub fn run(args: &[String]) -> CliResult {
                     CliError::new(format!("kuendesha kuu: {e}"), 1)
                 })?;
             }
+            if show_timing {
+                metrics.set_total(total_timer.elapsed());
+                println!("{}", metrics.report());
+            }
             return Ok(());
         }
+        let compile_timer = ScopedTimer::new("kuchanganua");
         let compiled = compile_single_file(path, build_target.as_deref())?;
+        metrics.record_phase(compile_timer.name(), compile_timer.elapsed());
         (root, compiled)
     } else {
         let root = Path::new(".");
+        let compile_timer = ScopedTimer::new("kuchanganua");
         let compiled = compile_project(root, build_target.as_deref())?;
+        metrics.record_phase(compile_timer.name(), compile_timer.elapsed());
         (root.to_path_buf(), compiled)
     };
 
+    let emit_timer = ScopedTimer::new("kutoa");
     let _artifact = if compiled.from_cache {
         let target = out
             .as_ref()
@@ -129,10 +142,17 @@ pub fn run(args: &[String]) -> CliResult {
         println!("imejengwa: {}", a.display());
         a
     };
+    metrics.record_phase(emit_timer.name(), emit_timer.elapsed());
+
     if do_run {
         run_main(&compiled.module, program_args).map_err(|e| {
             CliError::new(format!("kuendesha kuu: {e}"), 1)
         })?;
+    }
+
+    if show_timing {
+        metrics.set_total(total_timer.elapsed());
+        println!("{}", metrics.report());
     }
     Ok(())
 }
@@ -157,7 +177,7 @@ fn show_workspace_info() -> CliResult {
 #[allow(clippy::type_complexity)]
 pub fn parse_args(
     args: &[String],
-) -> Result<(String, Option<PathBuf>, bool, Option<PathBuf>, Vec<String>, Option<String>), CliError> {
+) -> Result<(String, Option<PathBuf>, bool, Option<PathBuf>, Vec<String>, Option<String>, bool), CliError> {
 
     let mut profile = String::from("dev");
     let mut out = None;
@@ -165,6 +185,7 @@ pub fn parse_args(
     let mut single_file = None;
     let mut program_args = Vec::new();
     let mut target = None;
+    let mut show_timing = false;
     let mut i = 0usize;
     while i < args.len() {
         match args[i].as_str() {
@@ -193,6 +214,10 @@ pub fn parse_args(
                 do_run = true;
                 i += 1;
             }
+            "--muda" => {
+                show_timing = true;
+                i += 1;
+            }
             other => {
                 if other.ends_with(".as") && single_file.is_none() {
                     single_file = Some(PathBuf::from(other));
@@ -203,7 +228,7 @@ pub fn parse_args(
             }
         }
     }
-    Ok((profile, out, do_run, single_file, program_args, target))
+    Ok((profile, out, do_run, single_file, program_args, target, show_timing))
 }
 
 #[cfg(test)]
@@ -234,6 +259,45 @@ mod tests {
         assert!(manifest.contains("kilele=app.asb"), "manifest should point at .asb");
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Real end-to-end: `pata jenga --muda` must build successfully and go through
+    /// `PerformanceMetrics::record_phase`/`report()` without panicking — the actual wiring
+    /// gap this test closes (that code path was entirely uncalled from any command before).
+    /// `report()`'s own formatting (phase names, SLO line) is covered directly by
+    /// `pipeline::performance`'s unit tests; this test's job is proving the CLI path reaches it.
+    #[test]
+    fn muda_flag_builds_successfully_and_does_not_panic() {
+        let _guard = TEST_CWD_LOCK.lock().expect("lock");
+        let original = std::env::current_dir().expect("cwd");
+        let root = temp_project();
+        std::env::set_current_dir(&root).expect("chdir");
+
+        let result = run(&["--muda".to_string()]);
+
+        std::env::set_current_dir(&original).expect("restore cwd");
+        let _ = fs::remove_dir_all(&root);
+
+        result.expect("jenga --muda should build successfully and print timing");
+    }
+
+    #[test]
+    fn muda_flag_works_with_single_file_cache_hit_path() {
+        // --muda must also work on the single-file cache-hit early-return path (a separate code
+        // path from the normal project build, with its own metrics.report() call) -- build once
+        // to populate the cache, then again with --muda to exercise that specific branch.
+        let _guard = TEST_CWD_LOCK.lock().expect("lock");
+        let original = std::env::current_dir().expect("cwd");
+        let root = temp_project();
+        std::env::set_current_dir(&root).expect("chdir");
+
+        run(&["src/kuu.as".to_string()]).expect("first single-file build");
+        let result = run(&["src/kuu.as".to_string(), "--muda".to_string()]);
+
+        std::env::set_current_dir(&original).expect("restore cwd");
+        let _ = fs::remove_dir_all(&root);
+
+        result.expect("cached single-file jenga --muda should succeed and print timing");
     }
 
     #[test]
