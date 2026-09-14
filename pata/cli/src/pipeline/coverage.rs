@@ -28,28 +28,6 @@ pub struct CoverageMetrics {
 }
 
 impl CoverageMetrics {
-    /// Build metrics from a module's static structure and the union of executed-line sets
-    /// collected from running its tests (see `asili_evaluator::run_test_with_coverage`, called
-    /// once per test by the caller — this function only aggregates the results).
-    pub fn new(module: &Module, executed_lines: HashSet<usize>) -> Self {
-        let total_lines = total_statement_lines(module);
-        // Only count executed lines that are real statement lines in this module — a test can
-        // legitimately touch lines in a *different* module's functions too (cross-file calls),
-        // which shouldn't inflate this module's own denominator-relative numerator.
-        let executed_lines: HashSet<usize> = executed_lines
-            .into_iter()
-            .filter(|l| total_lines.contains(l))
-            .collect();
-
-        let coverage_percent = if total_lines.is_empty() {
-            0.0
-        } else {
-            (executed_lines.len() as f64 / total_lines.len() as f64) * 100.0
-        };
-
-        Self { total_lines, executed_lines, coverage_percent }
-    }
-
     /// Format coverage report
     pub fn report(&self) -> String {
         format!(
@@ -58,11 +36,6 @@ impl CoverageMetrics {
             self.total_lines.len(),
             self.coverage_percent
         )
-    }
-
-    /// Check if coverage meets a threshold
-    pub fn meets_threshold(&self, threshold: f64) -> bool {
-        self.coverage_percent >= threshold
     }
 }
 
@@ -118,12 +91,30 @@ mod tests {
         parse_tokens(&tokens).expect("parse")
     }
 
+    /// Build a `CoverageMetrics` the same way real callers do (`compile.rs`'s
+    /// `run_project_tests_with_coverage`): compute `total_lines` via `total_statement_lines`,
+    /// filter `executed` down to real lines in this module, derive the percentage — kept here as
+    /// a shared test helper rather than a `CoverageMetrics::new` production method, since real
+    /// production code needs to aggregate `total_statement_lines` across *several* modules first
+    /// (see compile.rs), which a single-module constructor can't express.
+    fn metrics_for(module: &Module, executed: HashSet<usize>) -> CoverageMetrics {
+        let total_lines = total_statement_lines(module);
+        let executed_lines: HashSet<usize> =
+            executed.into_iter().filter(|l| total_lines.contains(l)).collect();
+        let coverage_percent = if total_lines.is_empty() {
+            0.0
+        } else {
+            (executed_lines.len() as f64 / total_lines.len() as f64) * 100.0
+        };
+        CoverageMetrics { total_lines, executed_lines, coverage_percent }
+    }
+
     #[test]
     fn total_lines_walks_into_nested_if_blocks() {
         let module = parse(
             "kazi f() -> Tupu {\nikiwa kweli {\nweka a = 1\n} vinginevyo {\nweka b = 2\n}\n}\n",
         );
-        let metrics = CoverageMetrics::new(&module, std::collections::HashSet::new());
+        let metrics = metrics_for(&module, HashSet::new());
         // if-condition line, true-branch weka, false-branch weka = 3 real statement lines.
         assert_eq!(metrics.total_lines.len(), 3, "{:?}", metrics.total_lines);
     }
@@ -131,22 +122,22 @@ mod tests {
     #[test]
     fn coverage_percent_reflects_partial_execution() {
         let module = parse("kazi f() -> Tupu {\nweka a = 1\nweka b = 2\n}\n");
-        let mut executed = std::collections::HashSet::new();
+        let mut executed = HashSet::new();
         // Only one of the two statement lines executed.
-        let total_lines_probe = CoverageMetrics::new(&module, std::collections::HashSet::new()).total_lines;
+        let total_lines_probe = metrics_for(&module, HashSet::new()).total_lines;
         let mut lines_iter = total_lines_probe.iter();
         executed.insert(*lines_iter.next().unwrap());
 
-        let metrics = CoverageMetrics::new(&module, executed);
+        let metrics = metrics_for(&module, executed);
         assert_eq!(metrics.coverage_percent, 50.0);
-        assert!(metrics.meets_threshold(50.0));
-        assert!(!metrics.meets_threshold(51.0));
+        assert!(metrics.coverage_percent >= 50.0);
+        assert!(metrics.coverage_percent < 51.0);
     }
 
     #[test]
     fn empty_module_has_zero_percent_not_100() {
         let module = parse("kazi f() -> Tupu {\n}\n");
-        let metrics = CoverageMetrics::new(&module, std::collections::HashSet::new());
+        let metrics = metrics_for(&module, HashSet::new());
         assert_eq!(metrics.total_lines.len(), 0);
         assert_eq!(metrics.coverage_percent, 0.0);
     }
@@ -154,9 +145,9 @@ mod tests {
     #[test]
     fn executed_lines_from_a_different_module_do_not_inflate_this_ones_coverage() {
         let module = parse("kazi f() -> Tupu {\nweka a = 1\n}\n");
-        let mut foreign_lines = std::collections::HashSet::new();
+        let mut foreign_lines = HashSet::new();
         foreign_lines.insert(9999); // not a real line in this module
-        let metrics = CoverageMetrics::new(&module, foreign_lines);
+        let metrics = metrics_for(&module, foreign_lines);
         assert_eq!(metrics.executed_lines.len(), 0, "a line from another module's execution must not count here");
     }
 }

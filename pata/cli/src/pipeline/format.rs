@@ -10,6 +10,7 @@
 
 use crate::commands::CliError;
 use pata_fmt::config::FormatterConfig;
+use similar::{ChangeTag, TextDiff};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -61,6 +62,38 @@ pub fn check_or_write(files: &[PathBuf], check_only: bool) -> Result<(usize, usi
                 fs::write(file, formatted).map_err(|e| {
                     CliError::new(format!("imeshindwa kuandika {}: {e}", file.display()), 1)
                 })?;
+            }
+        }
+    }
+    Ok((files.len(), changed))
+}
+
+/// Like `check_or_write` but never writes — for every file the formatter would change, prints a
+/// unified-diff-shaped body (`---`/`+++` header naming the file once each, `@@`-less line-level
+/// +/-/context lines, matching the spirit of `git diff`/`cargo fmt --check` output users already
+/// recognize) to stdout instead of silently rewriting the file. No `a/`/`b/` path prefix (unlike
+/// `git diff`): these are plain filesystem paths, not a two-tree git comparison, and prefixing an
+/// already-absolute path with `a/` would misleadingly double up the leading slash. Returns the
+/// same `(total, changed)` counts as `check_or_write` so callers can still report a summary line
+/// afterward.
+pub fn print_diff(files: &[PathBuf]) -> Result<(usize, usize), CliError> {
+    let mut changed = 0usize;
+    for file in files {
+        let original = fs::read_to_string(file)
+            .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", file.display()), 1))?;
+        let formatted = canonical_format(&original, Some(file));
+        if formatted != original {
+            changed += 1;
+            println!("--- {} (kabla)", file.display());
+            println!("+++ {} (baada)", file.display());
+            let diff = TextDiff::from_lines(&original, &formatted);
+            for change in diff.iter_all_changes() {
+                let sign = match change.tag() {
+                    ChangeTag::Delete => "-",
+                    ChangeTag::Insert => "+",
+                    ChangeTag::Equal => " ",
+                };
+                print!("{sign}{change}");
             }
         }
     }
