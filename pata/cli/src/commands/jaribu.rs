@@ -5,7 +5,7 @@ use std::path::Path;
 // Exit codes: 0 = all tests passed; 1 = one or more tests failed; 2 = usage or config error.
 // Contract: ../../commands/jaribu.md
 pub fn run(args: &[String]) -> CliResult {
-    let (filter, fail_fast, list_only) = parse_args(args)?;
+    let (filter, fail_fast, list_only, json) = parse_args(args)?;
 
     if list_only {
         let names = list_project_tests(Path::new("."))?;
@@ -13,8 +13,13 @@ pub fn run(args: &[String]) -> CliResult {
             Some(f) => names.iter().filter(|n| n.contains(f.as_str())).map(String::as_str).collect(),
             None => names.iter().map(String::as_str).collect(),
         };
-        for n in names {
-            println!("{n}");
+        if json {
+            let output = serde_json::json!({ "majaribio": names });
+            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        } else {
+            for n in names {
+                println!("{n}");
+            }
         }
         return Ok(());
     }
@@ -26,26 +31,51 @@ pub fn run(args: &[String]) -> CliResult {
     for r in &results {
         if r.passed {
             passed += 1;
-            println!("[SAWA] {}", r.name);
         } else {
             failed += 1;
-            println!("[KOSA] {} - {}", r.name, r.message);
         }
     }
 
-    println!("jumla: {} | sawa: {} | kosa: {}", results.len(), passed, failed);
+    if json {
+        let output = serde_json::json!({
+            "jumla": results.len(),
+            "sawa": passed,
+            "kosa": failed,
+            "majaribio": results.iter().map(|r| serde_json::json!({
+                "jina": r.name,
+                "sawa": r.passed,
+                "ujumbe": if r.passed { serde_json::json!(null) } else { serde_json::json!(r.message) }
+            })).collect::<Vec<_>>()
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        for r in &results {
+            if r.passed {
+                println!("[SAWA] {}", r.name);
+            } else {
+                println!("[KOSA] {} - {}", r.name, r.message);
+            }
+        }
+        println!("jumla: {} | sawa: {} | kosa: {}", results.len(), passed, failed);
+    }
+
     if failed > 0 {
-        println!("majaribio {} yameshindwa", failed);
+        if !json {
+            println!("majaribio {} yameshindwa", failed);
+        }
         return Err(CliError::new("baadhi ya majaribio yameshindwa", 1));
     }
-    println!("majaribio yote yamefaulu");
+    if !json {
+        println!("majaribio yote yamefaulu");
+    }
     Ok(())
 }
 
-fn parse_args(args: &[String]) -> Result<(Option<String>, bool, bool), CliError> {
+fn parse_args(args: &[String]) -> Result<(Option<String>, bool, bool, bool), CliError> {
     let mut filter = None;
     let mut fail_fast = false;
     let mut list_only = false;
+    let mut json = false;
     let mut i = 0usize;
     while i < args.len() {
         match args[i].as_str() {
@@ -64,6 +94,10 @@ fn parse_args(args: &[String]) -> Result<(Option<String>, bool, bool), CliError>
                 list_only = true;
                 i += 1;
             }
+            "--json" => {
+                json = true;
+                i += 1;
+            }
             other => {
                 return Err(CliError::new(
                     format!("hoja isiyotambuliwa kwenye jaribu: {other}"),
@@ -72,7 +106,7 @@ fn parse_args(args: &[String]) -> Result<(Option<String>, bool, bool), CliError>
             }
         }
     }
-    Ok((filter, fail_fast, list_only))
+    Ok((filter, fail_fast, list_only, json))
 }
 
 #[cfg(test)]

@@ -1047,6 +1047,7 @@ dependencies = [
  "pata-lsp",
  "pata-package",
  "pulldown-cmark",
+ "serde_json",
  "sha2",
 ]
 

@@ -13,3 +13,4 @@ pata-lsp = { path = "../lsp" }
 sha2 = "0.11.0"
 pulldown-cmark = "0.13"
 anyhow = "1.0"
+serde_json = "1"
