@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::env;
 
+use crate::platform;
 use crate::value::{self, Value, EvalError};
 use super::BuiltinFn;
 
@@ -16,63 +17,47 @@ fn format_message_for_display(msg: &str) -> &str {
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     m.insert("chapisha".to_string(), Box::new(|args: &[Value]| {
-        #[cfg(not(target_arch = "wasm32"))]
         if let Some(Value::Neno(ref msg)) = args.first() {
-            let display = format_message_for_display(msg);
-            println!("{display}");
+            platform::write_stdout(format_message_for_display(msg));
         }
-        #[cfg(target_arch = "wasm32")]
-        let _ = args;
         Ok(Value::Tupu)
     }));
     m.insert("onyo".to_string(), Box::new(|args: &[Value]| {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let msg = args
-                .first()
-                .and_then(|v| value::as_string(v))
-                .unwrap_or_default();
-            let display = format_message_for_display(&msg);
-            let line = if env::var("ASILI_TELEMETRY").is_ok() {
-                format!("[WARN][SUBSTRATE] {display}")
-            } else {
-                display.to_string()
-            };
-            eprintln!("{line}");
-        }
-        #[cfg(target_arch = "wasm32")]
-        let _ = args;
+        let msg = args
+            .first()
+            .and_then(value::as_string)
+            .unwrap_or_default();
+        let display = format_message_for_display(&msg);
+        let line = if env::var("ASILI_TELEMETRY").is_ok() {
+            format!("[WARN][SUBSTRATE] {display}")
+        } else {
+            display.to_string()
+        };
+        platform::write_stderr(&line);
         Ok(Value::Tupu)
     }));
     m.insert("makosa".to_string(), Box::new(|args: &[Value]| {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let msg = args
-                .first()
-                .and_then(|v| value::as_string(v))
-                .unwrap_or_default();
-            let display = format_message_for_display(&msg);
-            let line = if env::var("ASILI_TELEMETRY").is_ok() {
-                format!("[ERR][CRITICAL] {display}")
-            } else {
-                format!("KOSA: {display}")
-            };
-            eprintln!("{line}");
-        }
-        #[cfg(target_arch = "wasm32")]
-        let _ = args;
+        let msg = args
+            .first()
+            .and_then(value::as_string)
+            .unwrap_or_default();
+        let display = format_message_for_display(&msg);
+        let line = if env::var("ASILI_TELEMETRY").is_ok() {
+            format!("[ERR][CRITICAL] {display}")
+        } else {
+            format!("KOSA: {display}")
+        };
+        platform::write_stderr(&line);
         Ok(Value::Tupu)
     }));
     m.insert("paparika".to_string(), Box::new(|args: &[Value]| {
         let msg = args
             .first()
-            .and_then(|v| value::as_string(v))
+            .and_then(value::as_string)
             .unwrap_or_else(|| "paparika".to_string());
         Err(EvalError::Panic(msg))
     }));
-    // TODO: Read a line from stdin using std::io::stdin().read_line(). Currently returns
-    // an empty string, so any program prompting the user receives no input.
     m.insert("omba".to_string(), Box::new(|_args: &[Value]| {
-        Ok(Value::Neno(String::new()))
+        platform::read_stdin().map(Value::Neno)
     }));
 }

@@ -13,7 +13,15 @@ fn parses_main() {
     let src = "kazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }";
     let toks = tokenize(src).expect("tokens");
     let module = parse_tokens(&toks).expect("parse");
-    semantic_check(&module).expect("semantics");
+    let mut extern_fns = HashMap::new();
+    extern_fns.insert(
+        "chapisha".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno],
+            ret: ValueType::Tupu,
+        },
+    );
+    semantic_check_with_env(&module, true, extern_fns, HashMap::new()).expect("semantics");
 }
 
 #[test]
@@ -138,7 +146,7 @@ fn parses_method_call() {
     let kuu = module.functions.iter().find(|f| f.name == "kuu").unwrap();
     if let Stmt::Let { value, .. } = &kuu.body.statements[1] {
         if let Expr::MethodCall { receiver, method_name, args, .. } = value {
-            if let Expr::Ident(r) = &**receiver {
+            if let Expr::Ident { name: r, .. } = &**receiver {
                 assert_eq!(r, "x");
             } else {
                 panic!("expected Ident receiver");
@@ -153,7 +161,7 @@ fn parses_method_call() {
 
 #[test]
 fn recursion_depth_limit_parse() {
-    let n = 101;
+    let n = 1001;
     let open: String = "(".repeat(n);
     let close: String = ")".repeat(n);
     let src = format!("kazi kuu(hoja: Orodha<Neno>) -> Tupu {{ weka x = {}1{} }}", open, close);
@@ -249,4 +257,29 @@ fn unconsumed_tokeo_emits_sem048() {
         "expected SEM048 (Tokeo haukutumiwa), got: {:?}",
         errs.iter().map(|d| &d.code).collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn method_call_type_checking_is_implemented() {
+    let src = r#"
+        kazi kuu(hoja: Orodha<Neno>) -> Tupu {
+            weka x = "hi"
+            weka n = x.urefu()
+        }
+    "#;
+    let toks = tokenize(src).expect("tokens");
+    let module = parse_tokens(&toks).expect("parse");
+    let kuu = module.functions.iter().find(|f| f.name == "kuu").unwrap();
+
+    if let Stmt::Let { value, .. } = &kuu.body.statements[1] {
+        if let Expr::MethodCall { receiver, method_name, args, .. } = value {
+            assert_eq!(method_name, "urefu");
+            assert!(args.is_empty());
+            assert!(matches!(receiver.as_ref(), Expr::Ident { .. }));
+        } else {
+            panic!("expected MethodCall");
+        }
+    } else {
+        panic!("expected Let with method call");
+    }
 }

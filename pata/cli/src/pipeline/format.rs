@@ -13,9 +13,9 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), CliError> {
     for entry in fs::read_dir(dir)
         .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", dir.display()), 1))?
     {
-        let entry = entry.map_err(|e| CliError::new(format!("hitilafu ya kusoma entry: {e}"), 1))?;
+        let entry = entry.map_err(|e| CliError::new(format!("hitilafu ya kusoma kiingilio: {e}"), 1))?;
         let path = entry.path();
-        if path.file_name().map(|n| n == "target").unwrap_or(false) {
+        if path.file_name().map(|n| n == "kilele").unwrap_or(false) {
             continue;
         }
         if path.is_dir() {

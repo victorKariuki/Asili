@@ -4,10 +4,22 @@ use asili_parser::{AssignOp, ForMode, Stmt};
 
 use crate::runtime::Runtime;
 use crate::value::{self, assign_f64_op, handle_loop_out, EvalError, EvalOut, LoopAction, Value};
+use crate::signal;
 
 use super::expr::match_and_bind_pattern;
 
 pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOut, EvalError> {
+    let sig = signal::take_pending();
+    if sig != 0 {
+        if let Some(handler_name) = signal::get_handler(sig) {
+            if let Some(f) = rt.module.functions.iter().find(|x| x.name == handler_name).cloned() {
+                rt.env.push_scope();
+                super::eval_block_impl(&f.body, rt)?;
+                rt.env.pop_scope();
+            }
+        }
+    }
+
     match stmt {
         Stmt::Let { name, value, .. } => {
             let v = super::eval_expr_impl(value, rt)?;
@@ -43,12 +55,10 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             };
             Ok(EvalOut::Return(v))
         }
-        // TODO(Phase III): tupa currently sets the variable to Hamna (null) rather than removing
-        // it from scope. Subsequent reads of the dropped variable silently succeed and return Hamna
-        // instead of producing a compile-time "use after drop" error (SEM027 only catches unknown names,
-        // not dropped-then-read patterns in the evaluator).
         Stmt::Drop { name, .. } => {
-            rt.env.set(name, Value::Hamna);
+            if !rt.env.drop(name) {
+                return Err(EvalError::UndefinedVar(name.clone()));
+            }
             Ok(EvalOut::Next)
         }
         Stmt::If {
@@ -121,21 +131,43 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                         }
                     }
                 }
-                // TODO: kwa ... katika only iterates Orodha. Kamusi, Mfululizo, and Seti
-                // iteration are not supported — the loop body is silently skipped for those types.
                 ForMode::InExpr(expr) => {
                     let col = super::eval_expr_impl(expr, rt)?;
-                    if let Value::Orodha(elems) = col {
-                        for item in elems {
-                            rt.env.push_scope();
-                            rt.env.define(var, item);
-                            let out = super::eval_block_impl(body, rt)?;
-                            rt.env.pop_scope();
-                            match handle_loop_out(my_label.as_ref(), out) {
-                                LoopAction::Continue => {}
-                                LoopAction::Break => break,
-                                LoopAction::Propagate(out) => return Ok(out),
+                    match col {
+                        Value::Orodha(elems) => {
+                            for item in elems {
+                                rt.env.push_scope();
+                                rt.env.define(var, item);
+                                let out = super::eval_block_impl(body, rt)?;
+                                rt.env.pop_scope();
+                                match handle_loop_out(my_label.as_ref(), out) {
+                                    LoopAction::Continue => {}
+                                    LoopAction::Break => break,
+                                    LoopAction::Propagate(out) => return Ok(out),
+                                }
                             }
+                        }
+                        Value::Kamusi(map) => {
+                            for (key, val) in map {
+                                let pair = Value::Jozi(
+                                    Box::new(key.to_value()),
+                                    Box::new(val),
+                                );
+                                rt.env.push_scope();
+                                rt.env.define(var, pair);
+                                let out = super::eval_block_impl(body, rt)?;
+                                rt.env.pop_scope();
+                                match handle_loop_out(my_label.as_ref(), out) {
+                                    LoopAction::Continue => {}
+                                    LoopAction::Break => break,
+                                    LoopAction::Propagate(out) => return Ok(out),
+                                }
+                            }
+                        }
+                        _ => {
+                            return Err(EvalError::TypeErr(
+                                "kwa...katika inashughulikia Orodha na Kamusi tu".to_string()
+                            ));
                         }
                     }
                 }

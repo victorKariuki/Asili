@@ -1,5 +1,0 @@
-project=astar
-entry=./src/kuu.as
-functions=10
-artifact=astar.asb
-input_hash=72cc43b0b4df17e1

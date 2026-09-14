@@ -26,7 +26,7 @@ fn main() {
     let asb_path = if path
         .file_name()
         .and_then(|n| n.to_str())
-        .map_or(false, |n| n.ends_with(".build.manifest"))
+        .is_some_and(|n| n.ends_with(".build.manifest"))
     {
         artifact_from_manifest(&path).unwrap_or_else(|e| {
             eprintln!("{e}");
@@ -35,7 +35,7 @@ fn main() {
     } else if path
         .file_name()
         .and_then(|n| n.to_str())
-        .map_or(false, |n| n.ends_with(".asb"))
+        .is_some_and(|n| n.ends_with(".asb"))
     {
         path
     } else {
@@ -43,7 +43,7 @@ fn main() {
         process::exit(2);
     };
     if !asb_path.exists() {
-        eprintln!("artifact haipo: {}", asb_path.display());
+        eprintln!("kilele haipo: {}", asb_path.display());
         process::exit(1);
     }
     let bytes = fs::read(&asb_path).unwrap_or_else(|e| {
@@ -53,7 +53,7 @@ fn main() {
     let format = parse_format(&bytes).unwrap_or_else(|| "serialized".to_string());
     if format == "bytecode" {
         let program = load_asb_bytecode(&bytes).unwrap_or_else(|e| {
-            eprintln!("kuipakua asb bytecode: {e}");
+            eprintln!("kuipakia asb bytecode: {e}");
             process::exit(1);
         });
         if let Err(e) = run_bytecode(&program, program_args) {
@@ -62,7 +62,7 @@ fn main() {
         }
     } else {
         let module = load_asb(&bytes).unwrap_or_else(|e| {
-            eprintln!("kuipakua asb: {e}");
+            eprintln!("kuipakia asb: {e}");
             process::exit(1);
         });
         if let Err(e) = run_main(&module, program_args) {
@@ -77,9 +77,9 @@ fn artifact_from_manifest(manifest_path: &Path) -> Result<PathBuf, String> {
         .map_err(|e| format!("imeshindwa kusoma manifest: {e}"))?;
     let artifact = content
         .lines()
-        .find(|l| l.starts_with("artifact="))
-        .and_then(|l| l.strip_prefix("artifact=").map(str::trim))
-        .ok_or_else(|| "manifest haina mstari artifact=".to_string())?;
+        .find(|l| l.starts_with("kilele="))
+        .and_then(|l| l.strip_prefix("kilele=").map(str::trim))
+        .ok_or_else(|| "manifest haina mstari kilele=".to_string())?;
     let manifest_dir = manifest_path.parent().unwrap_or_else(|| Path::new("."));
     Ok(manifest_dir.join(artifact))
 }

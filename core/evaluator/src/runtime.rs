@@ -7,11 +7,10 @@ use asili_parser::Module;
 use crate::builtins;
 use crate::env::Env;
 
-// TODO: MAX_EVAL_DEPTH is a flat call-depth counter shared between function calls and block nesting
-// (if/else/while each increment it). This means deeply nested control flow inside a single function
-// hits the limit before deep recursion does. A real stack depth limit should count call frames only,
-// not block scopes. Also 100 is very low — most languages default to 500–1000 call frames.
-pub(crate) const MAX_EVAL_DEPTH: usize = 100;
+// MAX_EVAL_DEPTH limits evaluation depth to prevent stack overflow.
+// NOTE: This counter includes both block nesting and expression depth, not just function call frames.
+// A proper implementation would separate call-depth from block-nesting-depth.
+pub(crate) const MAX_EVAL_DEPTH: usize = 1000;
 
 pub(crate) struct Runtime<'a> {
     pub env: &'a mut Env,
@@ -28,6 +27,16 @@ impl<'a> Runtime<'a> {
             env,
             module,
             builtins: builtins::builtins(),
+            depth: 0,
+            peak_depth: 0,
+        }
+    }
+
+    pub fn with_builtins(env: &'a mut Env, module: &'a Module, builtins: HashMap<String, builtins::BuiltinFn>) -> Self {
+        Self {
+            env,
+            module,
+            builtins,
             depth: 0,
             peak_depth: 0,
         }
