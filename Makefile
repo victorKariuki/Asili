@@ -21,7 +21,10 @@ install: build-release
 	install -m 755 target/release/pata-lsp "$(DESTDIR)/pata-lsp"
 	install -m 755 target/release/pata-lint "$(DESTDIR)/pata-lint"
 
-# Copy the LSP binary into the VSCode extension bundle.
+# Build the VSCode extension (bundles pata-lsp + its own TS sources into a .vsix) and
+# install it into VS Code. Requires `code` on PATH and npm/npx.
 install-ext: build-release
 	mkdir -p extensions/vscode/bin
 	cp target/release/pata-lsp extensions/vscode/bin/pata-lsp
+	cd extensions/vscode && npm install && npx --yes @vscode/vsce package --no-dependencies
+	code --install-extension extensions/vscode/asili-*.vsix
