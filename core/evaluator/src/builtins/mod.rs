@@ -2,13 +2,15 @@
 
 mod faili;
 mod hisabati;
+pub(crate) mod http;
+mod json;
 mod kasha_gc;
 mod kiungo;
 mod kumbukumbu;
 mod majira;
 mod matumizi;
 mod mfumo;
-mod mkondo;
+pub(crate) mod mkondo;
 mod msingi;
 mod seti;
 // PHASE II: neno module is reserved for string-specific methods (gawanya, badilisha, anza_na, maliza_na, etc.)
@@ -41,6 +43,7 @@ pub fn builtins() -> HashMap<String, BuiltinFn> {
     mkondo::register(&mut m);
     kumbukumbu::register(&mut m);
     seti::register(&mut m);
+    json::register(&mut m);
     m
 }
 
@@ -60,6 +63,7 @@ pub fn builtin_names() -> Vec<String> {
     mkondo::register(&mut m);
     kumbukumbu::register(&mut m);
     seti::register(&mut m);
+    json::register(&mut m);
 
     let mut names: Vec<String> = m.keys().cloned().collect();
     // Ensure "chapisha" is index 0 for backward compatibility

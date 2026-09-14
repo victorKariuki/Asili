@@ -38,7 +38,8 @@ ulikamilika au ulianguka). Tumia `njia` kutuma matokeo halisi kurudi.
 
 | Njia          | Maelezo                                              |
 |---------------|---------------------------------------------------------|
-| `njia()`      | Unda `NjiaTx<T>`/`NjiaRx<T>` mpya kama `Jozi` — haiwezi kushindwa |
+| `njia()`      | Unda `NjiaTx<T>`/`NjiaRx<T>` mpya kama `Jozi` — haiwezi kushindwa, haina kikomo |
+| `njia_na_kikomo(kikomo)` | Kama `njia()` lakini `tx.tuma(v)` **husubiri** kikomo kikijaa badala ya kukua bila mpaka |
 | `tx.tuma(v)`  | Tuma; `Tokeo<Tupu, Neno>`                            |
 | `rx.pokea()`  | Pokea (inasubiri); `Tokeo<T, Neno>` — `Kosa` mara zote za kutuma zinapofungwa |
 

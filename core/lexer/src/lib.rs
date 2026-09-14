@@ -7,7 +7,36 @@ pub struct Token {
     pub column: usize,
 }
 
+/// A comment captured as trivia rather than a token — see [`tokenize_with_trivia`]. `text`
+/// excludes the leading `#`/`//` marker; `after_token_index` is the index into the returned
+/// token vec of the last token before this comment (`None` if the comment precedes every token),
+/// letting a consumer re-attach each comment to "immediately after token N" during re-emission.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Comment {
+    pub text: String,
+    pub line: usize,
+    pub column: usize,
+    pub after_token_index: Option<usize>,
+}
+
 pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
+    tokenize_inner(source, None)
+}
+
+/// Same tokenization as [`tokenize`], but comments (`# ...` / `// ...`) are captured as
+/// [`Comment`] trivia instead of being silently discarded — for `pata nadhifu`, which needs to
+/// re-emit them rather than delete them. Every other consumer (the parser, LSP, lint, tests)
+/// keeps using [`tokenize`] unchanged; this is purely additive.
+pub fn tokenize_with_trivia(source: &str) -> Result<(Vec<Token>, Vec<Comment>), Vec<Diagnostic>> {
+    let mut comments = Vec::new();
+    let tokens = tokenize_inner(source, Some(&mut comments))?;
+    Ok((tokens, comments))
+}
+
+fn tokenize_inner(
+    source: &str,
+    mut trivia: Option<&mut Vec<Comment>>,
+) -> Result<Vec<Token>, Vec<Diagnostic>> {
     let mut tokens = Vec::new();
     let mut errors = Vec::new();
 
@@ -28,9 +57,19 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
                     // Attribute start, treat '#' as a token
                 } else {
                     // Comment, skip until end of line
+                    let start_col = col;
+                    let start = i;
                     while i < chars.len() && chars[i] != '\n' {
                         i += 1;
                         col += 1;
+                    }
+                    if let Some(out) = trivia.as_deref_mut() {
+                        out.push(Comment {
+                            text: chars[start..i].iter().collect(),
+                            line: line_idx + 1,
+                            column: start_col,
+                            after_token_index: tokens.len().checked_sub(1),
+                        });
                     }
                     continue;
                 }
@@ -38,9 +77,19 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
 
             if ch == '/' && i + 1 < chars.len() && chars[i + 1] == '/' {
                 // Comment, skip until end of line
+                let start_col = col;
+                let start = i;
                 while i < chars.len() && chars[i] != '\n' {
                     i += 1;
                     col += 1;
+                }
+                if let Some(out) = trivia.as_deref_mut() {
+                    out.push(Comment {
+                        text: chars[start..i].iter().collect(),
+                        line: line_idx + 1,
+                        column: start_col,
+                        after_token_index: tokens.len().checked_sub(1),
+                    });
                 }
                 continue;
             }
@@ -203,7 +252,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
 
 #[cfg(test)]
 mod tests {
-    use super::tokenize;
+    use super::{tokenize, tokenize_with_trivia};
 
     #[test]
     fn tokenizes_basic_line() {
@@ -237,5 +286,46 @@ mod tests {
         let t = tokenize(src).expect("tokenize");
         let lexemes: Vec<&str> = t.iter().map(|x| x.lexeme.as_str()).collect();
         assert_eq!(lexemes, ["r", "?"], "r? should be two tokens for propagate");
+    }
+
+    #[test]
+    fn tokenize_unaffected_by_trivia_capture() {
+        let src = "weka x = 1 # maoni\nweka y = 2 // maoni mengine\n";
+        let plain = tokenize(src).expect("tokenize");
+        let (with_trivia, _) = tokenize_with_trivia(src).expect("tokenize_with_trivia");
+        assert_eq!(plain, with_trivia, "trivia capture must not change the token stream");
+    }
+
+    #[test]
+    fn tokenize_with_trivia_captures_hash_and_slash_comments() {
+        let src = "weka x = 1 # ya kwanza\n// mstari mzima\nweka y = 2";
+        let (tokens, comments) = tokenize_with_trivia(src).expect("tokenize_with_trivia");
+        assert_eq!(comments.len(), 2);
+        assert_eq!(comments[0].text, "# ya kwanza");
+        assert_eq!(comments[0].line, 1);
+        assert_eq!(comments[1].text, "// mstari mzima");
+        assert_eq!(comments[1].line, 2);
+        // First comment follows the last token on line 1 ("1"); second comment precedes any
+        // token on its own line, so it should attach to that same prior token, not None.
+        let tok_1_idx = tokens.iter().position(|t| t.lexeme == "1").unwrap();
+        assert_eq!(comments[0].after_token_index, Some(tok_1_idx));
+        assert_eq!(comments[1].after_token_index, Some(tok_1_idx));
+    }
+
+    #[test]
+    fn tokenize_with_trivia_leading_comment_has_no_prior_token() {
+        let src = "# maelezo ya faili\nweka x = 1";
+        let (_, comments) = tokenize_with_trivia(src).expect("tokenize_with_trivia");
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].after_token_index, None);
+    }
+
+    #[test]
+    fn attribute_hash_still_a_token_not_a_comment() {
+        let src = "#[jaribio]\nkazi t() -> Tupu { rejesha Tupu }";
+        let (tokens, comments) = tokenize_with_trivia(src).expect("tokenize_with_trivia");
+        assert!(comments.is_empty(), "#[...] is an attribute, not a comment");
+        assert_eq!(tokens[0].lexeme, "#");
+        assert_eq!(tokens[1].lexeme, "[");
     }
 }

@@ -26,10 +26,37 @@ Previous: [Standard Library](05-standard-library.md) | [Overview](../SPECIFICATI
 | `pata jenga --tenda` | Compile and run the entrypoint (`kuu`) in one step. |
 | `pata tenda <path.asb>` | Run an already-compiled `.asb` artifact directly, without recompiling. |
 | `pata jaribu` | Run internal `jaribio` test blocks. |
-| `pata nadhifu` | Auto-format Swahili code to standard style (line-based; best-effort; idempotent for current rules; AST-based formatter may follow in a later phase). |
-| `pata thibitisha` | Validate public API documentation coverage, formatting compliance, and (opt-in, `--kiwango-cha-jaribio <0-100>`) test coverage ratio. |
+| `pata nadhifu` | Auto-format Swahili code to standard style: a token-stream pretty-printer, idempotent, comment-preserving. See below for the exact rules. |
+| `pata thibitisha` | Validate public API documentation coverage, project-wide trait completeness, `#[kiunganishi]` FFI-signature safety, formatting compliance, and (opt-in, `--kiwango-cha-jaribio <0-100>`) test coverage ratio. |
 | `pata repl` | Start an interactive REPL (persistent environment; `?topic` shows inline help). |
 | `pata mwalimu` | Start the Mwalimu LSP server (stdio). For use by editors; see [Execution and Roadmap](07-execution-and-roadmap.md) Phase II. |
+
+### `pata nadhifu` formatting rules
+
+Token-stream-driven, not a full CST/lossless-syntax-tree rewrite (AST nodes carry only a start
+line/column today, not an end span, so span-slicing the source isn't viable without a larger AST
+change — see `docs/design/nadhifu-formatter-design.md`). Rules:
+
+- Call/index syntax hugs its target: `foo(x)`, `a[0]`, not `foo (x)`/`a [0]`. A grouping
+  expression or array literal after an operator/keyword keeps its preceding space instead:
+  `1 + (2 * 3)`, `weka a = [1, 2, 3]`.
+- Generic type brackets hug: `Orodha<Neno>`, `Kamusi<Neno, Orodha<Namba>>` — never spaced like a
+  comparison operator, which the formatter distinguishes heuristically (a `<` immediately after a
+  capitalized identifier, with everything up to its matching `>` being identifier-like or `,`, is
+  a generic bracket; anything else is `<`/`>` as comparison operators).
+  `Blocks (`{`/`}`) indent by nesting depth (4 spaces per level); a closing `}` always starts its
+  own line.
+- Comments (`#`/`//`) are preserved in place, not deleted — the lexer's `tokenize_with_trivia()`
+  captures them as trivia anchored to the token they follow, and the printer re-emits them there.
+- A single blank line between top-level declarations is preserved (a run of 2+ is collapsed to
+  one); blank lines are never invented where the source had none.
+- String and char literals are re-escaped correctly on output — the lexer stores a string's
+  *decoded* content in its token (e.g. a real newline byte, not the two characters `\`+`n`), so
+  the formatter re-escapes on the way out rather than printing raw control characters, which
+  would both corrupt the output and fail to re-tokenize on a second pass.
+- On a lex error (e.g. an unterminated string), the input is returned unchanged rather than
+  producing a mangled partial rewrite — `pata nadhifu` is safe to run on in-progress, possibly
+  invalid source.
 
 ---
 

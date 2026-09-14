@@ -137,3 +137,73 @@ fn weka_mutates_through_any_live_handle() {
     let result = run_function(&module, "hesabu", vec![]).expect("runs");
     assert_eq!(result, Value::Namba(14.0), "a and b should both see c's mutation");
 }
+
+#[test]
+fn dhaifu_imarisha_upgrades_while_strong_handle_is_alive() {
+    // Pattern-destructuring Chaguo::Kuna(kgc) and then calling a KashaGC method on `kgc` hits a
+    // pre-existing, unrelated analyzer limitation (standard_enums()'s Chaguo<T> declares Kuna's
+    // payload as the literal placeholder type T, not substituted against the real inner type at
+    // the pattern site — SEM039 "aina 'T' haina njia") — so this checks upgrade success/failure
+    // structurally instead of destructuring the payload, which exercises .imarisha() itself
+    // without depending on that separate gap.
+    let src = r#"
+        leta kasha_gc
+
+        kazi jaribu() -> Ukweli {
+            weka a = kasha_gc_unda(9.0)
+            weka d = kasha_gc_dhaifu(a)
+            linganisha d.imarisha() {
+                Hamna => { rejesha si_kweli }
+                _ => { rejesha kweli }
+            }
+        }
+    "#;
+    let module = compile(src);
+    let result = run_function(&module, "jaribu", vec![]).expect("runs");
+    assert_eq!(result, Value::Ukweli(true), ".imarisha() should upgrade to Kuna(...) while a is still alive");
+}
+
+#[test]
+fn dhaifu_imarisha_fails_once_every_strong_handle_is_dropped() {
+    let src = r#"
+        leta kasha_gc
+
+        kazi jaribu() -> Ukweli {
+            weka a = kasha_gc_unda(1.0)
+            weka d = kasha_gc_dhaifu(a)
+            tupa a
+            linganisha d.imarisha() {
+                Hamna => { rejesha kweli }
+                _ => { rejesha si_kweli }
+            }
+        }
+    "#;
+    let module = compile(src);
+    let result = run_function(&module, "jaribu", vec![]).expect("runs");
+    assert_eq!(result, Value::Ukweli(true), ".imarisha() must return Hamna once the strong count hits zero");
+}
+
+#[test]
+fn weak_reference_does_not_count_toward_strong_refcount() {
+    // The motivating scenario for kasha_gc_dhaifu(): a "child" holds a strong reference forward,
+    // and a "parent" would normally hold a strong reference back — but a strong/strong cycle
+    // leaks permanently (no collector exists). This test proves the load-bearing property that
+    // makes the weak back-reference actually break such a cycle: downgrading to a Dhaifu must
+    // NOT itself increment the strong count the way .shirikisha() (a second strong handle)
+    // would — otherwise "weak" would be nominal only, and the cycle would still never reach zero.
+    let src = r#"
+        leta kasha_gc
+
+        kazi jaribu() -> Ukweli {
+            weka a = kasha_gc_unda(1.0)
+            weka b = a.shirikisha()
+            weka idadi_kabla = a.idadi()
+            weka dhaifu = kasha_gc_dhaifu(b)
+            weka idadi_baada = a.idadi()
+            rejesha idadi_kabla == idadi_baada
+        }
+    "#;
+    let module = compile(src);
+    let result = run_function(&module, "jaribu", vec![]).expect("runs");
+    assert_eq!(result, Value::Ukweli(true), "downgrading to Dhaifu must not increment the strong count");
+}

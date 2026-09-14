@@ -16,7 +16,7 @@ pub use bytecode::{run_bytecode, BytecodeProgram};
 pub use env::Env;
 pub use eval::eval_expr;
 pub use tir::{emit_asb_from_tir, lower_to_tir, TypedIrFunction, TypedIrModule, validate_module};
-pub use value::{EvalError, EvalOut, Value};
+pub use value::{ErrorKind, EvalError, EvalOut, Value};
 pub use crate::builtins::BuiltinFn;
 
 use asili_parser::{Block, Function, Module};

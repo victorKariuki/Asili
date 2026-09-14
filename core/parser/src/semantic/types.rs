@@ -116,6 +116,10 @@ pub fn parse_value_type(s: &str) -> ValueType {
         let inner = s[9..s.len() - 1].trim();
         return ValueType::KashaGC(Box::new(parse_value_type(inner)));
     }
+    if s.starts_with("Kasha_GC_Dhaifu<") && s.ends_with('>') {
+        let inner = s[16..s.len() - 1].trim();
+        return ValueType::KashaGCDhaifu(Box::new(parse_value_type(inner)));
+    }
     if s.starts_with("Kumbukumbu<") && s.ends_with('>') {
         let inner = s[11..s.len() - 1].trim();
         return ValueType::Kumbukumbu(Box::new(parse_value_type(inner)));
@@ -128,6 +132,14 @@ pub fn parse_value_type(s: &str) -> ValueType {
         let inner = s[7..s.len() - 1].trim();
         return ValueType::NjiaRx(Box::new(parse_value_type(inner)));
     }
+    if s.starts_with("NjiaTxBounded<") && s.ends_with('>') {
+        let inner = s[14..s.len() - 1].trim();
+        return ValueType::NjiaTxBounded(Box::new(parse_value_type(inner)));
+    }
+    if s.starts_with("NjiaRxBounded<") && s.ends_with('>') {
+        let inner = s[14..s.len() - 1].trim();
+        return ValueType::NjiaRxBounded(Box::new(parse_value_type(inner)));
+    }
     if s.starts_with("Fungo<") && s.ends_with('>') {
         let inner = s[6..s.len() - 1].trim();
         return ValueType::Fungo(Box::new(parse_value_type(inner)));
@@ -137,6 +149,12 @@ pub fn parse_value_type(s: &str) -> ValueType {
     }
     if s == "Mkondo" {
         return ValueType::Mkondo;
+    }
+    if s == "MkondoSikilizaji" {
+        return ValueType::MkondoSikilizaji;
+    }
+    if s == "TlsUsanidi" {
+        return ValueType::TlsUsanidi;
     }
     if s == "Herufi" {
         return ValueType::Herufi;

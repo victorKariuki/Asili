@@ -285,6 +285,70 @@ pub fn mfumo_exports() -> BuiltinExportTable {
             ret: ValueType::Tokeo(Box::new(ValueType::Mkondo), Box::new(ValueType::Neno)),
         },
     );
+    functions.insert(
+        "mkondo_sikiliza".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno],
+            ret: ValueType::Tokeo(Box::new(ValueType::MkondoSikilizaji), Box::new(ValueType::Neno)),
+        },
+    );
+    functions.insert(
+        "mkondo_tumikia".to_string(),
+        FnContract {
+            params: vec![
+                ValueType::MkondoSikilizaji,
+                ValueType::Neno,
+                ValueType::Namba,
+                ValueType::Chaguo(Box::new(ValueType::TlsUsanidi)),
+            ],
+            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
+        },
+    );
+    functions.insert(
+        "mkondo_tumikia_http".to_string(),
+        FnContract {
+            // ombi/jibu are Value::Struct("OmbiHttp"/"JibuHttp", ...) at runtime — Unknown here
+            // since this codebase's FnContract has no way to express "a struct with these named
+            // fields," the same reflection-friendly-but-untyped-at-the-signature-level tradeoff
+            // the JSON codec's kutoka_json already accepts (see json-codec-design.md).
+            params: vec![
+                ValueType::MkondoSikilizaji,
+                ValueType::Neno,
+                ValueType::Namba,
+                ValueType::Chaguo(Box::new(ValueType::TlsUsanidi)),
+            ],
+            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
+        },
+    );
+    functions.insert(
+        "tls_sanidi".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno, ValueType::Neno],
+            ret: ValueType::Tokeo(Box::new(ValueType::TlsUsanidi), Box::new(ValueType::Neno)),
+        },
+    );
+    functions.insert(
+        "kwa_json".to_string(),
+        FnContract {
+            params: vec![ValueType::Unknown],
+            ret: ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
+        },
+    );
+    functions.insert(
+        "kutoka_json".to_string(),
+        // Declared as Kamusi<Neno, Unknown> — the codec's runtime output shape actually varies
+        // (a JSON array decodes as Orodha, a scalar as Namba/Neno/etc.), but a builtin's return
+        // type here is one static type, and a JSON object (the common "parse a response body"
+        // case) is the shape whose fields need `.pata(...)` to be statically callable at all.
+        // Other shapes still work at runtime; only their static method/index calls need a cast.
+        FnContract {
+            params: vec![ValueType::Neno],
+            ret: ValueType::Tokeo(
+                Box::new(ValueType::Kamusi(Box::new(ValueType::Neno), Box::new(ValueType::Unknown))),
+                Box::new(ValueType::Neno),
+            ),
+        },
+    );
     let mut constants = HashMap::new();
     constants.insert("TOLEO".to_string(), ValueType::Neno);
     constants.insert("JINA_OS".to_string(), ValueType::Neno);
@@ -474,6 +538,16 @@ pub fn sambamba_exports() -> BuiltinExportTable {
         },
     );
     functions.insert(
+        "njia_na_kikomo".to_string(),
+        FnContract {
+            params: vec![ValueType::Namba],
+            ret: ValueType::Jozi(
+                Box::new(ValueType::NjiaTxBounded(Box::new(ValueType::Unknown))),
+                Box::new(ValueType::NjiaRxBounded(Box::new(ValueType::Unknown))),
+            ),
+        },
+    );
+    functions.insert(
         "fungo".to_string(),
         FnContract {
             params: vec![ValueType::Unknown],
@@ -603,6 +677,13 @@ pub fn kasha_gc_exports() -> BuiltinExportTable {
         FnContract {
             params: vec![ValueType::Unknown],
             ret: ValueType::KashaGC(Box::new(ValueType::Unknown)),
+        },
+    );
+    functions.insert(
+        "kasha_gc_dhaifu".to_string(),
+        FnContract {
+            params: vec![ValueType::KashaGC(Box::new(ValueType::Unknown))],
+            ret: ValueType::KashaGCDhaifu(Box::new(ValueType::Unknown)),
         },
     );
     BuiltinExportTable {

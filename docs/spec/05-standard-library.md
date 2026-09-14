@@ -44,7 +44,11 @@ wrapper (`Rc<RefCell<Value>>`), the concrete realization of the "managed/GC modu
 [07-execution-and-roadmap.md](07-execution-and-roadmap.md). Sharing is explicit via
 `.shirikisha()` (like Rust's `Rc::clone`) — a plain `weka b = a` still moves, so wrapping in
 `Kasha_GC<T>` never silently changes the language's default move semantics. Not a
-tracing/cycle-collecting GC: a self-referential `Kasha_GC<T>` leaks, by design.
+tracing/cycle-collecting GC: a self-referential `Kasha_GC<T>` leaks, by design. The escape hatch:
+`kasha_gc_dhaifu(kgc) -> Kasha_GC_Dhaifu<T>` downgrades to a weak reference that does not itself
+count toward the strong refcount; `.imarisha() -> Chaguo<Kasha_GC<T>>` upgrades back (`Hamna` if
+every strong handle has already dropped). Holding the weak reference in one side of a cycle
+(e.g. a child's back-pointer to its parent) lets the strong count still reach zero.
 
 ---
 
@@ -62,6 +66,19 @@ Requires `leta mfumo`. OS-dependent.
 
 - `mfumo.majira()`, `mfumo.vigezo()`, `mfumo.pata_env(jina)`, `mfumo.toka(kodi)`.
 
+### JSON
+
+- `kwa_json(thamani) -> Tokeo<Neno, Neno>` — serializes any JSON-representable `Value` to a JSON
+  string. Rejects (`Kosa`) resource handles (`Kasha_GC<T>`, `Faili`, `Mkondo`,
+  `Kumbukumbu<T>`) and concurrency primitives (`NjiaTx`/`NjiaRx`/`Fungo`, and their bounded
+  variants) — none have a JSON representation — and structures nested past a fixed depth cap.
+  `NambaKuu`/`NambaSahihi`/`Anuani` encode as JSON strings, not numbers (arbitrary precision and
+  raw memory addresses don't round-trip through/belong as a JSON number). See
+  [json-codec-design.md](../design/json-codec-design.md) for the full per-variant mapping.
+- `kutoka_json(neno) -> Tokeo<Kamusi<Neno, Unknown>, Neno>` — parses a JSON string. A JSON object
+  decodes to `Kamusi<Neno, _>`; other JSON shapes (array, scalar) still decode correctly at
+  runtime, but the declared static return type reflects the common "parse a JSON object" case.
+
 ---
 
 ### Resource handles and traits
@@ -69,7 +86,13 @@ Requires `leta mfumo`. OS-dependent.
 System resources are represented by explicit handle types that own their underlying OS or hardware resource and release it on drop. `Faili`/`Mkondo` are available via `leta faili`/`leta mfumo` (no separate opt-in module); `Kumbukumbu<T>` is always in scope via `msingi`, like `Orodha`/`Kamusi`.
 
 - **`Faili`** — file handle. `faili_fungua(njia, hali) -> Tokeo<Faili, Neno>` opens a file; `hali` is `"soma"`, `"andika"`, or `"ongeza"`. Methods: `.soma() -> Tokeo<Neno, Neno>`, `.andika(data: Neno) -> Tokeo<Tupu, Neno>`, `.funga() -> Tupu` (idempotent — closing an already-closed handle is a safe no-op).
-- **`Mkondo`** — TCP client stream. `mkondo_unganisha(anwani) -> Tokeo<Mkondo, Neno>` connects. Same `.soma()`/`.andika()`/`.funga()` methods as `Faili`.
+- **`Mkondo`** — TCP client stream. `mkondo_unganisha(anwani) -> Tokeo<Mkondo, Neno>` connects. Same `.soma()`/`.andika()`/`.funga()` methods as `Faili`, plus `.soma_bailisi(kikomo: Namba) -> Tokeo<Neno, Neno>` — one bounded, non-EOF-seeking read (up to `kikomo` bytes), for protocols like HTTP/1.1 keep-alive that must read one message and then read again on the same connection, which `.soma()`'s read-to-EOF semantics can't do.
+- **`MkondoSikilizaji`** — TCP listening socket. `mkondo_sikiliza(anwani) -> Tokeo<MkondoSikilizaji, Neno>` binds. Not consumed directly with methods; passed to one of two worker-pool entry points, both spawning `idadi_ya_nyuzi` long-lived worker threads (a fixed-size pool, not one thread per connection) and blocking the caller forever, with `tls: Chaguo<TlsUsanidi>` optional in both (omit it, or pass `Chaguo::Hamna`, for a plaintext listener):
+  - **`mkondo_tumikia(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls) -> Tokeo<Tupu, Neno>`** — raw bytes. Each worker accepts a connection (TLS handshake first if `tls` was given; a handshake failure drops just that connection, not the worker) and calls `kazi_jina(mkondo: Mkondo) -> Tupu`, which owns that connection's whole lifecycle via `.soma()`/`.andika()`/`.funga()`/`.soma_bailisi(kikomo)` — plaintext or TLS, transparently.
+  - **`mkondo_tumikia_http(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls) -> Tokeo<Tupu, Neno>`** — HTTP/1.1 framing. Each worker parses one request per cycle (`Content-Length`-bodied; `Transfer-Encoding: chunked` returns `501`, not supported), calls `kazi_jina(ombi: OmbiHttp) -> JibuHttp`, writes a real HTTP/1.1 response, and — unlike the raw-bytes path — loops to parse the *next* request on the same connection under HTTP/1.1 keep-alive (default unless `Connection: close`), closing only on `Connection: close`, a parse error (`400`), or the peer disconnecting. `OmbiHttp { njia: Neno, anwani: Neno, vichwa: Kamusi<Neno, Neno>, mwili: Neno }` / `JibuHttp { hali: Namba, vichwa: Kamusi<Neno, Neno>, mwili: Neno }` — an Asili program using this needs its own matching `umbo` declarations for the analyzer to type-check `ombi`/the returned `JibuHttp`, even though neither struct's *name* is checked at runtime. No pipelining, no `Expect: 100-continue`, no HTTP/2.
+
+  Every accepted connection gets a fixed read/write timeout, and the pool size is itself the concurrent-connection cap — see [faili-mkondo-design.md](../design/faili-mkondo-design.md), [http-server-design.md](../design/http-server-design.md), [tls-design.md](../design/tls-design.md), and [http-framing-design.md](../design/http-framing-design.md).
+- **`TlsUsanidi`** — a loaded TLS server certificate/key pair. `tls_sanidi(cheti_njia, ufunguo_njia) -> Tokeo<TlsUsanidi, Neno>` loads a PEM certificate chain and private key from disk; every failure (missing file, malformed PEM, a cert/key that don't match) returns `Tokeo(Kosa(...))`, never panics. Pass the result (wrapped in `Chaguo::Kuna(...)`) as `mkondo_tumikia`'s 4th argument to serve TLS instead of plaintext.
 - **`Kumbukumbu<T>`** — heap-allocated box owning a value of type `T`, no OS resource. `kumbukumbu_unda(thamani) -> Kumbukumbu<T>` constructs; `.pata() -> T` reads a clone of the boxed value. No in-place mutation method (`.weka()`) — a method call receives a clone of its receiver, so mutating that clone's box would not be visible through the original binding; reassign the whole `Kumbukumbu` instead (`weka k = kumbukumbu_unda(thamani_mpya)`). This is a real difference from `Kasha_GC<T>`, which shares its allocation and supports true in-place mutation through any live handle.
 
 `Faili`/`Mkondo` implement deterministic cleanup: the underlying OS handle is closed when the owner goes out of scope, whether by explicit `tupa`, an explicit `.funga()` call, or ordinary block/function exit with no explicit cleanup at all — implemented as a real destructor on the handle's wrapper type (not a hook triggered only by explicit `tupa`), so it fires on every code path uniformly. See [faili-mkondo-design.md](../design/faili-mkondo-design.md) for the mechanism.
@@ -139,9 +162,13 @@ and [concurrency-design.md](../design/concurrency-design.md) for why).
   `subiri_tenda` — communicate results via `njia`.
 - **`subiri_tenda(id) -> Tokeo<Tupu, Neno>`** — joins the thread, reporting whether it finished
   cleanly or panicked.
-- **njia (Channel):** `njia() -> Jozi<NjiaTx<T>, NjiaRx<T>>` creates a channel (infallible — a
-  channel can't fail to construct). `tx.tuma(v) -> Tokeo<Tupu, Neno>` sends; `rx.pokea() ->
-  Tokeo<T, Neno>` receives (blocking), `Kosa` once every sender is dropped.
+- **njia (Channel):** `njia() -> Jozi<NjiaTx<T>, NjiaRx<T>>` creates an unbounded channel
+  (infallible — a channel can't fail to construct). `tx.tuma(v) -> Tokeo<Tupu, Neno>` sends;
+  `rx.pokea() -> Tokeo<T, Neno>` receives (blocking), `Kosa` once every sender is dropped.
+  `njia_na_kikomo(kikomo: Namba) -> Jozi<NjiaTxBounded<T>, NjiaRxBounded<T>>` creates a bounded
+  channel instead — same `.tuma()`/`.pokea()` contract, except `.tuma()` blocks once `kikomo`
+  unread items are already buffered, rather than growing memory without limit the way the
+  unbounded `njia()` does under a producer faster than its consumer.
 - **fungo (Mutex/Lock):** `fungo(thamani) -> Tokeo<Fungo<T>, Neno>` wraps a `Send`-safe value.
   `f.pata() -> T` / `f.weka(v) -> Tupu` lock, act, and unlock atomically in one call — the usual
   way to use a `Fungo`. `f.funga() -> Tupu` / `f.fungua() -> Tupu` are separate, explicit

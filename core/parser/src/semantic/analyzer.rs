@@ -1178,7 +1178,16 @@ impl<'a> Analyzer<'a> {
                         // TODO: variadic-by-name is a hardcoded special case, not a general
                         // FnContract flag — matches the existing "orodha" precedent rather than
                         // introducing new arity-checking machinery for this one addition.
-                        let variadic = name == "orodha" || name == "seti" || name == "tenda";
+                        // mkondo_tumikia's 4th parameter (tls: Chaguo<TlsUsanidi>) is optional —
+                        // callers not using TLS omit it entirely, matching this same
+                        // trailing-optional-argument shape, not true variadic argument counts,
+                        // but reusing this escape hatch is simpler than adding a distinct
+                        // "N required + M optional" arity concept for one builtin.
+                        let variadic = name == "orodha"
+                            || name == "seti"
+                            || name == "tenda"
+                            || name == "mkondo_tumikia"
+                            || name == "mkondo_tumikia_http";
                         // Evaluate all arg types upfront for both validation and generic instantiation.
                         let arg_types: Vec<ValueType> = args
                             .iter()
@@ -1274,12 +1283,15 @@ impl<'a> Analyzer<'a> {
                     ValueType::Chaguo(_) => "Chaguo".to_string(),
                     ValueType::Tokeo(_, _) => "Tokeo".to_string(),
                     ValueType::KashaGC(_) => "Kasha_GC".to_string(),
+                    ValueType::KashaGCDhaifu(_) => "Kasha_GC_Dhaifu".to_string(),
                     ValueType::Faili => "Faili".to_string(),
                     ValueType::Mkondo => "Mkondo".to_string(),
                     ValueType::Kumbukumbu(_) => "Kumbukumbu".to_string(),
                     ValueType::Seti(_) => "Seti".to_string(),
                     ValueType::NjiaTx(_) => "NjiaTx".to_string(),
                     ValueType::NjiaRx(_) => "NjiaRx".to_string(),
+                    ValueType::NjiaTxBounded(_) => "NjiaTxBounded".to_string(),
+                    ValueType::NjiaRxBounded(_) => "NjiaRxBounded".to_string(),
                     ValueType::Fungo(_) => "Fungo".to_string(),
                     _ => {
                         self.errors.push(
@@ -1295,7 +1307,7 @@ impl<'a> Analyzer<'a> {
                 };
                 let is_enum = self.module.enums.iter().any(|e| e.name == receiver_ty_name);
                 let _is_struct = self.module.structs.iter().any(|s| s.name == receiver_ty_name);
-                let is_builtin = matches!(receiver_ty, ValueType::Neno | ValueType::Orodha(_) | ValueType::Kamusi(_, _) | ValueType::Jozi(_, _) | ValueType::Chaguo(_) | ValueType::Tokeo(_, _) | ValueType::KashaGC(_) | ValueType::Faili | ValueType::Mkondo | ValueType::Kumbukumbu(_) | ValueType::Seti(_) | ValueType::NjiaTx(_) | ValueType::NjiaRx(_) | ValueType::Fungo(_));
+                let is_builtin = matches!(receiver_ty, ValueType::Neno | ValueType::Orodha(_) | ValueType::Kamusi(_, _) | ValueType::Jozi(_, _) | ValueType::Chaguo(_) | ValueType::Tokeo(_, _) | ValueType::KashaGC(_) | ValueType::KashaGCDhaifu(_) | ValueType::Faili | ValueType::Mkondo | ValueType::Kumbukumbu(_) | ValueType::Seti(_) | ValueType::NjiaTx(_) | ValueType::NjiaRx(_) | ValueType::NjiaTxBounded(_) | ValueType::NjiaRxBounded(_) | ValueType::Fungo(_));
                 if is_builtin {
                     for arg in args {
                         let _ = self.check_expr(arg, scopes, UseMode::Move);
@@ -1333,10 +1345,12 @@ impl<'a> Analyzer<'a> {
                         (ValueType::KashaGC(_), "weka") => ValueType::Tupu,
                         (ValueType::KashaGC(_), "idadi") => ValueType::Namba,
                         (ValueType::KashaGC(ref t), "shirikisha") => ValueType::KashaGC(t.clone()),
+                        (ValueType::KashaGCDhaifu(ref t), "imarisha") => ValueType::Chaguo(Box::new(ValueType::KashaGC(t.clone()))),
                         (ValueType::Faili, "soma") => ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
                         (ValueType::Faili, "andika") => ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
                         (ValueType::Faili, "funga") => ValueType::Tupu,
                         (ValueType::Mkondo, "soma") => ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
+                        (ValueType::Mkondo, "soma_bailisi") => ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
                         (ValueType::Mkondo, "andika") => ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
                         (ValueType::Mkondo, "funga") => ValueType::Tupu,
                         (ValueType::Kumbukumbu(ref t), "pata") => *t.clone(),
@@ -1348,6 +1362,8 @@ impl<'a> Analyzer<'a> {
                         (ValueType::Seti(ref t), "orodha") => ValueType::Orodha(t.clone()),
                         (ValueType::NjiaTx(_), "tuma") => ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
                         (ValueType::NjiaRx(ref t), "pokea") => ValueType::Tokeo(t.clone(), Box::new(ValueType::Neno)),
+                        (ValueType::NjiaTxBounded(_), "tuma") => ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
+                        (ValueType::NjiaRxBounded(ref t), "pokea") => ValueType::Tokeo(t.clone(), Box::new(ValueType::Neno)),
                         (ValueType::Fungo(_), "funga") => ValueType::Tupu,
                         (ValueType::Fungo(_), "fungua") => ValueType::Tupu,
                         (ValueType::Fungo(ref t), "pata") => *t.clone(),

@@ -402,6 +402,9 @@ Known, deliberately-not-fixed gaps in the type checker (small, contained, not ye
    of the 11 current examples are single-feature test fixtures rather than realistic programs —
    `examples/astar` is the one exception).
 
+See [pata-production-readiness.md](pata-production-readiness.md) for a `pata/`-toolchain-scoped
+production-readiness floor/stretch roadmap, benchmarked against Cargo/Gleam/Zig.
+
 Design docs exist for every aspirational (not-yet-implemented) subsystem the spec describes, for
 whenever work on them starts — not implementation guides, but a record of what's already
 half-there, what's genuinely blocked and on what, and the open decisions each needs before
