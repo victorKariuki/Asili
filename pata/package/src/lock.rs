@@ -38,6 +38,15 @@ pub struct LocalPackage {
     pub path: String,
 }
 
+/// One dependency whose vendored content no longer matches what `pata.lock` recorded at fetch
+/// time — returned by [`LockFile::verify_content_integrity`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IntegrityMismatch {
+    pub name: String,
+    pub expected: String,
+    pub actual: String,
+}
+
 impl LockFile {
     /// Create a new lock file
     pub fn new() -> Self {
@@ -100,6 +109,40 @@ impl LockFile {
             .keys()
             .chain(self.local_packages.keys())
             .map(|s| s.as_str())
+    }
+
+    /// Re-hash every vendored (git/registry) dependency's on-disk content under `root` and
+    /// compare against the checksum this lock file recorded at fetch time — the actual security
+    /// property a lockfile exists for: detect a `.asili/packages/<name>/` directory that was
+    /// swapped or tampered with after `pata ongeza` fetched it. Path dependencies are skipped
+    /// (their checksum is a placeholder over `name@version`, not fetched content — they're live
+    /// local source, not something to protect against tampering). Returns the names of every
+    /// dependency whose current content hash no longer matches the lock.
+    pub fn verify_content_integrity(&self, root: &Path) -> Result<Vec<IntegrityMismatch>> {
+        let paths = crate::paths::Paths::new(root);
+        let mut mismatches = Vec::new();
+        for (name, dep) in &self.dependencies {
+            if dep.path.is_some() {
+                continue;
+            }
+            let vendor_dir = paths.package_path(name);
+            if !vendor_dir.is_dir() {
+                // Nothing vendored yet (e.g. a fresh checkout before the first `pata ongeza`
+                // fetch) — not a tamper signal, just not fetched yet. Resolution/build will
+                // surface its own "not found" error separately.
+                continue;
+            }
+            let actual = crate::fetch::hash_dir(&vendor_dir)
+                .with_context(|| format!("imeshindwa kuhesabu hashi ya {}", vendor_dir.display()))?;
+            if actual != dep.checksum {
+                mismatches.push(IntegrityMismatch {
+                    name: name.clone(),
+                    expected: dep.checksum.clone(),
+                    actual,
+                });
+            }
+        }
+        Ok(mismatches)
     }
 
     /// Update workspace checksum (for detecting changes)

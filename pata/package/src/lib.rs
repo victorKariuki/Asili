@@ -11,7 +11,7 @@ pub mod constraints;
 pub mod registry;
 
 pub use manifest::{Manifest, Dependency, WorkspaceConfig};
-pub use lock::{LockFile, LockedDependency};
+pub use lock::{IntegrityMismatch, LockFile, LockedDependency};
 pub use resolver::Resolver;
 pub use workspace::Workspace;
 pub use paths::Paths;

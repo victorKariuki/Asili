@@ -336,6 +336,24 @@ pub fn read_lockfile(root: &Path) -> Result<Option<BTreeMap<String, Dependency>>
     Ok(Some(deps))
 }
 
+/// Re-hash every vendored git/registry dependency under `.asili/packages/` and compare against
+/// the checksum `pata.lock` recorded at fetch time — the actual security property a lockfile is
+/// for: catching a `.asili/packages/<name>/` directory that was swapped or edited after `pata
+/// ongeza` fetched it, which the checksum being merely *written* (and never re-checked) could not
+/// detect before. Returns the mismatching dependency names, empty when nothing is locked yet or
+/// everything still matches — never errors just because there's no lockfile (a fresh single-file
+/// build has none).
+pub fn verify_lockfile_integrity(root: &Path) -> Result<Vec<pata_package::IntegrityMismatch>, CliError> {
+    let path = root.join("pata.lock");
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let lock = pata_package::LockFile::load(&path)
+        .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", path.display()), 1))?;
+    lock.verify_content_integrity(root)
+        .map_err(|e| CliError::new(format!("imeshindwa kuthibitisha uadilifu wa tegemezi: {e}"), 1))
+}
+
 /// Resolve `cfg.dependencies` and write pata.lock via `pata_package`'s resolver/lock format.
 pub fn write_lockfile(root: &Path, cfg: &ProjectConfig) -> Result<(), CliError> {
     let pkg_deps: BTreeMap<String, pata_package::manifest::Dependency> = cfg

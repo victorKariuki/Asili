@@ -1,5 +1,5 @@
 use crate::commands::CliError;
-use crate::pipeline::project::{load_project_config, read_lockfile, find_workspace_root, ProjectConfig, Dependency};
+use crate::pipeline::project::{load_project_config, read_lockfile, verify_lockfile_integrity, find_workspace_root, ProjectConfig, Dependency};
 use crate::pipeline::sharti::filter_module_for_target;
 use pata_core::InterfaceRegistry;
 use pata_core::{
@@ -94,6 +94,21 @@ pub fn compile_project(root: &Path, cli_target: Option<&str>) -> Result<CompileO
     let mut cfg = load_project_config(root)?;
     if let Some(locked) = read_lockfile(root)? {
         cfg.dependencies = locked;
+    }
+    let mismatches = verify_lockfile_integrity(root)?;
+    if !mismatches.is_empty() {
+        let names: Vec<String> = mismatches
+            .iter()
+            .map(|m| format!("  - {}: pata.lock={} halisi={}", m.name, m.expected, m.actual))
+            .collect();
+        return Err(CliError::new(
+            format!(
+                "uadilifu wa tegemezi umeshindwa — yaliyomo ya .asili/packages/ hayalingani na pata.lock:\n{}\n\
+                 tumia 'pata ongeza' upya kupata toleo sahihi, au thibitisha maudhui ya .asili/packages/ hayajabadilishwa.",
+                names.join("\n")
+            ),
+            1,
+        ));
     }
     let target = resolve_target(cli_target, cfg.target.as_deref());
     let source = fs::read_to_string(&cfg.entrypoint).map_err(|e| {
@@ -627,6 +642,58 @@ mod tests {
         let (path, is_asi) = found.unwrap();
         assert!(!is_asi);
         assert_eq!(path, pkg_src.join("greeter.as"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The lockfile-integrity floor: `compile_project` must re-hash a vendored version
+    /// dependency and compare against `pata.lock`'s recorded checksum before building. A vendored
+    /// directory whose content still matches the lock builds fine; one that's been tampered with
+    /// after the fact (e.g. someone hand-edits `.asili/packages/<name>/` post-fetch) must fail
+    /// loudly instead of silently compiling against altered code.
+    #[test]
+    fn compile_project_rejects_tampered_vendored_dependency() {
+        let root = temp_dir("integrity");
+        let pkg_dir = root.join(".asili/packages/greeter");
+        fs::create_dir_all(pkg_dir.join("src")).expect("mkdir vendored pkg");
+        fs::create_dir_all(root.join("src")).expect("mkdir src");
+        fs::create_dir_all(root.join("lib/std")).expect("mkdir lib/std");
+        fs::write(pkg_dir.join("src/greeter.as"), "umma kazi salamu() -> Neno { rejesha \"hi\" }\n")
+            .expect("write vendored module");
+
+        let real_hash = pata_package::hash_dir(&pkg_dir).expect("hash vendored dir");
+        let lock_toml = format!(
+            "version = \"1\"\nlocked_at = \"2026-01-01T00:00:00Z\"\n\n[dependencies.greeter]\nversion = \"1.0.0\"\nchecksum = \"{real_hash}\"\nsource = \"registry\"\n"
+        );
+        fs::write(root.join("pata.lock"), lock_toml).expect("write pata.lock");
+
+        fs::write(
+            root.join("pata.toml"),
+            "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\ngreeter = \"^1.0\"\n",
+        )
+        .expect("write manifest");
+        fs::write(
+            root.join("src/kuu.as"),
+            "leta matumizi\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n  chapisha(\"ok\")\n}",
+        )
+        .expect("write src");
+        fs::write(root.join("lib/std/mfumo.asi"), "kazi chapisha(ujumbe: Neno) -> Tupu\n")
+            .expect("write stdlib stub");
+
+        // Content still matches the lock: build succeeds.
+        compile_project(&root, None).expect("compile_project ok when vendored content matches pata.lock");
+
+        // Tamper with the vendored content after the fact — the lock still says `real_hash`.
+        fs::write(pkg_dir.join("src/greeter.as"), "umma kazi salamu() -> Neno { rejesha \"tampered\" }\n")
+            .expect("tamper with vendored module");
+
+        let err = compile_project(&root, None)
+            .expect_err("compile_project must reject content that no longer matches pata.lock");
+        assert!(
+            err.message.contains("uadilifu") && err.message.contains("greeter"),
+            "expected an integrity-mismatch error naming 'greeter', got: {}",
+            err.message
+        );
 
         let _ = fs::remove_dir_all(&root);
     }
