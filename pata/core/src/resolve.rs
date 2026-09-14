@@ -77,16 +77,25 @@ pub fn find_module_file(
         }
     }
 
-    // A version dependency resolves against the vendored package cache (.asili/packages/<name>),
-    // populated out-of-band (there is no registry/fetch backend yet — see pata-package's
-    // Resolver). If it isn't vendored there, resolution falls through to the generic candidates
-    // below and ultimately reports RES002 with the full searched-path list.
-    if matches!(dependencies.get(name), Some(Dependency::Version(_))) {
-        let vendored = pata_package::Paths::new(root)
-            .package_src_path(name)
-            .join(format!("{name}.as"));
-        if vendored.is_file() {
-            return Some((vendored, false));
+    // A version or git dependency resolves against the vendored package cache
+    // (.asili/packages/<name>/), populated by `pata ongeza --git` (real fetch) or the registry
+    // resolver (real fetch from a RegistrySource) — see pata_package::Resolver::resolve. Two
+    // vendored layouts are checked: a real project layout (`src/<name>.as`, matching path
+    // dependencies' own convention) and a bare single-file source directly at the vendor root
+    // (`<name>.as`) — a git repo whose only content is the module file itself, with no `src/`
+    // subdirectory, is a legitimate shape for a small dependency and shouldn't require one. If
+    // neither is vendored, resolution falls through to the generic candidates below and
+    // ultimately reports RES002 with the full searched-path list.
+    if matches!(dependencies.get(name), Some(Dependency::Version(_)) | Some(Dependency::Git { .. })) {
+        let vendor_root = pata_package::Paths::new(root).package_path(name);
+        let candidates = [
+            vendor_root.join("src").join(format!("{name}.as")),
+            vendor_root.join(format!("{name}.as")),
+        ];
+        for candidate in &candidates {
+            if candidate.is_file() {
+                return Some((candidate.clone(), false));
+            }
         }
     }
 

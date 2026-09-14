@@ -8,6 +8,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`pata ongeza --git <url>`**: real dependency fetching. `pata_package::fetch_git` clones via
+  `git2` into `.asili/packages/<lib>/`, strips `.git/` metadata, and computes a real SHA-256
+  content hash over the fetched tree — written into `pata.lock` as that dependency's checksum.
+  The manifest now records `{ git = "...", version = "..." }` (a new `pata_core::Dependency::Git`
+  variant), not a bare version string, so later resolves correctly recognize it as a git source.
+  Verified end-to-end against a real local git repo (`file://` clone), not just unit tests.
+- **`pata_package::Resolver::resolve` does real semver constraint solving**, replacing the old
+  "lock whatever version string is given, verbatim, with no conflict detection" stub. Three
+  dependency shapes: path (unchanged), git (matched against a `.pata-version` marker the fetch
+  wrote), and registry (resolved against a real local index — see below). An
+  already-locked version that still satisfies its constraint is kept rather than re-resolved,
+  avoiding lockfile churn and unnecessary re-fetches on every build. A constraint with nothing
+  real to satisfy it now fails the resolve instead of silently succeeding with a
+  `sha256("{name}@{version}")` placeholder checksum.
+- **Real local package registry** (`pata_package::LocalRegistry`, `RegistryEntry`,
+  `RegistrySource`): a file-based index — one JSON file per package at
+  `.asili/registry/<name>.json`, each entry a published version plus a fetchable source (a git
+  URL or filesystem path). `LocalRegistry::load`/`publish` do real disk I/O (previously
+  in-memory-only with no way to discover what's actually published). A registry-sourced
+  dependency's chosen version is fetched for real (via `fetch_git` or a directory copy) into
+  `.asili/packages/<name>/` and content-hashed — never a placeholder. No hosted index/API server
+  required (per the Zig/Cargo-alternative-registry precedent in
+  `docs/design/pata-production-readiness.md`); a project's own `.asili/registry/` is a real,
+  self-contained index today, with a single documented path to swap in a remote index later.
 - **`pata jenga --workspace-info`**: detect and display workspace member information from
   `Asili.toml`'s `[workspace]` table, via `find_workspace_root` → `pata_package::Workspace::open`
   (previously fully implemented in `pata_package` but called from no CLI command at all).
@@ -76,6 +100,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`tab_indent_is_applied`) added while wiring `FormatterConfig`, not by inspection — this bug
   was latent in the printer before the config was ever wired to reach it.
 
+### Changed
+
+- **Extracted `pata-core`** (new lib crate: `pata/core`), holding the module resolver
+  (`resolve.rs`), interface registry (`.asi` trait-tracking included), and a `Dependency` enum
+  previously living only in `pata-cli`'s binary-only pipeline modules (so `pata-lsp` couldn't
+  depend on them — a genuine circular-dependency constraint, `pata-cli` itself depends on
+  `pata-lsp` to launch `pata mwalimu`). `pata-cli` now depends on `pata-core` directly;
+  `pata-lsp`'s `workspace.rs` (previously an independent, smaller reimplementation with no
+  vendored-dependency or `.asi` trait visibility) now delegates its file-finding to
+  `pata_core::find_module_file`, seeing exactly what `pata-cli`'s own resolver sees. Verified
+  against the extraction's own stated risk: `pata-cli`'s existing `pipeline::compile`/`resolve`
+  test modules moved and adapted cleanly, all passing.
+- **`pata-fmt` gained a `[lib]` target** (previously `[[bin]]`-only, which is why nothing could
+  depend on it), and both `pata-cli`'s `pipeline::format` and `pata-lsp`'s `format.rs` now
+  delegate to the one real `pata_fmt::canonical_format_with_indent` token-stream printer instead
+  of maintaining separate line-based text transforms that both corrupted string literals
+  containing braces/commas (GitHub issue #18). `pata-cli`'s copy was still live in `pata nadhifu`
+  and `pata thibitisha`'s format-compliance gate despite `pata-fmt` itself having been fixed
+  earlier this cycle — the CLI's own formatter and the LSP's format-on-save were both quietly
+  still broken until this pass. Verified end-to-end against the real `pata-cli` binary: a string
+  literal containing `{`/`}`/`,` now survives `pata nadhifu` byte-for-byte while the surrounding
+  code is correctly reindented.
+
 ### Added, but not yet usable (real code, real unit tests, but not actually doing anything a user
 ### would notice yet — either not called from any command, or called but producing empty/inert
 ### output. Verified by reading the actual call sites and function bodies/return values, not by
@@ -85,10 +132,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (gated on `LINT301`'s `is_enabled`, same as every other rule), but the function itself is
   `_module: &Module) -> Vec<Diagnostic> { Vec::new() }` — a genuine no-op, per its own doc
   comment ("placeholder for future depth"). Being *called* is not the same as doing anything.
-- **`pata_package::LocalRegistry`/`PackageMetadata`/`RegistryEntry`** (`pata/package/src/
-  registry.rs`) and **`pata_package::VersionConstraint`** (`constraints.rs`, real semver
-  constraint parsing): both exist with real unit tests, neither has any real caller in
-  `pata/cli` — `Resolver::resolve` still locks whatever version string is given verbatim.
 - **`pata_cli::pipeline::stability::check_type_stability`** (`pata/cli/src/pipeline/stability.rs`):
   git-tag-baseline type-stability checking. `pata thibitisha` has no `--baseline` flag and never
   calls this — `thibitisha.rs`'s own comment still says "Not implemented: type-stability."
@@ -100,25 +143,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   command.
 - **`pata_fmt::config::FormatterConfig::line_width`**: parsed and unit-tested, but genuinely
   inert — see the `FormatterConfig` entry above under Added.
-- **`pata-lsp`'s own `format.rs::format_document`** is a *different, weaker* formatter than
-  `pata-fmt`'s `canonical_format` (crude line-by-line brace/comma whitespace normalization vs. a
-  real token-stream printer with reindentation, generic-bracket handling, and comment
-  preservation), despite a doc comment claiming it's "inlined from
-  pata/cli/src/pipeline/format.rs::canonical_format". `pata-fmt` is a `[[bin]]`-only crate with
-  no `[lib]` target today, so `pata-lsp` (which can't depend on `pata-cli` — a separate,
-  pre-existing circular-dependency constraint, see `docs/design/pata-production-readiness.md`'s
-  "Full build-out" section, item 0) has nothing real to depend on yet. Format-on-save in the
-  editor is therefore still running the weaker algorithm, and doesn't see the `FormatterConfig`
-  wiring added this cycle either. Fixing this for real needs the `pata-core`/shared-lib
-  extraction already flagged there, not a further inline copy.
+- **`pata_package::VersionConstraint`** (`constraints.rs`, real semver constraint parsing): has
+  real unit tests, but `Resolver::resolve` now does its own direct `semver::VersionReq` parsing
+  rather than going through this wrapper type — not wired in, though superseded rather than
+  strictly blocking (the constraint-solving behavior it would have enabled is now real via a
+  different code path).
 
 ### Not started
 
 Real gaps, no commits addressing them yet: per-test timeout for `pata jaribu`; `#[kabla]`/
-`#[baada]` setup/teardown fixtures; a shared `pata-core` crate (resolver extraction, and now also
-the `pata-fmt`/`pata-lsp` formatter-duplication fix above); a DAP (Debug Adapter Protocol)
-server; `pata-fmt` line-width/wrap-point support. Tracked as GitHub issues (see the `Asili
-Feature release` project board).
+`#[baada]` setup/teardown fixtures; a DAP (Debug Adapter Protocol) server; `pata-fmt`
+line-width/wrap-point support; `pata-lint` unused-local-variables rule. Tracked as GitHub issues
+(see the `Asili Feature release` project board).
 
 ## [0.5.0] — pata-cli; asili-evaluator, pata-package at patch bumps
 

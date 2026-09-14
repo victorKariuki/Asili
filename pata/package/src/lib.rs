@@ -17,4 +17,4 @@ pub use workspace::Workspace;
 pub use paths::Paths;
 pub use fetch::{fetch_git, hash_dir, FetchError};
 pub use constraints::VersionConstraint;
-pub use registry::{PackageMetadata, RegistryEntry, LocalRegistry};
+pub use registry::{PackageMetadata, RegistryEntry, RegistrySource, LocalRegistry};

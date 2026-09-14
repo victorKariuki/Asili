@@ -56,10 +56,30 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
                 let val = v.trim();
                 if val.starts_with('{') && val.ends_with('}') {
                     let inner = val.trim_matches(&['{', '}'][..]);
-                    if let Some((pk, pv)) = inner.split_once('=') {
-                        if pk.trim() == "path" {
-                            deps.insert(key, Dependency::Path(PathBuf::from(pv.trim().trim_matches('"'))));
+                    // A real (if minimal) inline-table parse: split top-level `,`-separated
+                    // `key = "value"` pairs — needed for `{ git = "...", version = "..." }`,
+                    // which the old single-`split_once('=')` version couldn't represent (it only
+                    // ever recognized one key, `path`).
+                    let mut path_val: Option<String> = None;
+                    let mut git_val: Option<String> = None;
+                    let mut version_val: Option<String> = None;
+                    for pair in inner.split(',') {
+                        let Some((pk, pv)) = pair.split_once('=') else { continue };
+                        let pv = pv.trim().trim_matches('"').to_string();
+                        match pk.trim() {
+                            "path" => path_val = Some(pv),
+                            "git" => git_val = Some(pv),
+                            "version" => version_val = Some(pv),
+                            _ => {}
                         }
+                    }
+                    if let Some(p) = path_val {
+                        deps.insert(key, Dependency::Path(PathBuf::from(p)));
+                    } else if let Some(url) = git_val {
+                        deps.insert(key, Dependency::Git {
+                            url,
+                            version: version_val.unwrap_or_else(|| "*".to_string()),
+                        });
                     }
                 } else {
                     deps.insert(key, Dependency::Version(val.trim_matches('"').to_string()));
@@ -144,6 +164,26 @@ pub fn validate_semver_like(v: &str) -> Result<(), CliError> {
 }
 
 pub fn update_dependency(root: &Path, dep: &str, version: &str) -> Result<(), CliError> {
+    update_dependency_entry(root, dep, &dependency_toml_line(dep, version, None))
+}
+
+/// Like `update_dependency`, but records a git source too — writes the `{ git = "...", version
+/// = "..." }` table form instead of a bare version string, so a later resolve
+/// (`pata_package::Resolver::resolve`) correctly treats this as a git dependency (matched
+/// against its vendored `.pata-version` marker) rather than a registry one (matched against a
+/// local index that has no entry for it).
+pub fn update_dependency_git(root: &Path, dep: &str, version: &str, git_url: &str) -> Result<(), CliError> {
+    update_dependency_entry(root, dep, &dependency_toml_line(dep, version, Some(git_url)))
+}
+
+fn dependency_toml_line(dep: &str, version: &str, git_url: Option<&str>) -> String {
+    match git_url {
+        Some(url) => format!("{dep} = {{ git = \"{url}\", version = \"{version}\" }}"),
+        None => format!("{dep} = \"{version}\""),
+    }
+}
+
+fn update_dependency_entry(root: &Path, dep: &str, new_line: &str) -> Result<(), CliError> {
     let path = root.join("pata.toml");
     let content = fs::read_to_string(&path)
         .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", path.display()), 1))?;
@@ -159,7 +199,7 @@ pub fn update_dependency(root: &Path, dep: &str, version: &str) -> Result<(), Cl
 
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             if in_dep && !inserted {
-                out.push(format!("{dep} = \"{version}\""));
+                out.push(new_line.to_string());
                 inserted = true;
             }
             in_dep = trimmed == "[tegemezi]";
@@ -170,7 +210,7 @@ pub fn update_dependency(root: &Path, dep: &str, version: &str) -> Result<(), Cl
         if in_dep {
             if let Some((k, _)) = trimmed.split_once('=') {
                 if k.trim() == dep {
-                    out.push(format!("{dep} = \"{version}\""));
+                    out.push(new_line.to_string());
                     replaced = true;
                     inserted = true;
                     continue;
@@ -184,9 +224,9 @@ pub fn update_dependency(root: &Path, dep: &str, version: &str) -> Result<(), Cl
     if !content.contains("[tegemezi]") {
         out.push(String::new());
         out.push("[tegemezi]".to_string());
-        out.push(format!("{dep} = \"{version}\""));
+        out.push(new_line.to_string());
     } else if !inserted {
-        out.push(format!("{dep} = \"{version}\""));
+        out.push(new_line.to_string());
     }
 
     let final_content = format!("{}\n", out.join("\n"));
@@ -256,6 +296,12 @@ fn to_package_dependency(dep: &Dependency) -> pata_package::manifest::Dependency
             git: None,
             branch: None,
         }),
+        Dependency::Git { url, version } => pata_package::manifest::Dependency::Table(pata_package::manifest::DependencyTable {
+            version: version.clone(),
+            path: None,
+            git: Some(url.clone()),
+            branch: None,
+        }),
     }
 }
 
@@ -274,6 +320,15 @@ pub fn read_lockfile(root: &Path) -> Result<Option<BTreeMap<String, Dependency>>
     for (name, locked) in &lock.dependencies {
         let dep = match &locked.path {
             Some(p) => Dependency::Path(PathBuf::from(p)),
+            None if locked.source == "git" => Dependency::Git {
+                // The lockfile only records the resolved exact version, not the original
+                // constraint given at `pata ongeza --git` time — using it as an exact-match
+                // constraint here is correct for `find_module_file`'s purposes (it only checks
+                // *that* this is a Version-or-Git-shaped dependency to unlock the vendored-cache
+                // lookup branch, never re-parses this string as a semver::VersionReq).
+                url: String::new(),
+                version: locked.version.clone(),
+            },
             None => Dependency::Version(locked.version.clone()),
         };
         deps.insert(name.clone(), dep);
@@ -289,7 +344,7 @@ pub fn write_lockfile(root: &Path, cfg: &ProjectConfig) -> Result<(), CliError> 
         .map(|(k, v)| (k.clone(), to_package_dependency(v)))
         .collect();
     let existing = pata_package::LockFile::load(root.join("pata.lock")).ok();
-    let mut lock = pata_package::Resolver::resolve(&pkg_deps, existing.as_ref())
+    let mut lock = pata_package::Resolver::resolve(root, &pkg_deps, existing.as_ref())
         .map_err(|e| CliError::new(format!("imeshindwa kutatua tegemezi: {e}"), 1))?;
     // Keep the existing timestamp when the resolved dependency set is unchanged, so re-running
     // `pata jenga`/`pata ongeza` without dependency changes doesn't churn pata.lock every build.
@@ -306,7 +361,7 @@ pub fn write_lockfile(root: &Path, cfg: &ProjectConfig) -> Result<(), CliError> 
 
 #[cfg(test)]
 mod tests {
-    use super::{write_lockfile, ProjectConfig};
+    use super::{write_lockfile, Dependency, ProjectConfig};
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::PathBuf;
@@ -315,9 +370,13 @@ mod tests {
     #[test]
     fn lockfile_is_deterministic() {
         let tmp = temp_dir();
+        // Path dependencies (unlike bare-version ones) resolve with no registry/vendor lookup
+        // at all — the right fixture for a test whose only concern is write_lockfile's output
+        // determinism across repeated runs, not real constraint-solving behavior (covered by
+        // pata-package's own resolver tests).
         let mut deps = BTreeMap::new();
-        deps.insert("a".into(), "^1.0".into());
-        deps.insert("b".into(), "~2.0".into());
+        deps.insert("a".into(), Dependency::Path(PathBuf::from("../a")));
+        deps.insert("b".into(), Dependency::Path(PathBuf::from("../b")));
         let cfg = ProjectConfig {
             name: "app".into(),
             version: "0.1.0".into(),
