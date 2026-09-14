@@ -8,6 +8,7 @@ pub mod workspace;
 pub mod paths;
 pub mod fetch;
 pub mod constraints;
+pub mod registry;
 
 pub use manifest::{Manifest, Dependency, WorkspaceConfig};
 pub use lock::{LockFile, LockedDependency};
@@ -16,3 +17,4 @@ pub use workspace::Workspace;
 pub use paths::Paths;
 pub use fetch::{fetch_git, hash_dir, FetchError};
 pub use constraints::VersionConstraint;
+pub use registry::{PackageMetadata, RegistryEntry, LocalRegistry};
