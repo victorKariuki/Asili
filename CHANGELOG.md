@@ -9,58 +9,63 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - **`pata jenga --workspace-info`**: detect and display workspace member information from
-  `Asili.toml`'s `[workspace]` table. Foundational for workspace-aware compilation in future
-  releases.
-- **`pata jaribu --nyuzi-za-jaribio <n>`**: parallel test execution using rayon work-stealing
-  thread pool. Default behavior unchanged (sequential execution); pass a thread count to run tests
-  concurrently.
-- **`pata njozi --kiasi` / `--maktaba`**: template variants for binary vs. library project
-  scaffolding. Defaults to binary (application) template; `--maktaba` generates library-focused
-  starter code.
-- **`pata-lint` rule `LINT301`**: placeholder for logic-error detection (reserved for future
-  unreachable-code analysis). Current implementation is a no-op; tests confirm structure.
-- **Lint rule test coverage**: expanded adversarial test fixtures for `LINT001`–`LINT003`
-  (naming), `LINT101` (style), `LINT201`–`LINT203` (best practices) — each now has 2+ test cases
-  covering boundary conditions and false-positive avoidance (e.g., Swahili function names pass
-  `LINT001`, numbers in identifiers don't trigger false flags).
-- **`pata_package::VersionConstraint`**: semver constraint parsing (caret, tilde, ranges) with
-  version-matching. Foundation for real dependency resolution; not yet wired into `pata ongeza`.
-- **`pata nadhifu` configuration**: support for `[fmt]` section in `pata.toml` with `line_width`,
-  `indent_style` (spaces/tabs), and `indent_width` options. Defaults to 100-char line width, 4-space indent.
-- **Type-stability checking**: `pata thibitisha` now supports `--baseline <tag>` to check for breaking
-  signature changes (function removal, parameter count changes) against a git-tag baseline. Uses
-  `git show <tag>:src/kuu.as` to fetch baseline source, parses, and compares public functions.
-- **Registry backend infrastructure**: `pata_package::LocalRegistry` for in-memory package metadata
-  storage, compatible with Cargo/crates.io registry format. `PackageMetadata` and `RegistryEntry`
-  support version listing and dependency metadata.
-- **LSP code actions**: Quick-fix suggestions for lint diagnostics (e.g., "Add doc comment" for
-  LINT202). Extensible per-rule action generation.
-- **Lint configurability**: `pata-lint` now supports per-rule configuration via `[lint.rules]` in
-  `pata.toml`. Set severity levels (error/warning/info/ignore), configure rule-specific options
-  (e.g., `line_limit` for function length checks).
-- **Coverage instrumentation**: `CoverageMetrics` tracks function execution during tests, calculates
-  coverage percentage, and supports threshold checks for CI gates.
-- **Workspace scaffolding**: `pata njozi --workspace` generates multi-member workspace layout with
-  `Asili.toml` and member-specific `pata.toml` files ready for development.
-- **Performance profiling**: `PerformanceMetrics` and `ScopedTimer` for phase-level latency tracking.
-  Detects SLO violations and reports per-phase timing for optimization.
-- **Inlay hints (LSP)**: `mwalimu` now advertises `inlayHintProvider` capability. Type annotations
-  and parameter hints for variables and function calls.
+  `Asili.toml`'s `[workspace]` table, via `find_workspace_root` → `pata_package::Workspace::open`
+  (previously fully implemented in `pata_package` but called from no CLI command at all).
+- **`pata jaribu --nyuzi-za-jaribio <n>`**: parallel test execution using a rayon work-stealing
+  thread pool. Default behavior unchanged (sequential, `nyuzi == 1`); pass a thread count to run
+  tests concurrently.
+- **`pata jaribu --json`**: structured test-result output (`{"jumla", "sawa", "kosa",
+  "majaribio"}`) instead of `[SAWA]`/`[KOSA]` lines, for tooling to consume.
+- **`pata njozi --kiasi` / `--maktaba` / `--workspace`**: template variants for binary vs. library
+  project scaffolding, and a multi-member workspace layout (`Asili.toml` + per-member
+  `pata.toml`s).
+- **`pata njozi`-generated projects now include `.github/workflows/ci.yml`** (build/test/lint
+  stub), matching this repo's own CI workflow shape.
+- **`pata ondoa <lib>`**: the missing counterpart to `pata ongeza` — removes a dependency from
+  `pata.toml` and regenerates `pata.lock`.
+- **New `pata-lint` rule** in `rules/logic.rs`, wired into `pata_lint::check()`.
+- **LSP inlay hints**: `mwalimu` now advertises `inlayHintProvider` and answers real
+  `textDocument/inlayHint` requests via `compute_inlay_hints`.
+- **LSP code actions**: a real `code_action` handler offering "Fomati faili (pata nadhifu)" and
+  "Ongeza `///` maelezo" quick-fixes.
+- **`pata_package::LocalRegistry`**: in-memory package metadata storage (`PackageMetadata`,
+  `RegistryEntry`), wired into `pata/cli/src/pipeline/resolve.rs`/`compile.rs`.
+- **Adversarial test coverage for existing `pata-lint` rules** (`LINT001`–`LINT003`, `LINT101`,
+  `LINT201`–`LINT203`): each now has real false-positive/false-negative test cases, not just
+  happy-path coverage.
+
+### Added, but not yet usable (real code, real unit tests, not wired into any command a user can
+### reach — verified by grepping for actual call sites, not by re-reading commit messages)
+
+- **`pata_package::VersionConstraint`** (`pata/package/src/constraints.rs`): real semver
+  constraint parsing (caret/tilde/range). `Resolver::resolve` does not call it — dependency
+  resolution still locks whatever version string is given verbatim, unchanged from before.
+- **`pata_cli::pipeline::stability::check_type_stability`** (`pata/cli/src/pipeline/stability.rs`):
+  git-tag-baseline type-stability checking. `pata thibitisha` has no `--baseline` flag and never
+  calls this — `thibitisha.rs`'s own comment still says "Not implemented: type-stability."
+- **`pata_cli::pipeline::coverage::CoverageMetrics`** (`pata/cli/src/pipeline/coverage.rs`):
+  function-execution coverage tracking. `pata jaribu` has no `--chanjo`/coverage flag and never
+  calls this.
+- **`pata_lint::config::LintConfig`** (`pata/lint/src/config.rs`): per-rule severity/option
+  configuration via a `[lint.rules]` `pata.toml` table. Nothing in `pata-lint`'s CLI or the LSP
+  reads or applies it yet.
+- **`pata_fmt::config`** (`pata/fmt/src/config.rs`): `[fmt]` `pata.toml` section for line
+  width/indent style. `pata-fmt`'s `main.rs` doesn't reference it yet.
+- **`pata_cli::pipeline::performance::PerformanceMetrics`/`ScopedTimer`**
+  (`pata/cli/src/pipeline/performance.rs`): phase-latency/SLO tracking. Not called from any
+  command.
 
 ### Fixed
 
-- **Lint test suite**: corrected `LINT101` boundary test (50 statements exactly should not flag; flag
-  only when > 50). Tests now confirm the exact threshold behavior.
+- **Lint test suite**: corrected `LINT101` boundary test (50 statements exactly should not flag;
+  flag only when > 50). Tests now confirm the exact threshold behavior.
 
-### Planned (Sections 17–20, future phases, out of initial scope)
+### Not started
 
-The following sections from the 20-section production-readiness spec are planned for completion
-in the next phase:
-- Section 11: AST-based formatter rewrite (`pata nadhifu` full pretty-printer)
-- Section 12: Real dependency resolver with semver constraint solving
-- Section 13: Type-stability check for `pata thibitisha` (git-tag baseline)
-- Sections 14–20: Registry backend, LSP full build-out, coverage instrumentation, linting
-  configurability, Workspace scaffolding, performance polish
+Real gaps, no commits addressing them yet: per-test timeout for `pata jaribu`; `#[kabla]`/
+`#[baada]` setup/teardown fixtures; a shared `pata-core` crate (resolver extraction); a DAP
+(Debug Adapter Protocol) server. Tracked as GitHub issues (see the `Asili Feature release`
+project board).
 
 ## [0.5.0] — pata-cli; asili-evaluator, pata-package at patch bumps
 

@@ -30,19 +30,27 @@ and more achievable bar.
 
 ## The floor (blocking "production ready")
 
-### 1. `pata ongeza` must actually fetch and verify a dependency's code
+### 1. `pata ongeza` must actually fetch and verify a dependency's code — PARTIALLY DONE
 
-**Current state** (verified in [package-manager-design.md](package-manager-design.md) and
-`pata/package/src/resolver.rs`): `pata ongeza` writes an entry to `pata.toml` and `pata.lock`, but
-fetches nothing. `Resolver::resolve` does no I/O — it computes `sha256("{name}@{version}")` (a hash
-of the *name string*, not package content) and inserts a `LockedDependency`. A version dependency
-only resolves at build time if something else has *already* placed source under
+**Update:** `pata_package::fetch_git`/`hash_dir` (`pata/package/src/fetch.rs`) now exist — a real
+`git2`-based clone and a real SHA-256 content hash over the fetched tree, replacing the
+name-string placeholder described below. **But `pata ongeza` itself does not call them** —
+confirmed via `grep`, `ongeza.rs` still writes only to `pata.toml`/`pata.lock` with no fetch. The
+real, checkable primitives exist; the CLI command that was supposed to use them doesn't yet.
+Tracked as issue #17 on the bug tracker.
+
+**Original gap (still true for `pata ongeza` itself)** (verified in
+[package-manager-design.md](package-manager-design.md) and `pata/package/src/resolver.rs`):
+`pata ongeza` writes an entry to `pata.toml` and `pata.lock`, but fetches nothing.
+`Resolver::resolve` does no I/O — it computes `sha256("{name}@{version}")` (a hash of the *name
+string*, not package content) and inserts a `LockedDependency`. A version dependency only resolves
+at build time if something else has *already* placed source under
 `.asili/packages/<name>/src/<name>.as` "by some out-of-band means" (the code's own comment,
-`resolve.rs:80-83`). There is no HTTP client in `pata-package`'s `Cargo.toml` at all.
+`resolve.rs:80-83`).
 
 This means `pata ongeza <lib> <version>` — the single most basic dependency-management operation —
-currently cannot be used to actually obtain a library. Path dependencies work; everything else is
-theater.
+still cannot be used to actually obtain a library. Path dependencies work; everything else is
+theater, even with `fetch_git` now existing as an unused library function.
 
 **Floor fix, informed by the Zig precedent** (no registry server required to be legitimate):
 - `[tegemezi]` gains a `git`/`url` + optional `rev`/`tag` source (the manifest type already has
@@ -155,14 +163,13 @@ self-hostable index (Kellnr/Alexandrie-style — Cargo's alternative-registry RF
 API surface: a JSON index + tarball download endpoint) is the natural next step after item 1 proves
 out the fetch/verify path on git sources.
 
-### 7. Wire up the already-built `Workspace`/multi-package support
+### 7. Wire up the already-built `Workspace`/multi-package support — DONE
 
-`pata_package::Workspace::open` (`workspace.rs`, 173 lines) is fully implemented and unit-tested —
-`[workspace] members`, path validation, aggregated dependencies — but **zero `pata` CLI commands
-call it**. This is pure upside: no new design needed, just wiring `pata jenga`/`pata ongeza` to open
-a workspace when `Asili.toml`'s `[workspace]` table exists (today only `pata.toml`, a different
-format entirely, is read — see the adapter-approach section of
-[package-manager-design.md](package-manager-design.md)).
+`pata jenga` now calls `find_workspace_root` (`pata/cli/src/pipeline/project.rs`), which opens
+`pata_package::Workspace` when `Asili.toml`'s `[workspace]` table exists — confirmed via direct
+`grep`, not just the commit message that introduced it. `pata ongeza` itself is not
+workspace-aware yet (still resolves against the single project's `pata.toml`); that's the
+remaining gap if workspace-scoped dependency addition is needed later.
 
 ### 8. LSP incremental re-resolution
 
