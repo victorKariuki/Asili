@@ -36,7 +36,12 @@ fn compute_checksum(name: &str, version: &str) -> String {
     let input = format!("{}@{}", name, version);
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
-    format!("{:x}", hasher.finalize())[..16].to_string()
+    hasher
+        .finalize()
+        .iter()
+        .take(8)
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>()
 }
 
 #[cfg(test)]

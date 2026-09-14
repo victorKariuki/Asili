@@ -24,12 +24,21 @@ Configure your editor to start the language server with one of:
 
 ```json
 {
-  "asili-lsp.serverPath": "pata",
-  "asili-lsp.serverArgs": ["mwalimu"]
+  "asili.serverPath": "pata",
+  "asili.serverArgs": ["mwalimu"]
 }
 ```
 
-Or use the **Asili VS Code extension** from the repo: open [extensions/vscode/](../../extensions/vscode/) in VS Code and run **Run Extension** (F5), or run `vsce package` to build a `.vsix` and install it.
+Or use the **Asili VS Code extension** from the repo (`extensions/vscode/`):
+
+- **From the workspace root:** `make install-ext` — builds `pata-lsp`, bundles the extension
+  (esbuild, no `node_modules` needed in the package), packages it into a `.vsix`, and installs it
+  into VS Code in one step. Also available as the **Package + install VS Code extension** task
+  (`.vscode/tasks.json`).
+- **For development:** open [extensions/vscode/](../../extensions/vscode/) in VS Code and run
+  **Run Extension** (F5) to launch an Extension Development Host without packaging anything.
+- **Manually:** `cd extensions/vscode && npm install && npx @vscode/vsce package
+  --no-dependencies`, then `code --install-extension asili-<version>.vsix`.
 
 ## Features
 

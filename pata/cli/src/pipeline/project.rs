@@ -213,6 +213,52 @@ pub fn update_dependency(root: &Path, dep: &str, version: &str) -> Result<(), Cl
     Ok(())
 }
 
+pub fn remove_dependency(cfg: &mut ProjectConfig, name: &str) -> Result<(), CliError> {
+    if !cfg.dependencies.contains_key(name) {
+        return Err(CliError::new(
+            format!("tegemezi '{name}' halipo kwenye pata.toml"),
+            1,
+        ));
+    }
+
+    let root = Path::new(".");
+    let path = root.join("pata.toml");
+    let content = fs::read_to_string(&path)
+        .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", path.display()), 1))?;
+
+    let mut out = Vec::new();
+    let mut in_dep = false;
+
+    for raw in content.lines() {
+        let line = raw.to_string();
+        let trimmed = line.trim();
+
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_dep = trimmed == "[tegemezi]";
+            out.push(line);
+            continue;
+        }
+
+        if in_dep {
+            if let Some((k, _)) = trimmed.split_once('=') {
+                if k.trim() == name {
+                    continue;
+                }
+            }
+        }
+
+        out.push(line);
+    }
+
+    let final_content = format!("{}\n", out.join("\n"));
+    fs::write(&path, final_content)
+        .map_err(|e| CliError::new(format!("imeshindwa kuandika {}: {e}", path.display()), 1))?;
+
+    cfg.dependencies.remove(name);
+    println!("tegemezi '{name}' imeondolewa");
+    Ok(())
+}
+
 /// Convert a CLI-facing `Dependency` into the `pata-package` crate's manifest representation, so
 /// resolution/locking can delegate to `pata_package::resolver::Resolver` and
 /// `pata_package::lock::LockFile` instead of hand-rolling version resolution and checksums.
