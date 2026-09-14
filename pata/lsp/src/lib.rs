@@ -45,6 +45,7 @@ mod doc_store;
 mod format;
 pub mod hover;
 mod hover_format;
+pub mod inlay_hints;
 pub mod semantic;
 mod server;
 pub mod signature;
@@ -70,6 +71,7 @@ use tower_lsp::{
         FileSystemWatcher, GlobPattern, Registration,
         FoldingRange, FoldingRangeParams, FoldingRangeProviderCapability,
         GotoDefinitionParams, GotoDefinitionResponse,
+        InlayHintParams,
         InitializeParams, InitializeResult, InitializedParams,
         NumberOrString, OneOf, Position,
         PrepareRenameResponse,
@@ -164,6 +166,7 @@ impl LanguageServer for Backend {
                 }),
                 file_operations: None,
             }),
+            inlay_hint_provider: Some(OneOf::Left(true)),
             ..ServerCapabilities::default()
         };
         Ok(InitializeResult {
@@ -700,5 +703,20 @@ impl LanguageServer for Backend {
             changes: Some(changes),
             ..Default::default()
         }))
+    }
+
+    // ── Inlay hints ────────────────────────────────────────────────────────────
+
+    async fn inlay_hint(
+        &self,
+        params: InlayHintParams,
+    ) -> tower_lsp::jsonrpc::Result<Option<Vec<tower_lsp::lsp_types::InlayHint>>> {
+        let uri = params.text_document.uri;
+        let text = match self.documents.get(uri.as_str()).await {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+        let hints = inlay_hints::compute_inlay_hints(&text, 0, 0);
+        Ok(if hints.is_empty() { None } else { Some(hints) })
     }
 }
