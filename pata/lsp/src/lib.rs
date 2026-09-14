@@ -51,6 +51,7 @@ pub mod signature;
 pub mod symbols;
 pub mod types;
 pub mod workspace;
+pub mod actions;
 
 pub use server::{run_stdio, run_stdio_blocking};
 pub use tower_lsp;
