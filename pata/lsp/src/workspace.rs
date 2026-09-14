@@ -171,6 +171,18 @@ pub fn find_project_root(file_path: &Path) -> Option<PathBuf> {
     }
 }
 
+/// The distinct set of project roots that `changed_paths` (a `workspace/didChangeWatchedFiles`
+/// event's file list) could possibly affect — the incremental-invalidation scope for
+/// `Backend::did_change_watched_files`: only these roots' cached `WorkspaceIndex` entries need
+/// dropping, not the whole cache. A changed path outside any discoverable project (no `pata.toml`
+/// anywhere above it) contributes nothing — correct, since nothing cached could depend on it.
+pub fn affected_project_roots(changed_paths: &[PathBuf]) -> HashSet<PathBuf> {
+    changed_paths
+        .iter()
+        .filter_map(|path| find_project_root(path))
+        .collect()
+}
+
 /// Walk the import graph from `root`'s entrypoint, parsing every project-local `.as` file it
 /// (transitively) `leta`s. Synchronous, real disk I/O — callers on the async LSP runtime must
 /// wrap this in `tokio::task::spawn_blocking` rather than calling it inline from a handler.
@@ -221,4 +233,83 @@ pub fn resolve_workspace(root: &Path) -> WorkspaceIndex {
     }
 
     WorkspaceIndex { modules, reverse_deps }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_project(name: &str) -> PathBuf {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("pata-lsp-ws-test-{name}-{stamp}"));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(
+            dir.join("pata.toml"),
+            "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n",
+        ).unwrap();
+        std::fs::write(dir.join("src/kuu.as"), "kazi kuu() -> Tupu { }").unwrap();
+        dir
+    }
+
+    #[test]
+    fn affected_project_roots_finds_the_one_real_root_for_a_changed_file() {
+        let project = temp_project("single");
+        let changed = vec![project.join("src/kuu.as")];
+        let roots = affected_project_roots(&changed);
+        assert_eq!(roots.len(), 1);
+        assert!(roots.contains(&project));
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    /// The actual point of scoped invalidation: two independent projects changing shouldn't be
+    /// conflated into one root, and a project nobody touched shouldn't appear in the result at
+    /// all — proving the incremental fix's real behavior (only affected roots, not everything).
+    #[test]
+    fn affected_project_roots_distinguishes_two_independent_projects() {
+        let project_a = temp_project("a");
+        let project_b = temp_project("b");
+        let untouched = temp_project("untouched");
+
+        let changed = vec![project_a.join("src/kuu.as"), project_b.join("src/kuu.as")];
+        let roots = affected_project_roots(&changed);
+
+        assert_eq!(roots.len(), 2);
+        assert!(roots.contains(&project_a));
+        assert!(roots.contains(&project_b));
+        assert!(!roots.contains(&untouched), "a project with no changed files must not appear as affected");
+
+        std::fs::remove_dir_all(&project_a).ok();
+        std::fs::remove_dir_all(&project_b).ok();
+        std::fs::remove_dir_all(&untouched).ok();
+    }
+
+    #[test]
+    fn affected_project_roots_deduplicates_multiple_files_in_the_same_project() {
+        let project = temp_project("dedup");
+        std::fs::write(project.join("src/other.as"), "kazi f() -> Tupu { }").unwrap();
+
+        let changed = vec![project.join("src/kuu.as"), project.join("src/other.as"), project.join("pata.toml")];
+        let roots = affected_project_roots(&changed);
+
+        assert_eq!(roots.len(), 1, "three changed files in one project should collapse to one root, got: {roots:?}");
+        assert!(roots.contains(&project));
+
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    #[test]
+    fn affected_project_roots_ignores_a_file_outside_any_project() {
+        let outside = std::env::temp_dir().join(format!("pata-lsp-ws-test-outside-{}", std::process::id()));
+        std::fs::create_dir_all(&outside).unwrap();
+        let stray_file = outside.join("stray.as");
+        std::fs::write(&stray_file, "kazi f() -> Tupu { }").unwrap();
+
+        let roots = affected_project_roots(&[stray_file]);
+        assert!(roots.is_empty(), "a file with no pata.toml anywhere above it must not produce a root");
+
+        std::fs::remove_dir_all(&outside).ok();
+    }
 }

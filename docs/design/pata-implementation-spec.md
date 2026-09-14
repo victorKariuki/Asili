@@ -1966,7 +1966,20 @@ One test: an unformatted source string, call `compute_code_actions`, assert one 
 
 ---
 
-## Section 19: Mwalimu (LSP) incremental re-resolution
+## Section 19: Mwalimu (LSP) incremental re-resolution — DONE (as scoped below)
+
+**Implemented:** `DocStore::diagnostics_for` (content-hash cache, `pata/lsp/src/doc_store.rs`)
+and `workspace::affected_project_roots` (scoped `did_change_watched_files` invalidation,
+`pata/lsp/src/workspace.rs`) — both wired into `did_open`/`did_change`/`did_change_watched_files`
+in `pata/lsp/src/lib.rs`. Cross-file staleness is handled via an explicit `invalidate()` call in
+`did_change_watched_files` before recomputing, per this section's own step 3, rather than the
+`Module.imports`-based reverse-lookup originally sketched there — `did_change_watched_files`
+already recomputes every open document unconditionally on any watched-file event (a pre-existing
+behavior, not changed here), so the finer-grained "only B if it imports A" targeting sketched in
+step 3 wasn't necessary to get the caching's actual benefit (skipping same-text recomputation).
+Verified with 10 new tests (6 in `doc_store.rs` proving real cache hits/misses via a
+`#[cfg(test)]` recompute counter per this section's own acceptance-check note, 4 in
+`workspace.rs` proving scoped invalidation against real on-disk project directories).
 
 **Decision made:** not a full salsa-style incremental-computation framework (pulling in the
 `salsa` crate and restructuring the entire LSP around query-based recomputation is a rewrite, not

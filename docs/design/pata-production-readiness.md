@@ -171,13 +171,23 @@ out the fetch/verify path on git sources.
 workspace-aware yet (still resolves against the single project's `pata.toml`); that's the
 remaining gap if workspace-scoped dependency addition is needed later.
 
-### 8. LSP incremental re-resolution
+### 8. LSP incremental re-resolution — PARTIALLY DONE
 
-Mwalimu (`pata/lsp`) is the toolchain's most complete piece — diagnostics, hover, completion, goto-
-def, references, rename, workspace symbols. Its own doc names the gap: every edit triggers a full
-workspace re-check, no incremental model. Not urgent (correctness > speed here), but the ceiling on
-"feels production-grade" for any project past a few dozen files. Rust-analyzer's salsa-based
-incremental recomputation is the reference architecture if this is ever prioritized.
+**Update:** Two real, scoped fixes landed (`pata-implementation-spec.md` Section 19's
+decision — content-hash per-document caching plus scoped watched-file invalidation, not a full
+salsa rewrite): `did_change_watched_files` invalidates only the specific project root(s) whose
+files actually changed (`workspace::affected_project_roots`), not the entire cross-file
+resolution cache; and `DocStore::diagnostics_for` skips re-lex/re-parse/re-analyze on a `didChange`
+whose text hashes identically to what's cached. What's still missing, genuinely: finer-grained
+recomputation *within* one project root on a real content change — a cache miss still re-walks
+that project's whole import graph from its entrypoint, there's no per-file salsa-style
+recomputation. That remainder is the actual rust-analyzer-reference-architecture-sized item, not
+the smaller wins above.
+
+**Original gap:** Mwalimu (`pata/lsp`) is the toolchain's most complete piece — diagnostics,
+hover, completion, goto-def, references, rename, workspace symbols. Its own doc named the gap:
+every edit triggers a full workspace re-check, no incremental model. Not urgent (correctness >
+speed here), but the ceiling on "feels production-grade" for any project past a few dozen files.
 
 ### 9. Lint rule depth
 

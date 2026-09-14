@@ -33,12 +33,29 @@
 //!     you haven't opened as a tab yet is still found
 //!   - prepare_rename / rename: validates the cursor is on a real, renameable symbol before
 //!     the client shows the rename UI, then renames all occurrences in the open document
+//!   - inlay_hint: inferred types on un-annotated `weka`/`thabiti` bindings, via
+//!     `SemanticAnalyzer::inlay_type_hints` (the same scope-resolution walk that drives
+//!     semantic_tokens)
 //!
-//! Not yet implemented: inlay hints, and true incremental re-resolution (every workspace
-//! re-resolve — on open, on save, on a watched external change — re-walks the whole import
-//! graph from scratch; there is no API to cheaply re-resolve just one changed file). See
-//! `crate::workspace`'s module doc for the cross-file model this is all built on and its
-//! known limitations (path-based imports only, no `pata.lock`/registry dependencies).
+//! Incremental re-resolution is deliberately not a full salsa-style per-file recomputation
+//! framework (`docs/design/pata-implementation-spec.md` Section 19's own "Decision made":
+//! pulling in `salsa` and restructuring around query-based recomputation is a rewrite, not an
+//! incremental improvement). Two real, scoped wins instead:
+//!   - `did_change_watched_files` invalidates only the specific project root(s) the changed
+//!     files actually belong to (`workspace::affected_project_roots`), not the entire cache — an
+//!     unrelated sibling project under the same VS Code workspace folder stays a cache hit.
+//!   - `DocStore::diagnostics_for` caches each document's last-computed diagnostics keyed by a
+//!     content hash: a `didChange` whose new text hashes identically to what's cached (a real
+//!     case some editors fire — a no-op edit event, e.g. a purely-cursor-movement change) skips
+//!     re-lex/re-parse/re-analyze entirely instead of recomputing on every keystroke regardless
+//!     of whether anything actually changed.
+//! What's still missing is finer-grained *within* one project root on a genuine content change:
+//! a cache miss still re-walks that whole project's import graph from its entrypoint — there's
+//! no API to cheaply re-resolve just the one file that changed within an already-resolved graph
+//! (true per-file salsa-style recomputation). See `crate::workspace`'s module doc for the
+//! cross-file model this is all built on and its known limitations (path-based imports plus
+//! registry-resolved vendored dependencies via `pata_core::find_module_file`; still no
+//! `pata.lock`-driven version-constraint awareness).
 
 mod diagnostics;
 mod doc_store;
@@ -213,17 +230,33 @@ impl LanguageServer for Backend {
     }
 
     /// Fires on a change to any file matching the watchers registered in `initialized` above.
-    /// This crate has no incremental re-resolution (see `crate::workspace`'s module doc), and
-    /// with resolution now keyed per discovered project root rather than one workspace-wide
-    /// index, the simplest correct response to "something changed, somewhere" is to drop every
-    /// cached project and let `workspace_for` re-resolve lazily on next use — cheap relative to
-    /// getting invalidation wrong, and avoids having to work out which of possibly several
-    /// cached roots a given changed file actually belongs to. Then re-publish diagnostics for
-    /// every currently open document (each against its own project, if any), so e.g. a sibling
-    /// file edited outside the editor that broke (or fixed) a cross-file call is reflected
-    /// immediately rather than waiting for the next edit in an open file.
-    async fn did_change_watched_files(&self, _params: DidChangeWatchedFilesParams) {
-        self.workspaces.write().await.clear();
+    /// Incremental: `params.changes` names exactly which files changed, so only the project
+    /// root(s) those files actually belong to (via `find_project_root`) are dropped from the
+    /// cache — every other cached project (an unrelated sibling under the same VS Code
+    /// workspace folder, or a project nobody's editing right now) is left untouched and stays a
+    /// cache hit on the next `workspace_for` call. Previously this cleared the *entire* cache on
+    /// any watched-file event anywhere, forcing a full re-resolution of every open document's
+    /// project regardless of whether that project was actually affected — the real cost the
+    /// production-readiness doc's "no incremental re-resolution" gap named. A changed file with
+    /// no discoverable project root (outside any known `pata.toml`) contributes nothing to
+    /// invalidate, which is correct: nothing cached could depend on it. Then re-publish
+    /// diagnostics for every currently open document (each against its own project, if any), so
+    /// e.g. a sibling file edited outside the editor that broke (or fixed) a cross-file call is
+    /// reflected immediately rather than waiting for the next edit in an open file.
+    async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        let changed_paths: Vec<std::path::PathBuf> = params
+            .changes
+            .iter()
+            .filter_map(|change| change.uri.to_file_path().ok())
+            .collect();
+        let affected_roots = crate::workspace::affected_project_roots(&changed_paths);
+
+        if !affected_roots.is_empty() {
+            let mut workspaces = self.workspaces.write().await;
+            for root in &affected_roots {
+                workspaces.remove(root);
+            }
+        }
 
         for (uri_str, text) in self.documents.all().await {
             if is_interface_stub(&uri_str) {
@@ -237,8 +270,19 @@ impl LanguageServer for Backend {
                 Some(path) => self.workspace_for(path).await,
                 None => None,
             };
-            let diags = run_lex_parse(&text, workspace.as_ref(), file_path.as_deref());
-            let lsp_diags = asili_diagnostics_to_lsp_with_source(&diags, &text);
+            // The document's own text may be unchanged, but an external change to a *different*
+            // file it `leta`s can still stale its diagnostics (a cross-file call that just broke
+            // or got fixed) — drop any cached entry from before this event so diagnostics_for
+            // below genuinely recomputes rather than serving a same-text cache hit that predates
+            // the external change, and so it caches the fresh result for the next did_change.
+            self.documents.invalidate(&uri_str).await;
+            let lsp_diags = self
+                .documents
+                .diagnostics_for(&uri_str, &text, || {
+                    let diags = run_lex_parse(&text, workspace.as_ref(), file_path.as_deref());
+                    asili_diagnostics_to_lsp_with_source(&diags, &text)
+                })
+                .await;
             if let Ok(uri) = uri_str.parse() {
                 let _ = self.client.publish_diagnostics(uri, lsp_diags, None).await;
             }
@@ -260,12 +304,30 @@ impl LanguageServer for Backend {
                 Some(path) => self.workspace_for(path).await,
                 None => None,
             };
-            let diags = run_lex_parse(&text, workspace.as_ref(), file_path.as_deref());
-            asili_diagnostics_to_lsp_with_source(&diags, &text)
+            // Populates the diagnostics cache too (not just computing once and discarding) so
+            // an immediate no-op didChange right after open — some clients fire one — is a real
+            // cache hit rather than a second identical recomputation.
+            self.documents
+                .diagnostics_for(&uri_str, &text, || {
+                    let diags = run_lex_parse(&text, workspace.as_ref(), file_path.as_deref());
+                    asili_diagnostics_to_lsp_with_source(&diags, &text)
+                })
+                .await
         };
         let _ = self.client.publish_diagnostics(uri, lsp_diags, None).await;
     }
 
+    /// Incremental per Section 19 of `pata-implementation-spec.md`: `DocStore::diagnostics_for`
+    /// skips re-lex/re-parse/re-analyze entirely when the incoming text hashes identically to
+    /// what's already cached for this URI — a real case some editors hit (a no-op edit event,
+    /// e.g. purely a cursor move some clients still fire `didChange` for). Cross-file
+    /// invalidation (a change to module A stales cached diagnostics for every B that `leta`s A)
+    /// is handled separately in `did_change_watched_files`/the resolved workspace's
+    /// `reverse_deps`, not here — an in-editor edit to the *currently open* document doesn't by
+    /// itself invalidate any other document's cache entry until that edit is saved to disk and a
+    /// watcher event fires (this mirrors the pre-existing behavior for cross-file diagnostics
+    /// generally: another open document only sees the *saved* state of its imports, not
+    /// keystroke-by-keystroke edits in a different tab).
     async fn did_change(&self, params: tower_lsp::lsp_types::DidChangeTextDocumentParams) {
         let uri = params.text_document.uri.clone();
         let uri_str = uri.to_string();
@@ -282,8 +344,12 @@ impl LanguageServer for Backend {
                 Some(path) => self.workspace_for(path).await,
                 None => None,
             };
-            let diags = run_lex_parse(&text, workspace.as_ref(), file_path.as_deref());
-            asili_diagnostics_to_lsp_with_source(&diags, &text)
+            self.documents
+                .diagnostics_for(&uri_str, &text, || {
+                    let diags = run_lex_parse(&text, workspace.as_ref(), file_path.as_deref());
+                    asili_diagnostics_to_lsp_with_source(&diags, &text)
+                })
+                .await
         };
         let _ = self.client.publish_diagnostics(uri, lsp_diags, None).await;
     }

@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Mwalimu (LSP) partial incremental re-resolution** (`docs/design/pata-implementation-spec.md`
+  Section 19's scoped design, not a full salsa-style rewrite): two real, independently-verified
+  fixes to the "full workspace re-check on every edit/external change" cost.
+  - `did_change_watched_files` now invalidates only the specific project root(s) the changed
+    files actually belong to (new `workspace::affected_project_roots`), instead of clearing the
+    *entire* cross-file resolution cache on any watched-file event anywhere — an unrelated
+    sibling project under the same VS Code workspace folder stays a cache hit.
+  - A new `DocStore::diagnostics_for` caches each open document's diagnostics keyed by a content
+    hash (same `DefaultHasher` convention as `pata_core::interface_registry`'s `fingerprint`): a
+    `didChange` whose new text hashes identically to what's cached — a real case some editors
+    fire, e.g. a cursor-only "edit" event — skips re-lex/re-parse/re-analyze entirely instead of
+    recomputing on every keystroke. Cross-file staleness (document A's diagnostics depend on
+    document B, which just changed externally) is handled by explicitly invalidating A's cache
+    entry inside `did_change_watched_files` before recomputing, not left to a same-text false
+    cache hit.
 - **`pata-lint` LINT301: unused local variables.** `rules::logic::check_logic_errors` — real
   code, no longer the placeholder no-op it was — flags a `weka`/`thabiti` binding never
   referenced anywhere else in the same function body. Deliberately conservative scope: only
