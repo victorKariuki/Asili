@@ -19,6 +19,7 @@ pub fn run(args: &[String]) -> CliResult {
 enum Template {
     Binary,
     Library,
+    Workspace,
 }
 
 fn parse_inputs(args: &[String]) -> Result<(String, PathBuf, Template), CliError> {
@@ -35,6 +36,10 @@ fn parse_inputs(args: &[String]) -> Result<(String, PathBuf, Template), CliError
             }
             "--kiasi" => {
                 template = Template::Binary;
+                i += 1;
+            }
+            "--workspace" => {
+                template = Template::Workspace;
                 i += 1;
             }
             other => {
@@ -84,15 +89,42 @@ fn create_scaffold(project_name: &str, destination: &Path, template: Template) -
         ),
     )?;
 
-    let kuu_content = match template {
-        Template::Binary => "leta matumizi\n\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    ikiwa hoja.urefu() > 1 {\n        chapisha(\"Asili scaffold iko tayari.\")\n    } vinginevyo {\n        chapisha(\"Habari Asili!\")\n    }\n}\n",
-        Template::Library => "# Maktaba ya Asili\n\n# Jumuishe jongoo kuu hapa\nkazi example() -> Tupu {\n    rejesha Tupu\n}\n",
-    };
+    match template {
+        Template::Workspace => {
+            // Create Asili.toml for workspace
+            write_file(
+                &destination.join("Asili.toml"),
+                "[workspace]\nmembers = [\"core\", \"lib\"]\n\n[jumla]\nnina = true\n",
+            )?;
+            fs::create_dir_all(destination.join("core")).map_err(|e| {
+                CliError::new(format!("imeshindwa kuunda core/: {e}"), 1)
+            })?;
+            fs::create_dir_all(destination.join("lib")).map_err(|e| {
+                CliError::new(format!("imeshindwa kuunda lib/: {e}"), 1)
+            })?;
+            // Create pata.toml for each member
+            write_file(
+                &destination.join("core/pata.toml"),
+                &format!("[jumla]\njina = \"{}-core\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n", project_name),
+            )?;
+            write_file(
+                &destination.join("lib/pata.toml"),
+                &format!("[jumla]\njina = \"{}-lib\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n", project_name),
+            )?;
+        }
+        _ => {
+            let kuu_content = match template {
+                Template::Binary => "leta matumizi\n\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    ikiwa hoja.urefu() > 1 {\n        chapisha(\"Asili scaffold iko tayari.\")\n    } vinginevyo {\n        chapisha(\"Habari Asili!\")\n    }\n}\n",
+                Template::Library => "# Maktaba ya Asili\n\n# Jumuishe jongoo kuu hapa\nkazi example() -> Tupu {\n    rejesha Tupu\n}\n",
+                Template::Workspace => unreachable!(),
+            };
 
-    write_file(
-        &destination.join("src/kuu.as"),
-        kuu_content,
-    )?;
+            write_file(
+                &destination.join("src/kuu.as"),
+                kuu_content,
+            )?;
+        }
+    }
     write_file(
         &destination.join(".gitignore"),
         "kilele/*\n!kilele/.gitkeep\n\n*.asb\n*.asm\n",
