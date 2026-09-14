@@ -61,7 +61,7 @@ use diagnostics::{asili_diagnostics_to_lsp_with_source, run_lex_parse};
 use server::Backend;
 use tower_lsp::{
     lsp_types::{
-        CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams,
+        CodeActionOrCommand, CodeActionParams,
         CodeActionProviderCapability, CodeActionResponse,
         CodeLens, CodeLensOptions, CodeLensParams,
         CompletionOptions, CompletionParams, CompletionResponse,
@@ -73,12 +73,11 @@ use tower_lsp::{
         GotoDefinitionParams, GotoDefinitionResponse,
         InlayHintParams,
         InitializeParams, InitializeResult, InitializedParams,
-        NumberOrString, OneOf, Position,
+        OneOf,
         PrepareRenameResponse,
-        Range,
         ReferenceParams,
         RenameOptions,
-        RenameParams, TextDocumentPositionParams, TextEdit, WorkspaceEdit,
+        RenameParams, TextDocumentPositionParams, WorkspaceEdit,
         SemanticTokenModifier, SemanticTokenType,
         SemanticTokensFullOptions, SemanticTokensLegend,
         SemanticTokensOptions, SemanticTokensServerCapabilities,
@@ -230,15 +229,15 @@ impl LanguageServer for Backend {
             if is_interface_stub(&uri_str) {
                 continue;
             }
-            let workspace = uri_str
+            let file_path = uri_str
                 .parse::<tower_lsp::lsp_types::Url>()
                 .ok()
                 .and_then(|u| u.to_file_path().ok());
-            let workspace = match workspace {
-                Some(path) => self.workspace_for(&path).await,
+            let workspace = match &file_path {
+                Some(path) => self.workspace_for(path).await,
                 None => None,
             };
-            let diags = run_lex_parse(&text, workspace.as_ref());
+            let diags = run_lex_parse(&text, workspace.as_ref(), file_path.as_deref());
             let lsp_diags = asili_diagnostics_to_lsp_with_source(&diags, &text);
             if let Ok(uri) = uri_str.parse() {
                 let _ = self.client.publish_diagnostics(uri, lsp_diags, None).await;
@@ -256,11 +255,12 @@ impl LanguageServer for Backend {
         let lsp_diags = if is_interface_stub(&uri_str) {
             vec![]
         } else {
-            let workspace = match uri.to_file_path() {
-                Ok(path) => self.workspace_for(&path).await,
-                Err(()) => None,
+            let file_path = uri.to_file_path().ok();
+            let workspace = match &file_path {
+                Some(path) => self.workspace_for(path).await,
+                None => None,
             };
-            let diags = run_lex_parse(&text, workspace.as_ref());
+            let diags = run_lex_parse(&text, workspace.as_ref(), file_path.as_deref());
             asili_diagnostics_to_lsp_with_source(&diags, &text)
         };
         let _ = self.client.publish_diagnostics(uri, lsp_diags, None).await;
@@ -277,11 +277,12 @@ impl LanguageServer for Backend {
         let lsp_diags = if is_interface_stub(&uri_str) {
             vec![]
         } else {
-            let workspace = match uri.to_file_path() {
-                Ok(path) => self.workspace_for(&path).await,
-                Err(()) => None,
+            let file_path = uri.to_file_path().ok();
+            let workspace = match &file_path {
+                Some(path) => self.workspace_for(path).await,
+                None => None,
             };
-            let diags = run_lex_parse(&text, workspace.as_ref());
+            let diags = run_lex_parse(&text, workspace.as_ref(), file_path.as_deref());
             asili_diagnostics_to_lsp_with_source(&diags, &text)
         };
         let _ = self.client.publish_diagnostics(uri, lsp_diags, None).await;
@@ -389,54 +390,22 @@ impl LanguageServer for Backend {
     // ── Code actions ───────────────────────────────────────────────────────────
     // The client sends back whatever diagnostics from our own publish_diagnostics overlap the
     // requested range/selection (`params.context.diagnostics`) — no need to re-run lint
-    // ourselves. Currently offers one quick-fix: LINT202 ("Function 'x' lacks documentation
-    // comment") gets an "Add doc comment" fix that inserts a stub comment line directly above
-    // the function, satisfying the same check `pata/lint/src/rules/best_practices.rs` runs
-    // (a `#` line immediately preceding the `kazi`/attribute block).
+    // ourselves. The actual diagnostic→edit logic lives in `actions::action_for_diagnostic`
+    // (unit-tested there against real lint-rule message text); this handler just fans it out
+    // over the diagnostics the client handed back.
 
     async fn code_action(
         &self,
         params: CodeActionParams,
     ) -> tower_lsp::jsonrpc::Result<Option<CodeActionResponse>> {
         let uri = params.text_document.uri.clone();
-        let mut actions = Vec::new();
-
-        for diag in &params.context.diagnostics {
-            let is_lint202 = matches!(&diag.code, Some(NumberOrString::String(c)) if c == "LINT202");
-            if !is_lint202 {
-                continue;
-            }
-            let Some(name) = diag
-                .message
-                .strip_prefix("Function '")
-                .and_then(|rest| rest.split('\'').next())
-            else {
-                continue;
-            };
-
-            let insert_line = diag.range.start.line;
-            let indent = " ".repeat(diag.range.start.character as usize);
-            let edit = TextEdit {
-                range: Range {
-                    start: Position { line: insert_line, character: 0 },
-                    end: Position { line: insert_line, character: 0 },
-                },
-                new_text: format!("{indent}# TODO: eleza {name}.\n"),
-            };
-            let mut changes = std::collections::HashMap::new();
-            changes.insert(uri.clone(), vec![edit]);
-
-            actions.push(CodeActionOrCommand::CodeAction(CodeAction {
-                title: format!("Ongeza maelezo kwa '{name}'"),
-                kind: Some(CodeActionKind::QUICKFIX),
-                diagnostics: Some(vec![diag.clone()]),
-                edit: Some(WorkspaceEdit {
-                    changes: Some(changes),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }));
-        }
+        let actions: Vec<CodeActionOrCommand> = params
+            .context
+            .diagnostics
+            .iter()
+            .filter_map(|diag| actions::action_for_diagnostic(diag, &uri))
+            .map(CodeActionOrCommand::CodeAction)
+            .collect();
 
         Ok(if actions.is_empty() { None } else { Some(actions) })
     }
@@ -716,7 +685,7 @@ impl LanguageServer for Backend {
             Some(t) => t,
             None => return Ok(None),
         };
-        let hints = inlay_hints::compute_inlay_hints(&text, 0, 0);
+        let hints = inlay_hints::compute_inlay_hints(&text);
         Ok(if hints.is_empty() { None } else { Some(hints) })
     }
 }

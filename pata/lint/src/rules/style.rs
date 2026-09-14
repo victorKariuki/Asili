@@ -3,14 +3,23 @@
 use asili_diagnostics::Diagnostic;
 use asili_parser::Module;
 
-/// Check for style issues
+/// Default LINT101 threshold: functions with more statements than this get flagged. Overridable
+/// via `[lint.rules.LINT101] options.line_limit` in `pata.toml` — see `check_style_issues_with_limit`.
+pub const DEFAULT_LINE_LIMIT: usize = 50;
+
+/// Check for style issues, using the default statement-count threshold for LINT101.
 pub fn check_style_issues(module: &Module) -> Vec<Diagnostic> {
+    check_style_issues_with_limit(module, DEFAULT_LINE_LIMIT)
+}
+
+/// Check for style issues with a caller-supplied LINT101 threshold (from `LintConfig::option_int
+/// ("LINT101", "line_limit")`, when set).
+pub fn check_style_issues_with_limit(module: &Module, line_limit: usize) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
 
-    // Check function length (warn if > 50 statements)
     for func in &module.functions {
         let func_lines = func.body.statements.len();
-        if func_lines > 50 {
+        if func_lines > line_limit {
             diags.push(
                 Diagnostic::new("LINT101", format!(
                     "kazi '{}' ina kauli {} — fikiria kuigawanya",

@@ -3,7 +3,8 @@
 use asili_diagnostics::Diagnostic as AsiliDiagnostic;
 use asili_lexer::tokenize;
 use asili_parser::{extern_env_from_imports, merge_modules, parse_tokens, semantic_check_with_env_and_modules};
-use pata_lint::lint_source;
+use pata_lint::{config::LintConfig, lint_source_with_config};
+use std::path::Path;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use crate::workspace::WorkspaceIndex;
 
@@ -94,7 +95,12 @@ pub fn asili_diagnostics_to_lsp_with_source(diags: &[AsiliDiagnostic], source: &
 /// your own sibling `.as` file falsely reports as an undefined function/unknown module, and a
 /// struct/trait defined there is unrecognized entirely: the stdlib-only extern env and
 /// `resolved_modules` set have no way to know that module exists.
-pub fn run_lex_parse(text: &str, workspace: Option<&WorkspaceIndex>) -> Vec<AsiliDiagnostic> {
+///
+/// `file_path`, when given, is used to load the project's `[lint.rules]` `pata.toml` table
+/// (walking upward via `LintConfig::find_and_load`) so LSP-published lint diagnostics respect
+/// the same per-rule severity/options `pata-lint`'s CLI does — `None` (e.g. an unsaved buffer
+/// with no on-disk path) lints with every rule at its default settings.
+pub fn run_lex_parse(text: &str, workspace: Option<&WorkspaceIndex>, file_path: Option<&Path>) -> Vec<AsiliDiagnostic> {
     let mut out = Vec::new();
     let tokens = match tokenize(text) {
         Ok(t) => t,
@@ -136,9 +142,57 @@ pub fn run_lex_parse(text: &str, workspace: Option<&WorkspaceIndex>) -> Vec<Asil
     }
 
     // Run linting to provide style and best-practice warnings
-    if let Ok(lint_diags) = lint_source(text) {
+    let lint_config = file_path
+        .and_then(|p| LintConfig::find_and_load(p).ok())
+        .unwrap_or_default();
+    if let Ok(lint_diags) = lint_source_with_config(text, &lint_config) {
         out.extend(lint_diags);
     }
 
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn long_function_source() -> String {
+        let mut src = String::from("kazi ndefu() -> Tupu { ");
+        for _ in 0..51 {
+            src.push_str("weka x = 1\n");
+        }
+        src.push_str("rejesha Tupu }");
+        src
+    }
+
+    #[test]
+    fn run_lex_parse_with_no_file_path_uses_default_lint_settings() {
+        let src = long_function_source();
+        let diags = run_lex_parse(&src, None, None);
+        assert!(diags.iter().any(|d| d.code == "LINT101"));
+    }
+
+    #[test]
+    fn run_lex_parse_respects_project_pata_toml_lint_rules() {
+        let root = std::env::temp_dir()
+            .join(format!("pata-lsp-test-diag-config-{}", std::process::id()));
+        let src_dir = root.join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        std::fs::write(
+            root.join("pata.toml"),
+            "[lint.rules.LINT101]\nseverity = \"ignore\"\n",
+        )
+        .unwrap();
+        let file_path = src_dir.join("kuu.as");
+        let src = long_function_source();
+        std::fs::write(&file_path, &src).unwrap();
+
+        let diags = run_lex_parse(&src, None, Some(&file_path));
+        assert!(
+            !diags.iter().any(|d| d.code == "LINT101"),
+            "pata.toml's [lint.rules.LINT101] severity=\"ignore\" should suppress LINT101"
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
 }

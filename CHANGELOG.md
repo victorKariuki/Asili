@@ -26,26 +26,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Adversarial test coverage for existing `pata-lint` rules** (`LINT001`–`LINT003`, `LINT101`,
   `LINT201`–`LINT203`): each now has real false-positive/false-negative test cases, not just
   happy-path coverage.
+- **LSP inlay hints, for real**: `pata/lsp/src/inlay_hints.rs::compute_inlay_hints` now runs the
+  same `SemanticAnalyzer` scope-resolution walk semantic-tokens uses (a new
+  `inlay_type_hints()` accessor collects `(line, column, ValueType)` for every un-annotated
+  `weka`/`thabiti` while `scan_stmt` is already inferring types for scope binding), and renders
+  a real `InlayHintLabel::String(": <Aina>")`. Replaces the previous version, which built every
+  hint with an empty `LabelParts(vec![])` label (rendered as nothing) from a naive per-line text
+  scan that checked for a `kitu` keyword this language's lexer doesn't have (declarations use
+  `weka`).
+- **LSP code actions, for real**: the `code_action` handler's LINT202 fix now matches the
+  lint rule's real Swahili message (`"kazi '<name>' haina maelezo..."`) instead of a
+  `"Function '<name>'"` prefix that never matched anything, so the fix silently never fired even
+  though the surrounding plumbing (`edit: Some(...)`) was correct. A second fix for LINT203
+  ("Ondoa leta isiyotumika") now deletes the flagged import line for real. Both are implemented
+  as a pure `actions::action_for_diagnostic(diag, uri) -> Option<CodeAction>` function, unit
+  tested directly against realistic diagnostic messages rather than only reachable through the
+  full `tower_lsp` server.
+- **`LINT203` ("unused leta") now does real per-name detection**: for each `leta
+  modname::{a, b}` selective import, flags any name that never appears as a word elsewhere in
+  the file — replacing the previous check, which only ever fired when a file had imports *and
+  zero functions* (`module.imports.len() > 0 && module.functions.is_empty()`), a condition that
+  had nothing to do with whether an import was actually used. Wildcard `leta modname` imports
+  aren't checked (no explicit names to search for without full usage resolution).
+- **`pata_lint::config::LintConfig` is wired in**: `pata-lint`'s CLI and the LSP's diagnostics
+  pipeline (`pata/lsp/src/diagnostics.rs::run_lex_parse`) both now load a project's
+  `[lint.rules]` `pata.toml` table via a new `LintConfig::find_and_load` (walks upward from the
+  file/directory being linted to the nearest ancestor `pata.toml` — `pata-lint` has no
+  dependency on `pata-cli`'s own project-root walk, so this is a small independent one) and
+  apply it through a new `lint_source_with_config`: `severity = "ignore"` genuinely suppresses a
+  rule's diagnostics, and `LINT101`'s `options.line_limit` genuinely overrides its default
+  50-statement threshold. `lint_source`/`pata-lint`'s default CLI behavior is unchanged when no
+  `pata.toml`/`[lint.rules]` is present.
+- **`pata_fmt::config::FormatterConfig`'s `indent_style`/`indent_width` are wired in**:
+  `pata-fmt`'s `main.rs` now loads `[fmt]` via a new `FormatterConfig::find_and_load` (same
+  upward-walk shape as `LintConfig`'s) and threads a real indent unit into a new
+  `canonical_format_with_indent`, replacing the printer's previously-hardcoded 4-space indent.
+  `line_width` (line-wrap) is still not applied — `Printer` has no line-length tracking or wrap
+  points at all, so this is honestly out of scope until that's built, not silently claimed done.
+
+### Fixed
+
+- **Lint test suite**: corrected `LINT101` boundary test (50 statements exactly should not flag;
+  flag only when > 50). Tests now confirm the exact threshold behavior.
+- **`pata-fmt` tab-indent correctness bug**: `Printer::emit_token`'s `needs_space_before` check
+  only tested `self.out.ends_with(' ')` to detect "already at a fresh indent, don't add another
+  leading space" — true for the old hardcoded 4-space indent (which does end in `' '`) but false
+  right after a tab, so configuring `indent_style = "tabs"` produced a spurious extra space after
+  every tab (`"\t weka x = 1"` instead of `"\tweka x = 1"`). Caught by a real test
+  (`tab_indent_is_applied`) added while wiring `FormatterConfig`, not by inspection — this bug
+  was latent in the printer before the config was ever wired to reach it.
 
 ### Added, but not yet usable (real code, real unit tests, but not actually doing anything a user
 ### would notice yet — either not called from any command, or called but producing empty/inert
 ### output. Verified by reading the actual call sites and function bodies/return values, not by
-### re-reading commit messages — an earlier draft of this section got several of these wrong by
-### stopping at "is it called" without checking what it returns)
+### re-reading commit messages)
 
-- **LSP inlay hints** (`pata/lsp/src/inlay_hints.rs`, `compute_inlay_hints`): wired into a real
-  `textDocument/inlayHint` handler, but every hint it builds has `label:
-  InlayHintLabel::LabelParts(vec![])` — an empty label, which renders as nothing in the editor.
-  Detection is also a naive per-line text scan (not AST-based), and checks for a `kitu` keyword
-  prefix that doesn't exist in this language's lexer (real declarations use `weka`).
-- **LSP code actions** (`pata/lsp/src/actions.rs`, `code_actions_for_diagnostic`): wired into a
-  real `code_action` handler, but every `CodeAction` it builds has `edit: None` — clicking either
-  offered quick-fix ("Add doc comment" for `LINT202`, "Remove unused imports" for `LINT203`) does
-  nothing. Also not what the original spec asked for (a `pata nadhifu`-applying quick-fix and a
-  missing-`///`-comment fix) — different, also-inert actions shipped instead.
-- **`rules/logic.rs`'s `check_logic_errors`**: wired into `pata_lint::check()`, but the function
-  itself is `_module: &Module) -> Vec<Diagnostic> { Vec::new() }` — a genuine no-op, per its own
-  doc comment ("placeholder for future depth"). Being *called* is not the same as doing anything.
+- **`rules/logic.rs`'s `check_logic_errors`**: wired into `pata_lint::lint_source_with_config`
+  (gated on `LINT301`'s `is_enabled`, same as every other rule), but the function itself is
+  `_module: &Module) -> Vec<Diagnostic> { Vec::new() }` — a genuine no-op, per its own doc
+  comment ("placeholder for future depth"). Being *called* is not the same as doing anything.
 - **`pata_package::LocalRegistry`/`PackageMetadata`/`RegistryEntry`** (`pata/package/src/
   registry.rs`) and **`pata_package::VersionConstraint`** (`constraints.rs`, real semver
   constraint parsing): both exist with real unit tests, neither has any real caller in
@@ -56,26 +95,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`pata_cli::pipeline::coverage::CoverageMetrics`** (`pata/cli/src/pipeline/coverage.rs`):
   function-execution coverage tracking. `pata jaribu` has no `--chanjo`/coverage flag and never
   calls this.
-- **`pata_lint::config::LintConfig`** (`pata/lint/src/config.rs`): per-rule severity/option
-  configuration via a `[lint.rules]` `pata.toml` table. Nothing in `pata-lint`'s CLI or the LSP
-  reads or applies it yet.
-- **`pata_fmt::config`** (`pata/fmt/src/config.rs`): `[fmt]` `pata.toml` section for line
-  width/indent style. `pata-fmt`'s `main.rs` doesn't reference it yet.
 - **`pata_cli::pipeline::performance::PerformanceMetrics`/`ScopedTimer`**
   (`pata/cli/src/pipeline/performance.rs`): phase-latency/SLO tracking. Not called from any
   command.
-
-### Fixed
-
-- **Lint test suite**: corrected `LINT101` boundary test (50 statements exactly should not flag;
-  flag only when > 50). Tests now confirm the exact threshold behavior.
+- **`pata_fmt::config::FormatterConfig::line_width`**: parsed and unit-tested, but genuinely
+  inert — see the `FormatterConfig` entry above under Added.
+- **`pata-lsp`'s own `format.rs::format_document`** is a *different, weaker* formatter than
+  `pata-fmt`'s `canonical_format` (crude line-by-line brace/comma whitespace normalization vs. a
+  real token-stream printer with reindentation, generic-bracket handling, and comment
+  preservation), despite a doc comment claiming it's "inlined from
+  pata/cli/src/pipeline/format.rs::canonical_format". `pata-fmt` is a `[[bin]]`-only crate with
+  no `[lib]` target today, so `pata-lsp` (which can't depend on `pata-cli` — a separate,
+  pre-existing circular-dependency constraint, see `docs/design/pata-production-readiness.md`'s
+  "Full build-out" section, item 0) has nothing real to depend on yet. Format-on-save in the
+  editor is therefore still running the weaker algorithm, and doesn't see the `FormatterConfig`
+  wiring added this cycle either. Fixing this for real needs the `pata-core`/shared-lib
+  extraction already flagged there, not a further inline copy.
 
 ### Not started
 
 Real gaps, no commits addressing them yet: per-test timeout for `pata jaribu`; `#[kabla]`/
-`#[baada]` setup/teardown fixtures; a shared `pata-core` crate (resolver extraction); a DAP
-(Debug Adapter Protocol) server. Tracked as GitHub issues (see the `Asili Feature release`
-project board).
+`#[baada]` setup/teardown fixtures; a shared `pata-core` crate (resolver extraction, and now also
+the `pata-fmt`/`pata-lsp` formatter-duplication fix above); a DAP (Debug Adapter Protocol)
+server; `pata-fmt` line-width/wrap-point support. Tracked as GitHub issues (see the `Asili
+Feature release` project board).
 
 ## [0.5.0] — pata-cli; asili-evaluator, pata-package at patch bumps
 

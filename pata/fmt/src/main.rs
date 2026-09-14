@@ -7,7 +7,8 @@ mod format;
 mod walk;
 mod config;
 
-use format::canonical_format;
+use config::FormatterConfig;
+use format::canonical_format_with_indent;
 use walk::collect_asili_files;
 
 #[derive(Parser)]
@@ -34,7 +35,7 @@ fn main() -> Result<()> {
     let files = if path.is_dir() {
         collect_asili_files(&path)?
     } else {
-        vec![path]
+        vec![path.clone()]
     };
 
     if files.is_empty() {
@@ -42,7 +43,16 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let (total, changed) = format_files(&files, cli.check, cli.diff)?;
+    // `[fmt]` is read from the nearest ancestor `pata.toml`, walking up from the target path —
+    // usually a subdirectory/file below the real project root. No `pata.toml` anywhere above it
+    // formats with the default 100-char width / 4-space indent (line_width isn't applied yet —
+    // see `canonical_format_with_indent`'s doc comment).
+    let config = FormatterConfig::find_and_load(&path).unwrap_or_else(|e| {
+        eprintln!("Onyo: imeshindwa kusoma usanidi wa pata.toml: {e}");
+        FormatterConfig::default()
+    });
+
+    let (total, changed) = format_files(&files, cli.check, cli.diff, &config)?;
 
     if cli.check {
         if changed > 0 {
@@ -58,12 +68,13 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn format_files(files: &[PathBuf], check_only: bool, show_diff: bool) -> Result<(usize, usize)> {
+fn format_files(files: &[PathBuf], check_only: bool, show_diff: bool, config: &FormatterConfig) -> Result<(usize, usize)> {
     let mut changed = 0;
+    let indent_unit = config.indent_unit();
     for file in files {
         let original = fs::read_to_string(file)
             .with_context(|| format!("imeshindwa kusoma {}", file.display()))?;
-        let formatted = canonical_format(&original);
+        let formatted = canonical_format_with_indent(&original, &indent_unit);
 
         if formatted != original {
             changed += 1;

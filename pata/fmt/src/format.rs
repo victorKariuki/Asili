@@ -12,7 +12,21 @@ use asili_lexer::{tokenize_with_trivia, Comment, Token};
 /// On a lex error (e.g. an unterminated string), falls back to returning the input unchanged
 /// rather than panicking or producing a mangled partial rewrite — `pata nadhifu` is meant to be
 /// safe to run on in-progress, possibly-invalid source.
+///
+/// Formats with the default 4-space indent. See `canonical_format_with_indent` to apply a
+/// project's `[fmt]` `pata.toml` settings. Note only `indent_style`/`indent_width` are honored
+/// today — `line_width` (wrapping long lines) has no effect: this printer has no line-length
+/// tracking or wrap points at all, token-stream-driven output is emitted at whatever width the
+/// tokens naturally produce. Wiring `line_width` for real needs actual wrap-point logic added to
+/// `Printer`, not just a parameter threaded through — tracked as a real gap, not silently claimed
+/// as done.
 pub fn canonical_format(input: &str) -> String {
+    canonical_format_with_indent(input, "    ")
+}
+
+/// Like `canonical_format`, but with a caller-supplied indent unit (e.g. `"    "` for 4 spaces,
+/// `"\t"` for tabs) instead of the hardcoded 4-space default.
+pub fn canonical_format_with_indent(input: &str, indent_unit: &str) -> String {
     let (tokens, comments) = match tokenize_with_trivia(input) {
         Ok(pair) => pair,
         Err(_) => return input.to_string(),
@@ -20,7 +34,7 @@ pub fn canonical_format(input: &str) -> String {
     if tokens.is_empty() && comments.is_empty() {
         return String::new();
     }
-    Printer::new(&tokens, &comments).print()
+    Printer::new(&tokens, &comments, indent_unit).print()
 }
 
 /// True for delimiters that print with no space before them, and `NO_SPACE_AFTER` for no space
@@ -59,12 +73,23 @@ struct Printer<'a> {
     /// less-than/greater-than operators — see `classify_generic_brackets`. These print with no
     /// surrounding spaces, unlike the comparison operators sharing the same lexemes.
     generic_brackets: std::collections::HashSet<usize>,
+    /// One level of indentation (e.g. `"    "` or `"\t"`), repeated `depth` times per line —
+    /// see `canonical_format_with_indent`.
+    indent_unit: String,
 }
 
 impl<'a> Printer<'a> {
-    fn new(tokens: &'a [Token], comments: &'a [Comment]) -> Self {
+    fn new(tokens: &'a [Token], comments: &'a [Comment], indent_unit: &str) -> Self {
         let generic_brackets = classify_generic_brackets(tokens);
-        Self { tokens, comments, out: String::new(), depth: 0, next_comment: 0, generic_brackets }
+        Self {
+            tokens,
+            comments,
+            out: String::new(),
+            depth: 0,
+            next_comment: 0,
+            generic_brackets,
+            indent_unit: indent_unit.to_string(),
+        }
     }
 
     fn print(mut self) -> String {
@@ -107,9 +132,14 @@ impl<'a> Printer<'a> {
             self.trim_trailing_space();
         }
 
+        // `ends_with(' ')` alone misses a trailing tab: with a tab indent_unit, output right
+        // after `newline_indent()` ends in '\t', not ' ', so the plain-space check let a bogus
+        // extra leading space slip in before the next token (masked previously only because the
+        // old hardcoded indent was always a run of spaces, which does end in ' ').
+        let just_indented = self.out.ends_with(' ') || self.out.ends_with('\t');
         let needs_space_before = idx > 0
             && !self.out.ends_with('\n')
-            && !self.out.ends_with(' ')
+            && !just_indented
             && !hugs_left
             && !self.prev_suppresses_space_after(idx);
 
@@ -203,7 +233,7 @@ impl<'a> Printer<'a> {
             self.out.push('\n');
         }
         for _ in 0..self.depth {
-            self.out.push_str("    ");
+            self.out.push_str(&self.indent_unit);
         }
     }
 
@@ -557,5 +587,34 @@ weka c = 'x'"#;
         for line in once.lines() {
             assert!(!line.ends_with(' '), "trailing whitespace on line: {line:?}");
         }
+    }
+
+    #[test]
+    fn default_indent_is_four_spaces() {
+        let input = "kazi kuu() -> Tupu {\nweka x = 1\n}\n";
+        let output = canonical_format(input);
+        assert!(output.contains("\n    weka x = 1"), "got: {output:?}");
+    }
+
+    #[test]
+    fn custom_indent_width_is_applied() {
+        let input = "kazi kuu() -> Tupu {\nweka x = 1\n}\n";
+        let output = canonical_format_with_indent(input, "  ");
+        assert!(output.contains("\n  weka x = 1"), "got: {output:?}");
+        assert!(!output.contains("\n    weka x = 1"), "should not use the default 4-space indent, got: {output:?}");
+    }
+
+    #[test]
+    fn tab_indent_is_applied() {
+        let input = "kazi kuu() -> Tupu {\nweka x = 1\n}\n";
+        let output = canonical_format_with_indent(input, "\t");
+        assert!(output.contains("\n\tweka x = 1"), "got: {output:?}");
+    }
+
+    #[test]
+    fn custom_indent_nests_correctly_at_depth_two() {
+        let input = "kazi kuu() -> Tupu {\nikiwa kweli {\nweka x = 1\n}\n}\n";
+        let output = canonical_format_with_indent(input, "  ");
+        assert!(output.contains("\n    weka x = 1"), "depth-2 body should be 2x the 2-space unit, got: {output:?}");
     }
 }

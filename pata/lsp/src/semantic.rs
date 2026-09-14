@@ -114,6 +114,13 @@ pub struct SemanticAnalyzer {
     builtin_names: HashSet<String>,
     scopes: Vec<ScopeContext>,
     symbol_table: HashMap<String, SymbolInfo>,
+    /// `(line, column, inferred_type)` for every `weka`/`thabiti` binding with no explicit `:
+    /// Aina` annotation, collected while `scan_stmt` walks `Stmt::Let` — this is the same
+    /// inference `infer_expr_type` already does to populate scope binding for semantic-token
+    /// resolution, just also recorded positionally so `inlay_hints.rs` can render it as a
+    /// `textDocument/inlayHint` without re-walking the module a second time. `line`/`column` are
+    /// 1-based (matching the parser), converted to 0-based at the same point `push_raw` does.
+    inlay_type_hints: Vec<(usize, usize, ValueType)>,
 }
 
 impl SemanticAnalyzer {
@@ -126,7 +133,16 @@ impl SemanticAnalyzer {
             builtin_names: asili_evaluator::builtins::builtins().into_keys().collect(),
             scopes: vec![ScopeContext::new(0, None)],
             symbol_table: HashMap::new(),
+            inlay_type_hints: Vec::new(),
         }
+    }
+
+    /// Inlay-hint candidates gathered during `analyze()`: one `(0-based line, 0-based column
+    /// right after the binding name, inferred type)` triple per un-annotated `weka`/`thabiti`.
+    /// Must be called after `analyze()` — empty otherwise, since collection happens during the
+    /// same statement walk that builds semantic tokens.
+    pub fn inlay_type_hints(&self) -> &[(usize, usize, ValueType)] {
+        &self.inlay_type_hints
     }
 
     pub fn analyze(&mut self) -> SemanticTokens {
@@ -343,7 +359,17 @@ impl SemanticAnalyzer {
                 let inferred_type = if let Some(t) = ty {
                     type_expr_to_value_type(t)
                 } else {
-                    self.infer_expr_type(value)
+                    let inferred = self.infer_expr_type(value);
+                    // Only offer a hint when there's something real to show — `Unknown` would
+                    // render as a literal "Unknown" label in the editor, worse than no hint.
+                    if !matches!(inferred, ValueType::Unknown) {
+                        self.inlay_type_hints.push((
+                            line.saturating_sub(1),
+                            column.saturating_sub(1) + name.len(),
+                            inferred.clone(),
+                        ));
+                    }
+                    inferred
                 };
                 self.current_scope_mut().bind(name.clone(), inferred_type);
                 // `thabiti` (mutable == false) gets the Readonly modifier on its declaration
