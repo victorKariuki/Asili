@@ -1091,7 +1091,9 @@ dependencies = [
  "asili-lexer",
  "asili-parser",
  "clap",
+ "serde",
  "tempfile",
+ "toml",
 ]
 
 [[package]]
