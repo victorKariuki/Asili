@@ -1,15 +1,11 @@
 //! Signal state for mfumo: pending signal flag and handler registry.
 //! OS handler only sets an atomic; eval loop dispatches to registered kazi by name.
+//! Dispatch is polled at the top of every statement (see eval/stmt.rs's eval_stmt_impl and
+//! eval/mod.rs's eval_block_in_env, both of which call take_pending()).
 //
-// TODO: Signal dispatch is registered but never polled. The eval loop in eval/stmt.rs does not
-// call signal::take_pending() between statements, so signal handlers registered with
-// sikiliza_ishara() are never actually invoked during program execution.
-// Fix: add a signal check at the top of eval_stmt_impl (or every N iterations) that calls
-// take_pending() and, if non-zero, looks up the handler name and calls run_function() for it.
-//
-// TODO: sikiliza_ishara/rejesha_ishara are no-ops on non-unix platforms (#[cfg(not(unix))]).
-// Windows users get no signal handling at all — not even a runtime error. Should return
-// Tokeo(Err) on unsupported platforms rather than silently doing nothing.
+// sikiliza_ishara/rejesha_ishara are no-ops on non-unix platforms (#[cfg(not(unix))]) at this
+// module's level; the mfumo builtin wrappers surface this as Tokeo(Kosa(...)) instead of
+// silently succeeding — see core/evaluator/src/builtins/mfumo.rs.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -55,6 +51,12 @@ pub fn register_handler(sig_id: i32, kazi_name: String) {
     let mut inst = installed().lock().unwrap();
     if inst.insert(sig_id) {
         let sig = sig_id;
+        // # Safety:
+        // We are registering a simple signal handler that sets a static atomic variable (`set_pending`).
+        // This is safe because:
+        // 1. `signal_hook::low_level::register` ensures that only async-signal-safe operations are
+        //    performed in the handler.
+        // 2. `set_pending` only performs atomic operations, which are async-signal-safe.
         let _ = unsafe { signal_hook::low_level::register(sig, move || set_pending(sig)) };
     }
 }

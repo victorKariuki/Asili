@@ -18,7 +18,7 @@ impl Diagnostic {
     pub fn new(code: &'static str, message: impl Into<String>) -> Self {
         Self {
             code,
-            stage: "general",
+            stage: "jumla",
             message: message.into(),
             file: None,
             span: None,

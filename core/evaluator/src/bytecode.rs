@@ -74,6 +74,10 @@ impl BytecodeProgram {
     }
 }
 
+use crate::builtins::{builtin_names, builtins};
+
+// ... (other imports) ...
+
 /// Run the bytecode program: invoke entry (e.g. "kuu") with args.
 pub fn run_bytecode(program: &BytecodeProgram, args: Vec<String>) -> Result<(), EvalError> {
     let func = program
@@ -89,6 +93,10 @@ pub fn run_bytecode(program: &BytecodeProgram, args: Vec<String>) -> Result<(), 
     let mut locals: Vec<Value> = vec![hoja];
     let code = &func.code;
     let mut ip = 0;
+
+    let builtin_map = builtins();
+    let builtin_list = builtin_names();
+
     while ip < code.len() {
         match &code[ip] {
             Opcode::Const(idx) => {
@@ -107,14 +115,19 @@ pub fn run_bytecode(program: &BytecodeProgram, args: Vec<String>) -> Result<(), 
                 }
                 locals[*idx as usize] = v;
             }
-            Opcode::CallBuiltin(0) => {
-                let v = stack.pop().unwrap_or(Value::Tupu);
-                if let Value::Neno(s) = &v {
-                    println!("{s}");
-                }
+            Opcode::CallBuiltin(idx) => {
+                let name = builtin_list.get(*idx as usize)
+                    .ok_or_else(|| EvalError::Unknown(format!("faharisi ya batili iliyojengwa: {idx}")))?;
+                
+                let builtin_fn = builtin_map.get(name)
+                    .ok_or_else(|| EvalError::Unknown(format!("iliyojengwa haikupatikana: {name}")))?;
+
+                // Assume 1 argument for now (matching previous chapisha implementation).
+                // This will need better arity management in the ISA/VM later.
+                let args = vec![stack.pop().unwrap_or(Value::Tupu)];
+                let result = builtin_fn(&args)?;
+                stack.push(result);
             }
-            // TODO: Only builtin index 0 (chapisha) is wired up. All other builtins are silently ignored.
-            Opcode::CallBuiltin(_) => {}
             Opcode::Nop => {}
         }
         ip += 1;

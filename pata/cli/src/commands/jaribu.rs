@@ -49,14 +49,14 @@ fn parse_args(args: &[String]) -> Result<(Option<String>, bool, bool), CliError>
     let mut i = 0usize;
     while i < args.len() {
         match args[i].as_str() {
-            "--filter" => {
+            "--chuja" => {
                 let Some(v) = args.get(i + 1) else {
-                    return Err(CliError::new("--filter inahitaji pattern", 2));
+                    return Err(CliError::new("--chuja inahitaji muundo", 2));
                 };
                 filter = Some(v.clone());
                 i += 2;
             }
-            "--fail-fast" => {
+            "--simama-haraka" => {
                 fail_fast = true;
                 i += 1;
             }

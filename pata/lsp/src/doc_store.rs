@@ -22,6 +22,18 @@ impl DocStore {
     pub async fn get(&self, uri: &str) -> Option<String> {
         self.inner.read().await.get(uri).cloned()
     }
+
+    /// Drop a document from the store on `textDocument/didClose`. Without this, closed files
+    /// stay resident in server memory for the life of the session, and their last-published
+    /// diagnostics are never cleared (nothing re-publishes an empty list for them).
+    pub async fn remove(&self, uri: &str) {
+        self.inner.write().await.remove(uri);
+    }
+
+    /// Return all (uri, text) pairs currently stored.
+    pub async fn all(&self) -> Vec<(String, String)> {
+        self.inner.read().await.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    }
 }
 
 impl Default for DocStore {

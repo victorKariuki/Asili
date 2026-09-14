@@ -7,17 +7,34 @@ use rand::Rng;
 use crate::value::{self, Value};
 use super::BuiltinFn;
 
+// Plain Neno, matching gawio/mizizi/kipeo's error shape (Tokeo<T, Neno> throughout hisabati).
 fn kosa_h(msg: impl Into<String>) -> Value {
-    Value::Struct(
-        "Kosa_Hisabati".to_string(),
-        vec![
-            ("aina".to_string(), Value::Neno("hisabati".into())),
-            ("ujumbe".to_string(), Value::Neno(msg.into())),
-        ],
-    )
+    Value::Neno(msg.into())
 }
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
+    m.insert("namba_kuu_kutoka".to_string(), Box::new(|args: &[Value]| {
+        use crate::value::BigInt;
+        use std::str::FromStr;
+        let s = value::as_string(args.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
+        match BigInt::from_str(s.trim()) {
+            Ok(n) => Ok(Value::Tokeo(Ok(Box::new(Value::NambaKuu(n))))),
+            Err(_) => Ok(Value::Tokeo(Err(Box::new(kosa_h(format!(
+                "namba_kuu_kutoka: \"{s}\" si namba kamili sahihi"
+            )))))),
+        }
+    }));
+    m.insert("namba_sahihi_kutoka".to_string(), Box::new(|args: &[Value]| {
+        use crate::value::BigDecimal;
+        use std::str::FromStr;
+        let s = value::as_string(args.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
+        match BigDecimal::from_str(s.trim()) {
+            Ok(n) => Ok(Value::Tokeo(Ok(Box::new(Value::NambaSahihi(n))))),
+            Err(_) => Ok(Value::Tokeo(Err(Box::new(kosa_h(format!(
+                "namba_sahihi_kutoka: \"{s}\" si namba ya desimali sahihi"
+            )))))),
+        }
+    }));
     m.insert("jumla".to_string(), Box::new(|args: &[Value]| {
         let (a, b) = value::args_f64_2(args, "jumla")?;
         Ok(Value::Namba(a + b))
@@ -202,14 +219,14 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     }));
     m.insert("asini".to_string(), Box::new(|args: &[Value]| {
         let x = value::arg_f64(args, 0, "asini")?;
-        if x < -1.0 || x > 1.0 {
+        if !(-1.0..=1.0).contains(&x) {
             return Ok(Value::Tokeo(Err(Box::new(kosa_h("asini: kikoa ni -1 hadi 1")))));
         }
         Ok(Value::Tokeo(Ok(Box::new(Value::Namba(x.asin())))))
     }));
     m.insert("akosini".to_string(), Box::new(|args: &[Value]| {
         let x = value::arg_f64(args, 0, "akosini")?;
-        if x < -1.0 || x > 1.0 {
+        if !(-1.0..=1.0).contains(&x) {
             return Ok(Value::Tokeo(Err(Box::new(kosa_h("akosini: kikoa ni -1 hadi 1")))));
         }
         Ok(Value::Tokeo(Ok(Box::new(Value::Namba(x.acos())))))
@@ -274,18 +291,6 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     }));
     m.insert("ni_ukomo".to_string(), Box::new(|args: &[Value]| {
         let x = value::arg_f64(args, 0, "ni_ukomo")?;
-        Ok(Value::Ukweli(x.is_infinite()))
-    }));
-    m.insert("ni_namba?".to_string(), Box::new(|args: &[Value]| {
-        let x = value::arg_f64(args, 0, "ni_namba?")?;
-        Ok(Value::Ukweli(x.is_finite()))
-    }));
-    m.insert("si_namba?".to_string(), Box::new(|args: &[Value]| {
-        let x = value::arg_f64(args, 0, "si_namba?")?;
-        Ok(Value::Ukweli(x.is_nan()))
-    }));
-    m.insert("ni_ukomo?".to_string(), Box::new(|args: &[Value]| {
-        let x = value::arg_f64(args, 0, "ni_ukomo?")?;
         Ok(Value::Ukweli(x.is_infinite()))
     }));
     m.insert("nasibu".to_string(), Box::new(|args: &[Value]| {

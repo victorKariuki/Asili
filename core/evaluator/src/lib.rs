@@ -1,11 +1,12 @@
 //! Asili interpreter and TIR/ASB emission.
 
 mod asb;
-mod builtins;
+pub mod builtins;
 mod bytecode;
 mod env;
 mod eval;
-mod runtime;
+mod platform;
+pub mod runtime;
 mod signal;
 mod tir;
 mod value;
@@ -15,9 +16,11 @@ pub use bytecode::{run_bytecode, BytecodeProgram};
 pub use env::Env;
 pub use eval::eval_expr;
 pub use tir::{emit_asb_from_tir, lower_to_tir, TypedIrFunction, TypedIrModule, validate_module};
-pub use value::{EvalError, EvalOut, Value};
+pub use value::{ErrorKind, EvalError, EvalOut, Value};
+pub use crate::builtins::BuiltinFn;
 
 use asili_parser::{Block, Function, Module};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TestResult {
@@ -74,6 +77,56 @@ pub fn run_function(
     run_function_with_telemetry(module, func_name, args).map(|(v, _)| v)
 }
 
+/// Evaluate each module-level `thabiti` constant and bind it in `rt`'s current scope. Module-level
+/// constants (including ones merged in from `leta`-imported modules — see merge_for_eval in
+/// pata/cli) were previously type-checked and exported but never actually bound at runtime, so
+/// referencing one by name failed with UndefinedVar. Call once per fresh Env, before pushing the
+/// function's own scope, so constants act as globals for the rest of execution.
+fn seed_module_constants(module: &Module, rt: &mut runtime::Runtime) -> Result<(), EvalError> {
+    for c in &module.constants {
+        let val = eval::eval_expr_impl(&c.value, rt)?;
+        rt.env.define(&c.name, val);
+    }
+    Ok(())
+}
+
+/// Run a single function with custom builtins (for testing).
+pub fn run_function_with_builtins(
+    module: &Module,
+    func_name: &str,
+    args: Vec<Value>,
+    builtins: HashMap<String, BuiltinFn>,
+) -> Result<Value, EvalError> {
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == func_name)
+        .ok_or_else(|| EvalError::UndefinedVar(func_name.to_string()))?;
+    if f.params.len() != args.len() {
+        return Err(EvalError::TypeErr(format!(
+            "kazi {} inahitaji hoja {}",
+            func_name,
+            f.params.len()
+        )));
+    }
+    let mut env = Env::new();
+    env.seed_global_constants();
+    let mut rt = runtime::Runtime::with_builtins(&mut env, module, builtins);
+    seed_module_constants(module, &mut rt)?;
+    rt.env.push_scope();
+    for (i, p) in f.params.iter().enumerate() {
+        let val = args.get(i).cloned().unwrap_or(Value::Hamna);
+        rt.env.define(&p.name, val);
+    }
+    let out = eval::eval_block_impl(&f.body, &mut rt);
+    rt.env.pop_scope();
+    match out {
+        Ok(EvalOut::Return(v)) => Ok(v),
+        Ok(_) => Ok(Value::Tupu),
+        Err(e) => Err(e),
+    }
+}
+
 /// Like `run_function` but returns peak evaluation depth for telemetry (development/validation).
 pub fn run_function_with_telemetry(
     module: &Module,
@@ -95,6 +148,7 @@ pub fn run_function_with_telemetry(
     let mut env = Env::new();
     env.seed_global_constants();
     let mut rt = runtime::Runtime::new(&mut env, module);
+    seed_module_constants(module, &mut rt)?;
     rt.env.push_scope();
     for (i, p) in f.params.iter().enumerate() {
         let val = args.get(i).cloned().unwrap_or(Value::Hamna);

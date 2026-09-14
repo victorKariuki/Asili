@@ -5,6 +5,7 @@ target
 # Asili build outputs
 *.asb
 *.asm
+kilele/
 
 # IDE / editor
 .idea/
@@ -33,3 +34,8 @@ node_modules/
 .env
 .env.local
 .env.*.local
+
+# Claude Code local session state
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/worktrees/

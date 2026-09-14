@@ -5,8 +5,11 @@ members = [
   "core/parser",
   "core/evaluator",
   "pata/cli",
+  "pata/fmt",
+  "pata/package",
   "pata/runner",
   "pata/lsp",
+  "pata/lint",
   "driver/wasm",
 ]
 resolver = "2"
