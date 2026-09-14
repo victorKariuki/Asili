@@ -2,6 +2,7 @@
 
 pub mod rules;
 pub mod visitor;
+pub mod config;
 
 use asili_diagnostics::Diagnostic;
 use asili_parser::parse_tokens;

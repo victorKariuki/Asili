@@ -1105,6 +1105,8 @@ dependencies = [
  "asili-lexer",
  "asili-parser",
  "clap",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
