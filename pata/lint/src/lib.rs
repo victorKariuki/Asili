@@ -26,6 +26,7 @@ pub fn lint_source(source: &str) -> Result<Vec<Diagnostic>, String> {
     lints.extend(rules::naming::check_naming_conventions(&module));
     lints.extend(rules::style::check_style_issues(&module));
     lints.extend(rules::best_practices::check_best_practices(&module, source));
+    lints.extend(rules::logic::check_logic_errors(&module));
 
     Ok(lints)
 }

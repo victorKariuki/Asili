@@ -158,4 +158,25 @@ mod tests {
         let diags = lint(src);
         assert!(!diags.iter().any(|d| d.code == "LINT203"));
     }
+
+    #[test]
+    fn lint202_accepts_main_function() {
+        let src = "kazi kuu() -> Tupu { rejesha Tupu }";
+        let diags = lint(src);
+        assert!(!diags.iter().any(|d| d.code == "LINT202"));
+    }
+
+    #[test]
+    fn lint202_accepts_test_function() {
+        let src = "#[jaribio]\nkazi test_something() -> Tupu { rejesha Tupu }";
+        let diags = lint(src);
+        assert!(!diags.iter().any(|d| d.code == "LINT202"));
+    }
+
+    #[test]
+    fn lint201_accepts_unique_strings() {
+        let src = r#"kazi example() -> Tupu { chapisha("a") chapisha("b") rejesha Tupu }"#;
+        let diags = lint(src);
+        assert!(!diags.iter().any(|d| d.code == "LINT201"));
+    }
 }

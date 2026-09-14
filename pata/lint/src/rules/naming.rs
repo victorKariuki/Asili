@@ -94,6 +94,18 @@ mod tests {
     }
 
     #[test]
+    fn lint001_accepts_swahili_names() {
+        let diags = lint("kazi jamba() -> Tupu { rejesha Tupu }");
+        assert!(!diags.iter().any(|d| d.code == "LINT001"));
+    }
+
+    #[test]
+    fn lint001_accepts_numbers_in_name() {
+        let diags = lint("kazi test_2_name() -> Tupu { rejesha Tupu }");
+        assert!(!diags.iter().any(|d| d.code == "LINT001"));
+    }
+
+    #[test]
     fn lint002_flags_bad_struct_name() {
         let diags = lint("umbo not_pascal { }");
         assert!(diags.iter().any(|d| d.code == "LINT002"));
@@ -114,6 +126,12 @@ mod tests {
     #[test]
     fn lint003_accepts_good_constant_name() {
         let diags = lint("thabiti MAX_SIZE: Namba = 100");
+        assert!(!diags.iter().any(|d| d.code == "LINT003"));
+    }
+
+    #[test]
+    fn lint003_accepts_numbers_in_constant() {
+        let diags = lint("thabiti MAX_SIZE_2: Namba = 100");
         assert!(!diags.iter().any(|d| d.code == "LINT003"));
     }
 }

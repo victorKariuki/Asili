@@ -54,4 +54,15 @@ mod tests {
         let diags = lint(src);
         assert!(!diags.iter().any(|d| d.code == "LINT101"));
     }
+
+    #[test]
+    fn lint101_accepts_boundary_function() {
+        let mut src = String::from("kazi boundary() -> Tupu { ");
+        for _ in 0..49 {
+            src.push_str("weka x = 1\n");
+        }
+        src.push_str("rejesha Tupu }");
+        let diags = lint(&src);
+        assert!(!diags.iter().any(|d| d.code == "LINT101"));
+    }
 }

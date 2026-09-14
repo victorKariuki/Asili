@@ -3,3 +3,4 @@
 pub mod naming;
 pub mod style;
 pub mod best_practices;
+pub mod logic;
