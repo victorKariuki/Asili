@@ -4,15 +4,8 @@ use std::path::{Path, PathBuf};
 
 // Contract: ../../commands/njozi.md
 pub fn run(args: &[String]) -> CliResult {
-    if args.len() > 2 {
-        return Err(CliError::new(
-            "matumizi: pata njozi [jina_la_mradi] [njia]",
-            2,
-        ));
-    }
-
-    let (project_name, destination) = parse_inputs(args)?;
-    create_scaffold(&project_name, &destination)?;
+    let (project_name, destination, template) = parse_inputs(args)?;
+    create_scaffold(&project_name, &destination, template)?;
     println!(
         "imekamilika: mradi '{}' umeundwa katika {}",
         project_name,
@@ -22,25 +15,49 @@ pub fn run(args: &[String]) -> CliResult {
     Ok(())
 }
 
-fn parse_inputs(args: &[String]) -> Result<(String, PathBuf), CliError> {
-    match args {
-        [] => {
-            let project_name = String::from("asili-app");
-            Ok((project_name.clone(), PathBuf::from(project_name)))
+#[derive(Clone, Copy)]
+enum Template {
+    Binary,
+    Library,
+}
+
+fn parse_inputs(args: &[String]) -> Result<(String, PathBuf, Template), CliError> {
+    let mut template = Template::Binary;
+    let mut project_name = None;
+    let mut destination = None;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--maktaba" => {
+                template = Template::Library;
+                i += 1;
+            }
+            "--kiasi" => {
+                template = Template::Binary;
+                i += 1;
+            }
+            other => {
+                if other.starts_with("--") {
+                    return Err(CliError::new(
+                        format!("hoja isiyotambuliwa: {other}"),
+                        2,
+                    ));
+                }
+                if project_name.is_none() {
+                    project_name = Some(other.to_string());
+                } else if destination.is_none() {
+                    destination = Some(PathBuf::from(other));
+                }
+                i += 1;
+            }
         }
-        [name] => {
-            validate_project_name(name)?;
-            Ok((name.clone(), PathBuf::from(name)))
-        }
-        [name, dest] => {
-            validate_project_name(name)?;
-            Ok((name.clone(), PathBuf::from(dest)))
-        }
-        _ => Err(CliError::new(
-            "matumizi: pata njozi [jina_la_mradi] [njia]",
-            2,
-        )),
     }
+
+    let name = project_name.unwrap_or_else(|| String::from("asili-app"));
+    validate_project_name(&name)?;
+    let dest = destination.unwrap_or_else(|| PathBuf::from(&name));
+    Ok((name, dest, template))
 }
 
 fn validate_project_name(name: &str) -> Result<(), CliError> {
@@ -50,7 +67,7 @@ fn validate_project_name(name: &str) -> Result<(), CliError> {
     Ok(())
 }
 
-fn create_scaffold(project_name: &str, destination: &Path) -> CliResult {
+fn create_scaffold(project_name: &str, destination: &Path, template: Template) -> CliResult {
     ensure_destination_ready(destination)?;
 
     fs::create_dir_all(destination.join("src"))
@@ -66,9 +83,15 @@ fn create_scaffold(project_name: &str, destination: &Path) -> CliResult {
             "[jumla]\njina = \"{project_name}\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n"
         ),
     )?;
+
+    let kuu_content = match template {
+        Template::Binary => "leta matumizi\n\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    ikiwa hoja.urefu() > 1 {\n        chapisha(\"Asili scaffold iko tayari.\")\n    } vinginevyo {\n        chapisha(\"Habari Asili!\")\n    }\n}\n",
+        Template::Library => "# Maktaba ya Asili\n\n# Jumuishe jongoo kuu hapa\nkazi example() -> Tupu {\n    rejesha Tupu\n}\n",
+    };
+
     write_file(
         &destination.join("src/kuu.as"),
-        "leta matumizi\n\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    ikiwa hoja.urefu() > 1 {\n        chapisha(\"Asili scaffold iko tayari.\")\n    } vinginevyo {\n        chapisha(\"Habari Asili!\")\n    }\n}\n",
+        kuu_content,
     )?;
     write_file(
         &destination.join(".gitignore"),
@@ -126,7 +149,7 @@ mod tests {
     #[test]
     fn parse_defaults_to_asili_app() {
         let args: Vec<String> = vec![];
-        let (name, path) = parse_inputs(&args).expect("should parse defaults");
+        let (name, path, _) = parse_inputs(&args).expect("should parse defaults");
         assert_eq!(name, "asili-app");
         assert_eq!(path.to_string_lossy(), "asili-app");
     }
