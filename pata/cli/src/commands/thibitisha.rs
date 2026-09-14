@@ -8,17 +8,26 @@ use std::path::Path;
 
 // Contract: ../../commands/thibitisha.md
 //
-// TODO: thibitisha currently checks three things: public-item doc coverage, formatting
-// compliance, and (opt-in via --kiwango-cha-jaribio) test coverage. Missing checks from the
-// spec:
-//   - Type stability: public function signatures must not change in a breaking way between versions
-//   - ABI compatibility: exported kiunganishi functions must match declared C signatures
-//   - Trait completeness: every sifa listed in [tegemezi] must be fully implemented
+// thibitisha checks: project compiles (which also runs SEM105 trait-completeness for any impl
+// that names a trait), public-item doc coverage, formatting compliance, project-wide trait
+// completeness (every sifa reachable from an import has at least one impl somewhere in the
+// project — SEM105 alone only catches an impl that names a trait and gets it wrong, not a trait
+// that's never implemented at all), FFI-safety of #[kiunganishi]-tagged signatures, and (opt-in
+// via --kiwango-cha-jaribio) test coverage.
+//
+// Not implemented: type-stability (breaking public-signature changes between versions) — see
+// `pata semver` (planned) once a git-tag-based baseline exists; full ABI compatibility against a
+// C-signature contract, since #[kiunganishi]/kiungo has no such contract yet (FFI is a
+// documented Phase IV stub, core/evaluator/src/builtins/kiungo.rs). What thibitisha checks today
+// for #[kiunganishi] (FFI-safe types) is the real, checkable prerequisite for that future check,
+// not a placeholder.
 pub fn run(args: &[String]) -> CliResult {
     let threshold = parse_args(args)?;
 
     let output = compile_project(Path::new("."), None)?;
     enforce_docs(Path::new("."))?;
+    enforce_trait_completeness(&output.module)?;
+    enforce_ffi_signatures(&output.module)?;
 
     let files = collect_asili_files(Path::new("."))?;
     let (_, changed) = check_or_write(&files, true)?;
@@ -34,6 +43,82 @@ pub fn run(args: &[String]) -> CliResult {
     }
 
     println!("thibitisha: sawa");
+    Ok(())
+}
+
+/// Every `sifa` reachable from the project (declared locally, or by a `leta`-ed dependency
+/// module/.asi stub — both land in `module.traits` after merge_for_eval) must have at least one
+/// `shughuli ya X kwa/​: Trait` impl somewhere in the project. `check_trait_completeness`
+/// (SEM105, run during the compile step above) only checks an impl that already names a trait
+/// against that trait's signatures — a trait with zero impls anywhere never gets flagged there,
+/// since SEM105 iterates `module.impls`, not `module.traits`. Skips built-in seeded traits
+/// (Inasomeka/Inandikika from `standard_traits()`, `line == 0`, same convention as
+/// `enforce_docs` below) — those are always present regardless of project content and satisfied
+/// by fiat for builtin types (Faili/Mkondo), not something a project could implement itself.
+fn enforce_trait_completeness(module: &Module) -> CliResult {
+    for t in &module.traits {
+        if t.line == 0 {
+            continue;
+        }
+        let implemented = module
+            .impls
+            .iter()
+            .any(|i| i.trait_name.as_deref() == Some(t.name.as_str()));
+        if !implemented {
+            return Err(CliError::new(
+                format!("sifa '{}' haina utekelezaji wowote kwenye mradi huu", t.name),
+                1,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// FFI-safe primitive types for an `#[kiunganishi]`-tagged function's parameters/return type.
+/// There is no C-signature declaration syntax yet (kiungo/FFI is a Phase IV stub — see
+/// core/evaluator/src/builtins/kiungo.rs), so a real ABI-compatibility check (declared C sig vs.
+/// actual signature) has nothing to compare against. This is the real, checkable prerequisite:
+/// reject types that could never cross a C boundary safely regardless of what the eventual
+/// C-signature contract looks like (heap-owning/GC'd/generic-container types).
+fn is_ffi_safe(ty_name: &str) -> bool {
+    // TypeExpr::name is built from raw lexemes including any generic brackets (e.g.
+    // "Orodha < Namba >" for `Orodha<Namba>`, not "Orodha") — take the base name before any
+    // `<`/whitespace so a bare-name check works regardless of a generic argument list.
+    let base = ty_name.split(['<', ' ']).next().unwrap_or(ty_name);
+    matches!(
+        base,
+        "Namba" | "Ukweli" | "Herufi" | "Tupu" | "Anuani"
+            | "Biti8" | "Biti16" | "Biti32" | "Biti64"
+            | "uBiti8" | "uBiti16" | "uBiti32" | "uBiti64"
+    )
+}
+
+fn enforce_ffi_signatures(module: &Module) -> CliResult {
+    for f in &module.functions {
+        if !f.attrs.iter().any(|a| a.name == "kiunganishi") {
+            continue;
+        }
+        for p in &f.params {
+            if !is_ffi_safe(&p.ty.name) {
+                return Err(CliError::new(
+                    format!(
+                        "kazi ya kiunganishi '{}' hoja '{}' ina aina isiyo salama kwa ABI ya C: {}",
+                        f.name, p.name, p.ty.name
+                    ),
+                    1,
+                ));
+            }
+        }
+        if f.return_type.name != "Tupu" && !is_ffi_safe(&f.return_type.name) {
+            return Err(CliError::new(
+                format!(
+                    "kazi ya kiunganishi '{}' aina ya kurejesha si salama kwa ABI ya C: {}",
+                    f.name, f.return_type.name
+                ),
+                1,
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -237,6 +322,49 @@ mod tests {
     }
 
     #[test]
+    fn passes_when_local_trait_is_fully_implemented() {
+        let _guard = TEST_CWD_LOCK.lock().expect("lock");
+        let original = std::env::current_dir().expect("cwd");
+        let root = temp_project_trait_implemented();
+        std::env::set_current_dir(&root).expect("chdir");
+
+        let result = run(&[]);
+        std::env::set_current_dir(&original).expect("restore");
+        let _ = fs::remove_dir_all(root);
+        result.expect("thibitisha should pass when every sifa has an impl");
+    }
+
+    #[test]
+    fn fails_when_local_trait_has_no_impl() {
+        let _guard = TEST_CWD_LOCK.lock().expect("lock");
+        let original = std::env::current_dir().expect("cwd");
+        let root = temp_project_trait_unimplemented();
+        std::env::set_current_dir(&root).expect("chdir");
+
+        let err = run(&[]).expect_err("thibitisha should fail when a sifa has zero impls");
+        assert_eq!(err.exit_code, 1);
+        assert!(err.message.contains("haina utekelezaji wowote"), "{}", err.message);
+
+        std::env::set_current_dir(&original).expect("restore");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fails_when_kiunganishi_param_is_not_ffi_safe() {
+        let _guard = TEST_CWD_LOCK.lock().expect("lock");
+        let original = std::env::current_dir().expect("cwd");
+        let root = temp_project_unsafe_ffi_signature();
+        std::env::set_current_dir(&root).expect("chdir");
+
+        let err = run(&[]).expect_err("thibitisha should fail on a non-FFI-safe kiunganishi signature");
+        assert_eq!(err.exit_code, 1);
+        assert!(err.message.contains("salama kwa ABI ya C"), "{}", err.message);
+
+        std::env::set_current_dir(&original).expect("restore");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn test_coverage_threshold_not_enforced_by_default() {
         let _guard = TEST_CWD_LOCK.lock().expect("lock");
         let original = std::env::current_dir().expect("cwd");
@@ -284,6 +412,66 @@ mod tests {
         fs::write(
             dir.join("src/kuu.as"),
             "leta matumizi\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }\n",
+        )
+        .expect("src");
+        dir
+    }
+
+    fn temp_project_trait_implemented() -> std::path::PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("pata-thibitisha-trait-ok-{stamp}"));
+        fs::create_dir_all(dir.join("src")).expect("mkdir");
+        fs::write(
+            dir.join("pata.toml"),
+            "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n",
+        )
+        .expect("manifest");
+        fs::write(
+            dir.join("src/kuu.as"),
+            "leta matumizi\n/// Inayoonyeshwa.\nsifa Inayoonyeshwa { kazi onyesha(self: Self) -> Neno }\n/// Paka.\numbo Paka { jina: Neno }\nshughuli ya Paka kwa Inayoonyeshwa { kazi onyesha(self: Paka) -> Neno { rejesha self.jina } }\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }\n",
+        )
+        .expect("src");
+        dir
+    }
+
+    fn temp_project_trait_unimplemented() -> std::path::PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("pata-thibitisha-trait-missing-{stamp}"));
+        fs::create_dir_all(dir.join("src")).expect("mkdir");
+        fs::write(
+            dir.join("pata.toml"),
+            "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n",
+        )
+        .expect("manifest");
+        fs::write(
+            dir.join("src/kuu.as"),
+            "leta matumizi\n/// Inayoonyeshwa.\nsifa Inayoonyeshwa { kazi onyesha(self: Self) -> Neno }\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }\n",
+        )
+        .expect("src");
+        dir
+    }
+
+    fn temp_project_unsafe_ffi_signature() -> std::path::PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("pata-thibitisha-ffi-{stamp}"));
+        fs::create_dir_all(dir.join("src")).expect("mkdir");
+        fs::write(
+            dir.join("pata.toml"),
+            "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n",
+        )
+        .expect("manifest");
+        fs::write(
+            dir.join("src/kuu.as"),
+            "leta matumizi\n#[kiunganishi]\nkazi kutoka_c(x: Orodha<Namba>) -> Namba { rejesha 0 }\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }\n",
         )
         .expect("src");
         dir

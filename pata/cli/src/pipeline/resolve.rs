@@ -136,7 +136,7 @@ fn resolve_one(
                     enums: vec![],
                     functions: vec![],
                     structs: vec![],
-                    traits: vec![],
+                    traits: iface.trait_decls(),
                     impls: vec![],
                 },
                 exports,
@@ -176,7 +176,7 @@ fn resolve_one(
                     enums: vec![],
                     functions: vec![],
                     structs: vec![],
-                    traits: vec![],
+                    traits: iface.trait_decls(),
                     impls: vec![],
                 };
                 resolved.insert(
