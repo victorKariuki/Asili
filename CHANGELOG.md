@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`pata-lint` LINT301: unused local variables.** `rules::logic::check_logic_errors` — real
+  code, no longer the placeholder no-op it was — flags a `weka`/`thabiti` binding never
+  referenced anywhere else in the same function body. Deliberately conservative scope: only
+  `Stmt::Let` bindings (not `for`-loop variables or `match`-arm pattern bindings, both riskier to
+  flag correctly), function-scoped rather than block-scoped (a small false-negative bias toward
+  shadowed names, not false positives), and `_`-prefixed names are never flagged (the established
+  "intentionally unused" convention). Verified end-to-end against the real `pata-lint` binary.
 - **`pata jaribu --chanjo`**: real line-level code coverage. `core/parser`'s `Stmt::line()`
   (new) plus a new `Runtime::executed_lines`/`record_line` in `core/evaluator` (recorded on
   every statement `eval_stmt_impl` actually evaluates) feed a new
@@ -165,10 +172,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### output. Verified by reading the actual call sites and function bodies/return values, not by
 ### re-reading commit messages)
 
-- **`rules/logic.rs`'s `check_logic_errors`**: wired into `pata_lint::lint_source_with_config`
-  (gated on `LINT301`'s `is_enabled`, same as every other rule), but the function itself is
-  `_module: &Module) -> Vec<Diagnostic> { Vec::new() }` — a genuine no-op, per its own doc
-  comment ("placeholder for future depth"). Being *called* is not the same as doing anything.
 - **`pata_cli::pipeline::performance::PerformanceMetrics`/`ScopedTimer`**
   (`pata/cli/src/pipeline/performance.rs`): phase-latency/SLO tracking. Not called from any
   command.
@@ -183,8 +186,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Not started
 
 Real gaps, no commits addressing them yet: a DAP (Debug Adapter Protocol) server; `pata-fmt`
-line-width/wrap-point support; `pata-lint` unused-local-variables rule. Tracked as GitHub issues
-(see the `Asili Feature release` project board).
+line-width/wrap-point support. Tracked as GitHub issues (see the `Asili Feature release` project
+board).
 
 ## [0.5.0] — pata-cli; asili-evaluator, pata-package at patch bumps
 

@@ -167,10 +167,13 @@ Found by directly auditing the code this cycle, not from the spec:
   deliberately triggers and asserts it.** `semantic_check_with_env_and_modules` (the
   cross-module-aware entry point `pata-cli` actually uses) has zero direct test callers. This is
   exactly the class of gap that let three real bugs ship silently this cycle (see below).
-- **`pata-lint`'s rules are thinner than they look.** LINT201 (repeated-string-literal detection)
-  used to just count *all* string literals in a file and call anything over 5 "repeated" — fixed
-  this cycle, but the other rules (LINT001-003 naming, LINT101 length, LINT202 docs, LINT203
-  unused imports) haven't had the same scrutiny.
+- **`pata-lint`'s rules now all have adversarial (false-positive/false-negative) test coverage**,
+  not just happy-path assertions: LINT001-003 (naming), LINT101 (length), LINT201 (repeated
+  string literals — the count-*all*-literals bug is fixed), LINT202 (docs), and LINT203, which
+  was rewritten from a near-useless whole-file heuristic (`imports present AND zero functions`)
+  to real per-name unused-selective-import detection. LINT301 (unused local variables, `weka`/
+  `thabiti` bindings never referenced again in the same function) was added as a genuinely new
+  rule, not the placeholder no-op it started as.
 - **`pata thibitisha` now checks doc coverage, formatting, trait completeness, FFI-safety
   (the real, checkable prerequisite short of a full ABI contract — `kiungo`/FFI has no C-signature
   declaration syntax yet), type stability against the most recent `v<semver>` git tag, and
