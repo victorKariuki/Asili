@@ -205,6 +205,26 @@ pub enum Stmt {
     },
 }
 
+impl Stmt {
+    /// The source line this statement starts at — every variant carries one, used for
+    /// line-level coverage instrumentation (`core/evaluator`'s `Runtime::executed_lines`).
+    pub fn line(&self) -> usize {
+        match self {
+            Stmt::Let { line, .. }
+            | Stmt::Assign { line, .. }
+            | Stmt::If { line, .. }
+            | Stmt::While { line, .. }
+            | Stmt::For { line, .. }
+            | Stmt::Match { line, .. }
+            | Stmt::Break { line, .. }
+            | Stmt::Continue { line, .. }
+            | Stmt::Return { line, .. }
+            | Stmt::Drop { line, .. }
+            | Stmt::Expr { line, .. } => *line,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ForMode {
     InExpr(Expr),

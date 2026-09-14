@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use asili_evaluator::{eval_expr, run_function, run_function_with_telemetry, run_main, run_test_with_module, execute_tests, execute_tests_with_timeout, run_test_with_fixtures, Value};
+use asili_evaluator::{eval_expr, run_function, run_function_with_telemetry, run_main, run_test_with_module, execute_tests, execute_tests_with_timeout, run_test_with_fixtures, run_test_with_coverage, Value};
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, semantic_check_with_env, FnContract, Module, ValueType};
 
@@ -339,6 +339,70 @@ fn fixture_functions_are_not_discovered_as_tests_themselves() {
     let tests = asili_parser::discover_tests(&module);
     assert_eq!(tests.len(), 1, "only the #[jaribio]-tagged function should be discovered");
     assert_eq!(tests[0].name, "t1");
+}
+
+#[test]
+fn coverage_records_every_executed_statement_line() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t1() -> Tupu {
+             weka a = 1
+             weka b = 2
+             rejesha
+         }",
+    );
+    let f = module.functions.iter().find(|x| x.name == "t1").unwrap().clone();
+    let (result, lines) = run_test_with_coverage(&module, &f);
+    assert!(result.passed, "{}", result.message);
+    // Three statements in the test body: weka a, weka b, rejesha -- all three lines recorded.
+    assert_eq!(lines.len(), 3, "expected 3 distinct executed lines, got: {lines:?}");
+}
+
+/// The real point of line-level (not function-level) coverage: two branches of the same `if`
+/// produce genuinely different executed-line sets depending on which one actually ran — a
+/// function-name-presence check (the old inert CoverageMetrics) can't distinguish this at all,
+/// since the containing function is "covered" either way.
+#[test]
+fn coverage_distinguishes_which_branch_actually_ran() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t_tawi_kweli() -> Tupu {
+             ikiwa kweli {
+                 weka njia_ya_kweli = 1
+             } vinginevyo {
+                 weka njia_ya_uwongo = 2
+             }
+             rejesha
+         }",
+    );
+    let f = module.functions.iter().find(|x| x.name == "t_tawi_kweli").unwrap().clone();
+    let (result, lines) = run_test_with_coverage(&module, &f);
+    assert!(result.passed, "{}", result.message);
+
+    // The `if` condition line and the true-branch's `weka` line ran; the false-branch's line
+    // (`weka njia_ya_uwongo = 2`, one line below the true branch's) did not.
+    let true_branch_line = 4; // `weka njia_ya_kweli = 1`
+    let false_branch_line = 6; // `weka njia_ya_uwongo = 2`
+    assert!(lines.contains(&true_branch_line), "true branch's line should be covered, got: {lines:?}");
+    assert!(!lines.contains(&false_branch_line), "false branch's line must NOT be covered when the condition is always true, got: {lines:?}");
+}
+
+#[test]
+fn coverage_records_partial_lines_from_a_failing_test() {
+    // A test that panics partway through still has real, partial coverage up to the panic point
+    // -- that's genuine information a caller (e.g. a coverage-threshold gate) should see, not
+    // nothing just because the test itself failed.
+    let module = parse_and_check_with_stdlib(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t_inashindwa() -> Tupu {
+             weka a = 1
+             paparika(\"imekusudiwa\")
+         }",
+    );
+    let f = module.functions.iter().find(|x| x.name == "t_inashindwa").unwrap().clone();
+    let (result, lines) = run_test_with_coverage(&module, &f);
+    assert!(!result.passed);
+    assert!(lines.len() >= 1, "the weka statement before the panic should still be recorded as covered");
 }
 
 #[test]

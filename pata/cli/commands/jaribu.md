@@ -23,6 +23,16 @@ Flags:
   being forcibly killed — the timeout stops the suite from *waiting* on it, not the thread itself
   from existing.
 - `--json` — output structured JSON instead of text; includes test count, pass/fail breakdown, per-test details
+- `--chanjo` — run with real line-level code coverage tracking: every source statement line
+  actually executed by at least one test, not a function-name-presence check (two tests
+  exercising different branches of the same function report genuinely different coverage).
+  Prints `Kuganda: mistari <executed>/<total> (<percent>%)` (or, with `--json`, a `chanjo` object
+  with `mistari_jumla`/`mistari_yaliyotimizwa`/`asilimia`). Informational only — no threshold gate
+  here; `pata thibitisha --kiwango-cha-jaribio` is a separate, already-existing coverage
+  *threshold* check using a different metric (test-to-public-function count ratio, not line
+  coverage). Sequential only (no `--nyuzi-za-jaribio` combination) and incompatible with
+  `--muda`/parallel execution's own paths, since coverage tracking has its own dedicated
+  execution loop.
 
 Exit codes:
 - 0 — all tests passed (or listing/discovery succeeded)

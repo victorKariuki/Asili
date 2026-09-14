@@ -9,6 +9,8 @@ use crate::signal;
 use super::expr::match_and_bind_pattern;
 
 pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOut, EvalError> {
+    rt.record_line(stmt.line());
+
     let sig = signal::take_pending();
     if sig != 0 {
         if let Some(handler_name) = signal::get_handler(sig) {

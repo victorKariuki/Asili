@@ -190,6 +190,34 @@ pub fn run_test_with_module(module: &Module, function: &Function) -> TestResult 
     }
 }
 
+/// Like `run_test_with_module`, but also returns the set of source lines actually executed
+/// while running this one test — real line-level coverage from `Runtime::executed_lines`
+/// (`Stmt::line()` recorded on every statement evaluated), not a function-name presence check.
+/// A test that panics still reports whatever lines ran before the panic, since partial coverage
+/// from a failing test is real coverage, not nothing.
+pub fn run_test_with_coverage(module: &Module, function: &Function) -> (TestResult, std::collections::HashSet<usize>) {
+    let mut env = Env::new();
+    env.seed_global_constants();
+    let mut rt = runtime::Runtime::new(&mut env, module);
+    rt.enable_coverage();
+
+    let result = (|| -> Result<(), EvalError> {
+        seed_module_constants(module, &mut rt)?;
+        rt.env.push_scope();
+        let out = eval::eval_block_impl(&function.body, &mut rt);
+        rt.env.pop_scope();
+        out.map(|_| ())
+    })();
+
+    let lines = rt.executed_lines.unwrap_or_default();
+    let test_result = match result {
+        Ok(()) => TestResult { name: function.name.clone(), passed: true, message: "sawa".to_string() },
+        Err(EvalError::Panic(msg)) => TestResult { name: function.name.clone(), passed: false, message: msg },
+        Err(e) => TestResult { name: function.name.clone(), passed: false, message: e.to_string() },
+    };
+    (test_result, lines)
+}
+
 /// Execute tests by running each function. Each test is tied to its module.
 pub fn execute_tests(
     modules_and_tests: &[(Module, Function)],

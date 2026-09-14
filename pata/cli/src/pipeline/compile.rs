@@ -295,13 +295,11 @@ pub fn run_project_tests(root: &Path, filter: Option<&str>, fail_fast: bool) -> 
     run_project_tests_parallel(root, filter, fail_fast, None, None)
 }
 
-pub fn run_project_tests_parallel(
-    root: &Path,
-    filter: Option<&str>,
-    fail_fast: bool,
-    num_threads: Option<usize>,
-    timeout: Option<std::time::Duration>,
-) -> Result<Vec<TestResult>, CliError> {
+/// Discover every `#[jaribio]` test in the project (compile, resolve, semantic-check every
+/// source file, same as `run_project_tests_parallel`'s own first half) without running any of
+/// them — shared by the normal pass/fail runner and the coverage-mode runner below, so the
+/// resolve/semantic-check logic exists in exactly one place.
+fn discover_project_tests(root: &Path, filter: Option<&str>) -> Result<Vec<(Module, Function)>, CliError> {
     let cfg = load_project_config(root)?;
     let target = resolve_target(None, cfg.target.as_deref());
     let src_dir = cfg
@@ -350,6 +348,79 @@ pub fn run_project_tests_parallel(
     if let Some(f) = filter {
         modules_and_tests.retain(|(_, t)| t.name.contains(f));
     }
+
+    Ok(modules_and_tests)
+}
+
+/// Run every discovered test with line-level coverage tracking, returning both the pass/fail
+/// results (for the normal `pata jaribu` report) and the module's aggregated `CoverageMetrics`
+/// (real executed-line data from `asili_evaluator::run_test_with_coverage`, not the old
+/// function-name-presence check). Sequential only — coverage tracking allocates a `HashSet` per
+/// test, so unlike the plain pass/fail path this doesn't currently have a parallel variant; the
+/// tradeoff is acceptable since `--chanjo` is an opt-in diagnostic mode, not the default path.
+pub fn run_project_tests_with_coverage(
+    root: &Path,
+    filter: Option<&str>,
+) -> Result<(Vec<TestResult>, crate::pipeline::coverage::CoverageMetrics), CliError> {
+    let modules_and_tests = discover_project_tests(root, filter)?;
+
+    if modules_and_tests.is_empty() {
+        let metrics = crate::pipeline::coverage::CoverageMetrics {
+            total_lines: HashSet::new(),
+            executed_lines: HashSet::new(),
+            coverage_percent: 0.0,
+        };
+        return Ok((Vec::new(), metrics));
+    }
+
+    let mut results = Vec::new();
+    let mut all_executed_lines: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    for (module, test_fn) in &modules_and_tests {
+        let (result, lines) = asili_evaluator::run_test_with_coverage(module, test_fn);
+        all_executed_lines.extend(lines);
+        results.push(result);
+    }
+
+    // Coverage is computed against the union of every test's module (a project usually has one
+    // real source module per file, each already merged with its own imports via
+    // merged_for_eval) — sum each distinct module's total lines rather than picking one
+    // arbitrary module, since a multi-file project's tests are spread across several.
+    let mut seen_modules: Vec<&Module> = Vec::new();
+    for (module, _) in &modules_and_tests {
+        if !seen_modules.iter().any(|m| std::ptr::eq(*m, module)) {
+            seen_modules.push(module);
+        }
+    }
+    let mut total_lines = std::collections::HashSet::new();
+    for module in &seen_modules {
+        total_lines.extend(crate::pipeline::coverage::total_statement_lines(module));
+    }
+    let executed_lines: std::collections::HashSet<usize> = all_executed_lines
+        .into_iter()
+        .filter(|l| total_lines.contains(l))
+        .collect();
+    let coverage_percent = if total_lines.is_empty() {
+        0.0
+    } else {
+        (executed_lines.len() as f64 / total_lines.len() as f64) * 100.0
+    };
+    let metrics = crate::pipeline::coverage::CoverageMetrics {
+        total_lines,
+        executed_lines,
+        coverage_percent,
+    };
+
+    Ok((results, metrics))
+}
+
+pub fn run_project_tests_parallel(
+    root: &Path,
+    filter: Option<&str>,
+    fail_fast: bool,
+    num_threads: Option<usize>,
+    timeout: Option<std::time::Duration>,
+) -> Result<Vec<TestResult>, CliError> {
+    let mut modules_and_tests = discover_project_tests(root, filter)?;
 
     if modules_and_tests.is_empty() {
         return Ok(Vec::new());

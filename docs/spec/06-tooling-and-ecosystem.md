@@ -25,7 +25,7 @@ Previous: [Standard Library](05-standard-library.md) | [Overview](../SPECIFICATI
 | `pata jenga` | Compile project into bytecode (`.asb`). |
 | `pata jenga --tenda` | Compile and run the entrypoint (`kuu`) in one step. |
 | `pata tenda <path.asb>` | Run an already-compiled `.asb` artifact directly, without recompiling. |
-| `pata jaribu` | Run internal `jaribio` test blocks, with `#[kabla]`/`#[baada]` setup/teardown fixtures and an optional per-test `--muda <sekunde>` wall-clock timeout. |
+| `pata jaribu` | Run internal `jaribio` test blocks, with `#[kabla]`/`#[baada]` setup/teardown fixtures, an optional per-test `--muda <sekunde>` wall-clock timeout, and `--chanjo` real line-level coverage tracking. |
 | `pata nadhifu` | Auto-format Swahili code to standard style: a token-stream pretty-printer, idempotent, comment-preserving. See below for the exact rules. |
 | `pata thibitisha` | Validate public API documentation coverage, project-wide trait completeness, `#[kiunganishi]` FFI-signature safety, type stability against the most recent `v<semver>` git tag, formatting compliance, and (opt-in, `--kiwango-cha-jaribio <0-100>`) test coverage ratio. |
 | `pata repl` | Start an interactive REPL (persistent environment; `?topic` shows inline help). |

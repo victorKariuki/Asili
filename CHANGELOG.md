@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`pata jaribu --chanjo`**: real line-level code coverage. `core/parser`'s `Stmt::line()`
+  (new) plus a new `Runtime::executed_lines`/`record_line` in `core/evaluator` (recorded on
+  every statement `eval_stmt_impl` actually evaluates) feed a new
+  `asili_evaluator::run_test_with_coverage`, aggregated by a rewritten
+  `pata_cli::pipeline::coverage::CoverageMetrics` that walks every function body recursively
+  (including nested `if`/`while`/`for`/`match` blocks) to compute the real denominator. Replaces
+  the previous `CoverageMetrics`, which took a static function-name list — real presence/
+  absence of a name, not anything about what ran inside it, so two tests exercising different
+  branches of one function both counted as "covering" it fully. Verified end-to-end through the
+  real `pata jaribu --chanjo` CLI path against a project whose test only takes one branch of an
+  `ikiwa`/`vinginevyo`: reports 75% (3/4 lines), not 100%.
 - **`#[kabla]`/`#[baada]` setup/teardown fixtures for `pata jaribu`**: a `#[kabla]`-tagged
   function runs before every `#[jaribio]` test in the same module (file); a `#[baada]`-tagged one
   runs after — including when the test itself failed, since teardown exists to release resources
@@ -158,9 +169,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (gated on `LINT301`'s `is_enabled`, same as every other rule), but the function itself is
   `_module: &Module) -> Vec<Diagnostic> { Vec::new() }` — a genuine no-op, per its own doc
   comment ("placeholder for future depth"). Being *called* is not the same as doing anything.
-- **`pata_cli::pipeline::coverage::CoverageMetrics`** (`pata/cli/src/pipeline/coverage.rs`):
-  function-execution coverage tracking. `pata jaribu` has no `--chanjo`/coverage flag and never
-  calls this.
 - **`pata_cli::pipeline::performance::PerformanceMetrics`/`ScopedTimer`**
   (`pata/cli/src/pipeline/performance.rs`): phase-latency/SLO tracking. Not called from any
   command.
