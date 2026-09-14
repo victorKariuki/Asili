@@ -3,6 +3,7 @@ pub mod jenga;
 pub mod mwalimu;
 pub mod nadhifu;
 pub mod njozi;
+pub mod ondoa;
 pub mod ongeza;
 pub mod repl;
 pub mod tenda;
@@ -36,6 +37,7 @@ pub fn dispatch(args: &[String]) -> CliResult {
     match command.as_str() {
         "njozi" => njozi::run(rest),
         "ongeza" => ongeza::run(rest),
+        "ondoa" => ondoa::run(rest),
         "jenga" => jenga::run(rest),
         "jaribu" => jaribu::run(rest),
         "mwalimu" => mwalimu::run(rest),
@@ -64,6 +66,7 @@ Amri:
   repl                         Fungua REPL.
   njozi [jina]                 Unda mradi mpya.
   ongeza <lib> [chagua...]     Ongeza tegemezi.
+  ondoa <lib>                  Ondoa tegemezi.
   nadhifu [chagua...]          Nadhifisha chanzo.
   thibitisha [chagua...]       Thibitisha mradi.
 

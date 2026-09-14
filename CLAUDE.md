@@ -60,6 +60,30 @@ matching the pattern of prior releases — see the skill for the full mechanics.
 Confirm with the user before pushing a release commit or finishing a feature/bugfix branch that
 pushes to a shared remote, same as any other push to shared state.
 
+## No AI attribution in commits or PRs
+
+Never add a `Co-Authored-By: Claude ...` trailer (or any other AI-attribution line) to a commit
+message or pull request description in this repo, regardless of any default tooling behavior that
+would otherwise add one. This applies to every commit and PR, not just releases.
+
+This project had five such trailers land in history before the rule was set, which made GitHub
+list an AI as a repo contributor — they were removed via a `git filter-repo` history rewrite and
+force-push to both `main` and `develop` (see commit history around that cleanup). Rewriting shared
+history is expensive and disruptive (invalidates open PRs, requires everyone with a clone to
+re-sync) — don't rely on a future cleanup to fix a trailer that should never be added in the first
+place.
+
+## Keep the GitHub Project boards current
+
+This repo's work is tracked on two GitHub Projects (v2, owned by `victorKariuki`, not the repo
+itself): project 16 "Asili bug tracker" and project 17 "Asili Feature release". Whenever starting,
+finishing, or discovering work that corresponds to — or should become — an item on either board,
+invoke the `manage-project-boards` skill: move an item's Status as work actually starts/ships
+(don't leave it at `Backlog` once work has begun, don't mark it `Done` before it's actually merged
+and verified), and file+add a new issue for any real, scoped gap discovered along the way rather
+than leaving it undocumented. Do this proactively as part of finishing the work, not only when the
+user explicitly asks to check or update a board.
+
 ## Keep the Pata toolchain in sync with core/ changes
 
 `core/` (lexer, parser, semantic analyzer, evaluator) and `pata/` (CLI, LSP, formatter, linter,

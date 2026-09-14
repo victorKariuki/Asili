@@ -6,6 +6,66 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] — pata-cli; asili-evaluator, pata-package at patch bumps
+
+### Added
+
+- **`pata ondoa <lib>`**: the missing counterpart to `pata ongeza` — removes a dependency from
+  `pata.toml` and regenerates `pata.lock`.
+- **`pata_package::fetch_git`/`hash_dir`** (`pata/package/src/fetch.rs`): real git-clone-based
+  dependency fetching (via `git2`) and a deterministic SHA-256 content hash over a fetched tree,
+  replacing the `sha256("{name}@{version}")` name-string placeholder the old checksum used. Not
+  yet wired into `pata ongeza` itself — `pata ongeza <lib> <version>` still only writes to
+  `pata.toml`/`pata.lock` without fetching — so this ships as library-internal groundwork this
+  release, not a user-facing fix yet (tracked separately).
+
+### Fixed
+
+- **`rand` 0.8→0.10 API migration** (`core/evaluator/src/builtins/hisabati.rs`): `rand::thread_rng()`
+  was removed upstream in favor of `rand::rng()`, and `Rng::gen()` moved to a new `RngExt::random()`
+  trait. `nasibu`/`nasibu_chini`'s Asili-level behavior is unchanged — internal-only.
+- **`pulldown-cmark` 0.9→0.13 API migration** (`pata/cli/src/commands/repl.rs`): `Tag::Heading`
+  became a struct variant, and `Event::End` now carries the lighter `TagEnd` enum instead of the
+  full `Tag`. Fixes the `?topic` REPL markdown renderer, which stopped compiling under the bump;
+  verified live against the real REPL, rendering unchanged.
+- **`sha2` 0.10→0.11 API migration** (`pata/package/src/lock.rs`, `resolver.rs`): the digest
+  output type lost its direct `LowerHex` impl; replaced `format!("{:x}", ...)` with an explicit
+  byte-to-hex map producing the same checksums as before.
+- **`.github/dependabot.yml`** was still GitHub's unfilled default template
+  (`package-ecosystem: ""`, invalid) despite two Dependabot PRs having already merged into `main`
+  via zero-config security updates. Now targets `cargo`/`npm`/`github-actions` explicitly, each
+  with `target-branch: develop`, so future Dependabot PRs open against `develop` instead of `main`.
+- **VS Code extension packaging**: `vsce package` silently produced a broken `.vsix` missing its
+  own entrypoint in this project's dev environment, because npm 11's built-in secret-redaction
+  feature mangles any path containing a UUID-shaped segment in `npm list`'s `--parseable` output —
+  exactly what `vsce` parses to find `node_modules` to bundle. Fixed by having `esbuild` inline
+  the extension's runtime dependency (`vscode-languageclient` and its own transitive deps) into a
+  single `out/extension.js` at build time instead, so `vsce` has nothing left to detect — the
+  currently-recommended approach for VS Code extensions generally, not just a workaround. Also
+  fixes `engines.vscode` (was trailing behind an `@types/vscode` bump) and adds a `license` field
+  and `LICENSE` file so `vsce package` stops warning.
+- **`extensions/vscode/tsconfig.json`**: `vscode-languageclient` 9→10 ships type declarations
+  requiring `moduleResolution: "node16"` (TypeScript's default resolution couldn't locate
+  `vscode-languageclient/node` despite the `.d.ts` file existing on disk); `module` had to move to
+  `"node16"` alongside it. Emit stays CommonJS in practice (`package.json` has no
+  `"type": "module"`), verified by inspecting the compiled output.
+
+### Changed
+
+- `Makefile`'s `install-ext` target (and the matching "Package + install VS Code extension" /
+  "Build + install all" VS Code tasks) now actually build, package, and install the VS Code
+  extension end to end (`npm install && vsce package --no-dependencies && code
+  --install-extension`), instead of only copying the `pata-lsp` binary into
+  `extensions/vscode/bin/` and calling it done.
+- `extensions/vscode/node_modules/` (564 files, committed since the repo's first commit before
+  `.gitignore`'s `node_modules/` rule existed) is no longer tracked — reproducible via `npm
+  install`, and nothing in CI/the Makefile depended on it being pre-populated in git.
+- Two new project-level rules, each with a matching `.claude/skills/` entry: never add AI
+  attribution (`Co-Authored-By: Claude ...`) to commits or PR descriptions (five pre-existing
+  trailers had to be removed via a `git filter-repo` rewrite + force-push to `main`/`develop`);
+  and keep the project's two GitHub Project boards (`Asili bug tracker`, `Asili Feature release`)
+  in sync with real work as it starts/ships, not just filed-and-forgotten.
+
 ## [0.4.0] — core/evaluator, core/lexer, core/parser, pata-cli, pata-fmt, pata-lsp
 
 ### Fixed

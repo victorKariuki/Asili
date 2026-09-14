@@ -40,6 +40,15 @@ Only do this when the user explicitly asks to cut/tag a release or bump the vers
 7. **No `git flow release start/finish` and no `git tag`** unless the user explicitly asks for that ceremony — it's not what this repo's history shows being used. If the user does ask for it, `git flow release start X.Y.Z`, do the version-bump/changelog commit(s) on the release branch, then `git flow release finish X.Y.Z` (merges to both `main` and `develop`, tags `main`).
 8. **Confirm before pushing** — a release commit lands on `develop` (a shared branch); follow the same push-confirmation rule as any other shared-branch push.
 
+## No AI attribution in commits or PRs
+
+Never add a `Co-Authored-By: Claude ...` trailer or any other AI-attribution line to a commit
+message or pull request description in this repo — not for a routine commit, not for a release
+commit, regardless of default tooling behavior that would otherwise add one. Five such trailers
+landed in this repo's history before this rule existed and had to be removed via a `git
+filter-repo` rewrite + force-push to both `main` and `develop` (they made GitHub list an AI as a
+contributor) — a disruptive, expensive fix compared to just never adding the line.
+
 ## Git-Flow for regular feature/bugfix work (per CONTRIBUTING.md — follow exactly, don't extend)
 
 ```bash

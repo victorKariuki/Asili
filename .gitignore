@@ -30,6 +30,9 @@ ehthumbs.db
 # Node (extensions, LSP tooling)
 node_modules/
 
+# Packaged VS Code extension (build artifact, published via GitHub Releases instead)
+extensions/vscode/*.vsix
+
 # Local env (secrets)
 .env
 .env.local
