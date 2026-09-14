@@ -10,13 +10,13 @@ const TENDA_USAGE: &str = r#"matumizi: pata tenda <path.asb | path.build.manifes
 Tenda kilele kilichojengwa bila kujenga tena.
 
   path.asb             Faili ya bytecode; tenda moja kwa moja.
-  path.build.manifest  Soma artifact= kutoka manifest, kisha tenda .asb ile.
+  path.build.manifest  Soma kilele= kutoka manifest, kisha tenda .asb ile.
 
 Hoja za kuu: zinapewa kwa kuu(hoja: Orodha<Neno>).
 
 Mfano:
-  pata tenda target/hello.asb
-  pata tenda target/hello.build.manifest foo bar
+  pata tenda kilele/hello.asb
+  pata tenda kilele/hello.build.manifest foo bar
 "#;
 
 /// Resolve artifact path from a .build.manifest file. Returns path to .asb (relative to manifest dir or absolute).
@@ -26,11 +26,11 @@ fn artifact_from_manifest(manifest_path: &Path) -> Result<PathBuf, CliError> {
     })?;
     let artifact = content
         .lines()
-        .find(|l| l.starts_with("artifact="))
-        .and_then(|l| l.strip_prefix("artifact=").map(str::trim))
+        .find(|l| l.starts_with("kilele="))
+        .and_then(|l| l.strip_prefix("kilele=").map(str::trim))
         .ok_or_else(|| {
             CliError::new(
-                format!("manifest {} haina mstari artifact=", manifest_path.display()),
+                format!("manifest {} haina mstari kilele=", manifest_path.display()),
                 1,
             )
         })?;
@@ -43,7 +43,7 @@ fn artifact_from_manifest(manifest_path: &Path) -> Result<PathBuf, CliError> {
 pub fn run(args: &[String]) -> CliResult {
     if args
         .iter()
-        .any(|a| a == "--help" || a == "-h" || a == "--msaada")
+        .any(|a| a == "--msaada")
     {
         print!("{TENDA_USAGE}");
         return Ok(());
@@ -66,13 +66,13 @@ pub fn run(args: &[String]) -> CliResult {
     let asb_path: PathBuf = if artifact_path
         .file_name()
         .and_then(|n| n.to_str())
-        .map_or(false, |n| n.ends_with(".build.manifest"))
+        .is_some_and(|n| n.ends_with(".build.manifest"))
     {
         artifact_from_manifest(&artifact_path)?
     } else if artifact_path
         .file_name()
         .and_then(|n| n.to_str())
-        .map_or(false, |n| n.ends_with(".asb"))
+        .is_some_and(|n| n.ends_with(".asb"))
     {
         artifact_path.clone()
     } else {
@@ -99,14 +99,14 @@ pub fn run(args: &[String]) -> CliResult {
     let format = parse_format(&bytes).unwrap_or_else(|| "serialized".to_string());
     if format == "bytecode" {
         let program = load_asb_bytecode(&bytes).map_err(|e| {
-            CliError::new(format!("kuipakua asb bytecode: {e}"), 1)
+            CliError::new(format!("kuipakia asb bytecode: {e}"), 1)
         })?;
         run_bytecode(&program, program_args).map_err(|e| {
             CliError::new(format!("kuendesha kuu: {e}"), 1)
         })?;
     } else {
         let module = load_asb(&bytes).map_err(|e| {
-            CliError::new(format!("kuipakua asb: {e}"), 1)
+            CliError::new(format!("kuipakia asb: {e}"), 1)
         })?;
         run_main(&module, program_args).map_err(|e| {
             CliError::new(format!("kuendesha kuu: {e}"), 1)

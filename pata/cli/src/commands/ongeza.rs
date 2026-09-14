@@ -73,7 +73,10 @@ mod tests {
         let toml = fs::read_to_string("pata.toml").expect("pata.toml");
         let lock = fs::read_to_string("pata.lock").expect("pata.lock");
         assert!(toml.contains("hisabati = \"^1.2\""));
-        assert!(lock.contains("hisabati = \"^1.2\""));
+        // pata.lock is written via pata_package::LockFile (real TOML, not the old flat
+        // `name = "version"` line format) — the dependency name is a table header.
+        assert!(lock.contains("[dependencies.hisabati]"));
+        assert!(lock.contains("version = \"^1.2\""));
 
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(&root);

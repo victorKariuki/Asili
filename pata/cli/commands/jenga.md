@@ -9,7 +9,7 @@ Inputs:
 Success:
 - parses `pata.toml`
 - compiles from `[chanzo].kuingia`
-- emits artifacts under `target/`
+- emits artifacts under `kilele/`
 
 Failures:
 - syntax/type/ownership diagnostics from Mwalimu

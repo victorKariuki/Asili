@@ -1,5 +1,0 @@
-project=all_types
-entry=./src/kuu.as
-functions=42
-artifact=all_types.asb
-input_hash=0601984edaa5df66

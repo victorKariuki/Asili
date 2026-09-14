@@ -58,6 +58,16 @@ impl Env {
         }
     }
 
+    pub fn drop(&mut self, name: &str) -> bool {
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.contains_key(name) {
+                scope.remove(name);
+                return true;
+            }
+        }
+        false
+    }
+
     /// Seed the outermost scope with global constants (Ukomo, Siyo_Namba, PI, E, KWELI, TOLEO, etc.).
     pub fn seed_global_constants(&mut self) {
         if let Some(scope) = self.scopes.last_mut() {

@@ -43,7 +43,7 @@ pub fn dispatch(args: &[String]) -> CliResult {
         "repl" => repl::run(rest),
         "tenda" => tenda::run(rest),
         "thibitisha" => thibitisha::run(rest),
-        "-h" | "--help" | "help" | "--msaada" | "msaada" => {
+        "--msaada" | "msaada" => {
             println!("{}", usage());
             Ok(())
         }
@@ -58,15 +58,15 @@ Amri ni kitendo unachotaka kufanya. Chagua na hoja hutofautiana kwa kila amri.
 
 Amri:
   jenga [faili.as] [chagua...]  Jenga mradi (kutoka pata.toml) au faili moja.
-  tenda <path.asb|manifest>      Tenda kilele bila kujenga (run from artifact).
+  tenda <path.asb|manifest>      Tenda kilele bila kujenga upya.
   jaribu [chagua...]            Endesha majaribio (#[jaribio]).
   mwalimu                      Anza seva ya LSP (Mwalimu).
   repl                         Fungua REPL.
   njozi [jina]                 Unda mradi mpya.
   ongeza <lib> [chagua...]     Ongeza tegemezi.
-  nadhifu [chagua...]          Format chanzo.
+  nadhifu [chagua...]          Nadhifisha chanzo.
   thibitisha [chagua...]       Thibitisha mradi.
 
-Onyesha msaada kwa amri: pata <amri> --msaada (au -h, --help).
+Onyesha msaada kwa amri: pata <amri> --msaada.
 "#
 }

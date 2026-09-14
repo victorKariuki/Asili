@@ -1,11 +1,13 @@
 leta mfumo
 leta matumizi
 
+# Basic `ikiwa` (if) with a true condition.
 kazi demo_ikiwa() -> Namba {
   ikiwa kweli { rejesha 1 }
   rejesha 0
 }
 
+# `ikiwa`/`vinginevyo` (if/else).
 kazi demo_ikiwa_vinginevyo() -> Namba {
   weka x = 2
   ikiwa x < 0 { rejesha -1 }
@@ -13,6 +15,7 @@ kazi demo_ikiwa_vinginevyo() -> Namba {
   rejesha 0
 }
 
+# `ikiwa`/`au_ikiwa`/`vinginevyo` (if/else-if/else) chain.
 kazi demo_au_ikiwa() -> Namba {
   weka n = 2
   ikiwa n == 0 { rejesha 0 }
@@ -22,6 +25,7 @@ kazi demo_au_ikiwa() -> Namba {
   rejesha 0
 }
 
+# `kwa x katika ...` (for-in) over an Orodha, summing its elements.
 kazi demo_kwa_katika() -> Namba {
   weka sum = 0
   kwa x katika orodha(10, 20, 30) {
@@ -30,6 +34,7 @@ kazi demo_kwa_katika() -> Namba {
   rejesha sum
 }
 
+# `kwa i kutoka ... hadi ...` (for-range), summing 0..4.
 kazi demo_kwa_kutoka_hadi() -> Namba {
   weka sum = 0
   kwa i kutoka 0 hadi 4 {
@@ -38,6 +43,7 @@ kazi demo_kwa_kutoka_hadi() -> Namba {
   rejesha sum
 }
 
+# An empty for-range (`0 hadi 0`) runs its body zero times.
 kazi demo_kwa_range_empty() -> Namba {
   weka count = 0
   kwa i kutoka 0 hadi 0 {
@@ -46,6 +52,7 @@ kazi demo_kwa_range_empty() -> Namba {
   rejesha count
 }
 
+# Basic `wakati` (while) loop.
 kazi demo_wakati() -> Namba {
   weka n = 0
   wakati n < 5 {
@@ -54,6 +61,7 @@ kazi demo_wakati() -> Namba {
   rejesha n
 }
 
+# `wakati milele` (infinite loop) exited via `vunja` (break).
 kazi demo_wakati_milele_vunja() -> Namba {
   weka n = 0
   wakati milele {
@@ -63,6 +71,7 @@ kazi demo_wakati_milele_vunja() -> Namba {
   rejesha n
 }
 
+# A labeled loop (`lebo`) broken out of via `vunja 'label`.
 kazi demo_lebo_vunja() -> Namba {
   weka n = 0
   lebo 'nje: wakati milele {
@@ -72,6 +81,7 @@ kazi demo_lebo_vunja() -> Namba {
   rejesha n
 }
 
+# `endelea` (continue) skips one iteration of the loop body.
 kazi demo_endelea() -> Namba {
   weka sum = 0
   kwa i kutoka 0 hadi 6 {
@@ -81,6 +91,7 @@ kazi demo_endelea() -> Namba {
   rejesha sum
 }
 
+# `linganisha` (match) on a Namba value.
 kazi demo_linganisha_namba() -> Namba {
   weka x = 2
   linganisha x {
@@ -92,6 +103,7 @@ kazi demo_linganisha_namba() -> Namba {
   rejesha 0
 }
 
+# `linganisha` matching the `Hamna` (null) value.
 kazi demo_linganisha_hamna() -> Namba {
   weka val = Hamna
   linganisha val {
@@ -101,6 +113,7 @@ kazi demo_linganisha_hamna() -> Namba {
   rejesha 0
 }
 
+# `linganisha` alongside Jozi (pair) destructuring via `.kwanza()`/`.pili()`.
 kazi demo_linganisha_jozi() -> Namba {
   weka p = jozi(3, 4)
   weka a = (p.kwanza() kama Namba)
@@ -112,17 +125,20 @@ kazi demo_linganisha_jozi() -> Namba {
   rejesha 0
 }
 
+# A local `thabiti` (constant) inside a function body.
 kazi demo_thabiti() -> Namba {
   thabiti x = 7
   rejesha x
 }
 
+# `tupa` (drop) removes a variable from scope before the function returns.
 kazi demo_tupa() -> Namba {
   weka z = 10
   tupa z
   rejesha 0
 }
 
+# `?` (propagate) on an in-bounds Orodha index.
 kazi demo_propagate_ok() -> Namba {
   weka a = orodha(5, 15, 25)
   rejesha a[1]?

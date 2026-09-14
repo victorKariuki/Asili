@@ -30,6 +30,11 @@ pub(crate) fn split_generic_args(s: &str) -> Vec<&str> {
     out
 }
 
+/// Check if a string is a type variable (single uppercase letter: T, E, U, etc.)
+fn is_type_variable(s: &str) -> bool {
+    s.len() == 1 && s.chars().next().is_some_and(|c| c.is_uppercase())
+}
+
 /// Parse a type string (e.g. from .asi or AST) into ValueType. Public API for shared use.
 pub fn parse_value_type(s: &str) -> ValueType {
     let s = s.replace(' ', "");
@@ -76,7 +81,7 @@ pub fn parse_value_type(s: &str) -> ValueType {
         return ValueType::Tokeo(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown));
     }
     if s.starts_with("Orodha<") && s.ends_with('>') {
-        let inner = s[6..s.len() - 1].trim();
+        let inner = s[7..s.len() - 1].trim();
         return ValueType::Orodha(Box::new(parse_value_type(inner)));
     }
     if s.starts_with("Kamusi<") && s.ends_with('>') {
@@ -90,11 +95,11 @@ pub fn parse_value_type(s: &str) -> ValueType {
         }
     }
     if s.starts_with("Mfululizo<") && s.ends_with('>') {
-        let inner = s[9..s.len() - 1].trim();
+        let inner = s[10..s.len() - 1].trim();
         return ValueType::Mfululizo(Box::new(parse_value_type(inner)));
     }
     if s.starts_with("Jozi<") && s.ends_with('>') {
-        let inner = s[4..s.len() - 1].trim();
+        let inner = s[5..s.len() - 1].trim();
         let parts = split_generic_args(inner);
         if parts.len() >= 2 {
             return ValueType::Jozi(
@@ -104,8 +109,52 @@ pub fn parse_value_type(s: &str) -> ValueType {
         }
     }
     if s.starts_with("Seti<") && s.ends_with('>') {
-        let inner = s[4..s.len() - 1].trim();
+        let inner = s[5..s.len() - 1].trim();
         return ValueType::Seti(Box::new(parse_value_type(inner)));
+    }
+    if s.starts_with("Kasha_GC<") && s.ends_with('>') {
+        let inner = s[9..s.len() - 1].trim();
+        return ValueType::KashaGC(Box::new(parse_value_type(inner)));
+    }
+    if s.starts_with("Kasha_GC_Dhaifu<") && s.ends_with('>') {
+        let inner = s[16..s.len() - 1].trim();
+        return ValueType::KashaGCDhaifu(Box::new(parse_value_type(inner)));
+    }
+    if s.starts_with("Kumbukumbu<") && s.ends_with('>') {
+        let inner = s[11..s.len() - 1].trim();
+        return ValueType::Kumbukumbu(Box::new(parse_value_type(inner)));
+    }
+    if s.starts_with("NjiaTx<") && s.ends_with('>') {
+        let inner = s[7..s.len() - 1].trim();
+        return ValueType::NjiaTx(Box::new(parse_value_type(inner)));
+    }
+    if s.starts_with("NjiaRx<") && s.ends_with('>') {
+        let inner = s[7..s.len() - 1].trim();
+        return ValueType::NjiaRx(Box::new(parse_value_type(inner)));
+    }
+    if s.starts_with("NjiaTxBounded<") && s.ends_with('>') {
+        let inner = s[14..s.len() - 1].trim();
+        return ValueType::NjiaTxBounded(Box::new(parse_value_type(inner)));
+    }
+    if s.starts_with("NjiaRxBounded<") && s.ends_with('>') {
+        let inner = s[14..s.len() - 1].trim();
+        return ValueType::NjiaRxBounded(Box::new(parse_value_type(inner)));
+    }
+    if s.starts_with("Fungo<") && s.ends_with('>') {
+        let inner = s[6..s.len() - 1].trim();
+        return ValueType::Fungo(Box::new(parse_value_type(inner)));
+    }
+    if s == "Faili" {
+        return ValueType::Faili;
+    }
+    if s == "Mkondo" {
+        return ValueType::Mkondo;
+    }
+    if s == "MkondoSikilizaji" {
+        return ValueType::MkondoSikilizaji;
+    }
+    if s == "TlsUsanidi" {
+        return ValueType::TlsUsanidi;
     }
     if s == "Herufi" {
         return ValueType::Herufi;
@@ -121,6 +170,9 @@ pub fn parse_value_type(s: &str) -> ValueType {
     }
     if s == "Anuani" {
         return ValueType::Anuani;
+    }
+    if is_type_variable(&s) {
+        return ValueType::TypeVar(s.to_string());
     }
     ValueType::Unknown
 }

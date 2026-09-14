@@ -4,40 +4,308 @@
   "scopeName": "source.asili",
   "patterns": [
     { "include": "#comment" },
+    { "include": "#attribute" },
+    { "include": "#import-stmt" },
+    { "include": "#type-def" },
+    { "include": "#impl-def" },
+    { "include": "#function-def" },
+    { "include": "#variable-declaration" },
     { "include": "#string" },
     { "include": "#char" },
     { "include": "#number" },
-    { "include": "#keyword" },
+    { "include": "#keyword-control" },
+    { "include": "#keyword-operator" },
+    { "include": "#constant-language" },
+    { "include": "#builtin-type" },
+    { "include": "#builtin-function" },
+    { "include": "#method-call" },
+    { "include": "#member-access" },
+    { "include": "#function-call" },
+    { "include": "#type-annotation" },
+    { "include": "#type-ref" },
+    { "include": "#operator" },
+    { "include": "#punctuation" },
+    { "include": "#storage-keyword" },
     { "include": "#identifier" }
   ],
   "repository": {
     "comment": {
-      "match": "#.*$",
-      "name": "comment.line.number-sign.asili"
+      "patterns": [
+        {
+          "match": "#(?!\\[).*$",
+          "name": "comment.line.number-sign.asili"
+        },
+        {
+          "match": "//.*$",
+          "name": "comment.line.double-slash.asili"
+        }
+      ]
+    },
+    "attribute": {
+      "begin": "#\\[",
+      "end": "\\]",
+      "name": "meta.attribute.asili",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.attribute.begin.asili" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.attribute.end.asili" }
+      },
+      "patterns": [
+        {
+          "match": "\\b(jaribio|sharti|ndani|kiunganishi)\\b",
+          "name": "entity.other.attribute-name.asili"
+        },
+        { "include": "#string" },
+        { "include": "#number" },
+        { "include": "#punctuation" }
+      ]
     },
     "string": {
       "begin": "\"",
       "end": "\"",
       "name": "string.quoted.double.asili",
       "patterns": [
-        { "match": "\\\\.", "name": "constant.character.escape.asili" }
+        { "match": "\\\\[ntr\"\\\\]", "name": "constant.character.escape.asili" }
       ]
     },
     "char": {
-      "match": "'(\\\\[nt'\\\\]|.)'",
-      "name": "string.quoted.single.asili"
+      "match": "'(\\\\[ntr'\\\\]|[^'])'",
+      "name": "string.quoted.single.asili",
+      "captures": {
+        "1": { "name": "constant.character.escape.asili" }
+      }
     },
     "number": {
-      "match": "\\b[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?\\b",
+      "match": "\\b(0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+)\\b|\\b([0-9]+(\\.[0-9]*)?|\\.\\d+)([eE][+-]?[0-9]+)?\\b",
       "name": "constant.numeric.asili"
     },
-    "keyword": {
-      "match": "\\b(leta|kazi|umbo|sifa|shughuli|ya|weka|thabiti|rejesha|ikiwa|vinginevyo|kwa|wakati|milele|linganisha|vunja|endelea|lebo|tupa|jaribu|kama|azima|azima_tenda|au_ikiwa|chapisha|paparika|kweli|si_kweli|Hamna|Tupu|Namba|Neno|Ukweli|Orodha|Kamusi|Jozi|Herufi|Tokeo|Chaguo)\\b",
+    "import-stmt": {
+      "match": "\\b(leta)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.control.import.asili" },
+        "2": { "name": "entity.name.namespace.asili" }
+      }
+    },
+    "type-def": {
+      "match": "\\b(umbo|jenum|sifa)\\s+([A-Z][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.type.asili" },
+        "2": { "name": "entity.name.type.asili" }
+      }
+    },
+    "impl-def": {
+      "match": "\\b(shughuli)\\s+(ya)\\s+([A-Z][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.type.asili" },
+        "2": { "name": "storage.type.asili" },
+        "3": { "name": "entity.name.type.asili" }
+      }
+    },
+    "function-def": {
+      "begin": "\\b(kazi)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(\\()",
+      "end": "\\)",
+      "name": "meta.function.definition.asili",
+      "beginCaptures": {
+        "1": { "name": "storage.type.function.asili" },
+        "2": { "name": "entity.name.function.asili" },
+        "3": { "name": "punctuation.definition.parameters.begin.asili" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.parameters.end.asili" }
+      },
+      "patterns": [
+        {
+          "match": "\\b(azima|thabiti)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.modifier.asili" },
+            "2": { "name": "variable.parameter.asili" }
+          }
+        },
+        {
+          "match": "([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)(?!:)",
+          "captures": {
+            "1": { "name": "variable.parameter.asili" },
+            "2": { "name": "punctuation.separator.type.asili" }
+          }
+        },
+        { "include": "#builtin-type" },
+        { "include": "#type-ref" },
+        { "include": "#punctuation" }
+      ]
+    },
+    "variable-declaration": {
+      "match": "\\b(weka|thabiti)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.type.asili" },
+        "2": { "name": "variable.other.definition.asili" }
+      }
+    },
+    "block": {
+      "begin": "\\{",
+      "end": "\\}",
+      "name": "meta.block.asili",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.block.begin.asili" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.block.end.asili" }
+      },
+      "patterns": [
+        { "include": "$self" }
+      ]
+    },
+    "keyword-control": {
+      "match": "\\b(ikiwa|vinginevyo|au_ikiwa|wakati|milele|kwa|kutoka|hadi|katika|linganisha|vunja|endelea|rejesha|lebo|tupa)\\b",
       "name": "keyword.control.asili"
+    },
+    "storage-keyword": {
+      "match": "\\b(weka|thabiti|umma)\\b",
+      "name": "storage.modifier.asili"
+    },
+    "keyword-operator": {
+      "patterns": [
+        {
+          "match": "\\b(kama|azima|azima_tenda)\\b",
+          "name": "keyword.operator.cast.asili"
+        },
+        {
+          "match": "\\b(na|au|siyo)\\b",
+          "name": "keyword.operator.logical.asili"
+        },
+        {
+          "match": "\\b(jaribu|na_biti|au_biti|xor_biti|siyo_biti)\\b",
+          "name": "keyword.operator.bitwise.asili"
+        },
+        {
+          "match": "\\b(sogeza_kulia|sogeza_kushoto)\\b",
+          "name": "keyword.operator.bitwise.asili"
+        }
+      ]
+    },
+    "constant-language": {
+      "match": "\\b(kweli|si_kweli|Hamna)\\b",
+      "name": "constant.language.asili"
+    },
+    "builtin-type": {
+      "patterns": [
+        {
+          "match": "\\b(Namba|Neno|Ukweli|Herufi)\\b",
+          "name": "support.type.primitive.asili"
+        },
+        {
+          "match": "\\b(Biti8|Biti16|Biti32|Biti64|uBiti8|uBiti16|uBiti32|uBiti64)\\b",
+          "name": "support.type.integer.asili"
+        },
+        {
+          "match": "\\b(Orodha|Kamusi|Jozi|Tokeo|Chaguo|Tupu|Wakati|Anuani)\\b",
+          "name": "support.type.container.asili"
+        }
+      ]
+    },
+    "builtin-function": {
+      "begin": "\\b(chapisha|onyo|makosa|paparika|omba|orodha|kamusi|kamusi_tupu|jozi|tokeo|kosa|chaguo|vigezo|pata_env|toka|sasa|lala|umbiza|soma_faili|andika_faili|futa|vipo|ukubwa|syscall|toleo|jina_os|anza_mwendo|subiri_mwendo|saza_kiungo|wito_kiungo|absolute|sini|kosini|tanjenti|mzizi|nasibu|nasibu_chini|sakafu|dari|kipeo|gawio|logi|logi2|logi10|ni_namba|si_namba|ni_ukomo)\\s*(\\()",
+      "end": "\\)",
+      "name": "meta.function-call.builtin.asili",
+      "beginCaptures": {
+        "1": { "name": "support.function.builtin.asili" },
+        "2": { "name": "punctuation.definition.arguments.begin.asili" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.arguments.end.asili" }
+      },
+      "patterns": [
+        { "include": "$self" }
+      ]
+    },
+    "method-call": {
+      "match": "(\\.)([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*\\()",
+      "captures": {
+        "1": { "name": "punctuation.accessor.asili" },
+        "2": { "name": "variable.function.asili" }
+      }
+    },
+    "member-access": {
+      "match": "(\\.)([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "punctuation.accessor.asili" },
+        "2": { "name": "variable.other.member.asili" }
+      }
+    },
+    "function-call": {
+      "begin": "\\b([a-z_][a-zA-Z0-9_]*)\\s*(\\()",
+      "end": "\\)",
+      "name": "meta.function-call.asili",
+      "beginCaptures": {
+        "1": { "name": "variable.function.asili" },
+        "2": { "name": "punctuation.definition.arguments.begin.asili" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.arguments.end.asili" }
+      },
+      "patterns": [
+        { "include": "$self" }
+      ]
+    },
+    "type-annotation": {
+      "match": "(:)(?!:)\\s*([A-Z][a-zA-Z0-9_]*)?",
+      "captures": {
+        "1": { "name": "punctuation.separator.type.asili" },
+        "2": { "name": "entity.name.type.asili" }
+      },
+      "name": "meta.type-annotation.asili"
+    },
+    "type-ref": {
+      "match": "\\b([A-Z][a-zA-Z0-9_]*)\\b",
+      "name": "entity.name.type.asili"
+    },
+    "operator": {
+      "patterns": [
+        {
+          "match": "->|=>|::",
+          "name": "keyword.operator.compound.asili"
+        },
+        {
+          "match": "\\*\\*=|\\*\\*|==|!=|>=|<=",
+          "name": "keyword.operator.comparison.asili"
+        },
+        {
+          "match": "&&|\\|\\|",
+          "name": "keyword.operator.logical.asili"
+        },
+        {
+          "match": "\\+=|-=|\\*=|/=|=",
+          "name": "keyword.operator.assignment.asili"
+        },
+        {
+          "match": "[+\\-*/%]",
+          "name": "keyword.operator.arithmetic.asili"
+        },
+        {
+          "match": "[<>!&|^~?]",
+          "name": "keyword.operator.comparison.asili"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "match": "[,;]",
+          "name": "punctuation.separator.asili"
+        },
+        {
+          "match": "\\.",
+          "name": "punctuation.accessor.asili"
+        },
+        {
+          "match": "[\\(\\)\\[\\]\\{\\}]",
+          "name": "punctuation.bracket.asili"
+        }
+      ]
     },
     "identifier": {
       "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b",
-      "name": "variable.other.asili"
+      "name": "variable.other.readwrite.asili"
     }
   }
 }

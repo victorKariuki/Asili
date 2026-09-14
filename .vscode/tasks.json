@@ -1,0 +1,87 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build (debug)",
+      "type": "shell",
+      "command": "cargo build",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "Build (release)",
+      "type": "shell",
+      "command": "cargo build --release",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "Test",
+      "type": "shell",
+      "command": "cargo test",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "Install pata → ~/.local/bin",
+      "type": "shell",
+      "command": "cargo build --release && install -m 755 target/release/pata-cli ~/.local/bin/pata",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": "$rustc",
+      "dependsOn": []
+    },
+    {
+      "label": "Install pata-lsp → extension bin/",
+      "type": "shell",
+      "command": "cargo build --release -p pata-lsp && cp target/release/pata-lsp extensions/vscode/bin/pata-lsp",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "Install all (pata + pata-lsp)",
+      "type": "shell",
+      "command": "cargo build --release && install -m 755 target/release/pata-cli ~/.local/bin/pata && cp target/release/pata-lsp extensions/vscode/bin/pata-lsp",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": "$rustc"
+    },
+    {
+      "label": "Build VSCode extension",
+      "type": "shell",
+      "command": "npm run compile",
+      "options": { "cwd": "${workspaceFolder}/extensions/vscode" },
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": "$tsc"
+    },
+    {
+      "label": "Build + install all",
+      "dependsOrder": "sequence",
+      "dependsOn": ["Install all (pata + pata-lsp)", "Build VSCode extension"],
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run: pata <file>",
+      "type": "shell",
+      "command": "~/.local/bin/pata ${file}",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run: astar example",
+      "type": "shell",
+      "command": "~/.local/bin/pata examples/astar/src/kuu.as",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": true },
+      "problemMatcher": []
+    }
+  ]
+}
