@@ -11,21 +11,35 @@
     "url": "https://github.com/victorKariuki/Asili.git",
     "directory": "extensions/vscode"
   },
-  "engines": { "vscode": "^1.137.0" },
-  "categories": ["Programming Languages"],
+  "engines": {
+    "vscode": "^1.137.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "languages": [
       {
         "id": "asili",
-        "aliases": ["Asili"],
-        "extensions": [".as", ".asi"],
+        "aliases": [
+          "Asili"
+        ],
+        "extensions": [
+          ".as",
+          ".asi"
+        ],
         "configuration": "./language-configuration.json"
       },
       {
         "id": "pata-manifest",
-        "aliases": ["Pata Manifest"],
-        "filenames": ["pata.toml", "pata.lock"],
+        "aliases": [
+          "Pata Manifest"
+        ],
+        "filenames": [
+          "pata.toml",
+          "pata.lock"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -57,7 +71,9 @@
         },
         "asili.serverArgs": {
           "type": "array",
-          "default": ["mwalimu"],
+          "default": [
+            "mwalimu"
+          ],
           "description": "Arguments for LSP (e.g. [\"mwalimu\"] when using pata)"
         },
         "asili.cliPath": {
@@ -75,13 +91,16 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "vscode:prepublish": "npm run check-types && npm run bundle",
+    "check-types": "tsc -p ./ --noEmit",
+    "bundle": "node esbuild.js",
+    "compile": "npm run check-types && npm run bundle",
+    "watch": "node esbuild.js --watch"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",
     "@types/vscode": "^1.137.0",
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
   },
   "dependencies": {
