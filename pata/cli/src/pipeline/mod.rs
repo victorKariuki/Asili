@@ -7,3 +7,4 @@ pub mod resolve;
 pub mod sharti;
 pub mod stability;
 pub mod coverage;
+pub mod performance;

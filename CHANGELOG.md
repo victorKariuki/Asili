@@ -40,6 +40,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (e.g., `line_limit` for function length checks).
 - **Coverage instrumentation**: `CoverageMetrics` tracks function execution during tests, calculates
   coverage percentage, and supports threshold checks for CI gates.
+- **Workspace scaffolding**: `pata njozi --workspace` generates multi-member workspace layout with
+  `Asili.toml` and member-specific `pata.toml` files ready for development.
 
 ### Fixed
 
