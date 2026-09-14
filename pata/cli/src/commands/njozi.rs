@@ -57,6 +57,8 @@ fn create_scaffold(project_name: &str, destination: &Path) -> CliResult {
         .map_err(|err| CliError::new(format!("imeshindwa kuunda src/: {err}"), 1))?;
     fs::create_dir_all(destination.join("kilele"))
         .map_err(|err| CliError::new(format!("imeshindwa kuunda kilele/: {err}"), 1))?;
+    fs::create_dir_all(destination.join(".github/workflows"))
+        .map_err(|err| CliError::new(format!("imeshindwa kuunda .github/workflows/: {err}"), 1))?;
 
     write_file(
         &destination.join("pata.toml"),
@@ -73,6 +75,10 @@ fn create_scaffold(project_name: &str, destination: &Path) -> CliResult {
         "kilele/*\n!kilele/.gitkeep\n\n*.asb\n*.asm\n",
     )?;
     write_file(&destination.join("kilele/.gitkeep"), "")?;
+    write_file(
+        &destination.join(".github/workflows/ci.yml"),
+        "name: CI\n\non:\n  push:\n    branches: [main, develop]\n  pull_request:\n    branches: [main, develop]\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - name: Install Rust\n        uses: dtolnay/rust-toolchain@stable\n      - name: Install pata\n        run: cargo install --path . --locked || true\n      - name: pata jenga\n        run: pata jenga\n      - name: pata jaribu\n        run: pata jaribu\n",
+    )?;
 
     Ok(())
 }
