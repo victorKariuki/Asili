@@ -30,13 +30,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Type-stability checking**: `pata thibitisha` now supports `--baseline <tag>` to check for breaking
   signature changes (function removal, parameter count changes) against a git-tag baseline. Uses
   `git show <tag>:src/kuu.as` to fetch baseline source, parses, and compares public functions.
+- **Registry backend infrastructure**: `pata_package::LocalRegistry` for in-memory package metadata
+  storage, compatible with Cargo/crates.io registry format. `PackageMetadata` and `RegistryEntry`
+  support version listing and dependency metadata.
+- **LSP code actions**: Quick-fix suggestions for lint diagnostics (e.g., "Add doc comment" for
+  LINT202). Extensible per-rule action generation.
+- **Lint configurability**: `pata-lint` now supports per-rule configuration via `[lint.rules]` in
+  `pata.toml`. Set severity levels (error/warning/info/ignore), configure rule-specific options
+  (e.g., `line_limit` for function length checks).
 
 ### Fixed
 
 - **Lint test suite**: corrected `LINT101` boundary test (50 statements exactly should not flag; flag
   only when > 50). Tests now confirm the exact threshold behavior.
 
-### Planned (Sections 13–20, future phases)
+### Planned (Sections 16–20, future phases)
 
 The following sections from the 20-section production-readiness spec are planned for completion
 in the next phase:
