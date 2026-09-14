@@ -23,23 +23,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   stub), matching this repo's own CI workflow shape.
 - **`pata ondoa <lib>`**: the missing counterpart to `pata ongeza` — removes a dependency from
   `pata.toml` and regenerates `pata.lock`.
-- **New `pata-lint` rule** in `rules/logic.rs`, wired into `pata_lint::check()`.
-- **LSP inlay hints**: `mwalimu` now advertises `inlayHintProvider` and answers real
-  `textDocument/inlayHint` requests via `compute_inlay_hints`.
-- **LSP code actions**: a real `code_action` handler offering "Fomati faili (pata nadhifu)" and
-  "Ongeza `///` maelezo" quick-fixes.
-- **`pata_package::LocalRegistry`**: in-memory package metadata storage (`PackageMetadata`,
-  `RegistryEntry`), wired into `pata/cli/src/pipeline/resolve.rs`/`compile.rs`.
 - **Adversarial test coverage for existing `pata-lint` rules** (`LINT001`–`LINT003`, `LINT101`,
   `LINT201`–`LINT203`): each now has real false-positive/false-negative test cases, not just
   happy-path coverage.
 
-### Added, but not yet usable (real code, real unit tests, not wired into any command a user can
-### reach — verified by grepping for actual call sites, not by re-reading commit messages)
+### Added, but not yet usable (real code, real unit tests, but not actually doing anything a user
+### would notice yet — either not called from any command, or called but producing empty/inert
+### output. Verified by reading the actual call sites and function bodies/return values, not by
+### re-reading commit messages — an earlier draft of this section got several of these wrong by
+### stopping at "is it called" without checking what it returns)
 
-- **`pata_package::VersionConstraint`** (`pata/package/src/constraints.rs`): real semver
-  constraint parsing (caret/tilde/range). `Resolver::resolve` does not call it — dependency
-  resolution still locks whatever version string is given verbatim, unchanged from before.
+- **LSP inlay hints** (`pata/lsp/src/inlay_hints.rs`, `compute_inlay_hints`): wired into a real
+  `textDocument/inlayHint` handler, but every hint it builds has `label:
+  InlayHintLabel::LabelParts(vec![])` — an empty label, which renders as nothing in the editor.
+  Detection is also a naive per-line text scan (not AST-based), and checks for a `kitu` keyword
+  prefix that doesn't exist in this language's lexer (real declarations use `weka`).
+- **LSP code actions** (`pata/lsp/src/actions.rs`, `code_actions_for_diagnostic`): wired into a
+  real `code_action` handler, but every `CodeAction` it builds has `edit: None` — clicking either
+  offered quick-fix ("Add doc comment" for `LINT202`, "Remove unused imports" for `LINT203`) does
+  nothing. Also not what the original spec asked for (a `pata nadhifu`-applying quick-fix and a
+  missing-`///`-comment fix) — different, also-inert actions shipped instead.
+- **`rules/logic.rs`'s `check_logic_errors`**: wired into `pata_lint::check()`, but the function
+  itself is `_module: &Module) -> Vec<Diagnostic> { Vec::new() }` — a genuine no-op, per its own
+  doc comment ("placeholder for future depth"). Being *called* is not the same as doing anything.
+- **`pata_package::LocalRegistry`/`PackageMetadata`/`RegistryEntry`** (`pata/package/src/
+  registry.rs`) and **`pata_package::VersionConstraint`** (`constraints.rs`, real semver
+  constraint parsing): both exist with real unit tests, neither has any real caller in
+  `pata/cli` — `Resolver::resolve` still locks whatever version string is given verbatim.
 - **`pata_cli::pipeline::stability::check_type_stability`** (`pata/cli/src/pipeline/stability.rs`):
   git-tag-baseline type-stability checking. `pata thibitisha` has no `--baseline` flag and never
   calls this — `thibitisha.rs`'s own comment still says "Not implemented: type-stability."
