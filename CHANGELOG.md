@@ -8,6 +8,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`pata jenga` verifies vendored dependency content hash against `pata.lock` before building.**
+  `pata_package::fetch_git`/`hash_dir` previously only ever *wrote* a checksum at fetch time —
+  nothing ever re-checked it, so the lockfile's actual security property (detect a tampered or
+  swapped `.asili/packages/<name>/` directory) never fired. `LockFile::verify_content_integrity`
+  re-hashes every vendored git/registry dependency and rejects the build with a named mismatch if
+  content has drifted since `pata ongeza` fetched it. Path dependencies are exempt (live local
+  source, not fetched content).
+- **Real transitive dependency resolution + conflict detection.** `Resolver::resolve` previously
+  only resolved a project's own direct `[tegemezi]` entries — a registry dependency's own
+  `RegistryEntry.deps` field existed in the schema but nothing read it. Resolution now walks
+  registry-sourced transitive deps breadth-first (skipping `optional: true` edges), and every
+  constraint seen for a given package name (from any direct or transitive dependent) accumulates —
+  a version must satisfy all of them at once, or resolution fails with a named conflict instead of
+  one dependent's requirement silently overwriting another's lock entry. Git/path dependencies are
+  not walked transitively (no manifest format exists yet for either to declare their own deps).
+- **`pata nadhifu --diff`**: prints a unified-diff-style body of what the formatter would change,
+  using the `similar` crate for real line-level diffing, without writing any file.
+- **JSON output for `pata thibitisha`/`pata nadhifu`.** `asili-diagnostics`'s `Diagnostic`/`Span`/
+  `ContextMap` gain `Serialize`. `pata thibitisha` is restructured from fail-fast (first failing
+  check stops the run) to accumulate-and-report: every check (docs, trait completeness, FFI
+  safety, type stability, format, opt-in coverage) always runs and its result is collected, so one
+  run surfaces every problem instead of one at a time across repeated invocations; `--json` prints
+  a structured `{sawa, ukaguzi: [{jina, sawa, ujumbe}]}` array. `pata nadhifu --json` prints
+  `{sawa, jumla, yamebadilishwa: [paths]}`, naming exactly which files would change/changed.
+- **Workspace manifest unified onto `pata.toml`, `Asili.toml` retired.** `pata.toml` gains
+  `[eneo-kazi]` (`wanachama = [...]`) as the one way to declare workspace membership — one
+  manifest file and one Swahili-keyed syntax for both leaf and workspace-root projects, replacing
+  the earlier separate English-keyed `Asili.toml`/`pata_package::Workspace` design.
+  `load_project_config` now parses `pata.toml` with the real `toml` crate instead of the previous
+  hand-rolled line scanner (needed to represent `[eneo-kazi]`'s nested array; malformed `pata.toml`
+  now errors instead of silently skipping unparseable lines). `pata njozi --workspace` scaffolds
+  the unified shape. `pata_package::Workspace`/`WorkspaceConfig`/`Manifest`/`PackageMetadata` are
+  removed.
 - **`pata/cli` integration test building every `examples/` project with zero diagnostics**
   (`pipeline::compile::tests::every_example_project_builds_with_zero_diagnostics`) — the real gap
   `docs/design/pata-production-readiness.md` item 5 named: `pata`'s own test suite had no test
