@@ -8,6 +8,7 @@ pub mod paths;
 pub mod fetch;
 pub mod constraints;
 pub mod registry;
+pub mod remote_registry;
 
 pub use manifest::{Dependency, DependencyTable};
 pub use lock::{IntegrityMismatch, LockFile, LockedDependency};
@@ -16,3 +17,4 @@ pub use paths::Paths;
 pub use fetch::{fetch_git, hash_dir, FetchError};
 pub use constraints::VersionConstraint;
 pub use registry::{PackageMetadata, RegistryEntry, RegistrySource, LocalRegistry};
+pub use remote_registry::{fetch_and_verify, fetch_index, RemoteIndexEntry, DEFAULT_INDEX_BASE_URL};

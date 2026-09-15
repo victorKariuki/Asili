@@ -258,8 +258,9 @@ fn resolve_registry_dependency_transitive(
 /// Fetch a registry-resolved version's real source into `dest`, returning its content hash.
 /// `Git` sources go through the same `fetch_git` a `pata ongeza --git` run would use;
 /// `Path` sources (a local/file-based index entry, or any registry that vendors flat
-/// directories) are copied directly — both produce a real `hash_dir` checksum over the actual
-/// fetched bytes, never a placeholder.
+/// directories) are copied directly; `Http` sources (a hosted static-file index — see
+/// `remote_registry.rs`) download and checksum-verify a tarball before extracting. All three
+/// produce a real `hash_dir` checksum over the actual fetched bytes, never a placeholder.
 fn fetch_from_registry_source(source: &crate::registry::RegistrySource, dest: &Path) -> Result<String> {
     use crate::registry::RegistrySource;
     match source {
@@ -274,6 +275,14 @@ fn fetch_from_registry_source(source: &crate::registry::RegistrySource, dest: &P
             copy_dir_recursive(Path::new(path), dest)
                 .with_context(|| format!("imeshindwa kunakili {path} kwenda {}", dest.display()))?;
             crate::fetch::hash_dir(dest).map_err(|e| anyhow::anyhow!("{e}"))
+        }
+        RegistrySource::Http { url, checksum } => {
+            let entry = crate::remote_registry::RemoteIndexEntry {
+                version: String::new(), // unused by fetch_and_verify itself
+                checksum: checksum.clone(),
+                url: url.clone(),
+            };
+            crate::remote_registry::fetch_and_verify(&entry, dest)
         }
     }
 }
@@ -682,6 +691,79 @@ mod tests {
         assert_eq!(lock.dependencies.len(), 1, "optional transitive dep must not be locked");
         assert!(!lock.dependencies.contains_key("never-fetched"));
 
+        std::fs::remove_dir_all(&root).ok();
+        Ok(())
+    }
+
+    /// End-to-end: a `RegistrySource::Http` entry (a hosted/remote registry, as opposed to the
+    /// `Path`/`Git` sources every other resolver test exercises) resolves through the exact same
+    /// `Resolver::resolve` path — a real local HTTP server serves a real tarball, `resolve`
+    /// downloads, checksum-verifies, and extracts it, and the result lands in `pata.lock` with a
+    /// real content hash, indistinguishable in shape from a `Path`/`Git`-sourced dependency.
+    #[test]
+    fn test_resolve_fetches_real_content_from_http_registry_source() -> Result<()> {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+        use sha2::{Digest, Sha256};
+        use std::io::Write as _;
+        use std::net::TcpListener;
+
+        let _guard = TEST_ROOT_LOCK.lock().unwrap();
+        let root = temp_root("http-registry");
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        let addr = listener.local_addr().expect("local addr");
+        drop(listener);
+        let server = tiny_http::Server::http(addr).expect("start tiny_http server");
+        let base_url = format!("http://{addr}");
+
+        let file_content = b"kazi jina() -> Neno { rejesha \"http-registry\" }";
+        let mut tar_bytes = Vec::new();
+        {
+            let mut builder = tar::Builder::new(&mut tar_bytes);
+            let mut header = tar::Header::new_gnu();
+            header.set_size(file_content.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder.append_data(&mut header, "httplib.as", &file_content[..]).expect("append tar entry");
+            builder.finish().expect("finish tar");
+        }
+        let mut gz = GzEncoder::new(Vec::new(), Compression::default());
+        gz.write_all(&tar_bytes).expect("gzip");
+        let tarball = gz.finish().expect("finish gzip");
+
+        let mut hasher = Sha256::new();
+        hasher.update(&tarball);
+        let checksum = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>();
+
+        let handle = std::thread::spawn(move || {
+            let request = server.recv().expect("recv request");
+            let response = tiny_http::Response::from_data(tarball);
+            request.respond(response).expect("respond tarball");
+        });
+
+        let mut registry = LocalRegistry::at(root.join(".asili/registry"))?;
+        registry.publish(RegistryEntry {
+            name: "httplib".to_string(),
+            vers: "2.0.0".to_string(),
+            deps: vec![],
+            yanked: None,
+            source: RegistrySource::Http { url: format!("{base_url}/httplib-2.0.0.tar.gz"), checksum },
+        })?;
+
+        let mut deps = BTreeMap::new();
+        deps.insert("httplib".to_string(), Dependency::Version("^2.0".to_string()));
+        let lock = Resolver::resolve(&root, &deps, None)?;
+
+        assert_eq!(lock.dependencies["httplib"].version, "2.0.0");
+        assert_eq!(lock.dependencies["httplib"].source, "registry");
+        assert_eq!(lock.dependencies["httplib"].checksum.len(), 64);
+
+        let vendored = root.join(".asili/packages/httplib/httplib.as");
+        assert!(vendored.is_file(), "tarball must actually be downloaded and extracted");
+        assert_eq!(std::fs::read(&vendored).unwrap(), file_content);
+
+        handle.join().expect("server thread");
         std::fs::remove_dir_all(&root).ok();
         Ok(())
     }

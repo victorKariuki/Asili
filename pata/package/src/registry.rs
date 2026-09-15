@@ -27,14 +27,17 @@ pub struct PackageMetadata {
 }
 
 /// Where a specific published version's real source lives, fetchable by
-/// `pata_package::fetch_git` (`Git`) or a plain filesystem copy (`Path` — the source for a
+/// `pata_package::fetch_git` (`Git`), a plain filesystem copy (`Path` — the source for a
 /// `file://`-style local index entry, or any registry that vendors flat directories instead of
-/// git repos).
+/// git repos), or a real HTTP download (`Http` — a static-file/hosted registry: a `.tar.gz`
+/// fetched over HTTP and verified against `checksum` before extraction, matching Cargo's
+/// alternative-registry RFC minimum surface — see `remote_registry.rs`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum RegistrySource {
     Git { url: String, rev: Option<String> },
     Path { path: String },
+    Http { url: String, checksum: String },
 }
 
 /// Registry index entry (compatible with Cargo/crates.io format), extended with a `source` so
