@@ -214,9 +214,9 @@ fn parse_args(args: &[String]) -> Result<(Option<f64>, bool), CliError> {
 
 /// Ratio of public `kazi` with a corresponding `#[jaribio]` test to total public `kazi`,
 /// checked against `threshold` percent. A public function counts as "covered" if a test
-/// function with a matching name convention (`jaribio_<name>` or simply any #[jaribio]
+/// function with a matching name convention (`jaribio_<name>` or simply any `#[jaribio]`
 /// function, since Asili has no call-graph/coverage instrumentation) exists — kept
-/// deliberately simple: presence of at least `threshold`% as many #[jaribio] functions as
+/// deliberately simple: presence of at least `threshold`% as many `#[jaribio]` functions as
 /// public kazi, not per-function attribution.
 fn enforce_test_coverage(module: &Module, threshold: f64) -> CliResult {
     let public_count = module.functions.iter().filter(|f| f.is_public).count();

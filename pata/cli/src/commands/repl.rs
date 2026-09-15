@@ -79,7 +79,7 @@ pub fn run(_args: &[String]) -> CliResult {
     Ok(())
 }
 
-/// Parse line as block or as "rejesha <expr>". No semantic check — REPL runs in persistent env
+/// Parse line as block or as "rejesha `<expr>`". No semantic check — REPL runs in persistent env
 /// and undefined/type errors are reported at runtime by the evaluator.
 fn parse_repl_line(line: &str) -> Result<(asili_parser::Module, asili_parser::Block), Vec<asili_diagnostics::Diagnostic>> {
     let try_parse = |wrapped: &str| -> Result<(asili_parser::Module, asili_parser::Block), Vec<asili_diagnostics::Diagnostic>> {

@@ -119,7 +119,7 @@ pub enum Value {
     /// Heap-allocated box owning a value of type T; no OS resource, plain owning indirection —
     /// existing Box/Value drop and clone semantics already suffice, no special handling needed.
     Kumbukumbu(Box<Value>),
-    /// Ordered-by-nothing set (Seti<T>); reuses the MapKey hashable-key type Kamusi already
+    /// Ordered-by-nothing set (`Seti<T>`); reuses the MapKey hashable-key type Kamusi already
     /// uses. Iteration order is HashSet's (unspecified), same tradeoff Kamusi already accepts.
     Seti(HashSet<MapKey>),
     /// Arbitrary-precision integer (Namba_Kuu). No literal syntax — constructed only via

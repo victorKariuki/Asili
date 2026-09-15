@@ -1,0 +1,12 @@
+{
+  "name": "asili-vscode-docs-tooling",
+  "private": true,
+  "description": "TypeDoc + a TypeDoc-compatible TypeScript, isolated from the extension's own devDependencies so the extension itself can stay on a newer TypeScript that TypeDoc doesn't support yet.",
+  "scripts": {
+    "typedoc": "typedoc --tsconfig ../tsconfig.json --out ../../../docs-site/typedoc ../src/extension.ts"
+  },
+  "devDependencies": {
+    "typedoc": "^0.28.20",
+    "typescript": "^5.9.3"
+  }
+}

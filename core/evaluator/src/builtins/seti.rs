@@ -1,4 +1,4 @@
-//! Seti<T> (set): seti() constructor. Always in scope via msingi, like Orodha/Kamusi.
+//! `Seti<T>` (set): seti() constructor. Always in scope via msingi, like Orodha/Kamusi.
 //! Instance methods (.ongeza/.ina/.ondoa/.urefu/.clona) are dispatched in eval/expr.rs, not
 //! here — this module only registers the free-function constructor.
 

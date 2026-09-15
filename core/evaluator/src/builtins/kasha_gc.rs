@@ -1,4 +1,4 @@
-//! Kasha_GC<T> (managed memory): reference-counted shared wrapper. Requires `leta kasha_gc`.
+//! `Kasha_GC<T>` (managed memory): reference-counted shared wrapper. Requires `leta kasha_gc`.
 //!
 //! Sharing and refcounting need no special-casing beyond the `Value::KashaGC` variant itself:
 //! `Value::clone()` on it is `Rc::clone` (cheap, shares the allocation — every read of a

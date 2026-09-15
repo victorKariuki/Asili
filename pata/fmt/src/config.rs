@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// Formatter configuration (read from pata.toml [fmt] section)
+/// Formatter configuration (read from pata.toml `[fmt]` section)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FormatterConfig {
     /// Line length limit for wrapping (default: 100)

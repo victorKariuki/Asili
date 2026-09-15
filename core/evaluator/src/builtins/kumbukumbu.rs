@@ -1,4 +1,4 @@
-//! Kumbukumbu<T> (heap box): kumbukumbu_unda. No OS resource — plain owning indirection, so no
+//! `Kumbukumbu<T>` (heap box): kumbukumbu_unda. No OS resource — plain owning indirection, so no
 //! special drop handling is needed beyond Box's own. See docs/design/faili-mkondo-design.md.
 
 use std::collections::HashMap;

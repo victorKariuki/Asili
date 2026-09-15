@@ -33,6 +33,9 @@ node_modules/
 # Packaged VS Code extension (build artifact, published via GitHub Releases instead)
 extensions/vscode/*.vsix
 
+# Generated API docs (rustdoc + TypeDoc), assembled by CI and published to GitHub Pages
+docs-site/
+
 # Local env (secrets)
 .env
 .env.local

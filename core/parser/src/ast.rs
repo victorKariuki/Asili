@@ -467,8 +467,8 @@ pub enum ValueType {
     Anuani,
     /// Reference-counted shared wrapper (opt-in `leta kasha_gc`); see spec's managed-memory module.
     KashaGC(Box<ValueType>),
-    /// Weak reference to a Kasha_GC<T> (kasha_gc_dhaifu, downgrade); the cycle-breaking escape
-    /// hatch, since Kasha_GC<T> itself has no cycle collector.
+    /// Weak reference to a `Kasha_GC<T>` (kasha_gc_dhaifu, downgrade); the cycle-breaking escape
+    /// hatch, since `Kasha_GC<T>` itself has no cycle collector.
     KashaGCDhaifu(Box<ValueType>),
     /// File handle (leta faili); owns an OS file descriptor, closed on drop.
     Faili,
