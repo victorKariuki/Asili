@@ -189,8 +189,10 @@ fn keep_alive_serves_two_requests_on_one_connection() {
     assert_eq!(body2, "/pili", "second request over the same connection must still be answered");
 }
 
+/// Issue #20: a `Transfer-Encoding: chunked` request body is decoded for real (not rejected with
+/// 501) — a single chunk plus the terminating zero-size chunk.
 #[test]
-fn chunked_transfer_encoding_request_is_rejected_with_501() {
+fn chunked_transfer_encoding_request_body_is_decoded() {
     let kazi = r#"
         kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
             weka vichwa = kamusi()
@@ -204,8 +206,107 @@ fn chunked_transfer_encoding_request_is_rejected_with_501() {
         .write_all(b"POST /pakia HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n4\r\ntest\r\n0\r\n\r\n")
         .expect("write chunked request");
 
-    let (status, _) = read_one_response(&mut client);
-    assert_eq!(status, 501, "chunked Transfer-Encoding is explicitly out of scope for this pass");
+    let (status, body) = read_one_response(&mut client);
+    assert_eq!(status, 200);
+    assert_eq!(body, "test", "the decoded (unchunked) body must reach kazi_jina");
+}
+
+/// Multiple chunks of different sizes, plus a chunk-size line carrying an extension (`;ext`,
+/// which real clients sometimes send and which must be ignored, not fail hex parsing) — proves
+/// this isn't just a single-chunk special case.
+#[test]
+fn chunked_request_with_multiple_chunks_and_extension_is_decoded() {
+    let kazi = r#"
+        kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
+            weka vichwa = kamusi()
+            rejesha JibuHttp { hali: 200, vichwa: vichwa, mwili: ombi.mwili }
+        }
+    "#;
+    let addr = start_server(kazi, 1.0);
+
+    let mut client = connect_with_retry(&addr);
+    // "hello" (5 bytes) + ";ignored-ext" on the size line + " world" (6 bytes) + terminator,
+    // with a trailer header thrown in to prove trailers are consumed without breaking framing.
+    client
+        .write_all(
+            b"POST /pakia HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n\
+              5;ignored-ext\r\nhello\r\n6\r\n world\r\n0\r\nX-Trailer: baadaye\r\n\r\n",
+        )
+        .expect("write chunked request");
+
+    let (status, body) = read_one_response(&mut client);
+    assert_eq!(status, 200);
+    assert_eq!(body, "hello world");
+}
+
+/// Pipelining (issue #21): two full requests written in a single `write_all` call — no
+/// interleaved read between them, so the second request's bytes necessarily arrive in the same
+/// `stream.read` the server uses to complete the first request. Both must still be answered, in
+/// order, on the one connection.
+#[test]
+fn pipelined_requests_are_both_answered_in_order() {
+    let kazi = r#"
+        kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
+            weka vichwa = kamusi()
+            rejesha JibuHttp { hali: 200, vichwa: vichwa, mwili: ombi.anwani }
+        }
+    "#;
+    let addr = start_server(kazi, 1.0);
+
+    let mut client = connect_with_retry(&addr);
+    let first = b"GET /kwanza HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec();
+    let second = b"GET /pili HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".to_vec();
+    let mut both = first;
+    both.extend_from_slice(&second);
+    client.write_all(&both).expect("write both pipelined requests at once");
+
+    let (status1, body1) = read_one_response(&mut client);
+    assert_eq!(status1, 200);
+    assert_eq!(body1, "/kwanza", "first pipelined request must be answered first");
+
+    let (status2, body2) = read_one_response(&mut client);
+    assert_eq!(status2, 200);
+    assert_eq!(body2, "/pili", "second pipelined request must still be answered, in order");
+}
+
+/// 100-continue (issue #22): a client sending `Expect: 100-continue` must receive a real
+/// intermediate `HTTP/1.1 100 Continue\r\n\r\n` before the final response — proven by reading the
+/// interim status line directly, before the body is even written.
+#[test]
+fn expect_100_continue_gets_an_intermediate_response() {
+    let kazi = r#"
+        kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
+            weka vichwa = kamusi()
+            rejesha JibuHttp { hali: 200, vichwa: vichwa, mwili: ombi.mwili }
+        }
+    "#;
+    let addr = start_server(kazi, 1.0);
+
+    let mut client = connect_with_retry(&addr);
+    let body = "payload";
+    let request = format!(
+        "POST /pakia HTTP/1.1\r\nHost: localhost\r\nExpect: 100-continue\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    client.write_all(request.as_bytes()).expect("write request headers");
+
+    // Read exactly the interim response line before sending the body — a real client waiting
+    // for 100-continue would do the same.
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 256];
+    while find_double_crlf(&buf).is_none() {
+        let n = client.read(&mut chunk).expect("read interim response");
+        assert!(n > 0, "connection closed before 100 Continue arrived");
+        buf.extend_from_slice(&chunk[..n]);
+    }
+    let interim = String::from_utf8_lossy(&buf);
+    assert!(interim.starts_with("HTTP/1.1 100"), "expected an interim 100 Continue, got: {interim}");
+
+    client.write_all(body.as_bytes()).expect("write body after 100 Continue");
+
+    let (status, response_body) = read_one_response(&mut client);
+    assert_eq!(status, 200);
+    assert_eq!(response_body, body);
 }
 
 #[test]

@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`mkondo_tumikia_http` real chunked `Transfer-Encoding`, HTTP/1.1 pipelining, and
+  `Expect: 100-continue`** (closes #20, #21, #22). A chunked request body is decoded for real
+  (RFC 7230 §4.1 framing, chunk-size extensions ignored, trailer headers consumed but discarded)
+  instead of being rejected with `501`. Pipelined requests — two or more sent in one TCP
+  write/segment — are all answered in order without extra network reads, via a per-connection
+  `carry` buffer that no longer silently drops bytes read past the current request's boundary.
+  `Expect: 100-continue` gets a real intermediate `HTTP/1.1 100 Continue` response before the
+  body is read. See `docs/design/http-framing-design.md`'s "What changed" section.
+- **Hosted/remote package registry index over HTTP** (closes #40). New `pata_package::
+  remote_registry` module: `fetch_index` fetches and parses a static-file index's
+  `index/<name>/index.json` (Cargo alternative-registry RFC minimum surface), `fetch_and_verify`
+  downloads a version's tarball, verifies its SHA-256 against the index-recorded checksum before
+  extracting, and returns a real post-extraction content hash. `RegistrySource` gains an `Http`
+  variant, resolved through the same `Resolver::resolve` path as local-registry/git sources.
+
 - **`pata jenga` verifies vendored dependency content hash against `pata.lock` before building.**
   `pata_package::fetch_git`/`hash_dir` previously only ever *wrote* a checksum at fetch time —
   nothing ever re-checked it, so the lockfile's actual security property (detect a tampered or

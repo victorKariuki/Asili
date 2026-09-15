@@ -1,8 +1,10 @@
 //! HTTP/1.1 request/response framing on top of a `Mkondo` stream. See
-//! docs/design/http-framing-design.md for the `OmbiHttp`/`JibuHttp` `Struct`-reuse decision, the
-//! `.soma_bailisi` primitive this is built on, and the chunked/pipelining/100-continue scope
-//! boundaries (all explicitly out of scope for this pass — fixed `Content-Length` only, no
-//! speculative reads ahead of one request/response cycle, no `100 Continue` intermediate).
+//! docs/design/http-framing-design.md for the `OmbiHttp`/`JibuHttp` `Struct`-reuse decision and
+//! the `.soma_bailisi` primitive this is built on. The design doc's original chunked/pipelining/
+//! 100-continue scope cuts have since been implemented (issues #20/#21/#22): `Transfer-Encoding:
+//! chunked` request bodies are decoded (not rejected), pipelined requests on one connection are
+//! answered in order without an extra network round-trip per request, and `Expect: 100-continue`
+//! gets a real intermediate `100 Continue` response before the body is read.
 //!
 //! `mkondo_tumikia_http` is the framed counterpart to `mkondo_tumikia` (Phase 11's raw-bytes
 //! listener) — a separate, additive entry point, not a mode flag: `kazi_jina`'s contract here is
@@ -43,16 +45,27 @@ enum ParseOutcome {
     /// actual malformed-request 400.
     ConnectionClosed,
     BadRequest(String),
-    NotImplemented(String),
 }
 
 /// Reads and parses exactly one HTTP/1.1 (or 1.0) request off `stream`, using repeated bounded
 /// reads (the same primitive `.soma_bailisi` exposes at the Asili level) rather than
 /// `.soma()`'s read-to-EOF, which would make keep-alive impossible — the peer isn't expected to
 /// close the connection between requests.
-fn read_request(stream: &mut MkondoStream) -> ParseOutcome {
-    let mut buf: Vec<u8> = Vec::new();
+///
+/// `carry` holds bytes already read off the wire but not yet consumed by a parsed request —
+/// pipelining support (issue #21): a peer that sends two requests in one `write`/TCP segment has
+/// its second request's bytes land in the same `stream.read` call that completes the first
+/// request's body. Previously those extra bytes were silently dropped (`buf` was function-local
+/// and discarded on return); now `read_request` seeds `buf` from `carry` first — so an
+/// already-pipelined next request gets parsed with zero additional network reads — and stashes
+/// anything past the just-parsed request's boundary back into `carry` for the next call.
+fn read_request(stream: &mut MkondoStream, carry: &mut Vec<u8>) -> ParseOutcome {
+    let mut buf: Vec<u8> = std::mem::take(carry);
     let mut header_end: Option<usize> = None;
+    // One-shot guard: `Expect: 100-continue` (issue #22) must only trigger a single intermediate
+    // response per request, not be resent on every accumulation-loop iteration while the body is
+    // still arriving.
+    let mut continue_sent = false;
 
     loop {
         if buf.len() >= MAX_REQUEST_BYTES {
@@ -93,8 +106,37 @@ fn read_request(stream: &mut MkondoStream) -> ParseOutcome {
             let is_chunked = headers
                 .iter()
                 .any(|(k, v)| k.eq_ignore_ascii_case("transfer-encoding") && v.to_ascii_lowercase().contains("chunked"));
+
+            // 100-continue (issue #22): once headers are known complete, tell an uploading client
+            // to go ahead and send the body — before we've read any of it. Correctness note: a
+            // fully spec-faithful server would only do this if it already knows it intends to
+            // accept the body (RFC 7231 §5.1.1), but `kazi_jina` hasn't run yet at this point in
+            // the pipeline (headers-then-body-then-dispatch is strict here) — so, matching how
+            // minimally scoped the rest of this framing pass already is, this always continues
+            // once `Expect: 100-continue` is present, rather than trying to pre-consult the
+            // handler.
+            if !continue_sent {
+                let expects_continue = headers
+                    .iter()
+                    .any(|(k, v)| k.eq_ignore_ascii_case("expect") && v.trim().eq_ignore_ascii_case("100-continue"));
+                if expects_continue {
+                    if let Err(e) = stream.write_all(b"HTTP/1.1 100 Continue\r\n\r\n") {
+                        return ParseOutcome::BadRequest(format!("imeshindwa kuandika 100 Continue: {e}"));
+                    }
+                    continue_sent = true;
+                }
+            }
+
             if is_chunked {
-                return ParseOutcome::NotImplemented("Transfer-Encoding: chunked haiungwi mkono".to_string());
+                return match decode_chunked_body(stream, &mut buf, offset) {
+                    Ok(body_end) => {
+                        let body = String::from_utf8_lossy(&buf[offset..body_end]).into_owned();
+                        let keep_alive = connection_keep_alive(&headers, version);
+                        *carry = buf.split_off(body_end);
+                        ParseOutcome::Ok(ParsedRequest { method, path, headers, body }, keep_alive)
+                    }
+                    Err(msg) => ParseOutcome::BadRequest(msg),
+                };
             }
 
             let body_len = content_length.unwrap_or(0);
@@ -102,6 +144,11 @@ fn read_request(stream: &mut MkondoStream) -> ParseOutcome {
             if buf.len() >= needed {
                 let body = String::from_utf8_lossy(&buf[offset..needed]).into_owned();
                 let keep_alive = connection_keep_alive(&headers, version);
+                // Pipelining: anything past this request's boundary belongs to the *next*
+                // request already sitting in `buf` (or is empty) — hand it to the caller instead
+                // of discarding it, so the next `read_request` call sees it before touching the
+                // network again.
+                *carry = buf.split_off(needed);
                 return ParseOutcome::Ok(ParsedRequest { method, path, headers, body }, keep_alive);
             }
             // else: headers complete but body not fully received yet — fall through to read more.
@@ -123,6 +170,111 @@ fn read_request(stream: &mut MkondoStream) -> ParseOutcome {
             Err(e) => return ParseOutcome::BadRequest(format!("hitilafu ya kusoma: {e}")),
         }
     }
+}
+
+/// Decode a `Transfer-Encoding: chunked` request body in place, within `buf` (issue #20).
+/// `body_start` is the offset where chunked data begins (right after the header block).
+/// HTTP/1.1 chunked framing (RFC 7230 §4.1): a sequence of `<hex-size>[;ext...]\r\n<data>\r\n`
+/// chunks, terminated by a zero-size chunk, optionally followed by trailer headers, then a final
+/// `\r\n`. Reads more off `stream` into `buf` as needed (mirroring `read_request`'s own bounded
+/// accumulation loop and `MAX_REQUEST_BYTES` cap) until the terminator is found. On success,
+/// rewrites the decoded (unchunked) body directly over `buf[body_start..]` and returns the offset
+/// one past the end of that decoded body, so the caller can treat it exactly like a
+/// `Content-Length`-framed body (including handing leftover bytes to pipelining's `carry`).
+///
+/// Trailer headers, if present, are consumed off the wire (so the connection stays in sync for
+/// the next request) but discarded — this codebase has no trailer-header concept to expose them
+/// through today, matching the same "consume but don't surface" treatment as elsewhere in this
+/// minimal framing pass.
+///
+/// Binary-safety note: like every other body in this module, the decoded bytes are turned into a
+/// `Neno` via `String::from_utf8_lossy` by the caller — the interpreter has no `Value::Bytes`
+/// variant, so a binary chunked upload is exactly as lossy as a binary fixed-length one already
+/// was. Not a regression introduced here, not fixed by it either.
+fn decode_chunked_body(stream: &mut MkondoStream, buf: &mut Vec<u8>, body_start: usize) -> Result<usize, String> {
+    let mut decoded: Vec<u8> = Vec::new();
+    let mut cursor = body_start;
+
+    loop {
+        // Find a complete chunk-size line (`<hex>[;ext]\r\n`) at `cursor`, reading more if needed.
+        let size_line_end = loop {
+            if let Some(pos) = find_crlf(&buf[cursor..]) {
+                break cursor + pos;
+            }
+            if buf.len() >= MAX_REQUEST_BYTES {
+                return Err("ombi ni kubwa mno".to_string());
+            }
+            read_more(stream, buf)?;
+        };
+        let size_line = String::from_utf8_lossy(&buf[cursor..size_line_end]);
+        let hex_size = size_line.split(';').next().unwrap_or("").trim();
+        let chunk_size = usize::from_str_radix(hex_size, 16)
+            .map_err(|_| format!("ukubwa batili wa kipande: '{hex_size}'"))?;
+        cursor = size_line_end + 2; // past the size line's \r\n
+
+        if chunk_size == 0 {
+            // Zero-size chunk: consume any trailer headers (discarded), then the final \r\n.
+            loop {
+                let trailer_line_end = loop {
+                    if let Some(pos) = find_crlf(&buf[cursor..]) {
+                        break cursor + pos;
+                    }
+                    if buf.len() >= MAX_REQUEST_BYTES {
+                        return Err("ombi ni kubwa mno".to_string());
+                    }
+                    read_more(stream, buf)?;
+                };
+                if trailer_line_end == cursor {
+                    // The terminating blank line's own \r\n — nothing after this point reads
+                    // `cursor` again (the function returns `body_start + decoded.len()`, not
+                    // `cursor`), so there's nothing to advance it to.
+                    break;
+                }
+                cursor = trailer_line_end + 2; // skip this trailer header line
+            }
+            break;
+        }
+
+        // Ensure `chunk_size` data bytes plus their trailing \r\n are available.
+        while buf.len() < cursor + chunk_size + 2 {
+            if buf.len() >= MAX_REQUEST_BYTES {
+                return Err("ombi ni kubwa mno".to_string());
+            }
+            read_more(stream, buf)?;
+        }
+        decoded.extend_from_slice(&buf[cursor..cursor + chunk_size]);
+        cursor += chunk_size + 2; // past this chunk's data and its trailing \r\n
+    }
+
+    // Splice the decoded (unchunked) body back over the raw chunked bytes in `buf`, so the
+    // caller can slice `buf[body_start..body_end]` exactly like a Content-Length body.
+    buf.truncate(body_start);
+    buf.extend_from_slice(&decoded);
+    Ok(body_start + decoded.len())
+}
+
+/// Read more bytes off `stream` into `buf`, treating a clean close or a timeout as an error —
+/// used only from inside `decode_chunked_body`, where (unlike `read_request`'s own top-level
+/// loop) there is no valid "connection closed cleanly, just no more requests" case: once a
+/// chunked body has started, the peer is expected to finish sending it.
+fn read_more(stream: &mut MkondoStream, buf: &mut Vec<u8>) -> Result<(), String> {
+    let mut chunk = vec![0u8; READ_CHUNK];
+    match stream.read(&mut chunk) {
+        Ok(0) => Err("muunganisho umefungwa kabla mwili wa kipande kukamilika".to_string()),
+        Ok(n) => {
+            buf.extend_from_slice(&chunk[..n]);
+            Ok(())
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+            Err("muda wa kusoma umeisha".to_string())
+        }
+        Err(e) => Err(format!("hitilafu ya kusoma: {e}")),
+    }
+}
+
+/// Byte offset of the first `\r\n` in `data`, if any.
+fn find_crlf(data: &[u8]) -> Option<usize> {
+    data.windows(2).position(|w| w == b"\r\n")
 }
 
 /// HTTP/1.1 defaults to keep-alive unless `Connection: close` is present; HTTP/1.0 defaults to
@@ -315,19 +467,20 @@ fn http_worker_loop(
         #[cfg(target_arch = "wasm32")]
         let mut mkondo_stream = MkondoStream::Wazi(tcp_stream);
 
+        // Bytes read off the wire but not yet consumed by a parsed request — carries a
+        // pipelined next request's already-received bytes across keep-alive loop iterations
+        // (issue #21) instead of them being read again or silently dropped.
+        let mut carry: Vec<u8> = Vec::new();
+
         // Keep-alive loop: parse and answer requests on this one connection until the client
         // asks to close, a parse error occurs, or the peer disconnects.
         loop {
-            let outcome = read_request(&mut mkondo_stream);
+            let outcome = read_request(&mut mkondo_stream, &mut carry);
             let (parsed, keep_alive) = match outcome {
                 ParseOutcome::Ok(req, ka) => (req, ka),
                 ParseOutcome::ConnectionClosed => break,
                 ParseOutcome::BadRequest(msg) => {
                     let _ = write_response(&mut mkondo_stream, 400, &[], &msg);
-                    break;
-                }
-                ParseOutcome::NotImplemented(msg) => {
-                    let _ = write_response(&mut mkondo_stream, 501, &[], &msg);
                     break;
                 }
             };
