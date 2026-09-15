@@ -50,6 +50,22 @@ pub struct WorkspaceModule {
     pub module: Module,
 }
 
+/// Per-project-root cache of already-parsed modules, keyed by canonicalized file path — the
+/// incremental-resolution fix for issue #25: `resolve_workspace` previously re-lexed and
+/// re-parsed *every* file in a project's import graph on every call, even files that didn't
+/// change. Held by `Backend` (`server.rs`) alongside its `WorkspaceIndex` cache and passed into
+/// `resolve_workspace`, which checks a file's current content hash against the cached one before
+/// doing any tokenize/parse work — a hit skips straight to reusing the cached `WorkspaceModule`.
+/// No explicit "invalidate this file" call is needed: a changed file's new content simply won't
+/// hash-match its cache entry on the next walk, and an unchanged file's will — this is naturally
+/// immune to the staleness problem `DocStore::invalidate` exists for (a *derived* diagnostics
+/// result that depends on other files' content too), since each entry here is keyed by its own
+/// file's own content only.
+#[derive(Clone, Default)]
+pub struct ModuleCache {
+    entries: HashMap<PathBuf, (u64, WorkspaceModule)>,
+}
+
 /// A snapshot of every project-local `.as` file reachable (transitively) from the entrypoint —
 /// keyed by module name, i.e. the name used in `leta <name>`.
 #[derive(Clone, Default)]
@@ -186,7 +202,14 @@ pub fn affected_project_roots(changed_paths: &[PathBuf]) -> HashSet<PathBuf> {
 /// Walk the import graph from `root`'s entrypoint, parsing every project-local `.as` file it
 /// (transitively) `leta`s. Synchronous, real disk I/O — callers on the async LSP runtime must
 /// wrap this in `tokio::task::spawn_blocking` rather than calling it inline from a handler.
-pub fn resolve_workspace(root: &Path) -> WorkspaceIndex {
+///
+/// `cache` (issue #25) is checked before tokenizing/parsing each file: a file whose current
+/// on-disk content still hashes to what's cached is reused as-is, so a re-walk after one file
+/// changes only actually re-parses that file (plus anything whose own AST changed as a result of
+/// walking its imports again) rather than every file in the project. `cache` is updated in place
+/// with every file this call touches (both hits and fresh parses), so the caller's persisted copy
+/// stays current for the next call.
+pub fn resolve_workspace(root: &Path, cache: &mut ModuleCache) -> WorkspaceIndex {
     let (entry, path_deps) = read_entrypoint_and_deps(root);
     let mut modules = HashMap::new();
     let mut reverse_deps: HashMap<String, HashSet<String>> = HashMap::new();
@@ -195,15 +218,27 @@ pub fn resolve_workspace(root: &Path) -> WorkspaceIndex {
 
     while let Some(path) = queue.pop() {
         let canon = path.canonicalize().unwrap_or_else(|_| path.clone());
-        if !visited.insert(canon) {
+        if !visited.insert(canon.clone()) {
             continue;
         }
         let Ok(source) = std::fs::read_to_string(&path) else { continue };
-        let Ok(tokens) = tokenize(&source) else { continue };
-        let Ok(module) = parse_tokens(&tokens) else { continue };
+        let hash = crate::doc_store::hash_text(&source);
+
+        let wm = match cache.entries.get(&canon) {
+            Some((cached_hash, cached_wm)) if *cached_hash == hash => cached_wm.clone(),
+            _ => {
+                #[cfg(test)]
+                REPARSE_COUNT.with(|c| c.set(c.get() + 1));
+                let Ok(tokens) = tokenize(&source) else { continue };
+                let Ok(module) = parse_tokens(&tokens) else { continue };
+                let wm = WorkspaceModule { path: path.clone(), module };
+                cache.entries.insert(canon, (hash, wm.clone()));
+                wm
+            }
+        };
 
         let name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-        for imp in &module.imports {
+        for imp in &wm.module.imports {
             let mod_name = match &imp.path {
                 ImportPath::Full(s) => s.as_str(),
                 ImportPath::Selective { module, .. } => module.as_str(),
@@ -229,15 +264,28 @@ pub fn resolve_workspace(root: &Path) -> WorkspaceIndex {
             }
         }
 
-        modules.insert(name, WorkspaceModule { path, module });
+        modules.insert(name, wm);
     }
 
     WorkspaceIndex { modules, reverse_deps }
 }
 
+// `#[cfg(test)]`-only counter of how many times `resolve_workspace`'s tokenize/parse branch
+// actually ran (a real cache miss) — mirrors `DocStore::recompute_count`'s exact pattern, since
+// a cache hit and a cache miss otherwise return externally-indistinguishable `WorkspaceModule`
+// values (no `PartialEq`, no other observable side effect of a fresh parse).
+#[cfg(test)]
+thread_local! {
+    static REPARSE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn reparse_count() -> usize {
+        REPARSE_COUNT.with(|c| c.get())
+    }
 
     fn temp_project(name: &str) -> PathBuf {
         let stamp = std::time::SystemTime::now()
@@ -252,6 +300,63 @@ mod tests {
         ).unwrap();
         std::fs::write(dir.join("src/kuu.as"), "kazi kuu() -> Tupu { }").unwrap();
         dir
+    }
+
+    /// The actual point of issue #25's fix: a file whose content hasn't changed since the last
+    /// `resolve_workspace` call is served from `ModuleCache`'s existing entry rather than being
+    /// re-tokenized/re-parsed. `resolve_workspace` still reads the file's bytes each call (that's
+    /// unavoidable — computing a fresh content hash to compare against the cache is exactly how
+    /// a change is detected at all, the same tradeoff `DocStore::diagnostics_for` makes for the
+    /// same reason); the observable win is skipping the tokenize/parse work itself, proven here
+    /// directly via `REPARSE_COUNT` (mirroring `DocStore::recompute_count`'s exact pattern) —
+    /// two calls with byte-identical content must show exactly one real parse, not two.
+    #[test]
+    fn resolve_workspace_reuses_cached_module_without_reparsing_unchanged_file() {
+        REPARSE_COUNT.with(|c| c.set(0));
+        let project = temp_project("cache-reuse");
+        let mut cache = ModuleCache::default();
+
+        let first = resolve_workspace(&project, &mut cache);
+        assert!(first.modules.contains_key("kuu"), "kuu.as should resolve on the first (real parse) call");
+        assert_eq!(reparse_count(), 1, "the first call must be a real parse");
+
+        let second = resolve_workspace(&project, &mut cache);
+        assert!(second.modules.contains_key("kuu"), "kuu.as must still resolve on the second call");
+        assert_eq!(reparse_count(), 1, "unchanged content on the second call must be a cache hit, not a second real parse");
+
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    /// The other half of the same fix: a file whose content genuinely changed *must* be
+    /// re-parsed, not served stale from the cache — proven by changing kuu.as to import a second
+    /// module that didn't exist in the first call, and confirming the second call's
+    /// `WorkspaceIndex` actually reflects the new import edge.
+    #[test]
+    fn resolve_workspace_reparses_a_file_whose_content_actually_changed() {
+        REPARSE_COUNT.with(|c| c.set(0));
+        let project = temp_project("cache-invalidate");
+        // find_module_file (pata-core) resolves a plain sibling `leta msaidizi` against
+        // `<root>/msaidizi.as`, not `<root>/src/msaidizi.as` — the project root, not next to
+        // the entrypoint.
+        std::fs::write(project.join("msaidizi.as"), "umma kazi f() -> Tupu { }").unwrap();
+        let mut cache = ModuleCache::default();
+
+        let first = resolve_workspace(&project, &mut cache);
+        assert!(!first.modules.contains_key("msaidizi"), "msaidizi.as isn't imported yet, so it shouldn't be resolved");
+        assert_eq!(reparse_count(), 1, "only kuu.as (the entrypoint) should be parsed on the first call");
+
+        std::fs::write(project.join("src/kuu.as"), "leta msaidizi\nkazi kuu() -> Tupu { }").unwrap();
+        let second = resolve_workspace(&project, &mut cache);
+        assert!(
+            second.modules.contains_key("msaidizi"),
+            "kuu.as's real content change (adding `leta msaidizi`) must be picked up, not served from a stale cache entry"
+        );
+        assert_eq!(
+            reparse_count(), 3,
+            "kuu.as's changed content (1 more real parse) plus msaidizi.as being newly discovered and parsed for the first time (1 more) = 3 total real parses across both calls"
+        );
+
+        std::fs::remove_dir_all(&project).ok();
     }
 
     #[test]

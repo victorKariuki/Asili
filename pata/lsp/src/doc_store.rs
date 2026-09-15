@@ -22,7 +22,10 @@ struct CachedAnalysis {
     diagnostics: Vec<Diagnostic>,
 }
 
-fn hash_text(text: &str) -> u64 {
+/// Same `DefaultHasher`-over-content approach `pata_core::interface_registry::fingerprint` and
+/// `workspace::ModuleCache` use — `pub(crate)` so `workspace.rs`'s per-file module cache (issue
+/// #25) shares this one implementation instead of a second copy.
+pub(crate) fn hash_text(text: &str) -> u64 {
     let mut h = DefaultHasher::new();
     text.hash(&mut h);
     h.finish()

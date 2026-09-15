@@ -183,18 +183,24 @@ tests referenced them. `pata ongeza` itself is not workspace-aware yet (still re
 single project's `pata.toml`); that's the remaining gap if workspace-scoped dependency addition is
 needed later.
 
-### 8. LSP incremental re-resolution — PARTIALLY DONE
+### 8. LSP incremental re-resolution — PARTIALLY DONE (closes most of #25)
 
-**Update:** Two real, scoped fixes landed (`pata-implementation-spec.md` Section 19's
-decision — content-hash per-document caching plus scoped watched-file invalidation, not a full
-salsa rewrite): `did_change_watched_files` invalidates only the specific project root(s) whose
-files actually changed (`workspace::affected_project_roots`), not the entire cross-file
-resolution cache; and `DocStore::diagnostics_for` skips re-lex/re-parse/re-analyze on a `didChange`
-whose text hashes identically to what's cached. What's still missing, genuinely: finer-grained
-recomputation *within* one project root on a real content change — a cache miss still re-walks
-that project's whole import graph from its entrypoint, there's no per-file salsa-style
-recomputation. That remainder is the actual rust-analyzer-reference-architecture-sized item, not
-the smaller wins above.
+**Update:** Three real, scoped fixes have landed (`pata-implementation-spec.md` Section 19's
+decision — real, targeted caching at three layers, not a full salsa rewrite):
+`did_change_watched_files` invalidates only the specific project root(s) whose files actually
+changed (`workspace::affected_project_roots`), not the entire cross-file resolution cache;
+`DocStore::diagnostics_for` skips re-lex/re-parse/re-analyze on a `didChange` whose text hashes
+identically to what's cached; and (new) `workspace::ModuleCache` caches each project-local file's
+parsed `WorkspaceModule` keyed by its own content hash, so a re-walk of a project's import graph
+(triggered by `did_change_watched_files` evicting that root) reuses every unchanged file's
+already-parsed module instead of re-tokenizing/re-parsing it — verified directly via a real
+parse-count counter in two tests (`resolve_workspace_reuses_cached_module_without_reparsing_
+unchanged_file`, `resolve_workspace_reparses_a_file_whose_content_actually_changed`). What's still
+missing, genuinely: `ModuleCache` closes the "re-parse every file" gap but a re-walk still
+traverses the *whole* import graph from the entrypoint on every cache-refreshing call — there's no
+query that starts from "what depends on the one file that changed" and works outward, true
+per-file salsa-style recomputation. That remainder is the actual rust-analyzer-reference-
+architecture-sized item, not the caching wins above.
 
 **Original gap:** Mwalimu (`pata/lsp`) is the toolchain's most complete piece — diagnostics,
 hover, completion, goto-def, references, rename, workspace symbols. Its own doc named the gap:

@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Mwalimu (LSP) per-file incremental parse cache** (partial fix for #25). New
+  `workspace::ModuleCache`: keyed by each project-local file's canonicalized path, storing its
+  content hash alongside the already-parsed `WorkspaceModule`. A re-walk of a project's import
+  graph (triggered by `did_change_watched_files` evicting that root's coarser `WorkspaceIndex`
+  cache) now reuses every unchanged file's cached parse instead of re-tokenizing/re-parsing it,
+  only doing real work for files that are new or whose content hash no longer matches. Verified
+  directly (not just structurally) via a real parse-count counter across two new tests. What's
+  still open: a cache-refreshing call still traverses the whole import graph from the entrypoint,
+  not a "what depends on the changed file" query — true per-file salsa-style recomputation.
 - **`mkondo_tumikia_http` real chunked `Transfer-Encoding`, HTTP/1.1 pipelining, and
   `Expect: 100-continue`** (closes #20, #21, #22). A chunked request body is decoded for real
   (RFC 7230 §4.1 framing, chunk-size extensions ignored, trailer headers consumed but discarded)

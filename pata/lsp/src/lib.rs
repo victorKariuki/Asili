@@ -37,10 +37,10 @@
 //!     `SemanticAnalyzer::inlay_type_hints` (the same scope-resolution walk that drives
 //!     semantic_tokens)
 //!
-//! Incremental re-resolution is deliberately not a full salsa-style per-file recomputation
-//! framework (`docs/design/pata-implementation-spec.md` Section 19's own "Decision made":
-//! pulling in `salsa` and restructuring around query-based recomputation is a rewrite, not an
-//! incremental improvement). Two real, scoped wins instead:
+//! Incremental re-resolution is deliberately not a full salsa-style query-engine rewrite
+//! (`docs/design/pata-implementation-spec.md` Section 19's own "Decision made": pulling in
+//! `salsa` and restructuring around query-based recomputation is a rewrite, not an incremental
+//! improvement). Three real, scoped wins instead:
 //!   - `did_change_watched_files` invalidates only the specific project root(s) the changed
 //!     files actually belong to (`workspace::affected_project_roots`), not the entire cache — an
 //!     unrelated sibling project under the same VS Code workspace folder stays a cache hit.
@@ -49,13 +49,20 @@
 //!     case some editors fire — a no-op edit event, e.g. a purely-cursor-movement change) skips
 //!     re-lex/re-parse/re-analyze entirely instead of recomputing on every keystroke regardless
 //!     of whether anything actually changed.
-//! What's still missing is finer-grained *within* one project root on a genuine content change:
-//! a cache miss still re-walks that whole project's import graph from its entrypoint — there's
-//! no API to cheaply re-resolve just the one file that changed within an already-resolved graph
-//! (true per-file salsa-style recomputation). See `crate::workspace`'s module doc for the
-//! cross-file model this is all built on and its known limitations (path-based imports plus
-//! registry-resolved vendored dependencies via `pata_core::find_module_file`; still no
-//! `pata.lock`-driven version-constraint awareness).
+//!   - `workspace::ModuleCache` (issue #25): per-project-root, keyed by each file's own content
+//!     hash — a re-walk of a project's import graph (triggered whenever `did_change_watched_files`
+//!     evicts that root's `WorkspaceIndex`) reuses every file's already-parsed `WorkspaceModule`
+//!     whose content hasn't changed, only actually tokenizing/parsing files that are new or whose
+//!     hash no longer matches. Held by `Backend` (`server.rs`) alongside the coarser
+//!     `WorkspaceIndex` cache and deliberately *not* cleared by `did_change_watched_files` — a
+//!     changed file's new content simply fails its own hash check on the next walk, so no
+//!     explicit per-file invalidation call is needed.
+//! What remains open: `ModuleCache` still re-walks the whole import graph from the entrypoint on
+//! every cache-refreshing call (cheap per file that's unchanged, but still a full graph traversal,
+//! not a query that starts from "what depends on the one file that changed"). See
+//! `crate::workspace`'s module doc for the cross-file model this is all built on and its known
+//! limitations (path-based imports plus registry-resolved vendored dependencies via
+//! `pata_core::find_module_file`; still no `pata.lock`-driven version-constraint awareness).
 
 mod diagnostics;
 mod doc_store;
