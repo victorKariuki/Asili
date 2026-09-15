@@ -446,9 +446,24 @@ expected-file-list assertion to include the new path if the test enumerates exac
 
 ---
 
-## Section 6: `Workspace`/`Asili.toml` wired into `pata jenga`
+## Section 6: `Workspace`/`Asili.toml` wired into `pata jenga` — SUPERSEDED
 
-**Decision made (resolving the open question from the earlier draft of this doc):** `pata.toml`
+**This section's original decision (below, kept as history) was later reversed.** The steps below
+describe wiring `pata.toml` projects up to a *separate* `Asili.toml` workspace manifest via
+`pata_package::Workspace`/`WorkspaceConfig`, and were implemented as written. That design was
+then explicitly revisited and unified: `pata.toml` itself gained an `[eneo-kazi]` table
+(`wanachama = [...]`), parsed via a real TOML library (`load_project_config` moved off the old
+hand-rolled line scanner in the same pass), so a workspace root and an ordinary project share one
+manifest file and one Swahili-keyed syntax. `Asili.toml`, `pata_package::Workspace`,
+`WorkspaceConfig`, and `Manifest`/`PackageMetadata` were all deleted — nothing outside their own
+tests referenced them by that point. See
+[package-manager-design.md](package-manager-design.md#one-manifest-format-patatoml-real-toml-singleleaf-or-workspace-root)
+for the current design and rationale. The original rationale below (reuse a working serde parser
+rather than extend the hand-rolled one) was valid at the time but was superseded once the parser
+itself was replaced with a real TOML library, which removed the asymmetry that motivated keeping
+two formats.
+
+**Original decision (historical, no longer current):** `pata.toml`
 does **not** gain its own `[workspace]` section. `Asili.toml` stays the dedicated workspace
 manifest, read only from a workspace **root** (a directory with no `pata.toml` of its own, only
 `Asili.toml` with a `[workspace]` table naming member directories, each of which has its own

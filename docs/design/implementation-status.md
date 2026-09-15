@@ -42,11 +42,16 @@ Per [spec/07-execution-and-roadmap.md](../spec/07-execution-and-roadmap.md)'s ph
       pass; `pata.toml [jenga] lengo` / `pata jenga --lengo` select the build target. See
       [sharti-design.md](sharti-design.md) for the full architecture (grammar, scope limits,
       where the filter runs, and why `driver/wasm` doesn't run it).
-- [x] Pakiti/Moduli — `pata-package` crate wired into `pata-cli` (real lockfile, SHA-256
-      checksums); path dependencies and locally-vendored version dependencies resolve. Registry/git
-      fetching is **not** implemented (no registry backend exists) — out of scope until one does.
-      See [package-manager-design.md](package-manager-design.md) for the full architecture (the
-      `pata.toml`/`Asili.toml` adapter approach, module layout, what's actually wired vs. dead code).
+- [x] Pakiti/Moduli — `pata-package` crate wired into `pata-cli`: real lockfile with per-dependency
+      SHA-256 content hashes (not a name/version-string placeholder), re-verified against
+      `.asili/packages/` before every build (`pata jenga` hard-fails on a tampered/swapped
+      dependency). Path, git (`pata ongeza --git`, real clone), and registry (a real file-based
+      local index at `.asili/registry/`) dependencies all resolve and fetch for real; registry
+      dependencies resolve **transitively** (a package's own declared deps are fetched/locked too)
+      with real version-conflict detection across the dependency graph. Workspaces (`pata.toml`'s
+      `[eneo-kazi]` table) share the same single manifest file/syntax as an ordinary project — no
+      separate `Asili.toml`. See [package-manager-design.md](package-manager-design.md) for the
+      full current architecture.
 - [x] Wasm — `driver/wasm` builds for both `wasm32-unknown-unknown` (browser, `wasm-browser`
       feature, `console.log`/`console.error` via wasm-bindgen) and `wasm32-wasip1` (WASI,
       `wasm-wasi` feature — uses `std`'s native WASI support directly, no `wasi` crate needed).

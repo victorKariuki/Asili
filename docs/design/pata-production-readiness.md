@@ -169,13 +169,19 @@ self-hostable index (Kellnr/Alexandrie-style — Cargo's alternative-registry RF
 API surface: a JSON index + tarball download endpoint) is the natural next step after item 1 proves
 out the fetch/verify path on git sources.
 
-### 7. Wire up the already-built `Workspace`/multi-package support — DONE
+### 7. Wire up multi-package workspace support — DONE, unified onto one manifest
 
-`pata jenga` now calls `find_workspace_root` (`pata/cli/src/pipeline/project.rs`), which opens
-`pata_package::Workspace` when `Asili.toml`'s `[workspace]` table exists — confirmed via direct
-`grep`, not just the commit message that introduced it. `pata ongeza` itself is not
-workspace-aware yet (still resolves against the single project's `pata.toml`); that's the
-remaining gap if workspace-scoped dependency addition is needed later.
+`pata jenga` calls `find_workspace_root` (`pata/cli/src/pipeline/project.rs`), which discovers a
+workspace root by finding a `pata.toml` whose `[eneo-kazi].wanachama` table is non-empty —
+confirmed via direct `grep`. This item's original implementation used a separate `Asili.toml`
+manifest (`pata_package::Workspace`); that was later unified into `pata.toml` itself (real TOML
+parsing replacing the earlier hand-rolled line scanner, plus a Swahili `[eneo-kazi]` table) so a
+workspace root and an ordinary project share one manifest file and one syntax — see
+[package-manager-design.md](package-manager-design.md) for the current design.
+`pata_package::Workspace`/`WorkspaceConfig`/`Manifest` were deleted once nothing outside their own
+tests referenced them. `pata ongeza` itself is not workspace-aware yet (still resolves against the
+single project's `pata.toml`); that's the remaining gap if workspace-scoped dependency addition is
+needed later.
 
 ### 8. LSP incremental re-resolution — PARTIALLY DONE
 
@@ -278,7 +284,7 @@ blocked rather than silently included in sizing below.
 3. Real dependency resolver (semver constraint solving) + registry backend
    └─ builds on 2
 
-4. Workspace (Asili.toml [workspace]) wired into pata jenga/ongeza
+4. Workspace (pata.toml [eneo-kazi], unified single-manifest design) wired into pata jenga/ongeza
    └─ independent of 2/3 internally, but only valuable once 2 makes deps real
 
 5. pata thibitisha type-stability check (git-tag baseline)
@@ -353,14 +359,19 @@ download, no API server required) — self-hostable (Kellnr/Alexandrie-style), n
 hosted service Asili itself runs. Explicitly the largest single item in this plan; needs its own
 design doc before implementation starts.
 
-### 4. `Workspace`/`Asili.toml` wired into `pata jenga`/`pata ongeza` — **M**
+### 4. Workspace support wired into `pata jenga`/`pata ongeza` — **DONE (unified onto `pata.toml`)**
 
-`pata_package::Workspace::open` (`pata/package/src/workspace.rs`) is already fully implemented
-and unit-tested — this item is wiring, not new design: `pata jenga`/`pata ongeza` open a
-workspace when `Asili.toml`'s `[workspace]` table exists. Open question, not resolved here:
-whether `pata.toml`'s Swahili dialect gains its own `[workspace]` section instead of requiring
-the separate `Asili.toml` file, given the two-manifest-format situation documented in
-[package-manager-design.md](package-manager-design.md).
+Resolved: `pata.toml` gained its own `[eneo-kazi]` (Swahili "workspace") table
+(`wanachama = [...]`) instead of requiring a separate `Asili.toml` file. This meant migrating
+`load_project_config`'s parser from a hand-rolled line scanner to a real TOML library
+(`toml::Table`) — needed anyway to represent `[eneo-kazi]`'s nested array correctly, and a
+byproduct benefit is malformed `pata.toml` now errors instead of silently skipping unparseable
+lines. `find_workspace_root` discovers a workspace root by walking upward for a `pata.toml` with a
+non-empty `[eneo-kazi]`; `pata jenga --workspace-info` and `pata njozi --workspace` both use the
+unified format. `pata_package::Workspace`/`WorkspaceConfig`/`Manifest` (the old `Asili.toml`-only
+types) were deleted once nothing outside their own tests referenced them. See
+[package-manager-design.md](package-manager-design.md) for the full design. `pata ongeza` itself
+remaining not workspace-aware is unchanged by this — still a real gap, tracked in item 7 above.
 
 ### 5. `pata thibitisha` type-stability check — **M**
 

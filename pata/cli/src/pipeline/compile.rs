@@ -220,6 +220,7 @@ pub fn compile_single_file(entry_path: &Path, cli_target: Option<&str>) -> Resul
         entrypoint: entry_path.to_path_buf(),
         dependencies: BTreeMap::new(),
         target: None,
+        eneo_kazi: None,
     };
 
     let tokens = tokenize(&source).map_err(|errors| diag_err("leksika", errors))?;

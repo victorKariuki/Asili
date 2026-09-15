@@ -25,89 +25,89 @@ pub struct ProjectConfig {
     /// `[jenga] lengo = "..."` — the manifest-declared build target (e.g. "wasm"). `None` means
     /// unset; the CLI defaults to "native" unless `--target` overrides it.
     pub target: Option<String>,
+    /// `[eneo-kazi] wanachama = [...]` — relative paths to workspace member project directories,
+    /// each with its own `pata.toml`. `None` means this project isn't a workspace root. Unifies
+    /// workspace declaration into the same file and Swahili-keyed syntax as everything else in
+    /// `pata.toml`, replacing the earlier design of a separate English-keyed `Asili.toml` (see
+    /// `find_workspace_root` below and `docs/design/package-manager-design.md`).
+    pub eneo_kazi: Option<Vec<String>>,
 }
 
+/// Parses `pata.toml` with a real TOML library (`toml::Table`) rather than the earlier
+/// hand-rolled line-by-line scanner — the scanner could not represent nested tables at all
+/// (needed for `[eneo-kazi]`'s `wanachama` array), and a real parser also rejects genuinely
+/// malformed TOML instead of silently skipping unparseable lines. Reads the same Swahili section/
+/// key names the old parser did (`[jumla]`, `[chanzo]`, `[tegemezi]`, `[jenga]`), so every
+/// existing hand-written `pata.toml` fixture in this codebase's own tests keeps parsing
+/// identically — only the parsing mechanism changed, not the file format.
 pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
     let path = root.join("pata.toml");
     let content = fs::read_to_string(&path)
         .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", path.display()), 1))?;
+    let table: toml::Table = toml::from_str(&content)
+        .map_err(|e| CliError::new(format!("hitilafu ya kuchambua {}: {e}", path.display()), 2))?;
 
-    let mut section = String::new();
-    let mut name = String::new();
-    let mut version = String::new();
-    let mut asili_version = String::new();
-    let mut entry = PathBuf::from("src/kuu.as");
+    let jumla = table.get("jumla").and_then(|v| v.as_table());
+    let name = jumla
+        .and_then(|t| t.get("jina"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let version = jumla
+        .and_then(|t| t.get("toleo"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let asili_version = jumla
+        .and_then(|t| t.get("asili"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let entry = table
+        .get("chanzo")
+        .and_then(|v| v.as_table())
+        .and_then(|t| t.get("kuingia"))
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("src/kuu.as"));
+
+    let target = table
+        .get("jenga")
+        .and_then(|v| v.as_table())
+        .and_then(|t| t.get("lengo"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    let eneo_kazi = table
+        .get("eneo-kazi")
+        .and_then(|v| v.as_table())
+        .and_then(|t| t.get("wanachama"))
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>());
+
     let mut deps: BTreeMap<String, Dependency> = BTreeMap::new();
-    let mut target: Option<String> = None;
-
-    for raw in content.lines() {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if line.starts_with('[') && line.ends_with(']') {
-            section = line.trim_matches(&['[', ']'][..]).to_string();
-            continue;
-        }
-
-        if section == "tegemezi" {
-            if let Some((k, v)) = line.split_once('=') {
-                let key = k.trim().to_string();
-                let val = v.trim();
-                if val.starts_with('{') && val.ends_with('}') {
-                    let inner = val.trim_matches(&['{', '}'][..]);
-                    // A real (if minimal) inline-table parse: split top-level `,`-separated
-                    // `key = "value"` pairs — needed for `{ git = "...", version = "..." }`,
-                    // which the old single-`split_once('=')` version couldn't represent (it only
-                    // ever recognized one key, `path`).
-                    let mut path_val: Option<String> = None;
-                    let mut git_val: Option<String> = None;
-                    let mut version_val: Option<String> = None;
-                    for pair in inner.split(',') {
-                        let Some((pk, pv)) = pair.split_once('=') else { continue };
-                        let pv = pv.trim().trim_matches('"').to_string();
-                        match pk.trim() {
-                            "path" => path_val = Some(pv),
-                            "git" => git_val = Some(pv),
-                            "version" => version_val = Some(pv),
-                            _ => {}
-                        }
-                    }
+    if let Some(tegemezi) = table.get("tegemezi").and_then(|v| v.as_table()) {
+        for (key, val) in tegemezi {
+            match val {
+                toml::Value::String(v) => {
+                    deps.insert(key.clone(), Dependency::Version(v.clone()));
+                }
+                toml::Value::Table(inline) => {
+                    let path_val = inline.get("path").and_then(|v| v.as_str());
+                    let git_val = inline.get("git").and_then(|v| v.as_str());
+                    let version_val = inline.get("version").and_then(|v| v.as_str());
                     if let Some(p) = path_val {
-                        deps.insert(key, Dependency::Path(PathBuf::from(p)));
+                        deps.insert(key.clone(), Dependency::Path(PathBuf::from(p)));
                     } else if let Some(url) = git_val {
-                        deps.insert(key, Dependency::Git {
-                            url,
-                            version: version_val.unwrap_or_else(|| "*".to_string()),
+                        deps.insert(key.clone(), Dependency::Git {
+                            url: url.to_string(),
+                            version: version_val.unwrap_or("*").to_string(),
                         });
                     }
-                } else {
-                    deps.insert(key, Dependency::Version(val.trim_matches('"').to_string()));
                 }
-            }
-            continue;
-        }
-
-        let Some((k, v)) = line.split_once('=') else {
-            continue;
-        };
-        let key = k.trim();
-        let value = v.trim().trim_matches('"').to_string();
-
-        match section.as_str() {
-            "jumla" => match key {
-                "jina" => name = value,
-                "toleo" => version = value,
-                "asili" => asili_version = value,
                 _ => {}
-            },
-            "chanzo" if key == "kuingia" => {
-                entry = PathBuf::from(value);
             }
-            "jenga" if key == "lengo" => {
-                target = Some(value);
-            }
-            _ => {}
         }
     }
 
@@ -131,6 +131,7 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
         entrypoint: root.join(entry),
         dependencies: deps,
         target,
+        eneo_kazi,
     })
 }
 
@@ -402,6 +403,7 @@ mod tests {
             entrypoint: PathBuf::from("src/kuu.as"),
             dependencies: deps,
             target: None,
+            eneo_kazi: None,
         };
         write_lockfile(&tmp, &cfg).expect("lock 1");
         let a = fs::read_to_string(tmp.join("pata.lock")).expect("read a");
@@ -422,14 +424,36 @@ mod tests {
     }
 }
 
-pub fn find_workspace_root(start: &Path) -> Option<pata_package::Workspace> {
+/// A workspace root: a `pata.toml` declaring `[eneo-kazi] wanachama = [...]` (relative paths to
+/// member project directories, each with its own `pata.toml`). Replaces the earlier design of a
+/// separate `Asili.toml`/`pata_package::Workspace` (English-keyed, its own `Manifest`/
+/// `WorkspaceConfig` schema unrelated to `pata.toml`'s real Swahili one) — one manifest file and
+/// one syntax for every project, workspace root or not.
+#[derive(Debug, Clone)]
+pub struct PataWorkspace {
+    pub root: PathBuf,
+    /// Member directory name -> resolved absolute path, sorted for stable iteration/display.
+    pub members: BTreeMap<String, PathBuf>,
+}
+
+/// Walk upward from `start` looking for a `pata.toml` with a non-empty `[eneo-kazi]` table —
+/// the workspace root marker. Unlike the old `Asili.toml` design, this reuses the same
+/// `load_project_config`/real-TOML parse every other `pata.toml` read goes through, so a
+/// malformed `[eneo-kazi]` table surfaces the same way any other manifest error would.
+pub fn find_workspace_root(start: &Path) -> Option<PataWorkspace> {
     let mut dir = start;
     loop {
-        let asili_toml = dir.join("Asili.toml");
-        if asili_toml.is_file() {
-            if let Ok(ws) = pata_package::Workspace::open(dir) {
-                if ws.is_workspace() {
-                    return Some(ws);
+        if dir.join("pata.toml").is_file() {
+            if let Ok(cfg) = load_project_config(dir) {
+                if let Some(member_dirs) = cfg.eneo_kazi {
+                    let members: BTreeMap<String, PathBuf> = member_dirs
+                        .into_iter()
+                        .filter(|m| dir.join(m).join("pata.toml").is_file())
+                        .map(|m| (m.clone(), dir.join(&m)))
+                        .collect();
+                    if !members.is_empty() {
+                        return Some(PataWorkspace { root: dir.to_path_buf(), members });
+                    }
                 }
             }
         }

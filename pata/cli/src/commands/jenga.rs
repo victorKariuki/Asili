@@ -161,7 +161,7 @@ fn show_workspace_info() -> CliResult {
     let cwd = PathBuf::from(".");
     match find_workspace_root(&cwd) {
         Some(ws) => {
-            println!("Workspace: {}", ws.root.display());
+            println!("Eneo-kazi: {}", ws.root.display());
             println!("Wanachama: {}", ws.members.len());
             for (name, _manifest) in &ws.members {
                 println!("  - {}", name);
@@ -169,7 +169,7 @@ fn show_workspace_info() -> CliResult {
             Ok(())
         }
         None => {
-            Err(CliError::new("Workspace haipo (Asili.toml na [workspace] haipo)", 1))
+            Err(CliError::new("eneo-kazi haipo (pata.toml haina jedwali [eneo-kazi])", 1))
         }
     }
 }
