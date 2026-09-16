@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="sw">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Asili — Uwanja wa Kuchezea (Playground)</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Asili <span>Uwanja wa Kuchezea</span></h1>
+    <div class="header-actions">
+      <select id="sample-picker" title="Chagua mfano"></select>
+      <button id="run-btn" class="primary">▶ Endesha</button>
+      <span id="status" class="status"></span>
+    </div>
+  </header>
+
+  <main>
+    <section id="editor-pane">
+      <div id="editor"></div>
+    </section>
+    <section id="output-pane">
+      <div class="output-header">
+        <span>Matokeo (Output)</span>
+        <button id="clear-btn" title="Futa matokeo">Futa</button>
+      </div>
+      <pre id="output"></pre>
+    </section>
+  </main>
+
+  <footer>
+    Inaendesha <code>asili-wasm</code> (build ya <code>wasm-browser</code>) moja kwa moja
+    kwenye kivinjari chako — hakuna msimbo unaotumwa kwa seva yoyote.
+    Tazama <a href="https://github.com/victorKariuki/Asili" target="_blank" rel="noopener">victorKariuki/Asili</a>.
+  </footer>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,181 @@
+:root {
+  --bg: #0f1115;
+  --panel: #161a21;
+  --border: #262c37;
+  --text: #e6e8eb;
+  --muted: #8a93a3;
+  --accent: #f2b134;
+  --accent-dark: #c98f1f;
+  --error: #ff6b6b;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+header h1 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+header h1 span {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+select,
+button {
+  font: inherit;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #1d2229;
+  color: var(--text);
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #1b1400;
+  border-color: var(--accent-dark);
+  font-weight: 600;
+}
+
+button.primary:hover {
+  background: var(--accent-dark);
+  color: var(--text);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.status {
+  color: var(--muted);
+  font-size: 0.85rem;
+  min-width: 6rem;
+}
+
+.status.error {
+  color: var(--error);
+}
+
+.status.ok {
+  color: #7fd48a;
+}
+
+main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+#editor-pane,
+#output-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+}
+
+#output-pane {
+  border-right: none;
+}
+
+#editor {
+  flex: 1;
+  overflow: auto;
+}
+
+#editor .cm-editor {
+  height: 100%;
+  font-size: 14px;
+}
+
+.output-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.9rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.output-header button {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+#output {
+  flex: 1;
+  margin: 0;
+  padding: 0.9rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+  font-size: 13px;
+  background: #0b0d11;
+}
+
+#output .line-err {
+  color: var(--error);
+}
+
+footer {
+  padding: 0.5rem 1.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+
+footer a {
+  color: var(--accent);
+}
+
+@media (max-width: 760px) {
+  main {
+    flex-direction: column;
+  }
+  #editor-pane,
+  #output-pane {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}

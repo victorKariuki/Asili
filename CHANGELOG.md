@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Browser playground example** (`examples/playground`): a static web app that edits Asili
+  source in a [CodeMirror 6](https://codemirror.net/) editor and runs it entirely client-side via
+  `driver/wasm`'s `wasm-browser` build (`asili_wasm::run_source`) — no code is sent to a server.
+  `pata.toml`/`src/kuu.as` make the playground self-hosted: a small `mkondo_tumikia_http` static
+  file server (same framing layer as `examples/http_server`) serves the page, `main.js`, and the
+  sample `.as` programs, run with `pata jenga --tenda`; any other static file server (e.g.
+  `python3 -m http.server`) works too. `build.sh` runs `wasm-pack` and base64-encodes the built
+  `.wasm` (Asili's `soma_faili` only reads UTF-8 text — no raw-bytes file API yet — so the
+  Asili-hosted server can't serve the binary directly; `main.js` decodes it back to bytes before
+  handing it to the wasm-bindgen `init()` glue, which works identically regardless of which
+  server is used). LSP-in-browser (diagnostics/hover/format via `pata-lsp`) is intentionally out
+  of scope for this first pass — see the example's README.
+
 - **Mwalimu (LSP) per-file incremental parse cache** (partial fix for #25). New
   `workspace::ModuleCache`: keyed by each project-local file's canonicalized path, storing its
   content hash alongside the already-parsed `WorkspaceModule`. A re-walk of a project's import
@@ -238,6 +251,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`asili-evaluator`'s `wasm32-unknown-unknown` (browser) build**: `rand 0.10` now pulls in
+  `getrandom 0.4`, which needs its `wasm_js` feature enabled to compile for
+  `wasm32-unknown-unknown` — the crate's explicit `getrandom` dependency was still pinned to
+  `0.2`/`"js"` (stale from before `rand`'s upgrade), so `getrandom 0.4` was resolved unconfigured
+  and the browser wasm build (`driver/wasm --features wasm-browser`) failed outright. Found while
+  building `examples/playground`.
 - **Lint test suite**: corrected `LINT101` boundary test (50 statements exactly should not flag;
   flag only when > 50). Tests now confirm the exact threshold behavior.
 - **`pata-fmt` tab-indent correctness bug**: `Printer::emit_token`'s `needs_space_before` check
