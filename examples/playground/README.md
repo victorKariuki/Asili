@@ -14,12 +14,10 @@ to a remote server; everything executes in your browser.
 # 1. Build the wasm package (needs wasm-pack: `cargo install wasm-pack`)
 ./build.sh
 
-# 2. Serve this directory — with Asili itself:
+# 2. Serve this directory with Asili itself
 pata jenga --tenda
-# ...or with any other static file server, e.g.:
-python3 -m http.server 8080
 
-# 3. Open http://127.0.0.1:8080/ (pata jenga --tenda) or http://localhost:8080/ (python)
+# 3. Open http://127.0.0.1:8080/
 ```
 
 `build.sh` runs:
@@ -45,8 +43,7 @@ Asili's `soma_faili` (file read) only handles valid-UTF-8 text — there's no ra
 in the standard library yet — so `src/kuu.as` can't serve the `.wasm` binary directly. `build.sh`
 works around this by base64-encoding it to `pkg/asili_wasm_bg.wasm.b64` at build time; `main.js`
 fetches that text file, decodes it back to bytes with `atob`, and passes the bytes straight to
-the wasm-bindgen `init()` glue. This also means any other static file server works identically —
-`main.js` never needs a real `.wasm`-typed response.
+the wasm-bindgen `init()` glue.
 
 ## What it does
 

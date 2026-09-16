@@ -22,12 +22,7 @@ wasm-pack build "$repo_root/driver/wasm" \
 base64 -w0 "$script_dir/pkg/asili_wasm_bg.wasm" > "$script_dir/pkg/asili_wasm_bg.wasm.b64"
 
 echo
-echo "Imekamilika. Anza seva kwa mojawapo ya njia hizi:"
-echo
-echo "  # Asili yenyewe (mfano wa mkondo_tumikia_http, ona src/kuu.as):"
+echo "Imekamilika. Anza seva (mkondo_tumikia_http, ona src/kuu.as):"
 echo "  cd \"$script_dir\" && pata jenga --tenda"
 echo
-echo "  # au seva tuli yoyote, mfano:"
-echo "  cd \"$script_dir\" && python3 -m http.server 8080"
-echo
-echo "kisha fungua http://127.0.0.1:8080/ (pata jenga --tenda) au http://localhost:8080/ (python)"
+echo "kisha fungua http://127.0.0.1:8080/"
