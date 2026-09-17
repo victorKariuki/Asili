@@ -3,14 +3,12 @@
 //! launched by the client pointing at the adapter binary directly, matching how `pata-lsp`'s
 //! standalone binary coexists with `pata mwalimu`).
 //!
-//! Runs against `MockHook` today — real step-through debugging needs `core/evaluator` to
-//! implement `DebugHook` first (see `pata_dap::hook`'s doc comment), which is out of this
-//! crate's scope. This still lets a real DAP client exercise the protocol layer end-to-end
-//! (breakpoints, stack trace, variables) against canned data.
-
-use std::sync::Arc;
+//! Real step-through debugging: a `launch` naming a `.as` file, followed by `configurationDone`,
+//! compiles and runs that file with `asili_evaluator::debug_hook::RealDebugHook` attached (see
+//! `pata_dap::runner::real_session`) — breakpoints genuinely pause the running program,
+//! `variables` reflects real interpreter state, `continue` genuinely resumes it.
 
 fn main() {
-    let hook = Arc::new(pata_dap::MockHook::new());
-    pata_dap::run(hook, std::io::stdin(), std::io::stdout());
+    let session = pata_dap::real_session();
+    pata_dap::run_session(session, std::io::stdin(), std::io::stdout());
 }

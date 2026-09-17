@@ -1,8 +1,12 @@
 # Pata toolchain: production-readiness roadmap
 
 Scope: `pata/` only (`cli`, `lsp`, `fmt` [logic lives in `cli/src/pipeline/format.rs`], `lint`,
-`package`, `runner`). `core/` (lexer/parser/semantic analyzer/evaluator) is treated as a given —
-see [implementation-status.md](implementation-status.md) for that layer's own gaps.
+`package`, `runner`, `dap`). `core/` (lexer/parser/semantic analyzer/evaluator) is treated as a
+given — see [implementation-status.md](implementation-status.md) for that layer's own gaps. The
+one deliberate exception: `core/evaluator`'s `DebugHook` trait/`RealDebugHook` implementation
+(item 7, DAP) — real step-through debugging needed a hook inside the interpreter's own
+statement-execution loop, which is `core/`-side work by necessity, tracked here rather than
+treated as purely out of scope since `pata-dap`'s own completion depended on it.
 
 This doc sets the **floor** (what must be true before calling the toolchain production-ready) and
 a **stretch tier** (what would make it good, benchmarked against how comparable single-binary
@@ -30,43 +34,27 @@ and more achievable bar.
 
 ## The floor (blocking "production ready")
 
-### 1. `pata ongeza` must actually fetch and verify a dependency's code — PARTIALLY DONE
+### 1. `pata ongeza` must actually fetch and verify a dependency's code — DONE
 
-**Update:** `pata_package::fetch_git`/`hash_dir` (`pata/package/src/fetch.rs`) now exist — a real
-`git2`-based clone and a real SHA-256 content hash over the fetched tree, replacing the
-name-string placeholder described below. **But `pata ongeza` itself does not call them** —
-confirmed via `grep`, `ongeza.rs` still writes only to `pata.toml`/`pata.lock` with no fetch. The
-real, checkable primitives exist; the CLI command that was supposed to use them doesn't yet.
-Tracked as issue #17 on the bug tracker.
+**Update:** fully wired now, confirmed via direct source read (`pata/cli/src/commands/
+ongeza.rs`), not just the earlier-landed library primitives. `pata ongeza <lib> --git <url>
+[--tawi <branch>]` calls `pata_package::fetch_git` for real — a real `git2`-based clone into
+`.asili/packages/<lib>/`, a real SHA-256 content hash over the fetched tree written into
+`pata.lock`. A bare `pata ongeza <lib>` (no `--git`) resolves against the real local/hosted
+registry (item 6, stretch tier) instead of a name-string placeholder. `pata jenga` re-verifies
+every vendored dependency's content hash against `pata.lock` before every build
+(`LockFile::verify_content_integrity`, called from `pata/cli/src/pipeline/project.rs`) — a
+tampered or swapped `.asili/packages/<name>/` directory is a hard build error, the actual
+security property a lockfile is for. Verified end-to-end against a real local git repo
+(`file://` clone) in `ongeza.rs`'s own test module, not just unit tests against the library
+functions in isolation.
 
-**Original gap (still true for `pata ongeza` itself)** (verified in
-[package-manager-design.md](package-manager-design.md) and `pata/package/src/resolver.rs`):
-`pata ongeza` writes an entry to `pata.toml` and `pata.lock`, but fetches nothing.
-`Resolver::resolve` does no I/O — it computes `sha256("{name}@{version}")` (a hash of the *name
-string*, not package content) and inserts a `LockedDependency`. A version dependency only resolves
-at build time if something else has *already* placed source under
-`.asili/packages/<name>/src/<name>.as` "by some out-of-band means" (the code's own comment,
-`resolve.rs:80-83`).
-
-This means `pata ongeza <lib> <version>` — the single most basic dependency-management operation —
-still cannot be used to actually obtain a library. Path dependencies work; everything else is
-theater, even with `fetch_git` now existing as an unused library function.
-
-**Floor fix, informed by the Zig precedent** (no registry server required to be legitimate):
-- `[tegemezi]` gains a `git`/`url` + optional `rev`/`tag` source (the manifest type already has
-  `git`/`branch` fields on `DependencyTable`, per `manifest.rs:69-71` — currently threaded through
-  and never used).
-- `pata ongeza` clones/fetches the source into `.asili/packages/<name>/`, computes a **real content
-  hash** (SHA-256 over the fetched tree, not the name string), and writes that hash into
-  `pata.lock`.
-- `pata jenga` (or a new `pata sasisha`/update step) verifies the vendored directory's content hash
-  against the lockfile before building — this is the actual security property a lockfile is for,
-  and today's checksum can't detect a swapped or tampered dependency at all (confirmed: "two
-  different tarballs/directories placed under `.asili/packages/<name>/` for the same `name@version`
-  would produce identical checksums").
-- A registry index (crates.io-style) is explicitly **not** required for this floor item — git/path
-  sources are enough to make dependency management real rather than aspirational. Treat a registry
-  as stretch-tier (below).
+**Original gap (historical — kept for context on why this was the floor's #1 item):**
+`pata ongeza` used to write an entry to `pata.toml`/`pata.lock` without fetching anything;
+`Resolver::resolve` did no I/O and hashed `sha256("{name}@{version}")` (the name string, not
+content) — two different tarballs vendored under the same path would have produced identical
+checksums, so the lockfile had no real tamper-detection property at all. Path dependencies were
+the only mechanism that ever actually worked.
 
 ### 2. CI pipeline
 
@@ -157,17 +145,20 @@ the `pata`-side integration-test gap, which is what's actually done now.
 
 Benchmarked against Cargo, Gleam, and Zig — ordered roughly by leverage, not urgency.
 
-### 6. A real package registry (Gleam/Hex-style), once the floor's git-source path is stable
+### 6. A real package registry (Gleam/Hex-style) — DONE, local and hosted both
 
-Gleam's `gleam.toml` (manifest) + `manifest.toml` (lockfile, not uploaded) + Hex.pm (registry) split
-is the cleanest model for a small-language ecosystem: single binary, one hosted index, real
-version-constraint resolution (`>= 1.2.0 and < 2.0.0`-style ranges, not just pinned exact versions).
-`pata_package::Resolver::resolve` today doesn't even do constraint solving — it takes whatever
-version string is given and locks it verbatim (`_existing_lock` parameter is unused, prefixed `_`).
-A real resolver (SAT-style or Cargo's own greedy-with-backtracking algorithm) plus a lightweight
-self-hostable index (Kellnr/Alexandrie-style — Cargo's alternative-registry RFC shows the minimum
-API surface: a JSON index + tarball download endpoint) is the natural next step after item 1 proves
-out the fetch/verify path on git sources.
+**Update:** `pata_package::LocalRegistry` is a real, working file-based index (one JSON file per
+package at `.asili/registry/<name>.json`, each a published version plus a fetchable git/path
+source) with real semver constraint solving (`Resolver::resolve` now does direct `semver::
+VersionReq` matching, no longer the "lock whatever string is given verbatim" stub) and real
+transitive dependency resolution — a registry package's own declared deps are fetched/locked
+too, breadth-first, with real version-conflict detection across dependents requiring
+incompatible ranges of the same transitive package. A `remote_registry` module adds the hosted
+half: `fetch_index`/`fetch_and_verify` fetch a static-file HTTP index (Cargo alternative-registry
+RFC minimum surface — a JSON index + tarball download endpoint, no API server) and verify a
+downloaded tarball's SHA-256 before extracting, wired into `Resolver::resolve` via a new
+`RegistrySource::Http` variant. Confirmed via a real end-to-end resolver test exercising the
+`Http` source end to end, not just the module existing in isolation.
 
 ### 7. Wire up multi-package workspace support — DONE, unified onto one manifest
 
@@ -398,10 +389,16 @@ function-count-ratio check); richer assertion helpers beyond bare `paparika`.
 True incremental re-resolution (salsa-style), replacing full-workspace-recheck-on-every-edit.
 Inlay hints (inferred types, parameter names at call sites) — explicitly named as missing in the
 crate's own doc comment. Code actions/quick-fixes beyond the one existing doc-stub insertion.
-Workspace-wide rename needs explicit verification (currently only confirmed single-document). DAP
-(debugger) is a separate protocol/server entirely, sequenced last within this item since
-[dap-later.md](dap-later.md) already exists as a design placeholder and nothing else in this plan
-depends on it — its own potential future `L`-or-larger item, not estimated in detail here.
+Workspace-wide rename needs explicit verification (currently only confirmed single-document).
+
+**DAP (debugger): done.** `pata-dap`'s protocol layer (already complete) is now backed by a real
+`DebugHook` implementation in `core/evaluator` (`debug_hook::RealDebugHook`, wired into
+`eval_stmt_impl` via `Runtime::debug_hook`) instead of only `MockHook` — a `launch`+
+`setBreakpoints`+`configurationDone` DAP sequence genuinely compiles and runs a target `.as` file,
+pauses it at a real breakpoint, and reports real live variable bindings. Verified via a real
+integration test (`pata/dap/src/runner.rs`) and manually against the compiled binary over a live
+stdio pipe. See [dap-later.md](dap-later.md) for the full write-up. Single-file `launch` only (no
+project/dependency-aware compilation) remains a real, documented gap.
 
 ### 8. `pata-lint` rule depth + new rules — **M**
 

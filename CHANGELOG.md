@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Real step-through debugging via `pata-dap`** (closes #43). `DebugHook` moves from `pata/dap`
+  into `core/evaluator` (`debug_hook` module) — the crate that needs to implement it — with a
+  real `RealDebugHook`: breakpoints genuinely pause the executing thread (`Mutex<bool>` +
+  `Condvar`, not polling), `resume()` genuinely unblocks it from another thread, and
+  `current_bindings()` reflects the real, live `Env` at the paused line. Wired into the
+  interpreter's own statement-execution loop (`eval_stmt_impl`, via a new `Runtime::debug_hook`
+  field and `run_main_with_debug_hook` entry point). `pata-dap` now actually launches and runs
+  the target program on `configurationDone` (`pata/dap/src/runner.rs`) instead of only answering
+  protocol requests against canned `MockHook` data — verified end-to-end both via a real
+  integration test and manually against the compiled binary over a live stdio pipe (a real
+  breakpoint hit, real variable values, real resume). `MockHook` remains for exercising the DAP
+  wire protocol independent of compiling/running a program. Single-file `launch` only (no
+  project/dependency-aware compilation) is a known, documented remaining gap.
 - **Generated API docs, published to GitHub Pages**: `.github/workflows/docs.yml` runs
   `cargo doc --workspace --no-deps` (rustdoc, `RUSTDOCFLAGS=-D warnings` so broken doc comments
   fail CI rather than just warning) and TypeDoc against the VS Code extension's `extension.ts`,

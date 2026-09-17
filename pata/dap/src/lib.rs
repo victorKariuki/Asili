@@ -13,8 +13,10 @@
 //! for exercising the DAP wire protocol without a real `.as` program on disk.
 
 pub mod mock_hook;
+pub mod runner;
 pub mod server;
 
 pub use asili_evaluator::debug_hook::DebugHook;
 pub use mock_hook::MockHook;
-pub use server::{run, DapSession};
+pub use runner::real_session;
+pub use server::{run, run_session, DapSession};

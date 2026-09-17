@@ -18,32 +18,24 @@ use std::time::Duration;
 use crate::server::DapSession;
 
 /// Build a `DapSession<RealDebugHook>` wired to actually compile and run whatever `.as` file a
-/// `launch` request names, once `configurationDone` arrives. `breakpoint_lines` starts empty —
-/// real breakpoints are only known once `setBreakpoints` runs (before `configurationDone`, per
-/// normal DAP client sequencing) — read fresh from `breakpoint_lines`, a shared handle the
-/// callback closes over directly rather than needing the whole `DapSession` back (avoiding the
-/// self-referential "session's own callback needs a reference to the session" problem, since the
-/// session doesn't exist yet while its constructor argument is being built).
+/// `launch` request names, once `configurationDone` arrives — real breakpoints (from the
+/// preceding `setBreakpoints` request) and the program path (from `launch`) are both passed
+/// directly into the callback by `DapSession::handle` itself, so no self-referential handle back
+/// into the session is needed to read them.
 pub fn real_session() -> Arc<DapSession<RealDebugHook>> {
     let hook = Arc::new(RealDebugHook::new(Vec::new()));
-    let breakpoint_lines: Arc<std::sync::Mutex<Vec<i64>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let paused_at_line = Arc::new(AtomicI64::new(0));
-
     let hook_for_callback = Arc::clone(&hook);
-    let breakpoint_lines_for_callback = Arc::clone(&breakpoint_lines);
-    let paused_at_line_for_callback = Arc::clone(&paused_at_line);
-    let session = DapSession::new(Arc::clone(&hook))
-        .with_breakpoint_lines_handle(Arc::clone(&breakpoint_lines))
-        .with_paused_at_line_handle(Arc::clone(&paused_at_line))
-        .with_on_configuration_done(move |program| {
-            let lines = breakpoint_lines_for_callback.lock().unwrap().clone();
-            launch_and_monitor(
-                Arc::clone(&hook_for_callback),
-                Arc::clone(&paused_at_line_for_callback),
-                lines,
-                program,
-            );
-        });
+
+    // paused_at_line_handle() needs a constructed DapSession to call, but the callback that
+    // needs that handle has to be supplied to DapSession::new/with_on_configuration_done before
+    // construction finishes — build the session first with no callback, grab its handle, then
+    // attach the real callback via a second builder call (with_on_configuration_done replaces
+    // the field, it doesn't need to be set exactly once at construction time).
+    let session = DapSession::new(Arc::clone(&hook));
+    let paused_at_line = session.paused_at_line_handle();
+    let session = session.with_on_configuration_done(move |program, breakpoint_lines| {
+        launch_and_monitor(Arc::clone(&hook_for_callback), Arc::clone(&paused_at_line), breakpoint_lines, program);
+    });
     Arc::new(session)
 }
 
@@ -98,6 +90,7 @@ fn launch_and_monitor(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use asili_evaluator::debug_hook::DebugHook;
     use dap::prelude::*;
     use dap::requests::{LaunchRequestArguments, SetBreakpointsArguments};
     use dap::types::SourceBreakpoint;

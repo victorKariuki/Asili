@@ -254,19 +254,31 @@ fn command_name(cmd: &Command) -> &'static str {
 }
 
 /// Run the DAP server loop over `input`/`output` (real stdio in `main.rs`, or an in-memory
-/// buffer pair in tests) until the input stream closes or a `disconnect` request is handled.
-///
-/// Does not itself drive `hook.should_pause` — that's the evaluator's job once `DebugHook` has
-/// a real implementation (it calls `should_pause` from inside its own statement-execution loop,
-/// not `pata-dap`). This loop only answers DAP protocol requests against `session`'s state.
+/// buffer pair in tests) until the input stream closes or a `disconnect` request is handled,
+/// constructing a plain `DapSession` around `hook` with no `configurationDone` launch wiring
+/// (real launches go through `run_session` with a session built by `crate::runner::real_session`,
+/// which does wire it). This loop only answers DAP protocol requests against `session`'s state —
+/// `should_pause` itself is driven entirely by whatever is actually running the target program
+/// (the evaluator's own statement-execution loop, once one is attached), never by this loop.
 pub fn run<H, R, W>(hook: Arc<H>, input: R, output: W)
 where
     H: DebugHook,
     R: Read,
     W: Write,
 {
+    run_session(Arc::new(DapSession::new(hook)), input, output);
+}
+
+/// Like `run`, but driven by an already-built `session` (e.g. `crate::runner::real_session`'s
+/// output, with its `configurationDone` launch callback already attached) rather than
+/// constructing a bare one from a hook.
+pub fn run_session<H, R, W>(session: Arc<DapSession<H>>, input: R, output: W)
+where
+    H: DebugHook,
+    R: Read,
+    W: Write,
+{
     let mut server = dap::server::Server::new(BufReader::new(input), BufWriter::new(output));
-    let session = DapSession::new(hook);
 
     loop {
         match server.poll_request() {
