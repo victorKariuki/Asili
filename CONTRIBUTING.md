@@ -13,10 +13,44 @@ Contributions are welcome. This document outlines how to build, test, and submit
    (Skip the recursion-depth stress test if needed:  
    `cargo test -p asili-evaluator --test integration -- --skip recursion_depth`)
 
+## API documentation
+
+Generated API reference (for reading the code, not for using the `pata` CLI or the Asili
+language — see the [wiki](https://github.com/victorKariuki/Asili/wiki) for that) is published at
+<https://victorkariuki.github.io/Asili/>, rebuilt automatically on every push to `main`
+(`.github/workflows/docs.yml`).
+
+To build it locally:
+
+- **Rust (rustdoc):** `cargo doc --workspace --no-deps --open` — covers every crate under
+  `core/` and `pata/`. CI runs this with `RUSTDOCFLAGS=-D warnings`, so a broken intra-doc link or
+  unescaped `<T>`/`[...]` in a doc comment fails the build, not just warns — fix it rather than
+  working around it (wrap generic syntax like `` `Kasha_GC<T>` `` in backticks, escape `#[attr]`
+  and `<placeholder>` text the same way).
+- **VS Code extension (TypeDoc):** `cd extensions/vscode/docs-tooling && npm install && npm run
+  typedoc` — outputs to `docs-site/typedoc/` at the repo root. TypeDoc is isolated in its own
+  `docs-tooling/` package with its own pinned TypeScript (`^5.9`), separate from the extension's
+  own `devDependencies` (`^7.0`) — TypeDoc's peer-dependency range doesn't support the newer
+  compiler yet. Don't move TypeDoc into `extensions/vscode/package.json` directly without checking
+  that range first.
+
 ## Project structure
 
-- **core/** — Language core: lexer, parser, semantic analyzer, evaluator. Add or extend built-ins under `core/evaluator/src/builtins/`. Stdlib export contracts live in `pata/cli/src/pipeline/builtin_modules.rs`.
-- **pata/** — CLI (`pata-cli`), runner, LSP. Entrypoint is `pata/cli/src/main.rs`; commands are in `commands/`, pipeline in `pipeline/`.
+- **core/** — Language core: `diagnostics` (shared error/diagnostic types), `lexer`, `parser`
+  (includes the semantic analyzer), `evaluator` (interpreter + bytecode VM + built-ins). Add or
+  extend built-ins under `core/evaluator/src/builtins/`. `core/` never depends on `pata/` — a
+  type `core/` needs to expose to `pata/` (e.g. the `DebugHook` trait `pata-dap` drives) is
+  defined on the `core/` side and re-exported, not the other way around.
+- **pata/** — the toolchain, one crate per concern: `cli` (the `pata` binary — entrypoint
+  `pata/cli/src/main.rs`, commands in `commands/`, pipeline in `pipeline/`), `core` (shared
+  module resolver, used by both `cli` and `lsp` so they don't reimplement it separately), `fmt`
+  (`pata nadhifu`), `lint` (`pata-lint`), `package` (dependency resolution/lockfile/registry),
+  `runner` (`.asb` bytecode execution), `lsp` (Mwalimu language server), `dap` (Debug Adapter
+  Protocol server).
+- **extensions/vscode/** — the VS Code extension (`asili` on the Marketplace once published).
+  `src/extension.ts` is the entry point; bundled with `esbuild` (see `esbuild.js`) rather than
+  shipping `node_modules` in the packaged `.vsix`. `make install-ext` from the repo root builds,
+  packages, and installs it in one step.
 - **lib/std/** — `.asi` interface stubs for the standard library; keep these in sync with built-in modules and `builtin_modules.rs`.
 - **docs/spec/** — Formal language specification. Spec changes should be reflected in [docs/spec/CHANGELOG.md](docs/spec/CHANGELOG.md).
 

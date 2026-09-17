@@ -4,6 +4,9 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Architecture ([02-architecture-and-files.md](02-architecture-and-files.md)): added a
+  `/extensions/vscode` row to the project-structure table (previously undocumented despite
+  existing); noted the linter and DAP server in the `/pata` row's tooling list.
 - Tooling ([06-tooling-and-ecosystem.md](06-tooling-and-ecosystem.md)): added `#[kabla]`/`#[baada]`
   to the system-attributes table (setup/teardown fixtures run by `pata jaribu` around every
   `#[jaribio]` test in the same module, including when the test itself failed); updated the

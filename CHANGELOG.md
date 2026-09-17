@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Generated API docs, published to GitHub Pages**: `.github/workflows/docs.yml` runs
+  `cargo doc --workspace --no-deps` (rustdoc, `RUSTDOCFLAGS=-D warnings` so broken doc comments
+  fail CI rather than just warning) and TypeDoc against the VS Code extension's `extension.ts`,
+  publishing both at <https://victorkariuki.github.io/Asili/> on every push to `main`. TypeDoc is
+  isolated in its own `extensions/vscode/docs-tooling/` package with a pinned `typescript@^5.9`,
+  separate from the extension's real `typescript@^7.0` — TypeDoc's peer-dependency range doesn't
+  support the newer compiler yet, and running it against the extension's own `node_modules`
+  crashes reaching into TypeScript-internal APIs that changed shape in TS7. See
+  [CONTRIBUTING.md](CONTRIBUTING.md#api-documentation) for how to build both locally.
 - **Browser playground example** (`examples/playground`): a static web app that edits Asili
   source in a [CodeMirror 6](https://codemirror.net/) editor and runs it entirely client-side via
   `driver/wasm`'s `wasm-browser` build (`asili_wasm::run_source`) — no code is sent to a server.
