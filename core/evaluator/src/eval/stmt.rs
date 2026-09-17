@@ -11,6 +11,13 @@ use super::expr::match_and_bind_pattern;
 pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOut, EvalError> {
     rt.record_line(stmt.line());
 
+    if let Some(hook) = &rt.debug_hook {
+        // Push a fresh bindings snapshot in before should_pause might block, so a real pause
+        // always has up-to-date data ready for a `variables` DAP request.
+        hook.record_bindings(crate::debug_hook::snapshot_bindings(rt.env));
+        hook.should_pause(stmt.line());
+    }
+
     let sig = signal::take_pending();
     if sig != 0 {
         if let Some(handler_name) = signal::get_handler(sig) {

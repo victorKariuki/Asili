@@ -3,6 +3,7 @@
 mod asb;
 pub mod builtins;
 mod bytecode;
+pub mod debug_hook;
 mod env;
 mod eval;
 mod platform;
@@ -167,6 +168,39 @@ pub fn run_function_with_telemetry(
 pub fn run_main(module: &Module, args: Vec<String>) -> Result<(), EvalError> {
     let hoja = Value::Orodha(args.into_iter().map(Value::Neno).collect());
     run_function(module, "kuu", vec![hoja]).map(|_| ())
+}
+
+/// Like `run_main`, but with a real debugger (`pata-dap`'s `DapSession`, driving a
+/// `debug_hook::RealDebugHook`) attached: `eval_stmt_impl` will snapshot bindings into `hook`
+/// and call `hook.should_pause(line)` before every statement, genuinely pausing this thread at a
+/// configured breakpoint until the debugger resumes it. `run_main` itself stays a thin `None`-hook
+/// wrapper so every existing caller (dozens of test call sites, `pata-cli`, `pata-runner`) keeps
+/// compiling unchanged — matching this file's existing `run_function` vs.
+/// `run_function_with_telemetry`/`run_function_with_builtins` sibling-function convention rather
+/// than adding a breaking parameter to `run_main` itself.
+pub fn run_main_with_debug_hook(
+    module: &Module,
+    args: Vec<String>,
+    hook: std::sync::Arc<dyn debug_hook::DebugHook>,
+) -> Result<(), EvalError> {
+    let hoja = Value::Orodha(args.into_iter().map(Value::Neno).collect());
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == "kuu")
+        .ok_or_else(|| EvalError::UndefinedVar("kuu".to_string()))?;
+    let mut env = Env::new();
+    env.seed_global_constants();
+    let mut rt = runtime::Runtime::new(&mut env, module);
+    rt.enable_debug_hook(hook);
+    seed_module_constants(module, &mut rt)?;
+    rt.env.push_scope();
+    if let Some(p) = f.params.first() {
+        rt.env.define(&p.name, hoja);
+    }
+    let out = eval::eval_block_impl(&f.body, &mut rt);
+    rt.env.pop_scope();
+    out.map(|_| ())
 }
 
 /// Run a single test function (no args). Returns pass/fail from actual execution.

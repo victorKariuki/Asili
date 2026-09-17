@@ -115,4 +115,17 @@ impl Env {
         }
         names.into_iter().collect()
     }
+
+    /// Every `(name, value)` binding currently in scope, innermost scope first — for a debugger's
+    /// "current variables" snapshot (`debug_hook::RealDebugHook::record_bindings`), where a name
+    /// shadowed by an inner scope must report the inner (shadowing) value, matching `Env::get`'s
+    /// own lookup order exactly. Order/dedup of same-named entries across scopes is the caller's
+    /// job (keep only the first occurrence of each name) — this just yields every scope's own
+    /// entries, innermost first.
+    pub fn iter_innermost_first(&self) -> impl Iterator<Item = (String, Value)> + '_ {
+        self.scopes
+            .iter()
+            .rev()
+            .flat_map(|scope| scope.iter().map(|(k, v)| (k.clone(), v.clone())))
+    }
 }

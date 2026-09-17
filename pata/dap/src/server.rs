@@ -25,16 +25,25 @@ use dap::types::{Breakpoint, Capabilities, Scope, Source, StackFrame, Thread, Va
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::sync::Arc;
 
-use crate::hook::DebugHook;
+use asili_evaluator::debug_hook::DebugHook;
 
 pub struct DapSession<H: DebugHook> {
     hook: Arc<H>,
     breakpoint_lines: std::sync::Mutex<Vec<i64>>,
     source_path: std::sync::Mutex<Option<String>>,
-    /// The line last reported as paused-at, for `stackTrace` responses. Updated by whatever
-    /// caller observes a real pause (see `run`'s doc comment on how this connects to a real
-    /// hook once one exists) — `0` before any pause has occurred.
-    paused_at_line: std::sync::atomic::AtomicI64,
+    /// The line last reported as paused-at, for `stackTrace` responses. `Arc`-wrapped so a
+    /// background monitor thread (spawned by `on_configuration_done`'s callback, when set, to
+    /// watch a real running program) can update it without needing the whole session behind an
+    /// `Arc` — `0` before any pause has occurred.
+    paused_at_line: Arc<std::sync::atomic::AtomicI64>,
+    /// Called once when the DAP client signals `configurationDone` (breakpoints are set, ready
+    /// to run), given the `program` path from the preceding `launch` request and the breakpoint
+    /// lines from the preceding `setBreakpoints` request (both already known to `handle()` at
+    /// the call site, so passed directly rather than the callback needing its own handle back
+    /// into `self`) — `None` for a session with nothing real to launch (every existing test
+    /// against `MockHook`), `Some` for a real session (see `crate::runner::real_session`), which
+    /// compiles and starts running the target program on a background thread.
+    on_configuration_done: Option<Box<dyn Fn(Option<String>, Vec<i64>) + Send + Sync>>,
 }
 
 impl<H: DebugHook> DapSession<H> {
@@ -43,15 +52,31 @@ impl<H: DebugHook> DapSession<H> {
             hook,
             breakpoint_lines: std::sync::Mutex::new(Vec::new()),
             source_path: std::sync::Mutex::new(None),
-            paused_at_line: std::sync::atomic::AtomicI64::new(0),
+            paused_at_line: Arc::new(std::sync::atomic::AtomicI64::new(0)),
+            on_configuration_done: None,
         }
     }
 
+    /// Attach a callback run once on `configurationDone`, given the `program` path recorded by
+    /// the preceding `launch` request (`None` if the client never sent one) and the breakpoint
+    /// lines from the preceding `setBreakpoints` request. Builder-style so
+    /// `crate::runner::real_session` can construct a fully-wired session in one expression.
+    pub fn with_on_configuration_done(mut self, f: impl Fn(Option<String>, Vec<i64>) + Send + Sync + 'static) -> Self {
+        self.on_configuration_done = Some(Box::new(f));
+        self
+    }
+
     /// Record that execution is now paused at `line` — called once a real hook's `should_pause`
-    /// has actually blocked (see `run`), so a subsequent `stackTrace` request reports the real
-    /// paused location rather than a stale or default one.
+    /// has actually blocked (see `crate::runner`'s monitor thread), so a subsequent `stackTrace`
+    /// request reports the real paused location rather than a stale or default one.
     pub fn set_paused_line(&self, line: i64) {
         self.paused_at_line.store(line, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Shared handle to this session's `paused_at_line`, for a background monitor thread to
+    /// update as it observes real pauses — see `crate::runner`.
+    pub fn paused_at_line_handle(&self) -> Arc<std::sync::atomic::AtomicI64> {
+        Arc::clone(&self.paused_at_line)
     }
 
     /// Handle one request, returning the `Response` to send back plus any `Event`s that should
@@ -107,7 +132,14 @@ impl<H: DebugHook> DapSession<H> {
                     vec![],
                 )
             }
-            Command::ConfigurationDone => (ack(req), vec![]),
+            Command::ConfigurationDone => {
+                if let Some(on_configuration_done) = &self.on_configuration_done {
+                    let program = self.source_path.lock().unwrap().clone();
+                    let lines = self.breakpoint_lines.lock().unwrap().clone();
+                    on_configuration_done(program, lines);
+                }
+                (ack(req), vec![])
+            }
             Command::Threads => {
                 let threads = vec![Thread { id: 1, name: "kuu".to_string() }];
                 (ok_response(req, ResponseBody::Threads(responses::ThreadsResponse { threads })), vec![])

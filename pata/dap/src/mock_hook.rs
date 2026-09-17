@@ -1,12 +1,13 @@
 //! A fake `DebugHook`, real enough to exercise `pata-dap`'s protocol handling end-to-end
 //! (breakpoints causing a real pause, `continue` causing a real resume, `variables` returning
-//! real data) without depending on `core/evaluator`, which doesn't implement the trait yet.
-//! Not `#[cfg(test)]`-gated (unlike a typical test-only mock) — kept as a real, always-buildable
-//! module so `pata-dap`'s own binary can be manually exercised against a real DAP client (VS
-//! Code, etc.) today in a "canned" mode, proving the protocol layer end-to-end even before
-//! `core/evaluator`'s real hook exists.
+//! real data) without actually running a target program — `core/evaluator`'s own
+//! `debug_hook::RealDebugHook` (used by `pata-dap`'s real `launch` handling, see `runner.rs`) is
+//! the implementation that drives an actual `.as` program. Kept as a real, always-buildable
+//! module (not `#[cfg(test)]`-gated) so `pata-dap`'s protocol layer can still be exercised in a
+//! "canned" mode independent of compiling/running a real program — useful for testing the DAP
+//! wire format itself without needing a `.as` source file on disk.
 
-use crate::hook::DebugHook;
+use asili_evaluator::debug_hook::DebugHook;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -56,6 +57,11 @@ impl Default for MockHook {
 }
 
 impl DebugHook for MockHook {
+    /// A no-op: `MockHook` serves fixed, canned bindings (set via `set_bindings`) regardless of
+    /// what a real evaluator would have recorded — that's the whole point of a canned test
+    /// double for exercising the DAP protocol layer independent of a real running program.
+    fn record_bindings(&self, _bindings: Vec<(String, String)>) {}
+
     fn should_pause(&self, line: usize) -> bool {
         if !self.breakpoints.lock().unwrap().contains(&line) {
             return false;
