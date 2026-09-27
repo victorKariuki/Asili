@@ -380,6 +380,52 @@ pub enum Expr {
     },
 }
 
+impl Expr {
+    /// The direct sub-expressions of `self`, in evaluation order — the one definition of the
+    /// expression tree's shape that analyses walking it (linters, the LSP, the parser's own
+    /// checks) share instead of each re-listing every variant.
+    pub fn children(&self) -> Vec<&Expr> {
+        match self {
+            Expr::Number(_)
+            | Expr::String(_)
+            | Expr::Bool(_)
+            | Expr::Char(_)
+            | Expr::Ident { .. }
+            | Expr::Hamna => vec![],
+            Expr::Group(e)
+            | Expr::Unary { expr: e, .. }
+            | Expr::Cast { expr: e, .. }
+            | Expr::Propagate { expr: e, .. }
+            | Expr::FieldAccess { receiver: e, .. } => vec![e],
+            Expr::If {
+                cond,
+                then_expr,
+                else_if,
+                else_expr,
+                ..
+            } => {
+                let mut out = vec![&**cond, &**then_expr];
+                for (c, e) in else_if {
+                    out.push(c);
+                    out.push(e);
+                }
+                out.extend(else_expr.as_deref());
+                out
+            }
+            Expr::Binary { left, right, .. } => vec![left, right],
+            Expr::Index { base, index, .. } => vec![base, index],
+            Expr::Call { callee, args, .. } => std::iter::once(&**callee).chain(args).collect(),
+            Expr::MethodCall { receiver, args, .. } => {
+                std::iter::once(&**receiver).chain(args).collect()
+            }
+            Expr::List { elements, .. } => elements.iter().collect(),
+            Expr::Map { entries, .. } => entries.iter().flat_map(|(k, v)| [k, v]).collect(),
+            Expr::StructLiteral { fields, .. } => fields.iter().map(|(_, e)| e).collect(),
+            Expr::EnumConstruct { data, .. } => data.as_deref().into_iter().collect(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum UnaryOp {
     Neg,

@@ -1737,23 +1737,6 @@ fn expr_has_call(expr: &Expr) -> bool {
             args.iter().any(expr_has_call)
         }
         Expr::Call { .. } | Expr::MethodCall { .. } => true,
-        Expr::Group(e) | Expr::Propagate { expr: e, .. } | Expr::Cast { expr: e, .. } => {
-            expr_has_call(e)
-        }
-        Expr::Unary { expr, .. } => expr_has_call(expr),
-        Expr::Binary { left, right, .. } => expr_has_call(left) || expr_has_call(right),
-        Expr::Index { base, index, .. } => expr_has_call(base) || expr_has_call(index),
-        Expr::FieldAccess { receiver, .. } => expr_has_call(receiver),
-        Expr::List { elements, .. } => elements.iter().any(expr_has_call),
-        Expr::If { .. }
-        | Expr::Map { .. }
-        | Expr::StructLiteral { .. }
-        | Expr::EnumConstruct { .. } => true,
-        Expr::Number(_)
-        | Expr::String(_)
-        | Expr::Bool(_)
-        | Expr::Char(_)
-        | Expr::Ident { .. }
-        | Expr::Hamna => false,
+        other => other.children().into_iter().any(expr_has_call),
     }
 }

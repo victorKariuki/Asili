@@ -2,7 +2,6 @@
 
 pub mod config;
 pub mod rules;
-pub mod visitor;
 
 use asili_diagnostics::Diagnostic;
 use asili_lexer::tokenize;

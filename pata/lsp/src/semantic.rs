@@ -568,26 +568,6 @@ impl SemanticAnalyzer {
                     self.scan_expr(arg);
                 }
             }
-            Expr::MethodCall { receiver, args, .. } => {
-                self.scan_expr(receiver);
-                for arg in args {
-                    self.scan_expr(arg);
-                }
-            }
-            Expr::Binary { left, right, .. } => {
-                self.scan_expr(left);
-                self.scan_expr(right);
-            }
-            Expr::Unary { expr: e, .. } => {
-                self.scan_expr(e);
-            }
-            Expr::Cast { expr: e, .. } => {
-                self.scan_expr(e);
-            }
-            Expr::Index { base, index, .. } => {
-                self.scan_expr(base);
-                self.scan_expr(index);
-            }
             Expr::FieldAccess {
                 receiver,
                 field,
@@ -606,23 +586,6 @@ impl SemanticAnalyzer {
                     0,
                     field.len(),
                 );
-            }
-            Expr::Group(e) => {
-                self.scan_expr(e);
-            }
-            Expr::Propagate { expr: e, .. } => {
-                self.scan_expr(e);
-            }
-            Expr::List { elements, .. } => {
-                for e in elements {
-                    self.scan_expr(e);
-                }
-            }
-            Expr::Map { entries, .. } => {
-                for (k, v) in entries {
-                    self.scan_expr(k);
-                    self.scan_expr(v);
-                }
             }
             Expr::StructLiteral {
                 fields,
@@ -649,7 +612,11 @@ impl SemanticAnalyzer {
                     self.scan_expr(d);
                 }
             }
-            _ => {}
+            other => {
+                for child in other.children() {
+                    self.scan_expr(child);
+                }
+            }
         }
     }
 

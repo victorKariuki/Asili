@@ -157,55 +157,11 @@ fn scan_pattern(pattern: &asili_parser::Pattern, out: &mut HashSet<String>) {
 }
 
 fn scan_expr(expr: &Expr, out: &mut HashSet<String>) {
-    match expr {
-        Expr::Ident { name, .. } => {
-            out.insert(name.clone());
-        }
-        Expr::Group(e)
-        | Expr::Unary { expr: e, .. }
-        | Expr::Cast { expr: e, .. }
-        | Expr::Propagate { expr: e, .. } => {
-            scan_expr(e, out);
-        }
-        Expr::Binary { left, right, .. } => {
-            scan_expr(left, out);
-            scan_expr(right, out);
-        }
-        Expr::Call { callee, args, .. } => {
-            scan_expr(callee, out);
-            for a in args {
-                scan_expr(a, out);
-            }
-        }
-        Expr::MethodCall { receiver, args, .. } => {
-            scan_expr(receiver, out);
-            for a in args {
-                scan_expr(a, out);
-            }
-        }
-        Expr::List { elements, .. } => {
-            for e in elements {
-                scan_expr(e, out);
-            }
-        }
-        Expr::Map { entries, .. } => {
-            for (k, v) in entries {
-                scan_expr(k, out);
-                scan_expr(v, out);
-            }
-        }
-        Expr::StructLiteral { fields, .. } => {
-            for (_, e) in fields {
-                scan_expr(e, out);
-            }
-        }
-        Expr::EnumConstruct { data: Some(e), .. } => scan_expr(e, out),
-        Expr::FieldAccess { receiver, .. } => scan_expr(receiver, out),
-        Expr::Index { base, index, .. } => {
-            scan_expr(base, out);
-            scan_expr(index, out);
-        }
-        _ => {}
+    if let Expr::Ident { name, .. } = expr {
+        out.insert(name.clone());
+    }
+    for child in expr.children() {
+        scan_expr(child, out);
     }
 }
 
@@ -228,6 +184,13 @@ mod tests {
         assert!(diags
             .iter()
             .any(|d| d.code == "LINT301" && d.message.contains("bila_matumizi")));
+    }
+
+    #[test]
+    fn accepts_a_binding_used_only_inside_an_if_expression() {
+        let src = "kazi f(c: Ukweli) -> Namba {\nweka x = 1\nrejesha ikiwa c { x } vinginevyo { 0 }\n}";
+        let diags = lint(src);
+        assert!(!diags.iter().any(|d| d.code == "LINT301"), "{diags:?}");
     }
 
     #[test]
