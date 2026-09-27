@@ -1971,14 +1971,22 @@ pub fn run_bytecode_function(
     vm.call_values(index, args)
 }
 
+/// One call's register files. Native code reads `nums` through a raw pointer and `lists`
+/// through `jit::list_ptr`/`list_len`, so neither may be resized while the call runs.
 #[derive(Default)]
-struct Frame {
-    nums: Vec<f64>,
-    lists: Vec<Vec<f64>>,
-    vals: Vec<Value>,
+pub(crate) struct Frame {
+    pub(crate) nums: Vec<f64>,
+    pub(crate) lists: Vec<Vec<f64>>,
+    pub(crate) vals: Vec<Value>,
 }
 
-enum Ret {
+pub(crate) enum Flow {
+    Next,
+    Finish(Ret),
+    Fail(EvalError),
+}
+
+pub(crate) enum Ret {
     Num(f64),
     List(Vec<f64>),
     Val(Value),
@@ -1990,6 +1998,37 @@ struct Vm<'p> {
     builtin_index: HashMap<String, usize>,
     pool: Vec<Frame>,
     depth: usize,
+    #[cfg(not(target_arch = "wasm32"))]
+    jit: Option<crate::jit::Jit>,
+    /// Outcome of an instruction that native code handed to `exec_slow` and that ended the call.
+    pending: Option<Flow>,
+}
+
+/// `exec_slow` entry point for native code: `0` to continue, else a `jit::STATUS_*`.
+#[cfg(not(target_arch = "wasm32"))]
+extern "C" fn jit_exec(
+    vm: *mut std::ffi::c_void,
+    frame: *mut Frame,
+    function: u32,
+    pc: u32,
+) -> u32 {
+    // SAFETY: native code only calls this with the `Vm` and `Frame` that `run_native` passed
+    // in, both of which outlive the call and are not otherwise borrowed while it runs.
+    let vm = unsafe { &mut *(vm as *mut Vm<'static>) };
+    let frame = unsafe { &mut *frame };
+    let program = vm.program;
+    let op = &program.functions[function as usize].code[pc as usize];
+    match vm.exec_slow(op, frame) {
+        Flow::Next => 0,
+        flow @ Flow::Finish(_) => {
+            vm.pending = Some(flow);
+            crate::jit::STATUS_FINISH as u32
+        }
+        flow @ Flow::Fail(_) => {
+            vm.pending = Some(flow);
+            crate::jit::STATUS_FAIL as u32
+        }
+    }
 }
 
 const MAX_CALL_DEPTH: usize = 10_000;
@@ -2053,6 +2092,13 @@ impl<'p> Vm<'p> {
             builtin_index,
             pool: Vec::new(),
             depth: 0,
+            #[cfg(not(target_arch = "wasm32"))]
+            jit: if crate::jit::enabled() {
+                crate::jit::compile_program(program, &crate::jit::Callbacks { exec: jit_exec })
+            } else {
+                None
+            },
+            pending: None,
         })
     }
 
@@ -2099,8 +2145,50 @@ impl<'p> Vm<'p> {
             self.depth -= 1;
             return Err(EvalError::Unknown("undani mno".into()));
         }
-        let result = stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || self.run(index, frame));
+        let result = stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || {
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(native) = self.jit.as_ref().and_then(|j| j.funcs[index]) {
+                return self.run_native(native, index, frame);
+            }
+            self.run(index, frame)
+        });
         self.depth -= 1;
+        result
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn run_native(
+        &mut self,
+        native: crate::jit::NativeFn,
+        index: usize,
+        mut frame: Frame,
+    ) -> Result<Ret, EvalError> {
+        let nums = frame.nums.as_mut_ptr();
+        let vm = self as *mut Vm<'p> as *mut std::ffi::c_void;
+        // SAFETY: `native` was compiled from `program.functions[index]` for exactly this frame
+        // layout (`frame_for` sized every register file), and the frame is not resized while
+        // the call runs.
+        let status = unsafe { native(vm, &mut frame, nums) };
+        let pc = (status & 0xffff_ffff) as usize;
+        let result = match status >> 32 {
+            crate::jit::STATUS_RETURN => Ok(match &self.program.functions[index].code[pc] {
+                Opcode::Return { src } => match src.ty {
+                    Ty::Num | Ty::Bool => Ret::Num(frame.nums[src.reg as usize]),
+                    Ty::List => Ret::List(std::mem::take(&mut frame.lists[src.reg as usize])),
+                    Ty::Val => Ret::Val(std::mem::replace(
+                        &mut frame.vals[src.reg as usize],
+                        Value::Hamna,
+                    )),
+                },
+                _ => Ret::Val(Value::Tupu),
+            }),
+            _ => match self.pending.take() {
+                Some(Flow::Finish(ret)) => Ok(ret),
+                Some(Flow::Fail(err)) => Err(err),
+                _ => Err(EvalError::Unknown("hali ya msimbo asilia si sahihi".into())),
+            },
+        };
+        self.release(frame);
         result
     }
 
@@ -2265,10 +2353,6 @@ impl<'p> Vm<'p> {
                         pc = *target as usize;
                     }
                 }
-                Opcode::MakeNumList { dst, items } => {
-                    let list: Vec<f64> = items.iter().map(|r| n[*r as usize]).collect();
-                    frame.lists[*dst as usize] = list;
-                }
                 Opcode::ListGet { dst, list, idx } => {
                     let i = to_index(n[*idx as usize]);
                     let l = &frame.lists[*list as usize];
@@ -2280,15 +2364,6 @@ impl<'p> Vm<'p> {
                         }
                     }
                 }
-                Opcode::ListGetTokeo { dst, list, idx } => {
-                    let i = to_index(n[*idx as usize]);
-                    let l = &frame.lists[*list as usize];
-                    let v = match l.get(i) {
-                        Some(v) => Value::Tokeo(Ok(Box::new(Value::Namba(*v)))),
-                        None => methods::out_of_bounds(i, l.len()),
-                    };
-                    frame.vals[*dst as usize] = v;
-                }
                 Opcode::ListSet { list, idx, src } => {
                     let i = to_index(n[*idx as usize]);
                     let v = n[*src as usize];
@@ -2297,230 +2372,8 @@ impl<'p> Vm<'p> {
                         None => fail!(type_err("ingiza: index nje ya mipaka")),
                     }
                 }
-                Opcode::ListPush { list, src } => {
-                    let v = n[*src as usize];
-                    frame.lists[*list as usize].push(v);
-                }
-                Opcode::ListRemove { list, idx } => {
-                    let i = to_index(n[*idx as usize]);
-                    let l = &mut frame.lists[*list as usize];
-                    if i < l.len() {
-                        l.remove(i);
-                    }
-                }
-                Opcode::ListRemoveVal { dst, list, idx } => {
-                    let i = to_index(n[*idx as usize]);
-                    let l = &mut frame.lists[*list as usize];
-                    frame.vals[*dst as usize] = if i < l.len() {
-                        Value::Chaguo(Some(Box::new(Value::Namba(l.remove(i)))))
-                    } else {
-                        Value::Chaguo(None)
-                    };
-                }
                 Opcode::ListLen { dst, list } => {
                     n[*dst as usize] = frame.lists[*list as usize].len() as f64
-                }
-                Opcode::ListMov { dst, src } => {
-                    let copy = frame.lists[*src as usize].clone();
-                    frame.lists[*dst as usize] = copy;
-                }
-                Opcode::ListFromVal { dst, src } => {
-                    match list_from_value(&frame.vals[*src as usize]) {
-                        Ok(list) => frame.lists[*dst as usize] = list,
-                        Err(e) => fail!(e),
-                    }
-                }
-                Opcode::ListToVal { dst, src } => {
-                    let v = Value::Orodha(
-                        frame.lists[*src as usize]
-                            .iter()
-                            .map(|n| Value::Namba(*n))
-                            .collect(),
-                    );
-                    frame.vals[*dst as usize] = v;
-                }
-                Opcode::ConstVal { dst, k } => {
-                    frame.vals[*dst as usize] = program
-                        .constants
-                        .get(*k as usize)
-                        .map(StoredConstant::to_value)
-                        .unwrap_or(Value::Hamna)
-                }
-                Opcode::ValMov { dst, src } => {
-                    frame.vals[*dst as usize] = frame.vals[*src as usize].clone()
-                }
-                Opcode::BoxNum { dst, src } => {
-                    frame.vals[*dst as usize] = Value::Namba(n[*src as usize])
-                }
-                Opcode::BoxBool { dst, src } => {
-                    frame.vals[*dst as usize] = Value::Ukweli(n[*src as usize] != 0.0)
-                }
-                Opcode::UnboxNum { dst, src } => match &frame.vals[*src as usize] {
-                    Value::Namba(v) => frame.nums[*dst as usize] = *v,
-                    Value::Tokeo(Err(_)) => {
-                        let err = frame.vals[*src as usize].clone();
-                        finish!(Ret::Val(err));
-                    }
-                    other => fail!(EvalError::TypeErr(format!(
-                        "operesheni inahitaji Namba, ilipata {other:?}"
-                    ))),
-                },
-                Opcode::UnboxBool { dst, src } => {
-                    frame.nums[*dst as usize] =
-                        flag(matches!(frame.vals[*src as usize], Value::Ukweli(true)))
-                }
-                Opcode::ValBinary { op, dst, a, b } => {
-                    match value_binary(op, &frame.vals[*a as usize], &frame.vals[*b as usize]) {
-                        Ok(v) => frame.vals[*dst as usize] = v,
-                        Err(e) => fail!(e),
-                    }
-                }
-                Opcode::ValUnary { op, dst, src } => {
-                    let x = match value::as_f64(&frame.vals[*src as usize]) {
-                        Some(x) => x,
-                        None => fail!(type_err(match op {
-                            UnaryCode::Neg => "- inahitaji Namba",
-                            UnaryCode::BitNot => "siyo_biti inahitaji Namba",
-                        })),
-                    };
-                    frame.vals[*dst as usize] = Value::Namba(match op {
-                        UnaryCode::Neg => -x,
-                        UnaryCode::BitNot => !(x as i64) as f64,
-                    });
-                }
-                Opcode::ValIndex { dst, base, idx } => {
-                    match methods::index_value(
-                        &frame.vals[*base as usize],
-                        &frame.vals[*idx as usize],
-                    ) {
-                        Ok(v) => frame.vals[*dst as usize] = v,
-                        Err(e) => fail!(e),
-                    }
-                }
-                Opcode::ValLen { dst, src } => {
-                    let len = match &frame.vals[*src as usize] {
-                        Value::Orodha(items) => items.len(),
-                        Value::Neno(s) => {
-                            unicode_segmentation::UnicodeSegmentation::graphemes(s.as_str(), true)
-                                .count()
-                        }
-                        _ => fail!(type_err("urefu inahitaji Orodha au Neno")),
-                    };
-                    frame.nums[*dst as usize] = len as f64;
-                }
-                Opcode::Unwrap { dst, src } => {
-                    let out = match &frame.vals[*src as usize] {
-                        Value::Tokeo(Ok(inner)) | Value::Chaguo(Some(inner)) => {
-                            Ok((**inner).clone())
-                        }
-                        err @ Value::Tokeo(Err(_)) => Err(Ok(err.clone())),
-                        Value::Chaguo(None) => {
-                            Err(Err(EvalError::Unknown("? Chaguo Hamna".into())))
-                        }
-                        _ => Err(Err(type_err("? inahitaji Tokeo/Chaguo"))),
-                    };
-                    match out {
-                        Ok(v) => frame.vals[*dst as usize] = v,
-                        Err(Ok(err)) => finish!(Ret::Val(err)),
-                        Err(Err(e)) => fail!(e),
-                    }
-                }
-                Opcode::Jaribu { dst, src } => {
-                    let out = match &frame.vals[*src as usize] {
-                        Value::Tokeo(Ok(inner)) | Value::Chaguo(Some(inner)) => (**inner).clone(),
-                        Value::Tokeo(Err(e)) => {
-                            fail!(EvalError::Unknown(format!("KOSA: {e:?}")))
-                        }
-                        Value::Chaguo(None) => fail!(EvalError::Unknown("Chaguo: Hamna".into())),
-                        _ => fail!(type_err("jaribu inahitaji Tokeo/Chaguo")),
-                    };
-                    frame.vals[*dst as usize] = out;
-                }
-                Opcode::Cast { dst, src, ty } => {
-                    let v = frame.vals[*src as usize].clone();
-                    match methods::cast_value(v, ty) {
-                        Ok(v) => frame.vals[*dst as usize] = v,
-                        Err(e) => fail!(e),
-                    }
-                }
-                Opcode::MakeList { dst, items } => {
-                    let list = items
-                        .iter()
-                        .map(|r| frame.vals[*r as usize].clone())
-                        .collect();
-                    frame.vals[*dst as usize] = Value::Orodha(list);
-                }
-                Opcode::Call(call) => {
-                    let callee = &program.functions[call.function as usize];
-                    let mut callee_frame = self.frame_for(callee);
-                    for (arg, param) in call.args.iter().zip(&callee.params) {
-                        copy_operand(&frame, *arg, &mut callee_frame, *param);
-                    }
-                    let ret = match self.invoke(call.function as usize, callee_frame) {
-                        Ok(r) => r,
-                        Err(e) => fail!(e),
-                    };
-                    let dst = call.dst;
-                    match (ret, dst.ty) {
-                        (Ret::Num(v), Ty::Num | Ty::Bool) => frame.nums[dst.reg as usize] = v,
-                        (Ret::List(l), Ty::List) => frame.lists[dst.reg as usize] = l,
-                        (Ret::Val(v), Ty::Val) => frame.vals[dst.reg as usize] = v,
-                        // A typed callee that exited through `?` hands back its `Tokeo` error;
-                        // propagate it like the evaluator's early return.
-                        (Ret::Val(err @ Value::Tokeo(Err(_))), _) => finish!(Ret::Val(err)),
-                        (Ret::Val(v), ty) => {
-                            if let Err(e) = store_value(&mut frame, dst, v) {
-                                fail!(e);
-                            }
-                            let _ = ty;
-                        }
-                        (Ret::Num(v), Ty::Val) => {
-                            frame.vals[dst.reg as usize] = if callee.ret == Ty::Bool {
-                                Value::Ukweli(v != 0.0)
-                            } else {
-                                Value::Namba(v)
-                            }
-                        }
-                        (Ret::List(l), Ty::Val) => {
-                            frame.vals[dst.reg as usize] =
-                                Value::Orodha(l.into_iter().map(Value::Namba).collect())
-                        }
-                        _ => fail!(type_err("aina ya thamani ya kurudi si sahihi")),
-                    }
-                }
-                Opcode::CallBuiltin(call) => {
-                    let args: Vec<Value> = call
-                        .args
-                        .iter()
-                        .map(|r| frame.vals[*r as usize].clone())
-                        .collect();
-                    match (self.builtins[call.builtin as usize])(&args) {
-                        Ok(v) => frame.vals[call.dst as usize] = v,
-                        Err(e) => fail!(e),
-                    }
-                }
-                Opcode::CallMethod(call) => {
-                    let recv = frame.vals[call.recv as usize].clone();
-                    let args: Vec<Value> = call
-                        .args
-                        .iter()
-                        .map(|r| frame.vals[*r as usize].clone())
-                        .collect();
-                    match self.call_method(recv, &call.method, args) {
-                        Ok(v) => frame.vals[call.dst as usize] = v,
-                        Err(e) => fail!(e),
-                    }
-                }
-                Opcode::MutMethod(call) => {
-                    let args: Vec<Value> = call
-                        .args
-                        .iter()
-                        .map(|r| frame.vals[*r as usize].clone())
-                        .collect();
-                    match mut_method(&mut frame.vals[call.recv as usize], call.method, args) {
-                        Ok(v) => frame.vals[call.dst as usize] = v,
-                        Err(e) => fail!(e),
-                    }
                 }
                 Opcode::Return { src } => {
                     let ret = match src.ty {
@@ -2534,8 +2387,312 @@ impl<'p> Vm<'p> {
                     finish!(ret);
                 }
                 Opcode::ReturnTupu => finish!(Ret::Val(Value::Tupu)),
+                other => match self.exec_slow(other, &mut frame) {
+                    Flow::Next => {}
+                    Flow::Finish(ret) => finish!(ret),
+                    Flow::Fail(err) => fail!(err),
+                },
             }
         }
+    }
+
+    /// Execute one non-control instruction. Shared by the interpreter (for everything off the
+    /// numeric fast path) and by JIT-compiled code (for instructions it does not compile).
+    fn exec_slow(&mut self, op: &Opcode, frame: &mut Frame) -> Flow {
+        let program = self.program;
+        macro_rules! finish {
+            ($ret:expr) => {{
+                return Flow::Finish($ret);
+            }};
+        }
+        macro_rules! fail {
+            ($err:expr) => {{
+                return Flow::Fail($err);
+            }};
+        }
+        let n = &mut frame.nums;
+        match op {
+            Opcode::Mov { dst, src } => n[*dst as usize] = n[*src as usize],
+            Opcode::Add { dst, a, b } => n[*dst as usize] = n[*a as usize] + n[*b as usize],
+            Opcode::Sub { dst, a, b } => n[*dst as usize] = n[*a as usize] - n[*b as usize],
+            Opcode::Mul { dst, a, b } => n[*dst as usize] = n[*a as usize] * n[*b as usize],
+            Opcode::Div { dst, a, b } => n[*dst as usize] = n[*a as usize] / n[*b as usize],
+            Opcode::Rem { dst, a, b } => n[*dst as usize] = n[*a as usize] % n[*b as usize],
+            Opcode::Pow { dst, a, b } => n[*dst as usize] = n[*a as usize].powf(n[*b as usize]),
+            Opcode::Floor { dst, src } => n[*dst as usize] = n[*src as usize].floor(),
+            Opcode::Ceil { dst, src } => n[*dst as usize] = n[*src as usize].ceil(),
+            Opcode::MakeNumList { dst, items } => {
+                let list: Vec<f64> = items.iter().map(|r| n[*r as usize]).collect();
+                frame.lists[*dst as usize] = list;
+            }
+            Opcode::ListGet { dst, list, idx } => {
+                let i = to_index(n[*idx as usize]);
+                let l = &frame.lists[*list as usize];
+                match l.get(i) {
+                    Some(v) => frame.nums[*dst as usize] = *v,
+                    None => {
+                        let err = methods::out_of_bounds(i, l.len());
+                        finish!(Ret::Val(err));
+                    }
+                }
+            }
+            Opcode::ListGetTokeo { dst, list, idx } => {
+                let i = to_index(n[*idx as usize]);
+                let l = &frame.lists[*list as usize];
+                let v = match l.get(i) {
+                    Some(v) => Value::Tokeo(Ok(Box::new(Value::Namba(*v)))),
+                    None => methods::out_of_bounds(i, l.len()),
+                };
+                frame.vals[*dst as usize] = v;
+            }
+            Opcode::ListSet { list, idx, src } => {
+                let i = to_index(n[*idx as usize]);
+                let v = n[*src as usize];
+                match frame.lists[*list as usize].get_mut(i) {
+                    Some(slot) => *slot = v,
+                    None => fail!(type_err("ingiza: index nje ya mipaka")),
+                }
+            }
+            Opcode::ListPush { list, src } => {
+                let v = n[*src as usize];
+                frame.lists[*list as usize].push(v);
+            }
+            Opcode::ListRemove { list, idx } => {
+                let i = to_index(n[*idx as usize]);
+                let l = &mut frame.lists[*list as usize];
+                if i < l.len() {
+                    l.remove(i);
+                }
+            }
+            Opcode::ListRemoveVal { dst, list, idx } => {
+                let i = to_index(n[*idx as usize]);
+                let l = &mut frame.lists[*list as usize];
+                frame.vals[*dst as usize] = if i < l.len() {
+                    Value::Chaguo(Some(Box::new(Value::Namba(l.remove(i)))))
+                } else {
+                    Value::Chaguo(None)
+                };
+            }
+            Opcode::ListLen { dst, list } => {
+                n[*dst as usize] = frame.lists[*list as usize].len() as f64
+            }
+            Opcode::ListMov { dst, src } => {
+                let copy = frame.lists[*src as usize].clone();
+                frame.lists[*dst as usize] = copy;
+            }
+            Opcode::ListFromVal { dst, src } => match list_from_value(&frame.vals[*src as usize]) {
+                Ok(list) => frame.lists[*dst as usize] = list,
+                Err(e) => fail!(e),
+            },
+            Opcode::ListToVal { dst, src } => {
+                let v = Value::Orodha(
+                    frame.lists[*src as usize]
+                        .iter()
+                        .map(|n| Value::Namba(*n))
+                        .collect(),
+                );
+                frame.vals[*dst as usize] = v;
+            }
+            Opcode::ConstVal { dst, k } => {
+                frame.vals[*dst as usize] = program
+                    .constants
+                    .get(*k as usize)
+                    .map(StoredConstant::to_value)
+                    .unwrap_or(Value::Hamna)
+            }
+            Opcode::ValMov { dst, src } => {
+                frame.vals[*dst as usize] = frame.vals[*src as usize].clone()
+            }
+            Opcode::BoxNum { dst, src } => {
+                frame.vals[*dst as usize] = Value::Namba(n[*src as usize])
+            }
+            Opcode::BoxBool { dst, src } => {
+                frame.vals[*dst as usize] = Value::Ukweli(n[*src as usize] != 0.0)
+            }
+            Opcode::UnboxNum { dst, src } => match &frame.vals[*src as usize] {
+                Value::Namba(v) => frame.nums[*dst as usize] = *v,
+                Value::Tokeo(Err(_)) => {
+                    let err = frame.vals[*src as usize].clone();
+                    finish!(Ret::Val(err));
+                }
+                other => fail!(EvalError::TypeErr(format!(
+                    "operesheni inahitaji Namba, ilipata {other:?}"
+                ))),
+            },
+            Opcode::UnboxBool { dst, src } => {
+                frame.nums[*dst as usize] =
+                    flag(matches!(frame.vals[*src as usize], Value::Ukweli(true)))
+            }
+            Opcode::ValBinary { op, dst, a, b } => {
+                match value_binary(op, &frame.vals[*a as usize], &frame.vals[*b as usize]) {
+                    Ok(v) => frame.vals[*dst as usize] = v,
+                    Err(e) => fail!(e),
+                }
+            }
+            Opcode::ValUnary { op, dst, src } => {
+                let x = match value::as_f64(&frame.vals[*src as usize]) {
+                    Some(x) => x,
+                    None => fail!(type_err(match op {
+                        UnaryCode::Neg => "- inahitaji Namba",
+                        UnaryCode::BitNot => "siyo_biti inahitaji Namba",
+                    })),
+                };
+                frame.vals[*dst as usize] = Value::Namba(match op {
+                    UnaryCode::Neg => -x,
+                    UnaryCode::BitNot => !(x as i64) as f64,
+                });
+            }
+            Opcode::ValIndex { dst, base, idx } => {
+                match methods::index_value(&frame.vals[*base as usize], &frame.vals[*idx as usize])
+                {
+                    Ok(v) => frame.vals[*dst as usize] = v,
+                    Err(e) => fail!(e),
+                }
+            }
+            Opcode::ValLen { dst, src } => {
+                let len = match &frame.vals[*src as usize] {
+                    Value::Orodha(items) => items.len(),
+                    Value::Neno(s) => {
+                        unicode_segmentation::UnicodeSegmentation::graphemes(s.as_str(), true)
+                            .count()
+                    }
+                    _ => fail!(type_err("urefu inahitaji Orodha au Neno")),
+                };
+                frame.nums[*dst as usize] = len as f64;
+            }
+            Opcode::Unwrap { dst, src } => {
+                let out = match &frame.vals[*src as usize] {
+                    Value::Tokeo(Ok(inner)) | Value::Chaguo(Some(inner)) => Ok((**inner).clone()),
+                    err @ Value::Tokeo(Err(_)) => Err(Ok(err.clone())),
+                    Value::Chaguo(None) => Err(Err(EvalError::Unknown("? Chaguo Hamna".into()))),
+                    _ => Err(Err(type_err("? inahitaji Tokeo/Chaguo"))),
+                };
+                match out {
+                    Ok(v) => frame.vals[*dst as usize] = v,
+                    Err(Ok(err)) => finish!(Ret::Val(err)),
+                    Err(Err(e)) => fail!(e),
+                }
+            }
+            Opcode::Jaribu { dst, src } => {
+                let out = match &frame.vals[*src as usize] {
+                    Value::Tokeo(Ok(inner)) | Value::Chaguo(Some(inner)) => (**inner).clone(),
+                    Value::Tokeo(Err(e)) => {
+                        fail!(EvalError::Unknown(format!("KOSA: {e:?}")))
+                    }
+                    Value::Chaguo(None) => fail!(EvalError::Unknown("Chaguo: Hamna".into())),
+                    _ => fail!(type_err("jaribu inahitaji Tokeo/Chaguo")),
+                };
+                frame.vals[*dst as usize] = out;
+            }
+            Opcode::Cast { dst, src, ty } => {
+                let v = frame.vals[*src as usize].clone();
+                match methods::cast_value(v, ty) {
+                    Ok(v) => frame.vals[*dst as usize] = v,
+                    Err(e) => fail!(e),
+                }
+            }
+            Opcode::MakeList { dst, items } => {
+                let list = items
+                    .iter()
+                    .map(|r| frame.vals[*r as usize].clone())
+                    .collect();
+                frame.vals[*dst as usize] = Value::Orodha(list);
+            }
+            Opcode::Call(call) => {
+                let callee = &program.functions[call.function as usize];
+                let mut callee_frame = self.frame_for(callee);
+                for (arg, param) in call.args.iter().zip(&callee.params) {
+                    copy_operand(frame, *arg, &mut callee_frame, *param);
+                }
+                let ret = match self.invoke(call.function as usize, callee_frame) {
+                    Ok(r) => r,
+                    Err(e) => fail!(e),
+                };
+                let dst = call.dst;
+                match (ret, dst.ty) {
+                    (Ret::Num(v), Ty::Num | Ty::Bool) => frame.nums[dst.reg as usize] = v,
+                    (Ret::List(l), Ty::List) => frame.lists[dst.reg as usize] = l,
+                    (Ret::Val(v), Ty::Val) => frame.vals[dst.reg as usize] = v,
+                    // A typed callee that exited through `?` hands back its `Tokeo` error;
+                    // propagate it like the evaluator's early return.
+                    (Ret::Val(err @ Value::Tokeo(Err(_))), _) => finish!(Ret::Val(err)),
+                    (Ret::Val(v), ty) => {
+                        if let Err(e) = store_value(frame, dst, v) {
+                            fail!(e);
+                        }
+                        let _ = ty;
+                    }
+                    (Ret::Num(v), Ty::Val) => {
+                        frame.vals[dst.reg as usize] = if callee.ret == Ty::Bool {
+                            Value::Ukweli(v != 0.0)
+                        } else {
+                            Value::Namba(v)
+                        }
+                    }
+                    (Ret::List(l), Ty::Val) => {
+                        frame.vals[dst.reg as usize] =
+                            Value::Orodha(l.into_iter().map(Value::Namba).collect())
+                    }
+                    _ => fail!(type_err("aina ya thamani ya kurudi si sahihi")),
+                }
+            }
+            Opcode::CallBuiltin(call) => {
+                let args: Vec<Value> = call
+                    .args
+                    .iter()
+                    .map(|r| frame.vals[*r as usize].clone())
+                    .collect();
+                match (self.builtins[call.builtin as usize])(&args) {
+                    Ok(v) => frame.vals[call.dst as usize] = v,
+                    Err(e) => fail!(e),
+                }
+            }
+            Opcode::CallMethod(call) => {
+                let recv = frame.vals[call.recv as usize].clone();
+                let args: Vec<Value> = call
+                    .args
+                    .iter()
+                    .map(|r| frame.vals[*r as usize].clone())
+                    .collect();
+                match self.call_method(recv, &call.method, args) {
+                    Ok(v) => frame.vals[call.dst as usize] = v,
+                    Err(e) => fail!(e),
+                }
+            }
+            Opcode::MutMethod(call) => {
+                let args: Vec<Value> = call
+                    .args
+                    .iter()
+                    .map(|r| frame.vals[*r as usize].clone())
+                    .collect();
+                match mut_method(&mut frame.vals[call.recv as usize], call.method, args) {
+                    Ok(v) => frame.vals[call.dst as usize] = v,
+                    Err(e) => fail!(e),
+                }
+            }
+            Opcode::Jump { .. }
+            | Opcode::JumpIfFalse { .. }
+            | Opcode::JumpIfTrue { .. }
+            | Opcode::JumpIfNot { .. }
+            | Opcode::ForStep { .. }
+            | Opcode::Return { .. }
+            | Opcode::ReturnTupu
+            | Opcode::Neg { .. }
+            | Opcode::BitNot { .. }
+            | Opcode::Not { .. }
+            | Opcode::Trunc { .. }
+            | Opcode::Cmp { .. }
+            | Opcode::BitAnd { .. }
+            | Opcode::BitOr { .. }
+            | Opcode::BitXor { .. }
+            | Opcode::Shl { .. }
+            | Opcode::Shr { .. } => {
+                fail!(EvalError::Unknown(
+                    "amri ya udhibiti nje ya mzunguko".into()
+                ))
+            }
+        }
+        Flow::Next
     }
 }
 

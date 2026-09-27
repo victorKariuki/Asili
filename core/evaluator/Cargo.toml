@@ -29,6 +29,13 @@ signal-hook = "0.4"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rustls = "0.23"
 rustls-pemfile = "2"
+# Native code generation for `.asb` bytecode (see src/jit.rs). Pure Rust, no system toolchain;
+# absent on wasm32, where the register VM interprets bytecode instead.
+cranelift-codegen = "0.134"
+cranelift-frontend = "0.134"
+cranelift-jit = "0.134"
+cranelift-module = "0.134"
+cranelift-native = "0.134"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # `rand` 0.10 pulls in getrandom 0.4, which needs this explicitly enabled to build for

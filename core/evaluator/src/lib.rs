@@ -6,6 +6,8 @@ mod bytecode;
 pub mod debug_hook;
 mod env;
 mod eval;
+#[cfg(not(target_arch = "wasm32"))]
+mod jit;
 mod platform;
 pub mod runtime;
 mod signal;
