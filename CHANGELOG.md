@@ -46,6 +46,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   locally, the chosen tarball's SHA-256 is verified before extraction, and later builds stay
   offline.
 
+- **LSP re-checks only what a file change affects**: when a file changes on disk, Mwalimu
+  re-publishes diagnostics only for open documents that are, or transitively import, that file,
+  and leaves other projects' documents alone (previously every open document was re-analyzed).
+
 ### Changed
 
 - **Indexing an `Orodha` returns the element**: `a[i]` is now the element itself and an

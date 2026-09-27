@@ -38,11 +38,6 @@ use pata_core::Dependency;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-const STDLIB_MODULES: &[&str] = &[
-    "msingi", "mfumo", "majira", "matumizi", "faili", "hisabati", "runtime", "syscall", "kiungo",
-    "sambamba",
-];
-
 /// One resolved project-local module: its parsed AST plus the file it came from.
 #[derive(Clone)]
 pub struct WorkspaceModule {
@@ -99,6 +94,35 @@ impl WorkspaceIndex {
             }
         }
         seen
+    }
+
+    /// Whether the diagnostics of the file at `doc` can depend on any of `changed` (files that
+    /// changed on disk): true when `doc` is one of them, imports one of them transitively, or
+    /// isn't part of this index at all (nothing is known about it, so assume yes).
+    pub fn is_affected_by(&self, changed: &[PathBuf], doc: &Path) -> bool {
+        let canon = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+        let doc = canon(doc);
+        let changed: HashSet<PathBuf> = changed.iter().map(|p| canon(p)).collect();
+        let Some(doc_name) = self
+            .modules
+            .iter()
+            .find(|(_, wm)| canon(&wm.path) == doc)
+            .map(|(name, _)| name.clone())
+        else {
+            return true;
+        };
+        if changed.contains(&doc) {
+            return true;
+        }
+        // A changed file's module name is its stem, whether or not the index already holds it
+        // (a newly created module that `doc` imports is not in the old index yet).
+        changed.iter().any(|path| {
+            let name = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            self.transitive_importers(&name).contains(&doc_name)
+        })
     }
 
     /// Names of every project-local module this index knows about — for
@@ -249,7 +273,7 @@ pub fn resolve_workspace(root: &Path, cache: &mut ModuleCache) -> WorkspaceIndex
                 ImportPath::Full(s) => s.as_str(),
                 ImportPath::Selective { module, .. } => module.as_str(),
             };
-            if STDLIB_MODULES.contains(&mod_name) {
+            if asili_parser::builtins::BUILTIN_MODULE_NAMES.contains(&mod_name) {
                 continue;
             }
             // Record the edge regardless of whether `mod_name` was already discovered via some
@@ -391,6 +415,42 @@ mod tests {
             "kuu.as's changed content (1 more real parse) plus msaidizi.as being newly discovered and parsed for the first time (1 more) = 3 total real parses across both calls"
         );
 
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    /// Issue #25: a file changing on disk re-checks only the documents that depend on it —
+    /// the file itself and its transitive importers — not every open file in the project.
+    #[test]
+    fn is_affected_by_follows_transitive_imports_only() {
+        let project = temp_project("affected");
+        // Imported modules resolve from the project root (see find_module_file); the entrypoint
+        // lives in src/.
+        std::fs::write(
+            project.join("src/kuu.as"),
+            "leta a\nleta c\nkazi kuu() -> Tupu { }",
+        )
+        .unwrap();
+        let src = project.clone();
+        std::fs::write(src.join("a.as"), "leta b\numma kazi fa() -> Tupu { }").unwrap();
+        std::fs::write(src.join("b.as"), "umma kazi fb() -> Tupu { }").unwrap();
+        std::fs::write(src.join("c.as"), "umma kazi fc() -> Tupu { }").unwrap();
+        std::fs::write(src.join("pekee.as"), "kazi p() -> Tupu { }").unwrap();
+        let index = resolve_workspace(&project, &mut ModuleCache::default());
+        let affected =
+            |changed: &str, doc: &str| index.is_affected_by(&[src.join(changed)], &src.join(doc));
+
+        assert!(affected("b.as", "b.as"), "the changed file itself");
+        assert!(affected("b.as", "a.as"), "direct importer");
+        assert!(affected("b.as", "kuu.as"), "transitive importer");
+        assert!(
+            !affected("b.as", "c.as"),
+            "unrelated sibling keeps its diagnostics"
+        );
+        assert!(!affected("c.as", "a.as"));
+        assert!(
+            affected("b.as", "pekee.as"),
+            "a file outside the import graph is re-checked conservatively"
+        );
         std::fs::remove_dir_all(&project).ok();
     }
 
