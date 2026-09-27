@@ -39,8 +39,8 @@ Default-imported. No OS dependency. The Phase I interpreter provides selected st
 
 ### Kasha_GC\<T\> (opt-in managed memory)
 
-Builtin stdlib exports are ambient, so `leta kasha_gc` is optional documentation rather than a
-requirement. A minimal, deliberately small reference-counted
+Unlike the other builtin modules, `kasha_gc` is **not** ambient: `leta kasha_gc` is required
+(managed memory is opt-in; `core/parser/src/builtins.rs::OPT_IN_MODULES`). A minimal, deliberately small reference-counted
 wrapper (`Rc<RefCell<Value>>`), the concrete realization of the "managed/GC modules" concept in
 [07-execution-and-roadmap.md](07-execution-and-roadmap.md). Sharing is explicit via
 `.shirikisha()` (like Rust's `Rc::clone`) — a plain `weka b = a` still moves, so wrapping in
@@ -55,7 +55,7 @@ every strong handle has already dropped). Holding the weak reference in one side
 
 ## Moduli ya Mfumo (System)
 
-Requires `leta mfumo`. OS-dependent.
+Builtin exports are ambient; `leta mfumo` remains optional documentation. OS-dependent.
 
 ### Ingizo/Tokeo (I/O)
 
