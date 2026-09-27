@@ -111,6 +111,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Import cycles name the modules involved**: `RES001` now reads e.g.
+  `mzunguko wa moduli: a → b → c → a` and points at the `leta` line that closes the loop (it
+  used to say only that a module imported itself, with no location). Module ordering after
+  resolution reports a cycle instead of panicking.
 - **`lib/std` interface stubs match the real builtins again**: 25 missing functions added
   (`faili_fungua`, `tenda`/`njia`/`fungo`, the JSON, TCP and TLS functions in `mfumo`, `seti`,
   `kumbukumbu_unda`, the `runtime` probes and more), the nonexistent `anza_mwendo`/`subiri_mwendo`

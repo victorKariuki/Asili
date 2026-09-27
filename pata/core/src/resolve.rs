@@ -10,7 +10,7 @@ use crate::interface_registry::{InterfaceRegistry, StdlibEnv};
 use asili_diagnostics::Diagnostic;
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, parse_value_type, FnContract, ImportPath, Module, ValueType};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -127,23 +127,25 @@ pub fn find_module_file(
 }
 
 /// Resolve a single module by name: load file, parse, recursively resolve its imports.
+/// `loading` is the stack of modules currently being resolved (outermost first) and
+/// `import_line` the line of the `leta` that asked for `name`, so a cycle can be reported as
+/// the actual chain at the import that closes it.
+#[allow(clippy::too_many_arguments)]
 fn resolve_one(
     name: &str,
+    import_line: usize,
     root: &Path,
     dependencies: &BTreeMap<String, Dependency>,
     resolved: &mut HashMap<String, ResolvedModule>,
-    loading: &mut HashSet<String>,
+    loading: &mut Vec<String>,
     errors: &mut Vec<Diagnostic>,
     registry: &mut InterfaceRegistry,
 ) {
     if resolved.contains_key(name) {
         return;
     }
-    if loading.contains(name) {
-        errors.push(
-            Diagnostic::new("RES001", "mzunguko wa moduli: moduli imejirejea")
-                .with_stage("utatuzi"),
-        );
+    if let Some(start) = loading.iter().position(|m| m == name) {
+        errors.push(cycle_diagnostic(&loading[start..], name).with_span(import_line, 1));
         return;
     }
     if let Some(iface) = registry.get(name) {
@@ -193,10 +195,10 @@ fn resolve_one(
             return;
         }
     };
-    loading.insert(name.to_string());
+    loading.push(name.to_string());
 
     if is_asi {
-        loading.remove(name);
+        loading.pop();
         match registry.get_or_load(name, &path) {
             Ok(iface) => {
                 let (functions, constants) = iface.to_export_table();
@@ -239,7 +241,7 @@ fn resolve_one(
                 )
                 .with_stage("utatuzi"),
             );
-            loading.remove(name);
+            loading.pop();
             return;
         }
     };
@@ -249,7 +251,7 @@ fn resolve_one(
             for d in lex_errs {
                 errors.push(d);
             }
-            loading.remove(name);
+            loading.pop();
             return;
         }
     };
@@ -259,7 +261,7 @@ fn resolve_one(
             for d in parse_errs {
                 errors.push(d);
             }
-            loading.remove(name);
+            loading.pop();
             return;
         }
     };
@@ -270,6 +272,7 @@ fn resolve_one(
         };
         resolve_one(
             dep_name,
+            imp.line,
             root,
             dependencies,
             resolved,
@@ -278,7 +281,7 @@ fn resolve_one(
             registry,
         );
     }
-    loading.remove(name);
+    loading.pop();
     let exports = build_export_table(&module);
     resolved.insert(
         name.to_string(),
@@ -298,7 +301,7 @@ pub fn resolve_all(
     registry: &mut InterfaceRegistry,
 ) -> Result<ResolvedProgram, Vec<Diagnostic>> {
     let mut resolved = HashMap::new();
-    let mut loading = HashSet::new();
+    let mut loading = Vec::new();
     let mut errors = Vec::new();
     for imp in &entrypoint.imports {
         let name = match &imp.path {
@@ -307,6 +310,7 @@ pub fn resolve_all(
         };
         resolve_one(
             name,
+            imp.line,
             root,
             dependencies,
             &mut resolved,
@@ -378,37 +382,48 @@ pub fn merge_for_semantic(
     (functions, constants)
 }
 
-/// Return resolved module names in dependency order (dependencies first).
-pub fn dependency_order(resolved: &HashMap<String, ResolvedModule>) -> Vec<String> {
-    let names: Vec<String> = resolved.keys().cloned().collect();
+/// RES001: the modules in `chain` import each other in a loop back to `closing`.
+fn cycle_diagnostic(chain: &[String], closing: &str) -> Diagnostic {
+    let mut path: Vec<&str> = chain.iter().map(String::as_str).collect();
+    path.push(closing);
+    Diagnostic::new(
+        "RES001",
+        format!("mzunguko wa moduli: {}", path.join(" → ")),
+    )
+    .with_stage("utatuzi")
+}
+
+/// Resolved module names in dependency order (dependencies first). `resolve_all` already rejects
+/// import cycles (RES001); if one reaches here anyway it is reported, never a panic.
+pub fn dependency_order(
+    resolved: &HashMap<String, ResolvedModule>,
+) -> Result<Vec<String>, Diagnostic> {
+    let imports_of = |name: &str| -> Vec<&str> {
+        resolved[name]
+            .module
+            .imports
+            .iter()
+            .map(|imp| match &imp.path {
+                ImportPath::Full(n) => n.as_str(),
+                ImportPath::Selective { module: n, .. } => n.as_str(),
+            })
+            .collect()
+    };
+    let mut remaining: Vec<String> = resolved.keys().cloned().collect();
+    remaining.sort(); // deterministic order among independent modules
     let mut order = Vec::new();
-    let mut remaining: HashSet<String> = names.into_iter().collect();
     while !remaining.is_empty() {
-        let mut found = None;
-        for name in &remaining {
-            let res = &resolved[name];
-            let deps: Vec<&str> = res
-                .module
-                .imports
+        let ready = remaining.iter().position(|name| {
+            imports_of(name)
                 .iter()
-                .map(|imp| match &imp.path {
-                    ImportPath::Full(n) => n.as_str(),
-                    ImportPath::Selective { module: n, .. } => n.as_str(),
-                })
-                .filter(|n| remaining.contains(*n))
-                .collect();
-            if deps.is_empty() {
-                found = Some(name.clone());
-                break;
-            }
-        }
-        // HACK: dependency_order() panics if a cycle slips through (e.g. RES001 was not triggered).
-        // Should return Result<Vec<String>, Diagnostic> so the caller can surface the error cleanly.
-        let name = found.expect("cycle in resolved modules (should be prevented by RES001)");
-        remaining.remove(&name);
-        order.push(name);
+                .all(|d| !remaining.iter().any(|r| r == d))
+        });
+        let Some(i) = ready else {
+            return Err(cycle_diagnostic(&remaining, &remaining[0]));
+        };
+        order.push(remaining.remove(i));
     }
-    order
+    Ok(order)
 }
 
 /// Marker for names that come from the ambient builtin prelude rather than an explicit `leta`.
@@ -499,6 +514,53 @@ mod tests {
             exports,
             is_stdlib: false,
         }
+    }
+
+    #[test]
+    fn import_cycle_is_reported_as_the_chain_at_the_closing_import() {
+        let root = std::env::temp_dir().join(format!("pata-core-cycle-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("a.as"),
+            "leta b\numma kazi fa() -> Namba { rejesha 1 }",
+        )
+        .unwrap();
+        fs::write(
+            root.join("b.as"),
+            "\nleta a\numma kazi fb() -> Namba { rejesha 2 }",
+        )
+        .unwrap();
+        let entry = module("leta a\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { }");
+        let mut registry = InterfaceRegistry::new(root.clone());
+        let errors = match resolve_all(&entry, &root, &BTreeMap::new(), &mut registry) {
+            Err(errors) => errors,
+            Ok(_) => panic!("a cycle must not resolve"),
+        };
+        fs::remove_dir_all(&root).ok();
+        let cycle = errors.iter().find(|d| d.code == "RES001").expect("RES001");
+        assert!(cycle.message.contains("a → b → a"), "{}", cycle.message);
+        assert_eq!(
+            cycle.span.as_ref().map(|s| s.line),
+            Some(2),
+            "points at b.as's `leta a`"
+        );
+    }
+
+    #[test]
+    fn dependency_order_reports_a_cycle_instead_of_panicking() {
+        let with_import = |dep: &str| ResolvedModule {
+            module: module(&format!("leta {dep}\numma kazi f() -> Tupu {{ }}")),
+            exports: ExportTable::default(),
+            is_stdlib: false,
+        };
+        let resolved: HashMap<String, ResolvedModule> = [
+            ("x".to_string(), with_import("y")),
+            ("y".to_string(), with_import("x")),
+        ]
+        .into_iter()
+        .collect();
+        let err = dependency_order(&resolved).expect_err("cycle");
+        assert_eq!(err.code, "RES001");
     }
 
     #[test]

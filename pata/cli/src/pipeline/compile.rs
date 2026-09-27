@@ -81,7 +81,10 @@ pub fn project_input_hash(
     entry_content.hash(&mut h);
     target.0.hash(&mut h);
     let mut pairs: Vec<(String, String)> = Vec::new();
-    for name in dependency_order(&program.resolved) {
+    // Any fixed order works for a fingerprint; sorted names don't depend on import structure.
+    let mut names: Vec<&String> = program.resolved.keys().collect();
+    names.sort();
+    for name in names {
         let content = if let Some((path, _)) = find_module_file(name.as_str(), root, dependencies) {
             fs::read_to_string(&path).unwrap_or_default()
         } else {
@@ -240,7 +243,8 @@ fn check_program(
     // Modules the resolver already confirmed exist (project-local files, path/vendored
     // dependencies) are allowed `leta` targets alongside the builtin-module whitelist.
     let resolved_modules: HashSet<String> = program.resolved.keys().cloned().collect();
-    for name in dependency_order(&program.resolved) {
+    let order = dependency_order(&program.resolved).map_err(|d| diag_err("utatuzi", vec![d]))?;
+    for name in order {
         let res = &program.resolved[&name];
         let (ext_fns, ext_consts) = merge_for_semantic(&res.module, &program.resolved, prelude);
         semantic_check_with_env_and_modules(
