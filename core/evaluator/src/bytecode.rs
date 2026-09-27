@@ -2110,9 +2110,9 @@ pub fn run_bytecode_native(
 pub enum Engine<'l> {
     /// The register VM's interpreter only.
     Interpreter,
-    /// An LLVM AOT library built for this program.
+    /// Native code built for this program.
     #[cfg(not(target_arch = "wasm32"))]
-    Aot(&'l crate::aot::NativeLibrary),
+    Native(&'l crate::aot::NativeLibrary),
     /// Keeps the lifetime used on targets without native tiers.
     #[cfg(target_arch = "wasm32")]
     #[doc(hidden)]
@@ -2136,7 +2136,7 @@ pub fn run_bytecode_function_on(
         #[cfg(target_arch = "wasm32")]
         Engine::_Unused(_) => Vm::new(program)?,
         #[cfg(not(target_arch = "wasm32"))]
-        Engine::Aot(lib) => Vm::with_aot(program, lib)?,
+        Engine::Native(lib) => Vm::with_aot(program, lib)?,
     };
     vm.call_values(index, args)
 }

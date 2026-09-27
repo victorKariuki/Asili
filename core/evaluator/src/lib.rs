@@ -525,33 +525,23 @@ pub fn run_asb(
         let program = load_asb_bytecode(bytes).map_err(|e| RunAsbError::Load(e.to_string()))?;
         #[cfg(not(target_arch = "wasm32"))]
         {
-            // Native code beside the artifact: the in-house image (`<name>.nguvu`, written by
-            // `pata jenga` with no external tools), else the LLVM library (`<name>.so`, when
-            // `pata jenga` had clang). `ASILI_NGUVU=0` prefers the LLVM library; `ASILI_NGUVU=1`
-            // uses only the in-house backend, compiling in memory when no image was built.
-            // Anything missing or stale just means running on the VM.
-            let choice = std::env::var("ASILI_NGUVU").ok();
-            let own = nguvu::supported() && choice.as_deref() != Some("0");
-            let beside = |file: fn(&str) -> String| {
-                let path = asb_path?;
-                let lib = path.with_file_name(file(path.file_stem()?.to_str()?));
-                lib.is_file().then_some(lib)
-            };
+            // Native code beside the artifact: the machine-code image `pata jenga` wrote
+            // (`<name>.nguvu`). `ASILI_NGUVU=1` compiles in memory when there is none; otherwise
+            // anything missing or stale just means running on the VM.
             let image = || {
-                beside(nguvu::image_file_name).and_then(|p| nguvu::load_image(&p, &program).ok())
+                let path = asb_path?;
+                let file = path.with_file_name(nguvu::image_file_name(path.file_stem()?.to_str()?));
+                file.is_file()
+                    .then(|| nguvu::load_image(&file, &program).ok())
+                    .flatten()
             };
-            let llvm = || {
-                beside(aot::library_file_name)
-                    .and_then(|p| aot::NativeLibrary::load(&p, &program).ok())
-            };
-            let library = if !aot::enabled() {
+            let in_memory = std::env::var("ASILI_NGUVU").is_ok_and(|v| v == "1");
+            let library = if !aot::enabled() || !nguvu::supported() {
                 None
-            } else if choice.as_deref() == Some("1") && own {
+            } else if in_memory {
                 image().or_else(|| nguvu::compile(&program).ok())
-            } else if own {
-                image().or_else(llvm)
             } else {
-                llvm()
+                image()
             };
             return run_bytecode_native(&program, library.as_ref(), args).map_err(RunAsbError::Run);
         }

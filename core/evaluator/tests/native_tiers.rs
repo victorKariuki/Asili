@@ -1,11 +1,9 @@
 //! Differential tests: every snippet must produce bit-identical results on the register VM's
-//! interpreter, the LLVM AOT library (when `clang` is available) and the in-house `nguvu`
-//! backend.
+//! interpreter and the native `nguvu` code (loaded through its on-disk image).
 //! The snippets target the places where native code could diverge from `f64` semantics:
 //! -0.0, NaN, infinities, integers beyond 2^53 (speculation/deoptimization), remainders and
 //! floor division of negatives, out-of-range shifts, and out-of-bounds list access.
 
-use asili_evaluator::aot::{build_library, AotError, NativeLibrary};
 use asili_evaluator::{compile_module, run_bytecode_function_on, Engine, Value};
 use asili_lexer::tokenize;
 use asili_parser::parse_tokens;
@@ -31,14 +29,6 @@ fn check(name: &str, source: &str, functions: &[&str]) {
     let program = compile_module(&module).expect("subset should lower to bytecode");
     let dir = std::env::temp_dir().join(format!("asili-aot-{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
-    let lib = match build_library(&program, &dir, name) {
-        Ok(path) => Some(NativeLibrary::load(&path, &program).expect("load AOT library")),
-        Err(AotError::Unavailable(why)) => {
-            eprintln!("{name}: AOT skipped ({why})");
-            None
-        }
-        Err(AotError::Failed(why)) => panic!("{name}: AOT build failed: {why}"),
-    };
     // Through the on-disk image, as `pata jenga` + `pata tenda` run it.
     let own = asili_evaluator::nguvu::supported().then(|| {
         let path = asili_evaluator::nguvu::write_image(&program, &dir, name).expect("nguvu image");
@@ -51,16 +41,9 @@ fn check(name: &str, source: &str, functions: &[&str]) {
                 .unwrap_or_else(|e| format!("ERR {e}"))
         };
         let interpreted = run(Engine::Interpreter);
-        if let Some(lib) = &lib {
-            assert_eq!(
-                run(Engine::Aot(lib)),
-                interpreted,
-                "{name}::{function}: AOT differs"
-            );
-        }
         if let Some(own) = &own {
             assert_eq!(
-                run(Engine::Aot(own)),
+                run(Engine::Native(own)),
                 interpreted,
                 "{name}::{function}: nguvu differs"
             );

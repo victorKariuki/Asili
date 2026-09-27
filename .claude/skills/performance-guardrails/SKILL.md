@@ -1,6 +1,6 @@
 ---
 name: performance-guardrails
-description: Keep Asili at C speed and keep its execution engines agreeing. Use before finishing ANY change to core/evaluator (bytecode.rs, aot.rs, native.rs, eval/ops.rs, eval/methods.rs, builtins/*), to parser lowering/desugaring (parse.rs), to the .asb format, or to examples/sudoku — and whenever adding an operator, builtin, method, opcode, Expr/Stmt variant or keyword. Covers the architecture invariants, the required tests, the Sudoku benchmark and its thresholds, and how to debug a regression.
+description: Keep Asili at C speed and keep its execution engines agreeing. Use before finishing ANY change to core/evaluator (bytecode.rs, nguvu/, aot.rs, native.rs, eval/ops.rs, eval/methods.rs, builtins/*), to parser lowering/desugaring (parse.rs), to the .asb format, or to examples/sudoku — and whenever adding an operator, builtin, method, opcode, Expr/Stmt variant or keyword. Covers the architecture invariants, the required tests, the Sudoku benchmark and its thresholds, and how to debug a regression.
 ---
 
 # Performance guardrails
@@ -16,10 +16,15 @@ the checklist that stops that. `docs/design/performance.md` has the full design 
 | Tier | Where | When it runs |
 |---|---|---|
 | Tree-walking evaluator | `core/evaluator/src/eval/` | REPL, `pata jaribu`, AST `.asb` artifacts, any program the bytecode compiler can't lower |
-| Typed register VM | `core/evaluator/src/bytecode.rs` | `.asb` bytecode artifacts when no native library is available (`ASILI_AOT=0`, no clang, wasm) |
-| LLVM AOT native code | `core/evaluator/src/aot.rs` (+ `native.rs` analysis) | `pata jenga` emits `kilele/<name>.ll`, `clang -O2 -shared` builds `kilele/<name>.so`; `pata tenda`/`jenga --tenda`/runner load it if its hash matches the bytecode |
+| Typed register VM | `core/evaluator/src/bytecode.rs` | `.asb` bytecode artifacts without native code (`ASILI_AOT=0`, a platform without a backend, wasm) |
+| Native code (`nguvu`) | `core/evaluator/src/nguvu/` (+ `native.rs` analysis, `aot.rs` hash/ABI) | `pata jenga` writes `kilele/<name>.nguvu`; `pata tenda`/`jenga --tenda`/runner map it if its hash, ABI, architecture and CPU features match |
 
-clang is needed only where `pata jenga` runs — not to build `pata`, not to run a built program.
+No external tool is involved anywhere: not to build `pata`, not in `pata jenga`, not to run.
+
+`nguvu` pipeline: `lower.rs` (bytecode → typed IR; unrolls small constant-bound loops) →
+`opt.rs` (constant folding, `range.rs` interval analysis, if-conversion, bit-test/popcount
+fusion, value reuse, constant hoisting, liveness DCE) → `regalloc.rs` → `codegen.rs` with
+`x64.rs` (x86-64 encoder) → `mem.rs` (executable mapping).
 
 ## Invariants — never break these
 
@@ -30,8 +35,11 @@ clang is needed only where `pata jenga` runs — not to build `pata`, not to run
    instructions in native code call back into `Vm::exec_slow` through the runtime ABI table.
    If you find yourself writing a second `match` over `BinaryOp` semantics, stop and call the
    shared function instead.
-2. **One native backend.** LLVM IR text → clang. No JIT, no C transpiler. (A Cranelift JIT was
-   removed on purpose; see commit `d77a8c4` if you need to read it.)
+2. **One native backend.** `nguvu`, in-house, ahead of time. No external compiler/assembler/
+   linker, no C transpiler, no JIT. (A Cranelift JIT and an LLVM IR → clang backend were both
+   removed on purpose; see commit `d77a8c4` and the history of `aot.rs` if you need them.)
+   Every IR transform must keep bit-identical results; an optimization that can't prove its
+   precondition leaves the code alone.
 3. **Native code is bit-identical to the interpreter.** A `Namba` register may be lowered to
    `i64` only when `native::analyze_numbers` proves it whole, never NaN, never `-0.0`, and within
    ±2^53 — or when it is *speculated* with a ±2^53 guard that deoptimizes (`STATUS_DEOPT`) back
@@ -44,8 +52,9 @@ clang is needed only where `pata jenga` runs — not to build `pata`, not to run
    stale fact: silent miscompilation.
 5. **Formats are versioned.** Changing `Opcode`'s serialized shape → bump `BYTECODE_VERSION`
    in `asb.rs`. Changing the runtime ABI struct, a native function signature, or anything the
-   emitted IR assumes about the VM → bump `ABI_VERSION` in `aot.rs`. A stale `.so` must be
-   rejected, never loaded.
+   generated code assumes about the VM → bump `ABI_VERSION` in `aot.rs`. Changing what code
+   `nguvu` generates → bump `IMAGE_VERSION` in `nguvu/mod.rs`. A stale image must be rejected,
+   never loaded.
 6. **Unsupported means fallback, never crash.** When the bytecode compiler can't lower a
    construct it returns `None` and `pata jenga` emits the AST artifact
    (`compile_module_explained` says which `kazi`/line blocked it). The VM must never hit an
@@ -62,15 +71,15 @@ clang is needed only where `pata jenga` runs — not to build `pata`, not to run
 ## Required tests for engine changes
 
 - `cargo test -p asili-evaluator --test engines_agree` — each snippet on tree-walker, VM and
-  AOT; values *and error messages* must match. Add a snippet for every new operator, method,
+  native code; values *and error messages* must match. Add a snippet for every new operator, method,
   builtin or syntax form.
-- `cargo test -p asili-evaluator --test native_tiers` — interpreter vs AOT, bit-for-bit
-  (NaN bit patterns excluded: LLVM and x86 disagree on NaN sign and Asili can't observe it).
+- `cargo test -p asili-evaluator --test native_tiers` — interpreter vs native code (through the
+  on-disk image), bit-for-bit (NaN bit patterns excluded: Asili can't observe them).
   Add edge cases for anything numeric: `-0.0`, NaN, ±∞, ±2^53 and beyond (exercises deopt),
   negative `%`/`//`, shifts outside `0..=63`, out-of-range indices.
 - `cargo test -p asili-evaluator --test bytecode` — compiler/VM unit behaviour.
-- Tests that need AOT skip themselves without clang; run them where clang exists before
-  pushing a change to `aot.rs`/`native.rs`.
+- A new `nguvu` transform needs a snippet that exercises it — check by breaking the transform
+  on purpose and watching the test fail (a test that still passes covers nothing).
 
 ## The benchmark — run it, don't guess
 
@@ -78,16 +87,18 @@ clang is needed only where `pata jenga` runs — not to build `pata`, not to run
 examples/sudoku/bench/run.sh 7      # best-of-7 whole-process wall time
 ```
 
-It builds release `pata`, runs `pata jenga --namna release` on the example (which fails if the
-program falls back to the tree-walker or native code can't be built),
-and checks every implementation reports `Majaribio: 90665` before timing it.
+It builds release `pata` and the standalone runner, runs `pata jenga --namna release` on the
+example (which fails if the program falls back to the tree-walker or native code can't be
+built), and checks every implementation reports `Majaribio: 90665` before timing it.
 
-Reference (2026-09, this container): C 7 ms · Rust 7 ms · **asili-aot 10 ms** · asili-vm
-115 ms · Python 306 ms. About 3 ms of the Asili figure is `pata` start-up, not the solve
-(solve-only: AOT ≈ 4.8 ms, gcc -O2 4.4 ms, clang -O2 3.2 ms).
+Reference (2026-09, this container, standalone runner): gcc C 8.0 ms · clang C 6.4 ms · Rust
+7.0 ms · **asili-nguvu 7.1 ms** · asili-vm 111 ms · Python 304 ms. Process start-up is ~3.3 ms
+of every figure here; solve-only (run minus an empty run): nguvu ≈ 3.0 ms, clang -O2 C
+≈ 3.1 ms, gcc -O2 C ≈ 4.7 ms.
 
 **Thresholds** — treat any of these as a regression to fix before finishing:
-- asili-aot more than ~1.6× the C time, or more than ~2 ms slower than its previous figure;
+- asili-nguvu slower than clang C on the solve, or more than ~1 ms slower than its previous
+  figure;
 - asili-vm above ~130 ms;
 - any "wrong result" (attempt count ≠ 90,665) — that is a correctness bug, not noise.
 
@@ -96,16 +107,21 @@ new figures in `docs/design/performance.md` when they change meaningfully.
 
 ## Debugging a regression
 
-1. `ASILI_AOT=0` vs default: if only AOT slowed down, it's the IR or the analysis; if both did,
-   it's the bytecode compiler or VM.
+1. `ASILI_AOT=0` vs default: if only native code slowed down, it's `nguvu` or the analysis; if
+   both did, it's the bytecode compiler or VM. `ASILI_NATIVE_TRACE=1` prints every
+   deoptimization — a guard failing on every call looks like a VM-speed native tier.
 2. Did the program still lower to bytecode? `compile_module_explained` reports the first
    construct that forced the AST fallback (a 30× slowdown looks exactly like this).
-3. Read `kilele/<name>.ll` (kept beside the `.so`): look for `call` into the runtime table
-   (`exec_slow` spills) inside the hot loop, `sitofp`/`fptosi` pairs where a register should
-   have stayed `i64`, and bounds-check branches that should be gone.
+3. `ASILI_NGUVU_IR=<file>` dumps the optimized IR with register locations and loop depth;
+   `ASILI_NGUVU_DUMP=<file>` writes the machine code (`objdump -D -b binary -mi386:x86-64`),
+   its function offsets and load address (`.offsets`/`.base`, to line up with profiler
+   addresses). Both need an in-memory compile: `ASILI_NGUVU=1` with the `.nguvu` moved away.
+   Look for runtime `Call`s (`Exec` spills) in hot blocks, `FloatToInt`/`IntToFloat` pairs where
+   a register should have stayed integer, and spilled (`mem`) registers at high depth.
 4. Instruction counts beat wall time for small deltas:
    `valgrind --tool=callgrind target/release/pata-cli tenda examples/sudoku/kilele/sudoku.asb`
-   (AOT solve ≈ 30M instructions; clang C ≈ 27M).
+   (nguvu generated code ≈ 24M instructions; whole clang C program ≈ 27M). Add
+   `--dump-instr=yes` and join addresses with the dump for per-instruction costs.
 5. `perf record`/`perf report` on the same command for where time goes.
 
 ## Checklists

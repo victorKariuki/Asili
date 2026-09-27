@@ -1,9 +1,8 @@
 //! Differential tests: the tree-walking evaluator and every bytecode tier (the VM interpreter
-//! the LLVM AOT library when `clang` is available, and the in-house `nguvu` backend) must agree on each snippet — values
+//! and the native `nguvu` code) must agree on each snippet — values
 //! and error messages alike. Operator, cast, method, unwrapping, iteration and display
 //! semantics are shared code (`eval::ops`, `eval::methods`), and these tests keep it that way.
 
-use asili_evaluator::aot::{build_library, AotError, NativeLibrary};
 use asili_evaluator::{
     compile_module_explained, run_bytecode_function_on, run_function, Engine, Value,
 };
@@ -27,14 +26,7 @@ fn agree(name: &str, source: &str, functions: &[&str]) {
     let module = parse_tokens(&tokens).unwrap_or_else(|e| panic!("{name}: parse: {e:?}"));
     let program = compile_module_explained(&module)
         .unwrap_or_else(|why| panic!("{name}: expected bytecode lowering, blocked at {why}"));
-    let dir = std::env::temp_dir().join(format!("asili-agree-{name}-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("temp dir");
-    let lib = match build_library(&program, &dir, name) {
-        Ok(path) => Some(NativeLibrary::load(&path, &program).expect("load AOT library")),
-        Err(AotError::Unavailable(_)) => None,
-        Err(AotError::Failed(why)) => panic!("{name}: AOT build failed: {why}"),
-    };
-    // The in-house backend, where the host supports it.
+    // The in-house native backend, where the host supports it.
     let own = asili_evaluator::nguvu::supported()
         .then(|| asili_evaluator::nguvu::compile(&program).expect("nguvu compile"));
     let show = |r: Result<Value, asili_evaluator::EvalError>| match r {
@@ -49,22 +41,14 @@ fn agree(name: &str, source: &str, functions: &[&str]) {
             tree,
             "{name}::{function}: VM vs tree-walker"
         );
-        if let Some(lib) = &lib {
-            assert_eq!(
-                vm(Engine::Aot(lib)),
-                tree,
-                "{name}::{function}: AOT vs tree-walker"
-            );
-        }
         if let Some(own) = &own {
             assert_eq!(
-                vm(Engine::Aot(own)),
+                vm(Engine::Native(own)),
                 tree,
                 "{name}::{function}: nguvu vs tree-walker"
             );
         }
     }
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

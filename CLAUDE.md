@@ -108,24 +108,26 @@ separate follow-up task.
 
 ## Keep Asili at C speed — engines agree, benchmark proves it
 
-Asili runs the Sudoku benchmark (`examples/sudoku/bench/run.sh`) at C speed through LLVM AOT
-native code, with a typed register VM as the no-clang fallback and the tree-walker for
-everything else. Whenever a change touches `core/evaluator/` (`bytecode.rs`, `aot.rs`,
-`native.rs`, `eval/ops.rs`, `eval/methods.rs`, `builtins/`), parser lowering/desugaring, the
+Asili runs the Sudoku benchmark (`examples/sudoku/bench/run.sh`) at C speed through native
+code from its own backend (`nguvu`, no external compiler), with a typed register VM as the
+fallback where no backend exists and the tree-walker for everything else. Whenever a change
+touches `core/evaluator/` (`bytecode.rs`, `nguvu/`, `aot.rs`, `native.rs`, `eval/ops.rs`, `eval/methods.rs`, `builtins/`), parser lowering/desugaring, the
 `.asb` format, or adds an operator/builtin/method/opcode/AST variant, invoke the
 `performance-guardrails` skill before considering the work done. Non-negotiables it enforces:
 
 - **One semantics source.** Operators, casts, methods, indexing, `?`/`jaribu`, formatting and
   iteration are implemented once (`eval/ops.rs`, `eval/methods.rs`, `bytecode.rs::numeric_op`)
-  and called by every engine. Never re-implement a rule inside the VM or the AOT emitter.
-- **One native backend** — LLVM IR text compiled by clang. No JIT, no C transpiler.
+  and called by every engine. Never re-implement a rule inside the VM or the native backend.
+- **One native backend** — `nguvu`, in-house: bytecode → IR → machine code, written by
+  `pata jenga` as `kilele/<name>.nguvu`. No external compiler, assembler or linker, no C
+  transpiler, no JIT at run time.
 - **Native code is bit-identical to the interpreter** — integer lowering only when range
   analysis proves it (or speculates with a deopt guard); every new opcode is described to
   `native.rs` (`num_reads`/`num_writes`/`list_writes`/`transfer`); `BYTECODE_VERSION` /
   `ABI_VERSION` bumped when their formats change.
 - **Tests and numbers, not assumptions**: `engines_agree.rs` and `native_tiers.rs` cover every
-  new construct, and `run.sh` is rerun after engine changes — asili-aot within ~1.6× of C and
-  the attempt count exactly 90,665. Report the measured numbers, and treat a regression as a
+  new construct, and `run.sh` is rerun after engine changes — asili-nguvu at or below clang
+  `-O2` C on the solve and the attempt count exactly 90,665. Report the measured numbers, and treat a regression as a
   bug to fix before finishing.
 
 ## Write once, reuse — no second implementations

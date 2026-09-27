@@ -3,9 +3,9 @@
 # Usage: ./run.sh [runs]   (default 5; prints the best wall time per implementation)
 #
 # Asili tiers run on the standalone runner (`tenda`, what a deployment ships):
-# asili-nguvu = in-house native code built by `pata jenga` (no external tools; the default),
-# asili-llvm = LLVM native library (needs clang; ASILI_NGUVU=0), asili-vm = register-VM
-# interpreter (ASILI_AOT=0).
+# asili-nguvu = native code built in-house by `pata jenga` (no external tools),
+# asili-vm = register-VM interpreter (ASILI_AOT=0). clang is only used here to build the
+# C comparison, when installed.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
@@ -42,5 +42,4 @@ command -v python3 >/dev/null && best python python3 "$here/sudoku.py"
 asb="$here/../kilele/sudoku.asb"
 runner="$root/target/release/tenda"
 best asili-nguvu "$runner" "$asb"
-ASILI_NGUVU=0 best asili-llvm "$runner" "$asb"
 ASILI_AOT=0 best asili-vm "$runner" "$asb"

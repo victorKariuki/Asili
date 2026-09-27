@@ -323,12 +323,12 @@ pub fn compile_single_file(
 /// `pata jenga --namna`: how hard the build tries for native code.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BuildProfile {
-    /// Best effort: bytecode when the program benefits, native code when `clang` is available,
-    /// otherwise the artifact runs on the VM (or the tree-walker) with a note.
+    /// Best effort: bytecode when the program benefits, native code where the platform has a
+    /// native backend, otherwise the artifact runs on the VM (or the tree-walker) with a note.
     #[default]
     Dev,
-    /// What ships must run as native code: the program must compile to bytecode and the native
-    /// library must be built, or the build fails saying why.
+    /// What ships must run as native code: the program must compile to bytecode and its native
+    /// code must be built, or the build fails saying why.
     Release,
 }
 
@@ -346,59 +346,40 @@ impl BuildProfile {
     }
 }
 
-/// Ahead-of-time compile a bytecode artifact to native code next to it: the in-house image
-/// (`<name>.nguvu`, no external tools) and, when `clang` is available, the LLVM library. In
-/// `Dev` producing neither only means the artifact runs on the VM; `Release` fails instead.
+/// Ahead-of-time compile a bytecode artifact to native machine code next to it
+/// (`<name>.nguvu`, built in-house with no external tools). In `Dev` a platform without a
+/// native backend only means the artifact runs on the VM; `Release` fails instead.
 fn build_native_library(
     asb: &[u8],
     target: &Path,
     name: &str,
     profile: BuildProfile,
 ) -> Result<(), CliError> {
-    use asili_evaluator::aot::{build_library, library_file_name, AotError};
     use asili_evaluator::nguvu;
-    let stale_lib = target.join(library_file_name(name));
-    let stale_image = target.join(nguvu::image_file_name(name));
+    let stale = target.join(nguvu::image_file_name(name));
+    // Libraries from the retired LLVM backend would only confuse; nothing loads them now.
+    let _ = fs::remove_file(target.join(format!("{name}.{}", std::env::consts::DLL_EXTENSION)));
+    let _ = fs::remove_file(target.join(format!("{name}.ll")));
     if parse_format(asb).as_deref() != Some("bytecode") {
-        let _ = fs::remove_file(&stale_lib);
-        let _ = fs::remove_file(&stale_image);
+        let _ = fs::remove_file(&stale);
         return Ok(());
     }
     let program = asili_evaluator::load_asb_bytecode(asb)
         .map_err(|e| CliError::new(format!("kuipakia bytecode: {e}"), 1))?;
-    let mut built = false;
-    let mut failures = Vec::new();
-    if !asili_evaluator::aot::enabled() {
-        failures.push("ASILI_AOT=0".to_string());
-    } else if nguvu::supported() {
+    let failure = if !asili_evaluator::aot::enabled() {
+        "ASILI_AOT=0".to_string()
+    } else if !nguvu::supported() {
+        "mfumo huu bado hauungwi mkono".to_string()
+    } else {
         match nguvu::write_image(&program, target, name) {
             Ok(path) => {
                 println!("msimbo asilia: {}", path.display());
-                built = true;
+                return Ok(());
             }
-            Err(why) => failures.push(why),
+            Err(why) => why,
         }
-    }
-    if !built {
-        let _ = fs::remove_file(&stale_image);
-    }
-    match build_library(&program, target, name) {
-        Ok(path) => {
-            println!("msimbo asilia (LLVM): {}", path.display());
-            built = true;
-        }
-        Err(AotError::Unavailable(why)) | Err(AotError::Failed(why)) => {
-            let _ = fs::remove_file(&stale_lib);
-            if !built {
-                failures.push(why);
-            }
-        }
-    }
-    if built {
-        return Ok(());
-    }
-    failures.dedup();
-    let failure = failures.join("; ");
+    };
+    let _ = fs::remove_file(&stale);
     if profile == BuildProfile::Release {
         return Err(CliError::new(
             format!("--namna release inahitaji msimbo asilia, lakini haukujengwa: {failure}"),
