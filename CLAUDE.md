@@ -73,6 +73,14 @@ history is expensive and disruptive (invalidates open PRs, requires everyone wit
 re-sync) — don't rely on a future cleanup to fix a trailer that should never be added in the first
 place.
 
+This also covers the commit **author**, not only trailers. Before the first commit in any session,
+check `git config user.name`/`user.email`: if it says `Claude`/`noreply@anthropic.com` (the cloud
+session default), set it for this repo to the maintainer identity used throughout history —
+`git config user.name "Victor Kaiuki"` and `git config user.email "vikgachewa@hotmail.com"` —
+before committing anything. About 29 commits authored as Claude were pushed to `develop`/`main` in
+September 2026; the maintainer chose not to rewrite them, so leave those as they are and don't add
+more.
+
 ## Keep the GitHub Project boards current
 
 This repo's work is tracked on two GitHub Projects (v2, owned by `victorKariuki`, not the repo
