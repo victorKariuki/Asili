@@ -3,16 +3,32 @@
 use asili_parser::{AssignOp, ForMode, Stmt};
 
 use crate::runtime::Runtime;
-use crate::value::{self, assign_f64_op, handle_loop_out, EvalError, EvalOut, LoopAction, Value};
 use crate::signal;
+use crate::value::{self, assign_f64_op, handle_loop_out, EvalError, EvalOut, LoopAction, Value};
 
 use super::expr::match_and_bind_pattern;
 
 pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOut, EvalError> {
+    rt.count_statement();
+    rt.record_line(stmt.line());
+
+    if let Some(hook) = &rt.debug_hook {
+        // Push a fresh bindings snapshot in before should_pause might block, so a real pause
+        // always has up-to-date data ready for a `variables` DAP request.
+        hook.record_bindings(crate::debug_hook::snapshot_bindings(rt.env));
+        hook.should_pause(stmt.line());
+    }
+
     let sig = signal::take_pending();
     if sig != 0 {
         if let Some(handler_name) = signal::get_handler(sig) {
-            if let Some(f) = rt.module.functions.iter().find(|x| x.name == handler_name).cloned() {
+            if let Some(f) = rt
+                .module
+                .functions
+                .iter()
+                .find(|x| x.name == handler_name)
+                .cloned()
+            {
                 rt.env.push_scope();
                 super::eval_block_impl(&f.body, rt)?;
                 rt.env.pop_scope();
@@ -26,17 +42,29 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             rt.env.define(name, v);
             Ok(EvalOut::Next)
         }
-        Stmt::Assign { name, op, value, .. } => {
+        Stmt::LetPattern { pattern, value, .. } => {
+            let value = super::eval_expr_impl(value, rt)?;
+            if !super::expr::match_and_bind_pattern(pattern, &value, rt) {
+                return Err(EvalError::TypeErr(
+                    "muundo wa weka haulingani na thamani".into(),
+                ));
+            }
+            Ok(EvalOut::Next)
+        }
+        Stmt::Assign {
+            name, op, value, ..
+        } => {
             let rhs = super::eval_expr_impl(value, rt)?;
-            let current = rt.env.get(name).ok_or_else(|| EvalError::UndefinedVar(name.clone()))?;
+            let current = rt
+                .env
+                .get(name)
+                .ok_or_else(|| EvalError::UndefinedVar(name.clone()))?;
             let new_val = match op {
                 AssignOp::Assign => rhs,
-                AssignOp::AddAssign => {
-                    match (value::as_string(&current), value::as_string(&rhs)) {
-                        (Some(s1), Some(s2)) => Value::Neno(format!("{s1}{s2}")),
-                        _ => assign_f64_op(&current, &rhs, "+=", |a, b| a + b)?,
-                    }
-                }
+                AssignOp::AddAssign => match (value::as_string(&current), value::as_string(&rhs)) {
+                    (Some(s1), Some(s2)) => Value::Neno(format!("{s1}{s2}")),
+                    _ => assign_f64_op(&current, &rhs, "+=", |a, b| a + b)?,
+                },
                 AssignOp::SubAssign => assign_f64_op(&current, &rhs, "-=", |a, b| a - b)?,
                 AssignOp::MulAssign => assign_f64_op(&current, &rhs, "*=", |a, b| a * b)?,
                 AssignOp::DivAssign => assign_f64_op(&current, &rhs, "/=", |a, b| a / b)?,
@@ -69,13 +97,13 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             ..
         } => {
             let c = super::eval_expr_impl(cond, rt)?;
-            let run = matches!(&c, Value::Ukweli(true));
+            let run = super::ops::truthy(&c);
             if run {
                 return super::eval_block_impl(then_block, rt);
             }
             for (c2, blk) in else_if {
                 let c2val = super::eval_expr_impl(c2, rt)?;
-                if matches!(&c2val, Value::Ukweli(true)) {
+                if super::ops::truthy(&c2val) {
                     return super::eval_block_impl(blk, rt);
                 }
             }
@@ -92,7 +120,7 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
         } => {
             loop {
                 let c = super::eval_expr_impl(cond, rt)?;
-                if !matches!(&c, Value::Ukweli(true)) {
+                if !super::ops::truthy(&c) {
                     break;
                 }
                 match handle_loop_out(my_label.as_ref(), super::eval_block_impl(body, rt)?) {
@@ -133,41 +161,15 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                 }
                 ForMode::InExpr(expr) => {
                     let col = super::eval_expr_impl(expr, rt)?;
-                    match col {
-                        Value::Orodha(elems) => {
-                            for item in elems {
-                                rt.env.push_scope();
-                                rt.env.define(var, item);
-                                let out = super::eval_block_impl(body, rt)?;
-                                rt.env.pop_scope();
-                                match handle_loop_out(my_label.as_ref(), out) {
-                                    LoopAction::Continue => {}
-                                    LoopAction::Break => break,
-                                    LoopAction::Propagate(out) => return Ok(out),
-                                }
-                            }
-                        }
-                        Value::Kamusi(map) => {
-                            for (key, val) in map {
-                                let pair = Value::Jozi(
-                                    Box::new(key.to_value()),
-                                    Box::new(val),
-                                );
-                                rt.env.push_scope();
-                                rt.env.define(var, pair);
-                                let out = super::eval_block_impl(body, rt)?;
-                                rt.env.pop_scope();
-                                match handle_loop_out(my_label.as_ref(), out) {
-                                    LoopAction::Continue => {}
-                                    LoopAction::Break => break,
-                                    LoopAction::Propagate(out) => return Ok(out),
-                                }
-                            }
-                        }
-                        _ => {
-                            return Err(EvalError::TypeErr(
-                                "kwa...katika inashughulikia Orodha na Kamusi tu".to_string()
-                            ));
+                    for item in super::methods::iter_items(col)? {
+                        rt.env.push_scope();
+                        rt.env.define(var, item);
+                        let out = super::eval_block_impl(body, rt)?;
+                        rt.env.pop_scope();
+                        match handle_loop_out(my_label.as_ref(), out) {
+                            LoopAction::Continue => {}
+                            LoopAction::Break => break,
+                            LoopAction::Propagate(out) => return Ok(out),
                         }
                     }
                 }

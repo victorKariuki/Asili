@@ -1,10 +1,10 @@
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Span {
     pub line: usize,
     pub column: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Diagnostic {
     pub code: &'static str,
     pub stage: &'static str,
@@ -52,7 +52,7 @@ impl Diagnostic {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct ContextMap {
     pub symbol: String,
     pub created_at: Option<Span>,

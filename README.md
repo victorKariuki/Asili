@@ -58,26 +58,28 @@ pata jenga --tenda
 |------|----------|
 | `core/` | Lexer, parser, semantic analysis, evaluator, diagnostics. |
 | `driver/` | Target adapters: `wasm` (implemented, browser + WASI); `embedded`, `posix`, `win32` (stub placeholders, not yet in the Cargo workspace). |
-| `pata/` | CLI (`pata-cli`), runner, LSP (`pata-lsp`), formatter (`pata-fmt`), linter (`pata-lint`), package resolver (`pata-package`). |
+| `pata/` | CLI (`pata-cli`), shared module resolver (`pata-core`), runner, LSP (`pata-lsp`), formatter (`pata-fmt`), linter (`pata-lint`), package resolver (`pata-package`), Debug Adapter Protocol server (`pata-dap`), shared `pata.toml` discovery (`pata-config`). |
+| `extensions/vscode/` | VS Code extension — syntax highlighting, LSP client, bundled `pata-lsp`. |
 | `lib/` | Standard library surface (`lib/std/*.asi` stubs). |
 | `docs/spec/` | Language specification. |
 | `examples/` | Sample Asili programs. |
 | `docs/` | How-to and design notes. |
 
+Generated API reference (rustdoc + TypeDoc) for reading the code is published at
+<https://victorkariuki.github.io/Asili/> — see [CONTRIBUTING.md](CONTRIBUTING.md#api-documentation)
+to build it locally.
+
 ## Standard library modules
 
-Available via `leta <moduli>` (e.g. `leta matumizi`):
+Builtin modules — `msingi`, `mfumo`, `majira`, `matumizi`, `faili`, `hisabati`, `runtime`,
+`syscall`, `kiungo`, `sambamba` — are in scope without `leta` (writing `leta hisabati` is allowed
+as documentation). `kasha_gc` (reference-counted managed memory) is opt-in and needs
+`leta kasha_gc`. Handle types (`Faili`, `Mkondo`, `Kumbukumbu<T>`, `Seti<T>`) and JSON/HTTP
+helpers are builtin as well.
 
-- **msingi** — Prelude: constructors (`orodha`, `kamusi`, `jozi`, `tokeo`, `kosa`, `chaguo`), constants (`KWELI`, `SIYO_KWELI`, `TUPU`).
-- **mfumo** — System: `vigezo`, `pata_env`, `toka`, `sikiliza_ishara`, `rejesha_ishara`.
-- **majira** — Time: `sasa`, `majira`, `sekunde`, `kutoka_sekunde`, `umbiza`, `lala`.
-- **matumizi** — I/O: `chapisha`, `onyo`, `makosa`, `paparika`, `omba`.
-- **faili** — File system: `soma_faili`, `andika_faili`, `ongeza`, `vipo`, `futa`, `ukubwa`.
-- **hisabati** — Math: `jumla`, `tofauti`, `zao`, `gawio`, `duara`, `kipeo`, `mizizi`, etc.
-- **runtime** — `toleo`, `jina_os`.
-- **syscall** — Raw syscall stub.
-- **kiungo** — FFI stubs (`saza_kiungo`, `wito_kiungo`).
-- **sambamba** — Concurrency stubs (`anza_mwendo`, `subiri_mwendo`).
+The full, maintained function list is
+[docs/spec/05-standard-library.md](docs/spec/05-standard-library.md) (with tutorial coverage in
+[docs/language/06-moduli.md](docs/language/06-moduli.md)); it is not duplicated here.
 
 ## Documentation
 

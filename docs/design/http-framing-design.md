@@ -85,29 +85,44 @@ rather than growing the buffer without limit on an adversarial peer sending an e
 incomplete headers — the same resource-exhaustion concern the original production-readiness
 survey raised, applied here to the framing layer's own accumulation buffer.
 
-## Scope boundaries, and why each was cut here rather than "later"
+## Scope boundaries
 
-- **No chunked `Transfer-Encoding`.** A chunked request is detected (via the
-  `Transfer-Encoding: chunked` header) and rejected with `501 Not Implemented` rather than
-  attempting to decode it — chunk-size-line parsing, trailer headers, and the interaction with
-  `Content-Length` (which chunked encoding replaces, not supplements) are real, non-trivial
-  parsing surface that deserves its own pass once fixed-length bodies are proven working. A
-  `kazi_jina` response body is always a `Neno` already fully in memory, so the *server* never
-  needs to *emit* chunked encoding — this cut only affects incoming chunked request bodies.
-- **No pipelining.** The server reads one complete request, calls `kazi_jina`, writes one
-  complete response, and only then reads the next request — it never speculatively reads ahead
-  of the current request/response cycle. This is simpler and correct for effectively all real
-  HTTP/1.1 clients (pipelining is widely unsupported or explicitly disabled by client
-  implementations in practice, `curl`/browsers included).
-- **No `Expect: 100-continue`.** Treated as an ordinary header with no special handling — the
-  request body is read immediately rather than the server sending an intermediate
-  `100 Continue` before the client sends the body. This is a real gap for large-upload clients
-  that wait for `100-continue` before sending payload data, explicitly deferred rather than
-  silently unhandled.
+The original three scope cuts below (chunked `Transfer-Encoding`, pipelining, `Expect:
+100-continue`) have since been implemented — see "What changed" further down. Only HTTP/2 remains
+out of scope.
+
 - **HTTP/1.0 and HTTP/1.1 request lines only.** No HTTP/2 — an entirely different, binary framing
   protocol (HPACK header compression, stream multiplexing) that isn't a "finish this later"
   extension of what's built here; it would be new, separate work on top of a different wire
   format entirely.
+
+## What changed since the original pass (issues #20, #21, #22)
+
+- **Chunked `Transfer-Encoding` is decoded, not rejected.** `decode_chunked_body`
+  (`core/evaluator/src/builtins/http.rs`) parses the real `<hex-size>[;ext]\r\n<data>\r\n`
+  chunk framing (RFC 7230 §4.1), terminated by a zero-size chunk, handling chunk-size-line
+  extensions (ignored) and trailer headers (consumed off the wire so the connection stays in
+  sync, but discarded — this codebase has no trailer-header concept to expose them through). The
+  decoded body is spliced back into the same buffer the `Content-Length` path already used, so
+  everything downstream (pipelining's leftover-byte carry-over, the `Neno` body conversion)
+  treats it identically to a fixed-length body. As before, `kazi_jina`'s response body is always
+  a `Neno` already fully in memory, so the server still never needs to *emit* chunked encoding —
+  this only ever affected incoming request bodies.
+- **Pipelining is supported.** `read_request` now takes a `carry: &mut Vec<u8>` buffer, owned per
+  connection by `http_worker_loop` — any bytes read off the wire past the just-parsed request's
+  boundary (because a peer sent a second request in the same TCP segment/`write` call) are
+  stashed into `carry` instead of being silently dropped, and the next `read_request` call seeds
+  its accumulation buffer from `carry` before touching the network again. A fully pipelined next
+  request is answered with zero additional reads.
+- **`Expect: 100-continue` gets a real intermediate response.** Once `read_request` knows headers
+  are complete, it checks for `Expect: 100-continue` and, if present, writes
+  `HTTP/1.1 100 Continue\r\n\r\n` directly to the stream (guarded to fire at most once per
+  request) before falling through to read the body. Not fully RFC 7231 §5.1.1-faithful (a
+  spec-perfect server would only continue if it already intends to accept the body, which would
+  need consulting `kazi_jina`/routing before the body is read — this pipeline is strictly
+  headers-then-body-then-dispatch) — matching how minimally the rest of this framing pass is
+  already scoped, it always continues once the header is present, which is correct for the
+  common case (an endpoint that will accept the upload).
 
 `connection_keep_alive` implements the version-dependent default correctly: HTTP/1.1 defaults to
 keep-alive unless `Connection: close` is present; HTTP/1.0 defaults to close unless
@@ -130,9 +145,10 @@ Every failure path in `read_request` returns a typed `ParseOutcome` the worker l
 real HTTP error response rather than closing the connection silently or hanging:
 
 - `ParseOutcome::BadRequest` (a malformed request line, invalid headers, a request that exceeds
-  `MAX_REQUEST_BYTES`, or the peer closing the connection with an incomplete request already
-  buffered) → `400 Bad Request`.
-- `ParseOutcome::NotImplemented` (chunked `Transfer-Encoding`) → `501 Not Implemented`.
+  `MAX_REQUEST_BYTES`, a malformed chunk-size line, or the peer closing the connection with an
+  incomplete request/chunk already buffered) → `400 Bad Request`. `ParseOutcome::NotImplemented`
+  (previously used for chunked `Transfer-Encoding` → `501`) no longer exists — chunked bodies are
+  decoded now, not rejected.
 - `ParseOutcome::ConnectionClosed` (the peer closed the connection cleanly with **no** partial
   request buffered — i.e., between requests on a keep-alive connection, or the very first read on
   a new connection) is not an error at all — the worker loop exits its keep-alive loop and moves
@@ -155,7 +171,15 @@ over a `TcpStream` from the test, rather than trusting an HTTP client crate's ow
 - `keep_alive_serves_two_requests_on_one_connection` — two requests sent over one connection with
   no reconnect between them, both answered correctly — proves the per-connection loop in
   `http_worker_loop` actually loops rather than closing after one request.
-- `chunked_transfer_encoding_request_is_rejected_with_501` — the explicit scope cut, verified.
+- `chunked_transfer_encoding_request_body_is_decoded` / `chunked_request_with_multiple_chunks_and_extension_is_decoded`
+  — real chunk decoding (single chunk; multiple chunks with a chunk-size extension and a trailer
+  header, proving those don't break framing).
+- `pipelined_requests_are_both_answered_in_order` — two full requests written in a single
+  `write_all` call (no read between them), both answered correctly and in order on the same
+  connection with zero extra network reads for the second one.
+- `expect_100_continue_gets_an_intermediate_response` — a real interim `HTTP/1.1 100 Continue`
+  read directly off the wire before the client sends its body, followed by the real final
+  response.
 - `connection_closed_mid_body_is_rejected_with_400_not_a_hang` — a request declaring more body
   bytes than are actually sent, followed by the client closing its write half: resolves
   immediately with `400`, since there's nothing left to wait for once the peer has definitively
@@ -166,6 +190,7 @@ over a `TcpStream` from the test, rather than trusting an HTTP client crate's ow
 - `malformed_request_line_is_rejected_with_400` — garbage input, not a panic.
 
 Verified live, end-to-end, against the actual compiled `pata-cli` binary with real `curl`
-requests (`GET /`, `POST /echo`, a 404 path, and an explicit keep-alive check via
-`curl --http1.1` requesting two URLs in one invocation) — the same verification standard applied
-to every prior phase's example.
+requests (`GET /`, `POST /echo`, a 404 path, an explicit keep-alive check via `curl --http1.1`
+requesting two URLs in one invocation, `curl -H "Expect: 100-continue"` showing a real
+`100 Continue` before the `200 OK`, and a real `curl -H "Transfer-Encoding: chunked"` upload
+correctly echoed back) — the same verification standard applied to every prior phase's example.

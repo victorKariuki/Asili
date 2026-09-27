@@ -36,7 +36,9 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
     }
     use serde_json::Value as J;
     Ok(match v {
-        Value::Namba(n) => serde_json::Number::from_f64(*n).map(J::Number).unwrap_or(J::Null),
+        Value::Namba(n) => serde_json::Number::from_f64(*n)
+            .map(J::Number)
+            .unwrap_or(J::Null),
         Value::Neno(s) => J::String(s.clone()),
         Value::Ukweli(b) => J::Bool(*b),
         Value::Tupu | Value::Hamna => J::Null,
@@ -49,7 +51,9 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
         // A raw memory address has no safe reason to be a JSON number a client could do
         // arithmetic on — encode as a string, deliberately.
         Value::Anuani(a) => J::String(a.to_string()),
-        Value::Wakati(secs) => serde_json::Number::from_f64(*secs).map(J::Number).unwrap_or(J::Null),
+        Value::Wakati(secs) => serde_json::Number::from_f64(*secs)
+            .map(J::Number)
+            .unwrap_or(J::Null),
         Value::Chaguo(opt) => match opt {
             Some(inner) => to_json_depth(inner, depth + 1)?,
             None => J::Null,
@@ -69,7 +73,10 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
                 .map(|item| to_json_depth(item, depth + 1))
                 .collect::<Result<_, _>>()?,
         ),
-        Value::Jozi(a, b) => J::Array(vec![to_json_depth(a, depth + 1)?, to_json_depth(b, depth + 1)?]),
+        Value::Jozi(a, b) => J::Array(vec![
+            to_json_depth(a, depth + 1)?,
+            to_json_depth(b, depth + 1)?,
+        ]),
         Value::Kamusi(map) => {
             let mut out = serde_json::Map::with_capacity(map.len());
             for (k, v) in map {
@@ -77,7 +84,12 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
             }
             J::Object(out)
         }
-        Value::Seti(set) => J::Array(set.iter().map(|k| k.to_value()).map(|v| v.to_json()).collect::<Result<_, _>>()?),
+        Value::Seti(set) => J::Array(
+            set.iter()
+                .map(|k| k.to_value())
+                .map(|v| v.to_json())
+                .collect::<Result<_, _>>()?,
+        ),
         // Struct(name, fields) is already a name + field-list pair, reflection-friendly with no
         // per-type code needed — v1 does not support field rename/omission (wire format uses
         // internal field names verbatim); see the design doc for the future `#[jina("...")]`
@@ -101,7 +113,10 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
         Value::TlsUsanidi(_) => {
             return Err(EvalError::Coded {
                 kind: ErrorKind::BadInput,
-                message: format!("kwa_json: aina '{}' haiwezi kubadilishwa kuwa JSON", variant_name(v)),
+                message: format!(
+                    "kwa_json: aina '{}' haiwezi kubadilishwa kuwa JSON",
+                    variant_name(v)
+                ),
             });
         }
         Value::KashaGC(_)
@@ -112,7 +127,10 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
         | Value::Kumbukumbu(_) => {
             return Err(EvalError::Coded {
                 kind: ErrorKind::BadInput,
-                message: format!("kwa_json: aina '{}' haiwezi kubadilishwa kuwa JSON", variant_name(v)),
+                message: format!(
+                    "kwa_json: aina '{}' haiwezi kubadilishwa kuwa JSON",
+                    variant_name(v)
+                ),
             });
         }
         Value::NjiaTx(_)
@@ -122,7 +140,10 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
         | Value::Fungo(_) => {
             return Err(EvalError::Coded {
                 kind: ErrorKind::BadInput,
-                message: format!("kwa_json: aina '{}' haiwezi kubadilishwa kuwa JSON", variant_name(v)),
+                message: format!(
+                    "kwa_json: aina '{}' haiwezi kubadilishwa kuwa JSON",
+                    variant_name(v)
+                ),
             });
         }
     })
@@ -170,7 +191,12 @@ fn from_json_depth(j: &serde_json::Value, depth: usize) -> Value {
         J::Bool(b) => Value::Ukweli(*b),
         J::Number(n) => Value::Namba(n.as_f64().unwrap_or(f64::NAN)),
         J::String(s) => Value::Neno(s.clone()),
-        J::Array(items) => Value::Orodha(items.iter().map(|v| from_json_depth(v, depth + 1)).collect()),
+        J::Array(items) => Value::Orodha(
+            items
+                .iter()
+                .map(|v| from_json_depth(v, depth + 1))
+                .collect(),
+        ),
         J::Object(map) => {
             let mut fields: Vec<(String, Value)> = Vec::with_capacity(map.len());
             let mut out: HashMap<MapKey, Value> = HashMap::with_capacity(map.len());
@@ -193,8 +219,8 @@ fn from_json_depth(j: &serde_json::Value, depth: usize) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::rc::Rc;
     use std::cell::RefCell;
+    use std::rc::Rc;
 
     fn round_trip(v: &Value) -> Value {
         let j = v.to_json().expect("to_json");
@@ -204,7 +230,10 @@ mod tests {
     #[test]
     fn scalars_round_trip() {
         assert_eq!(round_trip(&Value::Namba(42.5)), Value::Namba(42.5));
-        assert_eq!(round_trip(&Value::Neno("habari".into())), Value::Neno("habari".into()));
+        assert_eq!(
+            round_trip(&Value::Neno("habari".into())),
+            Value::Neno("habari".into())
+        );
         assert_eq!(round_trip(&Value::Ukweli(true)), Value::Ukweli(true));
         assert_eq!(Value::Tupu.to_json().unwrap(), serde_json::Value::Null);
         assert_eq!(Value::Hamna.to_json().unwrap(), serde_json::Value::Null);
@@ -239,22 +268,34 @@ mod tests {
 
     #[test]
     fn orodha_round_trips() {
-        let v = Value::Orodha(vec![Value::Namba(1.0), Value::Namba(2.0), Value::Neno("x".into())]);
+        let v = Value::Orodha(vec![
+            Value::Namba(1.0),
+            Value::Namba(2.0),
+            Value::Neno("x".into()),
+        ]);
         let j = v.to_json().unwrap();
         assert_eq!(j, serde_json::json!([1.0, 2.0, "x"]));
     }
 
     #[test]
     fn chaguo_some_unwraps_none_becomes_null() {
-        assert_eq!(Value::Chaguo(Some(Box::new(Value::Namba(5.0)))).to_json().unwrap(), serde_json::json!(5.0));
-        assert_eq!(Value::Chaguo(None).to_json().unwrap(), serde_json::Value::Null);
+        assert_eq!(
+            Value::Chaguo(Some(Box::new(Value::Namba(5.0))))
+                .to_json()
+                .unwrap(),
+            serde_json::json!(5.0)
+        );
+        assert_eq!(
+            Value::Chaguo(None).to_json().unwrap(),
+            serde_json::Value::Null
+        );
     }
 
     #[test]
     fn tokeo_encodes_tagged() {
-        let ok = Value::Tokeo(Ok(Box::new(Value::Namba(1.0))));
+        let ok = Value::sawa(Value::Namba(1.0));
         assert_eq!(ok.to_json().unwrap(), serde_json::json!({"Sawa": 1.0}));
-        let err = Value::Tokeo(Err(Box::new(Value::Neno("kosa".into()))));
+        let err = Value::kosa("kosa");
         assert_eq!(err.to_json().unwrap(), serde_json::json!({"Kosa": "kosa"}));
     }
 
@@ -262,7 +303,10 @@ mod tests {
     fn struct_encodes_as_flat_object_reflectively() {
         let v = Value::Struct(
             "Pika".to_string(),
-            vec![("x".to_string(), Value::Namba(1.0)), ("y".to_string(), Value::Neno("hi".into()))],
+            vec![
+                ("x".to_string(), Value::Namba(1.0)),
+                ("y".to_string(), Value::Neno("hi".into())),
+            ],
         );
         let j = v.to_json().unwrap();
         assert_eq!(j, serde_json::json!({"x": 1.0, "y": "hi"}));
@@ -271,9 +315,19 @@ mod tests {
     #[test]
     fn enum_encodes_with_tag_and_optional_data() {
         let unit = Value::Enum("Rangi".into(), "Nyekundu".into(), None);
-        assert_eq!(unit.to_json().unwrap(), serde_json::json!({"aina": "Nyekundu"}));
-        let with_data = Value::Enum("Chaguo".into(), "Kuna".into(), Some(Box::new(Value::Namba(7.0))));
-        assert_eq!(with_data.to_json().unwrap(), serde_json::json!({"aina": "Kuna", "data": 7.0}));
+        assert_eq!(
+            unit.to_json().unwrap(),
+            serde_json::json!({"aina": "Nyekundu"})
+        );
+        let with_data = Value::Enum(
+            "Chaguo".into(),
+            "Kuna".into(),
+            Some(Box::new(Value::Namba(7.0))),
+        );
+        assert_eq!(
+            with_data.to_json().unwrap(),
+            serde_json::json!({"aina": "Kuna", "data": 7.0})
+        );
     }
 
     #[test]
@@ -290,7 +344,10 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel::<super::super::SendValue>();
         let tx_val = Value::NjiaTx(std::sync::Arc::new(std::sync::Mutex::new(tx)));
         let rx_val = Value::NjiaRx(std::sync::Arc::new(std::sync::Mutex::new(rx)));
-        assert!(tx_val.try_into_send().is_some(), "sanity: NjiaTx is Send-safe");
+        assert!(
+            tx_val.try_into_send().is_some(),
+            "sanity: NjiaTx is Send-safe"
+        );
         assert!(tx_val.to_json().is_err());
         assert!(rx_val.to_json().is_err());
     }
@@ -301,7 +358,10 @@ mod tests {
         for _ in 0..(MAX_DEPTH + 10) {
             v = Value::Orodha(vec![v]);
         }
-        assert!(v.to_json().is_err(), "must fail cleanly past MAX_DEPTH, not stack-overflow");
+        assert!(
+            v.to_json().is_err(),
+            "must fail cleanly past MAX_DEPTH, not stack-overflow"
+        );
     }
 
     #[test]
@@ -320,7 +380,10 @@ mod tests {
         match v {
             Value::Kamusi(m) => {
                 assert_eq!(m.get(&MapKey::Neno("a".into())), Some(&Value::Namba(1.0)));
-                assert_eq!(m.get(&MapKey::Neno("b".into())), Some(&Value::Neno("x".into())));
+                assert_eq!(
+                    m.get(&MapKey::Neno("b".into())),
+                    Some(&Value::Neno("x".into()))
+                );
             }
             other => panic!("expected Kamusi, got {other:?}"),
         }

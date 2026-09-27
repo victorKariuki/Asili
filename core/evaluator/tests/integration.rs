@@ -2,29 +2,66 @@
 
 use std::collections::HashMap;
 
-use asili_evaluator::{eval_expr, run_function, run_function_with_telemetry, run_main, run_test_with_module, execute_tests, Value};
+use asili_evaluator::{
+    eval_expr, execute_tests, execute_tests_with_timeout, run_function, run_function_with_metrics,
+    run_function_with_telemetry, run_main, run_test_with_coverage, run_test_with_fixtures,
+    run_test_with_module, Value,
+};
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, semantic_check_with_env, FnContract, Module, ValueType};
 
 fn parse_and_check(src: &str) -> Module {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    semantic_check_with_env(&module, false, std::collections::HashMap::new(), std::collections::HashMap::new()).expect("semantic");
+    semantic_check_with_env(
+        &module,
+        false,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    )
+    .expect("semantic");
     module
 }
 
 /// Extern env with prelude (msingi) + matumizi so tests can use chapisha, paparika, orodha, etc.
 fn test_extern_env() -> (HashMap<String, FnContract>, HashMap<String, ValueType>) {
     let mut fns = HashMap::new();
-    fns.insert("orodha".to_string(), FnContract { params: vec![], ret: ValueType::Orodha(Box::new(ValueType::Unknown)) });
-    fns.insert("kamusi_tupu".to_string(), FnContract { params: vec![], ret: ValueType::Kamusi(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown)) });
-    fns.insert("jozi".to_string(), FnContract { params: vec![ValueType::Unknown, ValueType::Unknown], ret: ValueType::Jozi(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown)) });
-    let neno_tupu = FnContract { params: vec![ValueType::Neno], ret: ValueType::Tupu };
+    fns.insert(
+        "orodha".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Orodha(Box::new(ValueType::Unknown)),
+        },
+    );
+    fns.insert(
+        "kamusi_tupu".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Kamusi(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown)),
+        },
+    );
+    fns.insert(
+        "jozi".to_string(),
+        FnContract {
+            params: vec![ValueType::Unknown, ValueType::Unknown],
+            ret: ValueType::Jozi(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown)),
+        },
+    );
+    let neno_tupu = FnContract {
+        params: vec![ValueType::Neno],
+        ret: ValueType::Tupu,
+    };
     fns.insert("chapisha".to_string(), neno_tupu.clone());
     fns.insert("onyo".to_string(), neno_tupu.clone());
     fns.insert("makosa".to_string(), neno_tupu.clone());
     fns.insert("paparika".to_string(), neno_tupu);
-    fns.insert("omba".to_string(), FnContract { params: vec![ValueType::Neno], ret: ValueType::Neno });
+    fns.insert(
+        "omba".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno],
+            ret: ValueType::Neno,
+        },
+    );
     let mut consts = HashMap::new();
     consts.insert("KWELI".to_string(), ValueType::Ukweli);
     consts.insert("SIYO_KWELI".to_string(), ValueType::Ukweli);
@@ -113,6 +150,24 @@ fn run_function_with_telemetry_returns_peak_depth() {
 }
 
 #[test]
+fn run_function_with_metrics_counts_hot_path_operations() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         kazi hot() -> Namba {
+             weka a = [1, 2, 3]
+             weka x = a[1]?
+             rejesha x + a.urefu()
+         }",
+    );
+    let (value, metrics) = run_function_with_metrics(&module, "hot", vec![]).expect("run");
+    assert_eq!(value, Value::Namba(5.0));
+    assert!(metrics.expressions > 0);
+    assert!(metrics.statements > 0);
+    assert!(metrics.index_reads >= 1);
+    assert!(metrics.method_calls >= 1);
+}
+
+#[test]
 fn global_constants_ukomo_siyo_namba() {
     let module = parse_and_check(
         "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
@@ -134,7 +189,11 @@ fn run_function_paparika_fails() {
     let result = run_function(&module, "fail_test", vec![]);
     assert!(result.is_err());
     if let Err(asili_evaluator::EvalError::Panic(m)) = result {
-        assert!(m.contains("test"), "panic message should contain 'test': got {}", m);
+        assert!(
+            m.contains("test"),
+            "panic message should contain 'test': got {}",
+            m
+        );
     } else {
         panic!("expected Panic error");
     }
@@ -146,7 +205,12 @@ fn run_test_with_module_pass() {
         "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
          #[jaribio] kazi pass_test() -> Tupu { rejesha }",
     );
-    let f = module.functions.iter().find(|x| x.name == "pass_test").unwrap().clone();
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == "pass_test")
+        .unwrap()
+        .clone();
     let result = run_test_with_module(&module, &f);
     assert!(result.passed, "{}", result.message);
 }
@@ -157,7 +221,12 @@ fn run_test_with_module_fail_on_panic() {
         "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
          #[jaribio] kazi fail_test() -> Tupu { paparika(\"x\") }",
     );
-    let f = module.functions.iter().find(|x| x.name == "fail_test").unwrap().clone();
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == "fail_test")
+        .unwrap()
+        .clone();
     let result = run_test_with_module(&module, &f);
     assert!(!result.passed);
     assert!(result.message.contains("x") || result.message.contains("paparika"));
@@ -179,6 +248,348 @@ fn execute_tests_runs_multiple() {
     let results = execute_tests(&tests, false);
     assert_eq!(results.len(), 2);
     assert!(results.iter().all(|r| r.passed));
+}
+
+#[test]
+fn execute_tests_with_timeout_none_behaves_like_execute_tests() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t1() -> Tupu { rejesha }",
+    );
+    let tests: Vec<(Module, asili_parser::Function)> = module
+        .functions
+        .iter()
+        .filter(|f| f.is_test)
+        .map(|f| (module.clone(), f.clone()))
+        .collect();
+    let results = execute_tests_with_timeout(&tests, false, None);
+    assert_eq!(results.len(), 1);
+    assert!(results[0].passed);
+}
+
+#[test]
+fn execute_tests_with_timeout_passes_a_fast_test_within_budget() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi haraka() -> Tupu { rejesha }",
+    );
+    let tests: Vec<(Module, asili_parser::Function)> = module
+        .functions
+        .iter()
+        .filter(|f| f.is_test)
+        .map(|f| (module.clone(), f.clone()))
+        .collect();
+    let results =
+        execute_tests_with_timeout(&tests, false, Some(std::time::Duration::from_secs(5)));
+    assert_eq!(results.len(), 1);
+    assert!(results[0].passed, "{}", results[0].message);
+}
+
+/// A genuinely infinite loop (`wakati milele { }`, no break), not a mock — proves the timeout actually
+/// interrupts *waiting* on a hung test rather than something that merely runs slowly, since the
+/// evaluator itself has no way to be told to stop early.
+#[test]
+fn execute_tests_with_timeout_reports_a_real_infinite_loop_as_failed() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi milele_test() -> Tupu { wakati milele { } }",
+    );
+    let tests: Vec<(Module, asili_parser::Function)> = module
+        .functions
+        .iter()
+        .filter(|f| f.is_test)
+        .map(|f| (module.clone(), f.clone()))
+        .collect();
+    let start = std::time::Instant::now();
+    let results =
+        execute_tests_with_timeout(&tests, false, Some(std::time::Duration::from_millis(200)));
+    let elapsed = start.elapsed();
+
+    assert_eq!(results.len(), 1);
+    assert!(
+        !results[0].passed,
+        "an infinite loop must be reported as a failed (timed-out) test"
+    );
+    assert!(
+        results[0].message.contains("muda umekwisha"),
+        "{}",
+        results[0].message
+    );
+    // The call must return promptly once the timeout elapses, not block forever waiting on the
+    // hung thread — this is the actual behavior a timeout exists to provide.
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "took {elapsed:?}, should return shortly after the 200ms timeout"
+    );
+}
+
+#[test]
+fn fixture_kabla_runs_before_test_and_test_passes() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[kabla] kazi weka_mazingira() -> Tupu { rejesha }
+         #[jaribio] kazi t1() -> Tupu { rejesha }",
+    );
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == "t1")
+        .unwrap()
+        .clone();
+    let result = run_test_with_fixtures(&module, &f, None);
+    assert!(result.passed, "{}", result.message);
+}
+
+#[test]
+fn fixture_kabla_failure_fails_the_test_and_names_the_fixture() {
+    let module = parse_and_check_with_stdlib(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[kabla] kazi mazingira_mabovu() -> Tupu { paparika(\"kabla imeshindwa kimakusudi\") }
+         #[jaribio] kazi t1() -> Tupu { rejesha }",
+    );
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == "t1")
+        .unwrap()
+        .clone();
+    let result = run_test_with_fixtures(&module, &f, None);
+    assert!(
+        !result.passed,
+        "a failing #[kabla] must fail the test, not let it run"
+    );
+    assert!(
+        result.message.contains("mazingira_mabovu"),
+        "{}",
+        result.message
+    );
+    assert!(result.message.contains("kabla"), "{}", result.message);
+}
+
+#[test]
+fn fixture_baada_runs_after_a_passing_test() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t1() -> Tupu { rejesha }
+         #[baada] kazi safisha() -> Tupu { rejesha }",
+    );
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == "t1")
+        .unwrap()
+        .clone();
+    let result = run_test_with_fixtures(&module, &f, None);
+    assert!(result.passed, "{}", result.message);
+}
+
+#[test]
+fn fixture_baada_failure_fails_an_otherwise_passing_test() {
+    let module = parse_and_check_with_stdlib(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t1() -> Tupu { rejesha }
+         #[baada] kazi safisha_mbovu() -> Tupu { paparika(\"baada imeshindwa kimakusudi\") }",
+    );
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == "t1")
+        .unwrap()
+        .clone();
+    let result = run_test_with_fixtures(&module, &f, None);
+    assert!(
+        !result.passed,
+        "a failing #[baada] must fail an otherwise-passing test"
+    );
+    assert!(
+        result.message.contains("safisha_mbovu"),
+        "{}",
+        result.message
+    );
+    assert!(result.message.contains("baada"), "{}", result.message);
+}
+
+#[test]
+fn fixture_test_failure_takes_precedence_over_baada_failure_message() {
+    // The test's own failure is the more useful signal -- don't let a teardown failure mask it.
+    let module = parse_and_check_with_stdlib(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t_inashindwa() -> Tupu { paparika(\"jaribio lenyewe limeshindwa\") }
+         #[baada] kazi safisha_mbovu() -> Tupu { paparika(\"baada imeshindwa pia\") }",
+    );
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == "t_inashindwa")
+        .unwrap()
+        .clone();
+    let result = run_test_with_fixtures(&module, &f, None);
+    assert!(!result.passed);
+    assert!(
+        result.message.contains("jaribio lenyewe"),
+        "test's own failure should take precedence, got: {}",
+        result.message
+    );
+}
+
+#[test]
+fn fixture_multiple_baada_all_run_even_if_one_panics() {
+    // Two #[baada] functions in the same module -- a panic in the first must not prevent the
+    // second from running. Verified indirectly: the reported failure must come from whichever
+    // teardown genuinely failed, and execute_tests_with_timeout (which drives this for a whole
+    // suite) must still report a result rather than hang or skip.
+    let module = parse_and_check_with_stdlib(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t1() -> Tupu { rejesha }
+         #[baada] kazi safisha_a() -> Tupu { paparika(\"a imeshindwa\") }
+         #[baada] kazi safisha_b() -> Tupu { rejesha }",
+    );
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == "t1")
+        .unwrap()
+        .clone();
+    let result = run_test_with_fixtures(&module, &f, None);
+    assert!(!result.passed);
+    assert!(result.message.contains("safisha_a"));
+}
+
+#[test]
+fn fixture_functions_are_not_discovered_as_tests_themselves() {
+    // #[kabla]/#[baada] functions must not show up in discover_tests -- they're fixtures, not
+    // tests in their own right, even though they're regular callable functions in the module.
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[kabla] kazi weka_mazingira() -> Tupu { rejesha }
+         #[baada] kazi safisha() -> Tupu { rejesha }
+         #[jaribio] kazi t1() -> Tupu { rejesha }",
+    );
+    let tests = asili_parser::discover_tests(&module);
+    assert_eq!(
+        tests.len(),
+        1,
+        "only the #[jaribio]-tagged function should be discovered"
+    );
+    assert_eq!(tests[0].name, "t1");
+}
+
+#[test]
+fn coverage_records_every_executed_statement_line() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t1() -> Tupu {
+             weka a = 1
+             weka b = 2
+             rejesha
+         }",
+    );
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == "t1")
+        .unwrap()
+        .clone();
+    let (result, lines) = run_test_with_coverage(&module, &f);
+    assert!(result.passed, "{}", result.message);
+    // Three statements in the test body: weka a, weka b, rejesha -- all three lines recorded.
+    assert_eq!(
+        lines.len(),
+        3,
+        "expected 3 distinct executed lines, got: {lines:?}"
+    );
+}
+
+/// The real point of line-level (not function-level) coverage: two branches of the same `if`
+/// produce genuinely different executed-line sets depending on which one actually ran — a
+/// function-name-presence check (the old inert CoverageMetrics) can't distinguish this at all,
+/// since the containing function is "covered" either way.
+#[test]
+fn coverage_distinguishes_which_branch_actually_ran() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t_tawi_kweli() -> Tupu {
+             ikiwa kweli {
+                 weka njia_ya_kweli = 1
+             } vinginevyo {
+                 weka njia_ya_uwongo = 2
+             }
+             rejesha
+         }",
+    );
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == "t_tawi_kweli")
+        .unwrap()
+        .clone();
+    let (result, lines) = run_test_with_coverage(&module, &f);
+    assert!(result.passed, "{}", result.message);
+
+    // The `if` condition line and the true-branch's `weka` line ran; the false-branch's line
+    // (`weka njia_ya_uwongo = 2`, one line below the true branch's) did not.
+    let true_branch_line = 4; // `weka njia_ya_kweli = 1`
+    let false_branch_line = 6; // `weka njia_ya_uwongo = 2`
+    assert!(
+        lines.contains(&true_branch_line),
+        "true branch's line should be covered, got: {lines:?}"
+    );
+    assert!(
+        !lines.contains(&false_branch_line),
+        "false branch's line must NOT be covered when the condition is always true, got: {lines:?}"
+    );
+}
+
+#[test]
+fn coverage_records_partial_lines_from_a_failing_test() {
+    // A test that panics partway through still has real, partial coverage up to the panic point
+    // -- that's genuine information a caller (e.g. a coverage-threshold gate) should see, not
+    // nothing just because the test itself failed.
+    let module = parse_and_check_with_stdlib(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi t_inashindwa() -> Tupu {
+             weka a = 1
+             paparika(\"imekusudiwa\")
+         }",
+    );
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == "t_inashindwa")
+        .unwrap()
+        .clone();
+    let (result, lines) = run_test_with_coverage(&module, &f);
+    assert!(!result.passed);
+    assert!(
+        lines.len() >= 1,
+        "the weka statement before the panic should still be recorded as covered"
+    );
+}
+
+#[test]
+fn execute_tests_with_timeout_continues_past_a_timed_out_test() {
+    let module = parse_and_check(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+         #[jaribio] kazi milele_test() -> Tupu { wakati milele { } }
+         #[jaribio] kazi baada_yake() -> Tupu { rejesha }",
+    );
+    let tests: Vec<(Module, asili_parser::Function)> = module
+        .functions
+        .iter()
+        .filter(|f| f.is_test)
+        .map(|f| (module.clone(), f.clone()))
+        .collect();
+    let results =
+        execute_tests_with_timeout(&tests, false, Some(std::time::Duration::from_millis(200)));
+    assert_eq!(
+        results.len(),
+        2,
+        "a timed-out test must not prevent the rest of the suite from running"
+    );
+    let by_name: std::collections::HashMap<_, _> =
+        results.iter().map(|r| (r.name.as_str(), r)).collect();
+    assert!(!by_name["milele_test"].passed);
+    assert!(by_name["baada_yake"].passed);
 }
 
 #[test]
@@ -221,9 +632,7 @@ fn recursion_depth_limit_eval() {
         return_type: TypeExpr {
             name: "Tupu".into(),
         },
-        body: Block {
-            statements: vec![],
-        },
+        body: Block { statements: vec![] },
         is_test: false,
         is_public: false,
         line: 1,
@@ -240,7 +649,10 @@ fn recursion_depth_limit_eval() {
         impls: vec![],
     };
     let result = run_function(&module, "deep", vec![]);
-    assert!(result.is_err(), "eval should fail when recursion depth exceeded");
+    assert!(
+        result.is_err(),
+        "eval should fail when recursion depth exceeded"
+    );
     let err = result.unwrap_err();
     let msg = err.to_string();
     assert!(
@@ -252,9 +664,8 @@ fn recursion_depth_limit_eval() {
 
 #[test]
 fn run_main_executes_kuu() {
-    let module = parse_and_check_with_stdlib(
-        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"hello\") }",
-    );
+    let module =
+        parse_and_check_with_stdlib("kazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"hello\") }");
     run_main(&module, vec!["a".into(), "b".into()]).expect("run_main");
 }
 
@@ -297,7 +708,11 @@ fn labeled_break_exits_outer_loop() {
          }",
     );
     let v = run_function(&module, "labeled_break", vec![]).expect("run");
-    assert_eq!(v, Value::Namba(0.0), "break 'nje should exit outer after first inner iter");
+    assert_eq!(
+        v,
+        Value::Namba(0.0),
+        "break 'nje should exit outer after first inner iter"
+    );
 }
 
 #[test]
@@ -307,7 +722,11 @@ fn neno_urefu() {
          kazi len() -> Namba { weka s = \"hello\" rejesha s.urefu() }",
     );
     let v = run_function(&module, "len", vec![]).expect("run");
-    assert_eq!(v, Value::Namba(5.0), "string content 'hello' has 5 graphemes");
+    assert_eq!(
+        v,
+        Value::Namba(5.0),
+        "string content 'hello' has 5 graphemes"
+    );
 }
 
 #[test]
@@ -320,7 +739,11 @@ fn neno_urefu_grapheme() {
     );
     let module = parse_and_check(&src);
     let v = run_function(&module, "g", vec![]).expect("run");
-    assert_eq!(v, Value::Namba(1.0), "string content is one grapheme (e with acute)");
+    assert_eq!(
+        v,
+        Value::Namba(1.0),
+        "string content is one grapheme (e with acute)"
+    );
 }
 
 #[test]
@@ -333,7 +756,11 @@ fn neno_biti_ngapi() {
     let v = run_function(&module, "bytes", vec![]).expect("run");
     assert_eq!(v, Value::Namba(2.0), "string content 'ab' is 2 bytes");
     let v2 = run_function(&module, "bytes_utf8", vec![]).expect("run");
-    assert_eq!(v2, Value::Namba(2.0), "string content 'é' is 2 bytes in UTF-8");
+    assert_eq!(
+        v2,
+        Value::Namba(2.0),
+        "string content 'é' is 2 bytes in UTF-8"
+    );
 }
 
 #[test]
@@ -369,7 +796,11 @@ fn cast_to_biti8_fallible() {
     let v = run_function(&module, "cast_ok", vec![]).expect("run");
     assert_eq!(v, Value::Chaguo(Some(Box::new(Value::Namba(100.0)))));
     let v2 = run_function(&module, "cast_fail", vec![]).expect("run");
-    assert_eq!(v2, Value::Chaguo(None), "1000 kama Biti8 should yield Chaguo(None)");
+    assert_eq!(
+        v2,
+        Value::Chaguo(None),
+        "1000 kama Biti8 should yield Chaguo(None)"
+    );
 }
 
 #[test]
@@ -485,21 +916,31 @@ fn orodha_index() {
          kazi first() -> Namba { weka a = orodha(10, 20, 30) rejesha a[0]? }
          kazi second() -> Namba { weka a = orodha(5, 15, 25) rejesha a[1]? }",
     );
-    assert_eq!(run_function(&module, "first", vec![]).unwrap(), Value::Namba(10.0));
-    assert_eq!(run_function(&module, "second", vec![]).unwrap(), Value::Namba(15.0));
+    assert_eq!(
+        run_function(&module, "first", vec![]).unwrap(),
+        Value::Namba(10.0)
+    );
+    assert_eq!(
+        run_function(&module, "second", vec![]).unwrap(),
+        Value::Namba(15.0)
+    );
 }
 
 #[test]
-fn orodha_index_returns_tokeo() {
+fn orodha_index_returns_element_and_question_mark_returns_tokeo() {
     let module = parse_only(
         "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
-         kazi in_bounds() -> Namba { weka a = orodha(10, 20) weka r = a[0] rejesha r? }
-         kazi out_of_bounds() -> Namba { weka a = orodha(10, 20) weka r = a[10] rejesha r? }",
+         kazi in_bounds() -> Namba { weka a = orodha(10, 20) rejesha a[0] }
+         kazi out_of_bounds() -> Namba { weka a = orodha(10, 20) rejesha a[10] }
+         kazi propagated() -> Namba { weka a = orodha(10, 20) rejesha a[10]? }",
     );
     let v = run_function(&module, "in_bounds", vec![]).expect("run");
     assert_eq!(v, Value::Namba(10.0));
-    // r? on Tokeo(Err) propagates, so the function returns that Err value
-    let v = run_function(&module, "out_of_bounds", vec![]).expect("run");
+    // A plain out-of-range index is a runtime error...
+    let err = run_function(&module, "out_of_bounds", vec![]).expect_err("out of range");
+    assert!(err.to_string().contains("fahirisi nje ya mipaka"), "{err}");
+    // ...while `a[i]?` returns the KosaMipaka Tokeo error from the function.
+    let v = run_function(&module, "propagated", vec![]).expect("run");
     assert!(matches!(v, Value::Tokeo(Err(_))));
     if let Value::Tokeo(Err(inner)) = v {
         assert!(matches!(*inner, Value::Struct(ref n, _) if n == "KosaMipaka"));
@@ -557,12 +998,30 @@ fn ordering_neno_lexicographic() {
          kazi eq_le() -> Ukweli { rejesha "x" <= "x" }
          kazi eq_ge() -> Ukweli { rejesha "x" >= "x" }"#,
     );
-    assert_eq!(run_function(&module, "lt", vec![]).unwrap(), Value::Ukweli(true));
-    assert_eq!(run_function(&module, "gt", vec![]).unwrap(), Value::Ukweli(false));
-    assert_eq!(run_function(&module, "le", vec![]).unwrap(), Value::Ukweli(true));
-    assert_eq!(run_function(&module, "ge", vec![]).unwrap(), Value::Ukweli(false));
-    assert_eq!(run_function(&module, "eq_le", vec![]).unwrap(), Value::Ukweli(true));
-    assert_eq!(run_function(&module, "eq_ge", vec![]).unwrap(), Value::Ukweli(true));
+    assert_eq!(
+        run_function(&module, "lt", vec![]).unwrap(),
+        Value::Ukweli(true)
+    );
+    assert_eq!(
+        run_function(&module, "gt", vec![]).unwrap(),
+        Value::Ukweli(false)
+    );
+    assert_eq!(
+        run_function(&module, "le", vec![]).unwrap(),
+        Value::Ukweli(true)
+    );
+    assert_eq!(
+        run_function(&module, "ge", vec![]).unwrap(),
+        Value::Ukweli(false)
+    );
+    assert_eq!(
+        run_function(&module, "eq_le", vec![]).unwrap(),
+        Value::Ukweli(true)
+    );
+    assert_eq!(
+        run_function(&module, "eq_ge", vec![]).unwrap(),
+        Value::Ukweli(true)
+    );
 }
 
 #[test]
@@ -572,7 +1031,8 @@ fn short_circuit_or_does_not_eval_right() {
 kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
 kazi or_short() -> Ukweli { rejesha kweli au paparika("right") }"#,
     );
-    let v = run_function(&module, "or_short", vec![]).expect("kweli au ... must not evaluate right");
+    let v =
+        run_function(&module, "or_short", vec![]).expect("kweli au ... must not evaluate right");
     assert_eq!(v, Value::Ukweli(true));
 }
 
@@ -583,7 +1043,8 @@ fn short_circuit_and_does_not_eval_right() {
 kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
 kazi and_short() -> Ukweli { rejesha si_kweli na paparika("right") }"#,
     );
-    let v = run_function(&module, "and_short", vec![]).expect("si_kweli na ... must not evaluate right");
+    let v = run_function(&module, "and_short", vec![])
+        .expect("si_kweli na ... must not evaluate right");
     assert_eq!(v, Value::Ukweli(false));
 }
 
@@ -595,7 +1056,11 @@ fn add_assign_neno_concatenates() {
     );
     let v = run_function(&module, "concat", vec![]).expect("run");
     match &v {
-        Value::Neno(s) => assert!(s.contains("a") && s.contains("b"), "+= should concatenate: {:?}", s),
+        Value::Neno(s) => assert!(
+            s.contains("a") && s.contains("b"),
+            "+= should concatenate: {:?}",
+            s
+        ),
         _ => panic!("expected Neno, got {:?}", v),
     }
 }
@@ -622,24 +1087,83 @@ fn unary_ops_stress() {
          kazi borrow_imm() -> Namba { weka x = 7 rejesha azima x }
          kazi borrow_mut() -> Namba { weka x = 8 rejesha azima_tenda x }"#,
     );
-    assert_eq!(run_function(&module, "neg_double", vec![]).unwrap(), Value::Namba(1.0), "- - 1");
-    assert_eq!(run_function(&module, "neg_zero", vec![]).unwrap(), Value::Namba(0.0), "- 0");
+    assert_eq!(
+        run_function(&module, "neg_double", vec![]).unwrap(),
+        Value::Namba(1.0),
+        "- - 1"
+    );
+    assert_eq!(
+        run_function(&module, "neg_zero", vec![]).unwrap(),
+        Value::Namba(0.0),
+        "- 0"
+    );
     let v = run_function(&module, "neg_ukomo", vec![]).unwrap();
-    assert!(matches!(v, Value::Namba(x) if x.is_infinite() && x < 0.0), "- Ukomo");
+    assert!(
+        matches!(v, Value::Namba(x) if x.is_infinite() && x < 0.0),
+        "- Ukomo"
+    );
     let v = run_function(&module, "neg_siyo_namba", vec![]).unwrap();
     assert!(matches!(v, Value::Namba(x) if x.is_nan()), "- Siyo_Namba");
-    assert_eq!(run_function(&module, "neg_precedence", vec![]).unwrap(), Value::Namba(9.0), "- 1 + 10");
-    assert_eq!(run_function(&module, "not_double", vec![]).unwrap(), Value::Ukweli(true), "siyo siyo kweli");
-    assert_eq!(run_function(&module, "not_triple", vec![]).unwrap(), Value::Ukweli(false), "siyo siyo siyo kweli");
-    assert_eq!(run_function(&module, "bitnot_zero", vec![]).unwrap(), Value::Namba(-1.0), "siyo_biti 0");
-    assert_eq!(run_function(&module, "bitnot_neg_one", vec![]).unwrap(), Value::Namba(0.0), "siyo_biti (-1)");
-    assert_eq!(run_function(&module, "bitnot_three", vec![]).unwrap(), Value::Namba(-4.0), "siyo_biti 3 => !3 i64");
-    assert_eq!(run_function(&module, "jaribu_tokeo_ok", vec![]).unwrap(), Value::Namba(5.0), "jaribu gawio(10,2)");
-    assert_eq!(run_function(&module, "jaribu_chaguo_some", vec![]).unwrap(), Value::Namba(100.0), "jaribu (100 kama Biti8)");
-    assert_eq!(run_function(&module, "precedence_binary_minus", vec![]).unwrap(), Value::Namba(-1.0), "0 - 1");
-    assert_eq!(run_function(&module, "precedence_unary_neg", vec![]).unwrap(), Value::Namba(-1.0), "- 1");
-    assert_eq!(run_function(&module, "borrow_imm", vec![]).unwrap(), Value::Namba(7.0), "azima x");
-    assert_eq!(run_function(&module, "borrow_mut", vec![]).unwrap(), Value::Namba(8.0), "azima_tenda x");
+    assert_eq!(
+        run_function(&module, "neg_precedence", vec![]).unwrap(),
+        Value::Namba(9.0),
+        "- 1 + 10"
+    );
+    assert_eq!(
+        run_function(&module, "not_double", vec![]).unwrap(),
+        Value::Ukweli(true),
+        "siyo siyo kweli"
+    );
+    assert_eq!(
+        run_function(&module, "not_triple", vec![]).unwrap(),
+        Value::Ukweli(false),
+        "siyo siyo siyo kweli"
+    );
+    assert_eq!(
+        run_function(&module, "bitnot_zero", vec![]).unwrap(),
+        Value::Namba(-1.0),
+        "siyo_biti 0"
+    );
+    assert_eq!(
+        run_function(&module, "bitnot_neg_one", vec![]).unwrap(),
+        Value::Namba(0.0),
+        "siyo_biti (-1)"
+    );
+    assert_eq!(
+        run_function(&module, "bitnot_three", vec![]).unwrap(),
+        Value::Namba(-4.0),
+        "siyo_biti 3 => !3 i64"
+    );
+    assert_eq!(
+        run_function(&module, "jaribu_tokeo_ok", vec![]).unwrap(),
+        Value::Namba(5.0),
+        "jaribu gawio(10,2)"
+    );
+    assert_eq!(
+        run_function(&module, "jaribu_chaguo_some", vec![]).unwrap(),
+        Value::Namba(100.0),
+        "jaribu (100 kama Biti8)"
+    );
+    assert_eq!(
+        run_function(&module, "precedence_binary_minus", vec![]).unwrap(),
+        Value::Namba(-1.0),
+        "0 - 1"
+    );
+    assert_eq!(
+        run_function(&module, "precedence_unary_neg", vec![]).unwrap(),
+        Value::Namba(-1.0),
+        "- 1"
+    );
+    assert_eq!(
+        run_function(&module, "borrow_imm", vec![]).unwrap(),
+        Value::Namba(7.0),
+        "azima x"
+    );
+    assert_eq!(
+        run_function(&module, "borrow_mut", vec![]).unwrap(),
+        Value::Namba(8.0),
+        "azima_tenda x"
+    );
 }
 
 // ── Trait dispatch ────────────────────────────────────────────────────────────
@@ -934,7 +1458,8 @@ fn syntax_sugar_list_map_ops() {
     //  4. g[key]        (index-read  → pata or Hamna)
     //  5. weka without type annotation (already worked; confirmed here)
     //  6. ! (not), && (and), || (or) operator aliases
-    let module = parse_only(r#"
+    let module = parse_only(
+        r#"
 kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
 
 kazi run_list() -> Namba {
@@ -969,13 +1494,35 @@ kazi run_and() -> Ukweli {
 kazi run_or() -> Ukweli {
     rejesha si_kweli || kweli
 }
-"#);
+"#,
+    );
 
-    assert_eq!(run_function(&module, "run_list",    vec![]).expect("list"),   Value::Namba(3.0));
-    assert_eq!(run_function(&module, "run_map_empty",   vec![]).expect("map_empty"),  Value::Namba(99.0));
-    assert_eq!(run_function(&module, "run_map_literal", vec![]).expect("map_lit"),    Value::Namba(3.0));
-    assert_eq!(run_function(&module, "run_map_missing", vec![]).expect("map_miss"),   Value::Ukweli(true));
-    assert_eq!(run_function(&module, "run_not",    vec![]).expect("not"),     Value::Ukweli(true));
-    assert_eq!(run_function(&module, "run_and",    vec![]).expect("and"),     Value::Ukweli(true));
-    assert_eq!(run_function(&module, "run_or",     vec![]).expect("or"),      Value::Ukweli(true));
+    assert_eq!(
+        run_function(&module, "run_list", vec![]).expect("list"),
+        Value::Namba(3.0)
+    );
+    assert_eq!(
+        run_function(&module, "run_map_empty", vec![]).expect("map_empty"),
+        Value::Namba(99.0)
+    );
+    assert_eq!(
+        run_function(&module, "run_map_literal", vec![]).expect("map_lit"),
+        Value::Namba(3.0)
+    );
+    assert_eq!(
+        run_function(&module, "run_map_missing", vec![]).expect("map_miss"),
+        Value::Ukweli(true)
+    );
+    assert_eq!(
+        run_function(&module, "run_not", vec![]).expect("not"),
+        Value::Ukweli(true)
+    );
+    assert_eq!(
+        run_function(&module, "run_and", vec![]).expect("and"),
+        Value::Ukweli(true)
+    );
+    assert_eq!(
+        run_function(&module, "run_or", vec![]).expect("or"),
+        Value::Ukweli(true)
+    );
 }

@@ -1,6 +1,8 @@
 //! Expression and statement evaluation.
 
 mod expr;
+pub(crate) mod methods;
+pub(crate) mod ops;
 mod stmt;
 
 use asili_parser::{Block, Expr, Module};
@@ -69,7 +71,11 @@ pub fn eval_expr(
     eval_expr_impl(expr, &mut rt)
 }
 
-pub(crate) fn eval_expr_impl(expr: &Expr, rt: &mut Runtime<'_>) -> Result<crate::value::Value, EvalError> {
+pub(crate) fn eval_expr_impl(
+    expr: &Expr,
+    rt: &mut Runtime<'_>,
+) -> Result<crate::value::Value, EvalError> {
+    rt.count_expression();
     rt.depth += 1;
     rt.update_peak_depth();
     if rt.depth > MAX_EVAL_DEPTH {
@@ -77,7 +83,9 @@ pub(crate) fn eval_expr_impl(expr: &Expr, rt: &mut Runtime<'_>) -> Result<crate:
         return Err(EvalError::Unknown("undani mno".into()));
     }
     // See the matching comment in eval_block_impl above for why the red zone was widened.
-    let result = stacker::maybe_grow(256 * 1024, 2 * 1024 * 1024, || expr::eval_expr_inner(expr, rt));
+    let result = stacker::maybe_grow(256 * 1024, 2 * 1024 * 1024, || {
+        expr::eval_expr_inner(expr, rt)
+    });
     rt.depth -= 1;
     result
 }

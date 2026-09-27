@@ -30,7 +30,7 @@ These are the definitive resolutions for the Asili v1.1 **Substrate**, following
 | Topic | Decision |
 |-------|----------|
 | **Bitwise / shift** | **Shift:** `sogeza_kushoto`, `sogeza_kulia`. **Bitwise:** `na_biti`, `au_biti`, `xor_biti`. |
-| **Operator families** | Arithmetic (`+`, `-`, `*`, `/`, `%`, `**`), comparison (`==`, `!=`, `>`, `<`, `>=`, `<=`), logical (`na`, `au`, `siyo`), assignment (`=`, `+=`, `-=`, `*=`, `/=`) are part of core Signal. |
+| **Operator families** | Arithmetic (`+`, `-`, `*`, `/`, `%`, `**`), comparison (`==`, `!=`, `>`, `<`, `>=`, `<=`), logical (`na`, `au`, `siyo`), assignment (`=`, `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `\|=`, `^=`) are part of core Signal. |
 | **Bitwise NOT** | `siyo_biti` is the unary bitwise inversion operator for fixed-width integer/bit types. |
 | **kwa loop** | **Iterator:** `kwa x katika orodha`. **Range:** `kwa i kutoka 0 hadi n`. Both supported. |
 | **Unbounded loop form** | `wakati milele { ... }` is the canonical syntax for intentional infinite loops. |
@@ -62,7 +62,7 @@ These are the definitive resolutions for the Asili v1.1 **Substrate**, following
 | Topic | Decision |
 |-------|----------|
 | **kama on failure** | Returns **T?**. On failure (e.g. `1000 kama Biti8`), result is **Hamna**. Caller must handle nullability. |
-| **Precedence** | **kama** binds **tighter** than arithmetic. So `a + b kama Namba` means `a + (b kama Namba)`. |
+| **Precedence** | **kama** binds **tighter** than arithmetic. So `a + b kama Namba` means `a + (b kama Namba)`. Bitwise operators bind tighter than comparisons: `a & b == 0` means `(a & b) == 0`. |
 
 ---
 

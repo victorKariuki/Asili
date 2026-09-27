@@ -1,5 +1,7 @@
 mod commands;
 mod pipeline;
+#[cfg(test)]
+mod test_support;
 
 use commands::{dispatch, CliError};
 

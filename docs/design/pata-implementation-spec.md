@@ -446,9 +446,24 @@ expected-file-list assertion to include the new path if the test enumerates exac
 
 ---
 
-## Section 6: `Workspace`/`Asili.toml` wired into `pata jenga`
+## Section 6: `Workspace`/`Asili.toml` wired into `pata jenga` — SUPERSEDED
 
-**Decision made (resolving the open question from the earlier draft of this doc):** `pata.toml`
+**This section's original decision (below, kept as history) was later reversed.** The steps below
+describe wiring `pata.toml` projects up to a *separate* `Asili.toml` workspace manifest via
+`pata_package::Workspace`/`WorkspaceConfig`, and were implemented as written. That design was
+then explicitly revisited and unified: `pata.toml` itself gained an `[eneo-kazi]` table
+(`wanachama = [...]`), parsed via a real TOML library (`load_project_config` moved off the old
+hand-rolled line scanner in the same pass), so a workspace root and an ordinary project share one
+manifest file and one Swahili-keyed syntax. `Asili.toml`, `pata_package::Workspace`,
+`WorkspaceConfig`, and `Manifest`/`PackageMetadata` were all deleted — nothing outside their own
+tests referenced them by that point. See
+[package-manager-design.md](package-manager-design.md#one-manifest-format-patatoml-real-toml-singleleaf-or-workspace-root)
+for the current design and rationale. The original rationale below (reuse a working serde parser
+rather than extend the hand-rolled one) was valid at the time but was superseded once the parser
+itself was replaced with a real TOML library, which removed the asymmetry that motivated keeping
+two formats.
+
+**Original decision (historical, no longer current):** `pata.toml`
 does **not** gain its own `[workspace]` section. `Asili.toml` stays the dedicated workspace
 manifest, read only from a workspace **root** (a directory with no `pata.toml` of its own, only
 `Asili.toml` with a `[workspace]` table naming member directories, each of which has its own
@@ -1966,7 +1981,20 @@ One test: an unformatted source string, call `compute_code_actions`, assert one 
 
 ---
 
-## Section 19: Mwalimu (LSP) incremental re-resolution
+## Section 19: Mwalimu (LSP) incremental re-resolution — DONE (as scoped below)
+
+**Implemented:** `DocStore::diagnostics_for` (content-hash cache, `pata/lsp/src/doc_store.rs`)
+and `workspace::affected_project_roots` (scoped `did_change_watched_files` invalidation,
+`pata/lsp/src/workspace.rs`) — both wired into `did_open`/`did_change`/`did_change_watched_files`
+in `pata/lsp/src/lib.rs`. Cross-file staleness is handled via an explicit `invalidate()` call in
+`did_change_watched_files` before recomputing, per this section's own step 3, rather than the
+`Module.imports`-based reverse-lookup originally sketched there — `did_change_watched_files`
+already recomputes every open document unconditionally on any watched-file event (a pre-existing
+behavior, not changed here), so the finer-grained "only B if it imports A" targeting sketched in
+step 3 wasn't necessary to get the caching's actual benefit (skipping same-text recomputation).
+Verified with 10 new tests (6 in `doc_store.rs` proving real cache hits/misses via a
+`#[cfg(test)]` recompute counter per this section's own acceptance-check note, 4 in
+`workspace.rs` proving scoped invalidation against real on-disk project directories).
 
 **Decision made:** not a full salsa-style incremental-computation framework (pulling in the
 `salsa` crate and restructuring the entire LSP around query-based recomputation is a rewrite, not
@@ -2028,7 +2056,20 @@ A's cached analysis was NOT recomputed as a side effect of B's change.
 
 ---
 
-## Section 20: DAP (Debug Adapter Protocol server)
+## Section 20: DAP (Debug Adapter Protocol server) — DONE (protocol layer; see dap-later.md)
+
+**Implemented:** `pata/dap` (new crate, lib `pata_dap` + bin `pata-dap`), depending on the real
+`dap = "=0.4.1-alpha1"` crate (confirmed current via the crates.io API — no stable release exists
+for this crate; pinned the exact alpha rather than assuming `0.4`). `hook.rs` defines the
+`DebugHook` trait exactly as specified below; `mock_hook.rs` is a real (not `#[cfg(test)]`-gated)
+fake with genuine thread-blocking pause/resume (a `Mutex`+`Condvar`, not a stub); `server.rs`
+implements `initialize`/`launch`/`setBreakpoints`/`configurationDone`/`continue`/`stackTrace`/
+`scopes`/`variables`/`threads`/`disconnect` request handling plus the stdio poll loop, using the
+`dap` crate's own `Request::success`/`.ack()`/`.error()` helpers rather than reimplementing them.
+Verified with 14 tests (`cargo test -p pata-dap`) including one exercising the full stdio loop
+against real `Content-Length`-framed wire bytes, and manually against the compiled binary over a
+live pipe. See `docs/design/dap-later.md` for the up-to-date status write-up (that file, not this
+one, is the canonical "what works today" reference per the wiki-sync table).
 
 **Decision made:** a **new binary crate** `pata/dap`, not a module inside `pata-lsp` — DAP and LSP
 are structurally unrelated protocols (different message shapes, different lifecycle, different

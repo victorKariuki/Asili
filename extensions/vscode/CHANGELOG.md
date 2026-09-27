@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added snippets for grouped `weka`/`thabiti` declarations.
+- Documented that builtin standard-library functions are ambient and do not require `leta`.
+- Added current-file and workspace lint commands backed by the globally installed `pata-lint`,
+  plus the `asili.linterPath` setting.
+
 All notable changes to the Asili VS Code extension are recorded here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 

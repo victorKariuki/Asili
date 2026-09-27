@@ -24,9 +24,13 @@ Syntax highlighting and full language server support (Mwalimu) for the Asili lan
 - Signature help — parameter hints while typing a call, with real parameter names for your own
   functions and cross-file calls into your own other project files.
 - Completion — keywords, builtin types, builtin functions, module-level declarations.
+- Builtin standard-library functions are available without `leta`; snippets also support grouped
+  declarations such as `weka r = 0.0, c = 0.0`.
 - Code actions — quick-fixes for diagnostics (currently: "Add doc comment").
 - Code lens — a "▶ Run Test" lens above every `#[jaribio]` function, running
   `pata jaribu --filter <name>` in an integrated terminal.
+- Lint commands — use **Asili: Lint Current File** or **Asili: Lint Workspace** to run the
+  globally installed `pata-lint` with the nearest `pata.toml` configuration.
 - Formatting, folding ranges, rename (with `prepareRename` validation), and "highlight
   occurrences" (document highlight).
 
@@ -66,6 +70,17 @@ on your PATH:
   "asili.cliPath": "/path/to/pata"
 }
 ```
+
+For the complete global toolchain, install the CLI, language server, and linter with Cargo:
+
+```bash
+cargo install --path pata/cli --bin pata-cli --force
+cargo install --path pata/lsp --bin pata-lsp --force
+cargo install --path pata/lint --bin pata-lint --force
+```
+
+Ensure `~/.cargo/bin` is on `PATH`. If the tools are installed elsewhere, set
+`asili.serverPath`, `asili.cliPath`, and `asili.linterPath` to their absolute paths.
 
 Cross-file features (diagnostics, go to definition, references, workspace symbols) need a
 `pata.toml` at your workspace root to know what your project's files and dependencies are —

@@ -10,7 +10,7 @@
 use asili_parser::Module;
 use std::fmt;
 
-const ASB_HEADER_PREFIX: &str = "ASB-STUB\nversion=3\nformat=serialized\n";
+const ASB_HEADER_PREFIX: &str = "ASB-STUB\nversion=4\nformat=serialized\n";
 const PAYLOAD_MARKER: &[u8] = b"\nPAYLOAD\n";
 
 /// Parse format from .asb header (e.g. "serialized" or "bytecode"). Returns None if header missing.
@@ -63,6 +63,27 @@ pub fn emit_asb_bytes(module: &Module, source: &str) -> Vec<u8> {
     out
 }
 
+/// Version of the bytecode payload (the register-VM instruction set). Artifacts built by an
+/// older `pata jenga` carry a different `version=` and must be rebuilt.
+const BYTECODE_VERSION: &str = "5";
+
+/// Emit a real bytecode artifact.  The header remains intentionally simple and textual so older
+/// runners can reject it cleanly, while the payload is the same deterministic bincode envelope
+/// used by the AST fallback.
+pub fn emit_bytecode_bytes(program: &crate::bytecode::BytecodeProgram, source: &str) -> Vec<u8> {
+    let payload = bincode::serialize(program).expect("BytecodeProgram serialization");
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    source.hash(&mut h);
+    let header = format!(
+        "ASB-STUB\nversion={BYTECODE_VERSION}\nformat=bytecode\nmodule_hash={:016x}\nPAYLOAD\n",
+        h.finish()
+    );
+    let mut out = header.into_bytes();
+    out.extend_from_slice(&payload);
+    out
+}
+
 /// Load a Module from .asb bytes. Expects format=serialized and a PAYLOAD section.
 pub fn load_asb(bytes: &[u8]) -> Result<Module, AsbLoadError> {
     let payload = payload_slice(bytes)?;
@@ -74,7 +95,9 @@ fn payload_slice(bytes: &[u8]) -> Result<&[u8], AsbLoadError> {
         .windows(PAYLOAD_MARKER.len())
         .position(|w| w == PAYLOAD_MARKER)
         .ok_or_else(|| {
-            AsbLoadError::InvalidFormat("alama ya PAYLOAD haipo; jenga upya ili kupata kilele kinachotendeka".to_string())
+            AsbLoadError::InvalidFormat(
+                "alama ya PAYLOAD haipo; jenga upya ili kupata kilele kinachotendeka".to_string(),
+            )
         })?;
     Ok(&bytes[pos + PAYLOAD_MARKER.len()..])
 }
@@ -82,5 +105,13 @@ fn payload_slice(bytes: &[u8]) -> Result<&[u8], AsbLoadError> {
 /// Load BytecodeProgram from .asb bytes. Expects format=bytecode and a PAYLOAD section.
 pub fn load_asb_bytecode(bytes: &[u8]) -> Result<crate::bytecode::BytecodeProgram, AsbLoadError> {
     let payload = payload_slice(bytes)?;
+    let header = std::str::from_utf8(&bytes[..bytes.len() - payload.len()]).unwrap_or("");
+    let version = header.lines().find_map(|l| l.strip_prefix("version="));
+    if version != Some(BYTECODE_VERSION) {
+        return Err(AsbLoadError::InvalidFormat(
+            "kilele kilijengwa na toleo jingine la bytecode; jenga upya kwa `pata jenga`"
+                .to_string(),
+        ));
+    }
     bincode::deserialize(payload).map_err(|e| AsbLoadError::Decode(e.to_string()))
 }

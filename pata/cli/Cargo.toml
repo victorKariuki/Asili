@@ -1,6 +1,6 @@
 [package]
 name = "pata-cli"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 
 [dependencies]
@@ -8,8 +8,16 @@ asili-diagnostics = { path = "../../core/diagnostics" }
 asili-lexer = { path = "../../core/lexer" }
 asili-parser = { path = "../../core/parser" }
 asili-evaluator = { path = "../../core/evaluator" }
+pata-core = { path = "../core" }
+pata-fmt = { path = "../fmt" }
 pata-package = { path = "../package" }
 pata-lsp = { path = "../lsp" }
 sha2 = "0.11.0"
 pulldown-cmark = "0.13"
 anyhow = "1.0"
+serde_json = "1"
+rayon = "1.7"
+git2 = "0.19"
+semver = "1.0"
+similar = "2.7"
+toml = "0.8"

@@ -3,5 +3,5 @@
 mod analyzer;
 mod types;
 
-pub use types::parse_value_type;
 pub(crate) use analyzer::{run_semantic_check, run_semantic_check_with_modules};
+pub use types::parse_value_type;

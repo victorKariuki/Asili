@@ -8,7 +8,7 @@ pub struct Token {
 }
 
 /// A comment captured as trivia rather than a token — see [`tokenize_with_trivia`]. `text`
-/// excludes the leading `#`/`//` marker; `after_token_index` is the index into the returned
+/// includes the leading `#` marker; `after_token_index` is the index into the returned
 /// token vec of the last token before this comment (`None` if the comment precedes every token),
 /// letting a consumer re-attach each comment to "immediately after token N" during re-emission.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -19,11 +19,57 @@ pub struct Comment {
     pub after_token_index: Option<usize>,
 }
 
+/// Every reserved word of the language — statement keywords, word operators and literal
+/// keywords. The one list the parser's grammar, LSP completion/hover/rename and the formatter
+/// all agree on.
+pub const KEYWORDS: &[&str] = &[
+    "au",
+    "au_biti",
+    "au_ikiwa",
+    "azima",
+    "azima_tenda",
+    "endelea",
+    "hadi",
+    "ikiwa",
+    "jaribu",
+    "jenum",
+    "kama",
+    "katika",
+    "kazi",
+    "kutoka",
+    "kwa",
+    "kweli",
+    "lebo",
+    "leta",
+    "linganisha",
+    "milele",
+    "na",
+    "na_biti",
+    "rejesha",
+    "shughuli",
+    "si_kweli",
+    "sifa",
+    "siyo",
+    "siyo_biti",
+    "sogeza_kulia",
+    "sogeza_kushoto",
+    "thabiti",
+    "tupa",
+    "umbo",
+    "umma",
+    "vinginevyo",
+    "vunja",
+    "wakati",
+    "weka",
+    "xor_biti",
+    "ya",
+];
+
 pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
     tokenize_inner(source, None)
 }
 
-/// Same tokenization as [`tokenize`], but comments (`# ...` / `// ...`) are captured as
+/// Same tokenization as [`tokenize`], but comments (`# ...` and `/// ...` doc comments) are captured as
 /// [`Comment`] trivia instead of being silently discarded — for `pata nadhifu`, which needs to
 /// re-emit them rather than delete them. Every other consumer (the parser, LSP, lint, tests)
 /// keeps using [`tokenize`] unchanged; this is purely additive.
@@ -56,41 +102,16 @@ fn tokenize_inner(
                 if i + 1 < chars.len() && chars[i + 1] == '[' {
                     // Attribute start, treat '#' as a token
                 } else {
-                    // Comment, skip until end of line
-                    let start_col = col;
-                    let start = i;
-                    while i < chars.len() && chars[i] != '\n' {
-                        i += 1;
-                        col += 1;
-                    }
-                    if let Some(out) = trivia.as_deref_mut() {
-                        out.push(Comment {
-                            text: chars[start..i].iter().collect(),
-                            line: line_idx + 1,
-                            column: start_col,
-                            after_token_index: tokens.len().checked_sub(1),
-                        });
-                    }
+                    // Comment: the rest of the line.
+                    skip_comment(&chars, &mut i, &mut col, line_idx, &tokens, &mut trivia);
                     continue;
                 }
             }
 
-            if ch == '/' && i + 1 < chars.len() && chars[i + 1] == '/' {
-                // Comment, skip until end of line
-                let start_col = col;
-                let start = i;
-                while i < chars.len() && chars[i] != '\n' {
-                    i += 1;
-                    col += 1;
-                }
-                if let Some(out) = trivia.as_deref_mut() {
-                    out.push(Comment {
-                        text: chars[start..i].iter().collect(),
-                        line: line_idx + 1,
-                        column: start_col,
-                        after_token_index: tokens.len().checked_sub(1),
-                    });
-                }
+            // `///` is a documentation comment (read by `pata thibitisha`'s public-API docs
+            // check). A plain `//` is the floor-division operator, not a comment.
+            if ch == '/' && chars.get(i + 1) == Some(&'/') && chars.get(i + 2) == Some(&'/') {
+                skip_comment(&chars, &mut i, &mut col, line_idx, &tokens, &mut trivia);
                 continue;
             }
 
@@ -188,12 +209,28 @@ fn tokenize_inner(
                 continue;
             }
 
-            if "(){}:,.;+-*/%<>!=[]?#&|".contains(ch) {
+            if "(){}:,.;+-*/%<>!=[]?#&|^".contains(ch) {
                 let start_col = col;
                 let mut lexeme = ch.to_string();
+                // `//=` (floor-division assignment) is the one three-character operator.
+                if ch == '/' && chars.get(i + 1) == Some(&'/') && chars.get(i + 2) == Some(&'=') {
+                    tokens.push(Token {
+                        lexeme: "//=".to_string(),
+                        line: line_idx + 1,
+                        column: start_col,
+                    });
+                    i += 3;
+                    col += 3;
+                    continue;
+                }
                 if i + 1 < chars.len() {
                     let pair = format!("{}{}", ch, chars[i + 1]);
-                    if ["==", "!=", ">=", "<=", "->", "+=", "-=", "*=", "/=", "=>", "::", "**", "&&", "||"].contains(&pair.as_str()) {
+                    if [
+                        "==", "!=", ">=", "<=", "->", "+=", "-=", "*=", "/=", "%=", "&=", "|=",
+                        "^=", "//", "=>", "::", "**", "&&", "||", "<<", ">>",
+                    ]
+                    .contains(&pair.as_str())
+                    {
                         lexeme = pair;
                         i += 1;
                         col += 1;
@@ -215,15 +252,18 @@ fn tokenize_inner(
                 let c = chars[i];
                 // Include decimal point in numeric literals: if building a digit-only token
                 // and we see '.' followed by a digit, absorb both to form e.g. "100.0".
-                if c == '.' && word.chars().all(|ch| ch.is_ascii_digit()) && !word.is_empty()
-                    && i + 1 < chars.len() && chars[i + 1].is_ascii_digit()
+                if c == '.'
+                    && word.chars().all(|ch| ch.is_ascii_digit())
+                    && !word.is_empty()
+                    && i + 1 < chars.len()
+                    && chars[i + 1].is_ascii_digit()
                 {
                     word.push('.');
                     i += 1;
                     col += 1;
                     continue;
                 }
-                if c.is_whitespace() || "(){}:,.;+-*/%<>!=[]#&?|\"".contains(c) {
+                if c.is_whitespace() || "(){}:,.;+-*/%<>!=[]#&|^?\"".contains(c) {
                     break;
                 }
                 word.push(c);
@@ -250,6 +290,29 @@ fn tokenize_inner(
     }
 }
 
+/// Consume a comment running from `chars[*i]` to the end of the line, recording it as trivia
+/// when the caller asked for it.
+fn skip_comment(
+    chars: &[char],
+    i: &mut usize,
+    col: &mut usize,
+    line_idx: usize,
+    tokens: &[Token],
+    trivia: &mut Option<&mut Vec<Comment>>,
+) {
+    let (start, start_col) = (*i, *col);
+    *col += chars.len() - *i;
+    *i = chars.len();
+    if let Some(out) = trivia.as_deref_mut() {
+        out.push(Comment {
+            text: chars[start..].iter().collect(),
+            line: line_idx + 1,
+            column: start_col,
+            after_token_index: tokens.len().checked_sub(1),
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{tokenize, tokenize_with_trivia};
@@ -265,7 +328,10 @@ mod tests {
     fn string_escapes_decoded() {
         let src = r#"weka s = "a\n\t\"\\b""#;
         let t = tokenize(src).expect("tokenize");
-        let s_tok = t.iter().find(|x| x.lexeme.starts_with('"')).expect("string token");
+        let s_tok = t
+            .iter()
+            .find(|x| x.lexeme.starts_with('"'))
+            .expect("string token");
         assert!(s_tok.lexeme.contains('\n'));
         assert!(s_tok.lexeme.contains('\t'));
         assert!(s_tok.lexeme.ends_with('"'));
@@ -277,7 +343,11 @@ mod tests {
         let src = "ni_namba?(3)";
         let t = tokenize(src).expect("tokenize");
         let lexemes: Vec<&str> = t.iter().map(|x| x.lexeme.as_str()).collect();
-        assert_eq!(lexemes, ["ni_namba", "?", "(", "3", ")"], "ni_namba? should be two tokens");
+        assert_eq!(
+            lexemes,
+            ["ni_namba", "?", "(", "3", ")"],
+            "ni_namba? should be two tokens"
+        );
     }
 
     #[test]
@@ -290,26 +360,39 @@ mod tests {
 
     #[test]
     fn tokenize_unaffected_by_trivia_capture() {
-        let src = "weka x = 1 # maoni\nweka y = 2 // maoni mengine\n";
+        let src = "weka x = 1 # maoni\nweka y = 2 # maoni mengine\n";
         let plain = tokenize(src).expect("tokenize");
         let (with_trivia, _) = tokenize_with_trivia(src).expect("tokenize_with_trivia");
-        assert_eq!(plain, with_trivia, "trivia capture must not change the token stream");
+        assert_eq!(
+            plain, with_trivia,
+            "trivia capture must not change the token stream"
+        );
     }
 
     #[test]
-    fn tokenize_with_trivia_captures_hash_and_slash_comments() {
-        let src = "weka x = 1 # ya kwanza\n// mstari mzima\nweka y = 2";
+    fn tokenize_with_trivia_captures_hash_comments() {
+        let src = "weka x = 1 # ya kwanza\n# mstari mzima\nweka y = 2";
         let (tokens, comments) = tokenize_with_trivia(src).expect("tokenize_with_trivia");
         assert_eq!(comments.len(), 2);
         assert_eq!(comments[0].text, "# ya kwanza");
         assert_eq!(comments[0].line, 1);
-        assert_eq!(comments[1].text, "// mstari mzima");
+        assert_eq!(comments[1].text, "# mstari mzima");
         assert_eq!(comments[1].line, 2);
         // First comment follows the last token on line 1 ("1"); second comment precedes any
         // token on its own line, so it should attach to that same prior token, not None.
         let tok_1_idx = tokens.iter().position(|t| t.lexeme == "1").unwrap();
         assert_eq!(comments[0].after_token_index, Some(tok_1_idx));
         assert_eq!(comments[1].after_token_index, Some(tok_1_idx));
+    }
+
+    #[test]
+    fn double_slash_is_floor_division_not_a_comment() {
+        let lexemes: Vec<String> = tokenize("a // b //= c /// doc comment")
+            .expect("tokenize")
+            .into_iter()
+            .map(|t| t.lexeme)
+            .collect();
+        assert_eq!(lexemes, ["a", "//", "b", "//=", "c"]);
     }
 
     #[test]

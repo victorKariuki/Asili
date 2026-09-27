@@ -5,6 +5,7 @@ thabiti SIYO_KWELI: Ukweli
 thabiti TUPU: Tupu
 
 kazi orodha() -> Orodha
+kazi orodha_rudia(thamani: Unknown, idadi: Namba) -> Orodha
 kazi kamusi() -> Kamusi
 kazi kamusi_tupu() -> Kamusi
 kazi jozi(a: Unknown, b: Unknown) -> Jozi

@@ -4,10 +4,12 @@ Purpose: apply canonical formatting to `.as` / `.asi`.
 
 Inputs:
 - optional path scope
-- optional check-only mode
+- optional check-only mode (`--kagua`)
+- optional diff mode (`--diff`): never writes, prints a unified diff of what would change
+- optional `--json`: machine-readable `{sawa, jumla, yamebadilishwa: [paths]}` instead of text
 
 Success:
-- updates files in place, or exits cleanly in check mode
+- updates files in place, or exits cleanly in check/diff mode
 
 Failures:
 - parse errors preventing safe formatting

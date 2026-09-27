@@ -11,7 +11,9 @@ pub fn collect_asili_files(root: &Path) -> Result<Vec<PathBuf>> {
 }
 
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("imeshindwa kusoma {}", dir.display()))? {
+    for entry in
+        fs::read_dir(dir).with_context(|| format!("imeshindwa kusoma {}", dir.display()))?
+    {
         let entry = entry.with_context(|| "hitilafu ya kusoma entry")?;
         let path = entry.path();
 
@@ -21,7 +23,12 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         }
 
         // Skip hidden directories
-        if path.file_name().and_then(|n| n.to_str()).map(|n| n.starts_with('.')).unwrap_or(false) {
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.starts_with('.'))
+            .unwrap_or(false)
+        {
             continue;
         }
 

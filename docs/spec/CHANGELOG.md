@@ -4,6 +4,39 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Standard library ([05-standard-library.md](05-standard-library.md)): `kasha_gc` is excluded
+  from the ambient builtin exports and again requires `leta kasha_gc`; an explicit import may
+  shadow an ambient name, and only two explicit imports of one name clash (`SEM090`/`SEM091`).
+  The `mfumo` section no longer claims `leta mfumo` is required.
+
+- Syntax ([03-syntax.md](03-syntax.md)): `//` is floor division (`a // b` ≡ `sakafu(a / b)`, plus
+  `//=`); comments are `#` only, with `///` for documentation comments. Indexing an `Orodha`
+  yields the element (`a[i]: T`, out of range is a runtime error); `a[i]?`/`jaribu a[i]` keep the
+  `Tokeo`/`KosaMipaka` behaviour. `a[i] op= v` now reads `a[i]` (not `a[i]?`).
+
+- Syntax ([03-syntax.md](03-syntax.md), [08-resolved-decisions.md](08-resolved-decisions.md)):
+  compound assignment gains `%=`, `&=`, `|=`, `^=`, and every compound operator also applies to a
+  list element (`a[i] op= v`, index may not contain a call — `PAR096`); bitwise operators now
+  bind tighter than comparisons (`mask & bit == 0` is `(mask & bit) == 0`).
+- Architecture ([02-architecture-and-files.md](02-architecture-and-files.md)): `.asb` bytecode now
+  runs on a typed register VM, with ahead-of-time native code (LLVM via `clang`); replaces the
+  stack-VM description below.
+
+- Standard library ([05-standard-library.md](05-standard-library.md)): builtin modules are
+  available without explicit `leta`; project and dependency modules remain explicit.
+
+- Architecture ([02-architecture-and-files.md](02-architecture-and-files.md)): document the real `.asb` stack-VM path for the
+  Sudoku-compatible subset and the serialized-AST fallback for unsupported constructs.
+
+- Architecture ([02-architecture-and-files.md](02-architecture-and-files.md)): added a
+  `/extensions/vscode` row to the project-structure table (previously undocumented despite
+  existing); noted the linter and DAP server in the `/pata` row's tooling list.
+- Tooling ([06-tooling-and-ecosystem.md](06-tooling-and-ecosystem.md)): added `#[kabla]`/`#[baada]`
+  to the system-attributes table (setup/teardown fixtures run by `pata jaribu` around every
+  `#[jaribio]` test in the same module, including when the test itself failed); updated the
+  `pata jaribu` row for the new `--muda <sekunde>` per-test timeout flag and `--chanjo` real
+  line-level coverage tracking, and the `pata thibitisha` row for its type-stability check
+  against the most recent `v<semver>` git tag.
 - Resolved decisions ([08-resolved-decisions.md](08-resolved-decisions.md)): added 9.12 HTTP-server-shaped stack — the bounded-thread-pool-over-async decision for `mkondo_tumikia`/`mkondo_tumikia_http` (extends the 1:1-OS-thread model from 9.11 rather than introducing `tokio` as a second concurrency substrate), `mkondo_tumikia`'s blocking/per-connection model, `EvalError::Coded` as an additive (not restructuring) error-model change, `rustls`-over-`native-tls` for TLS, and `httparse`-based HTTP/1.1 framing as a separate entry point (`mkondo_tumikia_http`, not a mode flag) with its explicit chunked/pipelining/100-continue scope cuts.
 - Standard library ([05-standard-library.md](05-standard-library.md)): added `kwa_json`/`kutoka_json` (`Value`↔JSON codec, under the `mfumo` module) with per-variant encoding rules; `MkondoSikilizaji`/`mkondo_tumikia`/`mkondo_tumikia_http` (listening socket, bounded worker pool, HTTP/1.1-framed variant) with `OmbiHttp`/`JibuHttp` struct shapes; `TlsUsanidi`/`tls_sanidi`; `Mkondo.soma_bailisi(kikomo)` (bounded, non-EOF-seeking read); `njia_na_kikomo` (bounded channel constructor alongside `njia()`); `Kasha_GC<T>`'s `kasha_gc_dhaifu`/`.imarisha()` weak-reference pair.
 - Tooling ([06-tooling-and-ecosystem.md](06-tooling-and-ecosystem.md)): `pata nadhifu` section rewritten from a one-line description to the actual formatting rules (token-stream pretty-printer, call/index-hugging, generic-bracket vs. comparison-operator disambiguation, comment preservation, blank-line handling, string/char re-escaping, lex-error fallback) now that the formatter is a real implementation, not a line-based text transform.

@@ -6,6 +6,509 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Cross-language Sudoku benchmark** (`examples/sudoku/bench/`): C, Rust and Python solvers
+  using the exact MRV algorithm from `examples/sudoku/src/kuu.as`, plus `run.sh`, which builds
+  everything and reports the best wall time per implementation after checking that every
+  solver reports the same attempt count (90,665).
+- **Ahead-of-time native code** (`core/evaluator/src/aot.rs`): `pata jenga` lowers bytecode
+  artifacts to LLVM IR (no C source involved), optimizes and links it with `clang -O2` into
+  `kilele/<name>.so` (`.dylib`/`.dll`), and `pata tenda`, `pata jenga --tenda` and the
+  standalone runner load it when it was built from exactly the same bytecode (hash-checked);
+  without `clang` the build prints a note and the artifact runs on the VM. `Namba` registers
+  that a flow-sensitive integer range analysis proves to hold whole numbers become native
+  `i64`s (bit-identical to `f64` semantics: no NaN, no `-0.0`, within ±2^53); unbounded
+  counters are speculated as `i64` with a bound check on every write that deoptimizes the call
+  back into the interpreter at that instruction if it ever fails. `sakafu(a / b)` on proven
+  non-negative integers becomes an integer division, and list accesses whose index is proven
+  in range drop their bounds check. The Inkala Sudoku solve runs in about 4.8 ms (gcc `-O2` C:
+  4.4 ms; clang `-O2` C: 3.2 ms). `ASILI_AOT=0` disables it, `ASILI_CLANG` picks the compiler.
+- **Cross-tier differential tests** (`tests/native_tiers.rs`): every snippet must give
+  bit-identical results on the VM interpreter and the AOT native code (signed zeros,
+  NaN/infinities, values past 2^53, negative remainders, out-of-range shifts, out-of-bounds
+  errors, labelled loops, recursion, callbacks). Without `clang`, `.asb` bytecode runs on the
+  register VM (a Cranelift JIT prototype was removed in favour of one native backend).
+
+- **Shorter bit and counter code**: compound assignment gains `%=`, `&=`, `|=` and `^=`, and every
+  compound operator now works on a list element — `safu[r] |= x` instead of
+  `safu[r] = safu[r]? | x` (`a[i] op= v` means `a[i] = a[i]? op v`; the index may not call a
+  `kazi` or method since it is evaluated twice — new diagnostic `PAR096`). The Sudoku example
+  uses both.
+
+- **Floor division `//`** (and `//=`): `a // b` is `sakafu(a / b)`, so `sakafu(i / N)` becomes
+  `i // N`. It is lowered to the same code as `sakafu(a / b)`, including the native integer
+  division.
+
+### Changed
+
+- **Indexing an `Orodha` returns the element**: `a[i]` is now the element itself and an
+  out-of-range index stops the program with `paparika: fahirisi nje ya mipaka: i (urefu n)`,
+  instead of yielding a `Tokeo` that every read had to unwrap with `?`. `a[i]?` and `jaribu a[i]`
+  keep returning/raising the `KosaMipaka` error, and `a.pata(i)` stays the `Chaguo`-returning
+  lookup. The type checker gives `a[i]` type `T` (was `Tokeo<T, KosaMipaka>`); code that stored a
+  bare `a[i]` and inspected it as a `Tokeo` must use `a[i]?`/`a.pata(i)`. `a[i] op= v` now reads
+  `a[i]` rather than `a[i]?`.
+- **Comments are `#` only** (and `///` for documentation comments): `//` is now the
+  floor-division operator. Existing `// ...` comments in the examples and docs were converted;
+  the VS Code grammar and playground highlighter follow.
+- **Bitwise operators bind tighter than comparisons** (`&`/`na_biti`, `^`/`xor_biti`,
+  `|`/`au_biti`, as in Rust and Python): `mask & bit == 0` now means `(mask & bit) == 0` instead
+  of `mask & (bit == 0)`, which was always a type error, so no valid program changes meaning.
+- `pata jenga --tenda` now runs the artifact it just built (bytecode plus native code) exactly
+  like `pata tenda`, instead of re-interpreting the in-memory AST with the tree-walking
+  evaluator. `orodha_rudia(x, n)` assigned to an `Orodha<Namba>` lowers to a typed
+  `ListRepeat` instruction.
+- **Typed register VM for `.asb` bytecode** (`core/evaluator/src/bytecode.rs`): the stack VM,
+  which boxed every operand in a `Value`-carrying enum, is replaced by a register machine with
+  separate `f64`, `Vec<f64>` (`Orodha<Namba>`) and generic `Value` register files per frame.
+  Numeric code never touches `Value`: arithmetic and bitwise operators are single instructions
+  on unboxed registers, comparisons feeding `ikiwa`/`wakati` fuse into one compare-and-branch,
+  `kwa ... kutoka ... hadi` uses a fused increment-and-branch back edge, `b[i]?` on an
+  `Orodha<Namba>` is one bounds-checked load, and numeric literals are preloaded registers. The
+  real Inkala Sudoku (90,665 attempts) drops from 1.50 s to about 0.12 s in release builds (the
+  tree-walking evaluator takes 3.4 s; the same algorithm in CPython 3.11 takes 0.33 s, in C
+  0.006 s). The `.asb` bytecode payload format changed (header `version=5`);
+  running an artifact built by an older `pata jenga` now fails with a clear "rebuild with
+  `pata jenga`" message instead of a decode error.
+- **One implementation of the language's value semantics** (`core/evaluator/src/eval/ops.rs`,
+  `eval/methods.rs`), used by the tree-walking evaluator and by every bytecode tier: binary and
+  unary operators (including `Neno` ordering and `Namba_Kuu`/`Namba_Sahihi` widening), `kama`
+  casts, `?`/`jaribu` unwrapping, condition truthiness, indexing, number-to-text formatting,
+  `kwa ... katika` snapshots (with `Kamusi` entries as `Jozi`), every state-free method on
+  `Neno`/`Orodha`/`Kamusi`/`Seti`/`Chaguo`/`Tokeo`/`Jozi`/`Wakati` and the handle types, the
+  mutating methods (`ongeza`, `ingiza`, `ondoa`, `weka_key`, `badilisha`), and the callback
+  methods (`ramani`, `chuja`, `hesabu`, `chunguza`, `kila_na_fahirisi`, `kila_mmoja`). The VM
+  now dispatches methods at run time when a receiver's type is not known statically (e.g.
+  `weka k = kamusi()`) instead of falling back to the evaluator, iterates `Kamusi`, and runs
+  `badilisha` and other mutating methods on `Orodha<Namba>` locals. `tests/engines_agree.rs`
+  runs each snippet on the evaluator, the VM interpreter and AOT and requires
+  identical values and error messages.
+- LSP completion offers every builtin function the type checker knows, with its signature
+  (it offered a hand-kept list of twelve names).
+- Internal: one implementation each of the compile front end, `pata.toml` discovery (new
+  `pata-config` crate shared by `pata-fmt`, `pata-lint` and `pata-lsp`), the keyword list, the
+  server worker pool, the tree-walker entry path and the expression-tree walk; no behaviour
+  change beyond the fixes below.
+- `Orodha.jiunge`/`kwa_neno` (and string building) now print NaN and infinities the same way as
+  `kama Neno` does (`Siyo_Namba`, `Ukomo`, `-Ukomo`) instead of Rust's `NaN`/`inf`.
+
+### Fixed
+
+- **Sudoku example fixture**: the board literal had 82 cells (an extra `0` in the last row),
+  so the example solved an easier, different puzzle — which is where the 0.6.0 "roughly 0.05
+  seconds" bytecode figure came from. The fixture is the real 81-cell Arto Inkala puzzle again
+  and reports 90,665 attempts / 10,041 backtracks.
+- **Bytecode VM correctness**: `.asb` programs no longer crash with `bytecode method haijaungwa
+  mkono` on `vipande`, `ramani`, `kwa_neno`, `jiunge` and the other `Neno`/`Orodha` methods (the
+  Sudoku example itself failed at the final board print); methods the VM does not implement now
+  make `pata jenga` fall back to the AST artifact instead of failing at run time. `na`/`au` now
+  short-circuit, labelled `vunja`/`endelea` target the right loop, block-scoped `weka` bindings no
+  longer share one slot per name, builtins win over same-named `kazi` (matching the evaluator),
+  out-of-bounds `Orodha` reads return the evaluator's `KosaMipaka` error, and the nonexistent
+  call forms `na_biti(..)`/`sogeza_kushoto(..)` are no longer silently accepted.
+  `kila_na_fahirisi` callbacks on bytecode receive `(kipengele, fahirisi)` like the evaluator
+  (the VM passed the index first).
+- **Ambient stdlib follow-ups**: a project or dependency constant/function may now share a name
+  with an ambient builtin (e.g. a dependency's `PI`) — an explicit import shadows the prelude,
+  and only two explicit imports of the same name clash (`SEM090`/`SEM091`); `kasha_gc` is opt-in
+  again (needs `leta kasha_gc`, as its design specifies). The semantic analyzer grows its stack
+  on deeply nested code instead of overflowing it.
+- **Nested generics closed by `>>`**: `Orodha<Orodha<Namba>>` no longer lets the type swallow
+  the following `= ...` (the lexer reads `>>` as one token; types now count it as two closing
+  brackets), and `pata nadhifu` keeps such types tight (`Kamusi<Neno, Orodha<Namba>>`).
+- `pata-lint`'s unused-binding rule (`LINT301`) no longer flags a variable used only inside an
+  `ikiwa` expression, and the LSP now highlights names there too.
+- LSP folding ranges and signature help no longer treat `//` (floor division) as the start of
+  a comment.
+
+## [0.6.0] - 2026-09-21
+
+### Added
+
+- **Value-producing conditionals**: `ikiwa ... { thamani } vinginevyo { thamani }` and
+  `au_ikiwa` branches can now be used directly in expressions.
+- **Pair destructuring**: declarations such as `weka (jina, umri) = p` now bind both members
+  of a `Jozi` without repetitive `.kwanza()` and `.pili()` calls.
+- **Symbolic bitwise aliases**: `&`, `|`, `^`, `<<`, and `>>` now complement the existing
+  Swahili bitwise operators without removing their readable spellings.
+- **Collection helpers**: `Orodha` now provides `pata`, `badilisha`, `ramani`, `chuja`, `hesabu`,
+  `chunguza`, `unganisha`, and `kila_na_fahirisi` for safe access, replacement, transformation,
+  filtering, predicates, joining, and indexed callbacks.
+- **List shaping and string pipelines**: `Orodha.vipande(size)` chunks lists,
+  `Orodha.kwa_neno()` converts elements to strings, and `Orodha.jiunge(separator)` joins the
+  resulting values, allowing concise row/line rendering without manual index loops.
+- **String convenience methods**: `Neno` now supports `tupu()`, `ina(sub)`, `hesabu(sub)`, and
+  `rudia(n)` for common emptiness, containment, counting, and repetition operations without
+  hand-written loops.
+- **VS Code global-tool workflow**: the extension now exposes current-file and workspace lint
+  commands backed by `pata-lint`, with configurable `asili.linterPath`; installation guidance
+  covers globally installing `pata-cli`, `pata-lsp`, and `pata-lint`.
+- **Ambient builtin stdlib**: builtin standard-library exports are now available without
+  repetitive `leta` declarations; explicit imports remain required for project and dependency
+  modules.
+- **Repeated list construction**: the new `orodha_rudia(thamani, idadi)` prelude builtin
+  creates a list by repeating a value, including validation that the count is a finite,
+  non-negative integer.
+- **Grouped declarations**: one `weka` or `thabiti` declaration can now introduce multiple
+  comma-separated bindings, such as `weka r = 0.0, c = 0.0`, reducing repeated declaration
+  keywords while preserving normal inferred types and ownership checks.
+- **Evaluator execution metrics**: `run_function_with_metrics` now reports statement,
+  expression, index-read, method-call, and function-call counts for profiling hot programs
+  without changing ordinary runtime behavior.
+- **Evaluator collection fast paths**: identifier-based list and map indexing now borrows the
+  collection and clones only the selected element instead of cloning the entire collection.
+- **Evaluator mutation dispatch fast paths**: identifier-bound `Orodha` and `Kamusi` mutation
+  methods now update the binding without first cloning the receiver collection.
+- **Sudoku solver example** (`examples/sudoku`): a runnable MRV backtracking solver using a
+  flat numeric board and row/column/sub-grid bit masks; the legendary Arto Inkala "world's
+  hardest Sudoku" fixture completes in about 2.25–2.38 seconds in repeated release bytecode
+  runs and reports 90,665 candidate attempts and 10,041 backtracks for repeatable benchmarking.
+- **Sudoku bytecode VM**: `pata jenga` now lowers the loop/list-heavy Sudoku subset (arithmetic,
+  comparisons, indexing, mutation, builtin and user-function calls) to a compact `.asb` stack
+  bytecode artifact. `pata tenda` and `pata-runner` execute those artifacts directly, while
+  unsupported syntax keeps the serialized-AST evaluator fallback.
+- **Bytecode list fast paths**: local `Orodha` indexing and `.urefu()` now use specialized VM
+  instructions that avoid cloning the whole list; the Sudoku artifact improves from roughly
+  0.07–0.10 seconds to roughly 0.05 seconds in repeated release runs.
+- **Typed Sudoku VM hot paths**: numeric locals and arithmetic use unboxed VM numbers (with
+  integer-safe bit-mask results), numeric-list reads/writes avoid collection cloning, builtin
+  indices are cached per VM run, recursive frames/stacks are pooled, and counted-loop/index-add
+  operations have fused instructions. The Inkala fixture remains source-semantic and completes
+  in about 2.25–2.38 seconds in repeated release bytecode runs.
+- **Direct numeric index lowering**: identity additions such as `data[i + 0.0]?` now lower
+  directly to a numeric-list read when the compiler can prove both locals are numeric, avoiding
+  a temporary arithmetic result while preserving the generic indexing fallback.
+- **Typed numeric builtin lowering**: numeric `sakafu`, shifts, and bitwise builtin calls in the
+  bytecode subset now execute as unboxed VM operations instead of going through builtin dispatch;
+  the Inkala benchmark drops from roughly 2.41 seconds to 2.24 seconds per release run.
+- **Real step-through debugging via `pata-dap`** (closes #43). `DebugHook` moves from `pata/dap`
+  into `core/evaluator` (`debug_hook` module) — the crate that needs to implement it — with a
+  real `RealDebugHook`: breakpoints genuinely pause the executing thread (`Mutex<bool>` +
+  `Condvar`, not polling), `resume()` genuinely unblocks it from another thread, and
+  `current_bindings()` reflects the real, live `Env` at the paused line. Wired into the
+  interpreter's own statement-execution loop (`eval_stmt_impl`, via a new `Runtime::debug_hook`
+  field and `run_main_with_debug_hook` entry point). `pata-dap` now actually launches and runs
+  the target program on `configurationDone` (`pata/dap/src/runner.rs`) instead of only answering
+  protocol requests against canned `MockHook` data — verified end-to-end both via a real
+  integration test and manually against the compiled binary over a live stdio pipe (a real
+  breakpoint hit, real variable values, real resume). `MockHook` remains for exercising the DAP
+  wire protocol independent of compiling/running a program. Single-file `launch` only (no
+  project/dependency-aware compilation) is a known, documented remaining gap.
+- **Generated API docs, published to GitHub Pages**: `.github/workflows/docs.yml` runs
+  `cargo doc --workspace --no-deps` (rustdoc, `RUSTDOCFLAGS=-D warnings` so broken doc comments
+  fail CI rather than just warning) and TypeDoc against the VS Code extension's `extension.ts`,
+  publishing both at <https://victorkariuki.github.io/Asili/> on every push to `main`. TypeDoc is
+  isolated in its own `extensions/vscode/docs-tooling/` package with a pinned `typescript@^5.9`,
+  separate from the extension's real `typescript@^7.0` — TypeDoc's peer-dependency range doesn't
+  support the newer compiler yet, and running it against the extension's own `node_modules`
+  crashes reaching into TypeScript-internal APIs that changed shape in TS7. See
+  [CONTRIBUTING.md](CONTRIBUTING.md#api-documentation) for how to build both locally.
+- **Browser playground example** (`examples/playground`): a static web app that edits Asili
+  source in a [CodeMirror 6](https://codemirror.net/) editor and runs it entirely client-side via
+  `driver/wasm`'s `wasm-browser` build (`asili_wasm::run_source`) — no code is sent to a server.
+  `pata.toml`/`src/kuu.as` make the playground self-hosted: a small `mkondo_tumikia_http` static
+  file server (same framing layer as `examples/http_server`) serves the page, `main.js`, and the
+  sample `.as` programs, run with `pata jenga --tenda`; any other static file server (e.g.
+  `python3 -m http.server`) works too. `build.sh` runs `wasm-pack` and base64-encodes the built
+  `.wasm` (Asili's `soma_faili` only reads UTF-8 text — no raw-bytes file API yet — so the
+  Asili-hosted server can't serve the binary directly; `main.js` decodes it back to bytes before
+  handing it to the wasm-bindgen `init()` glue, which works identically regardless of which
+  server is used). LSP-in-browser (diagnostics/hover/format via `pata-lsp`) is intentionally out
+  of scope for this first pass — see the example's README.
+
+- **Mwalimu (LSP) per-file incremental parse cache** (partial fix for #25). New
+  `workspace::ModuleCache`: keyed by each project-local file's canonicalized path, storing its
+  content hash alongside the already-parsed `WorkspaceModule`. A re-walk of a project's import
+  graph (triggered by `did_change_watched_files` evicting that root's coarser `WorkspaceIndex`
+  cache) now reuses every unchanged file's cached parse instead of re-tokenizing/re-parsing it,
+  only doing real work for files that are new or whose content hash no longer matches. Verified
+  directly (not just structurally) via a real parse-count counter across two new tests. What's
+  still open: a cache-refreshing call still traverses the whole import graph from the entrypoint,
+  not a "what depends on the changed file" query — true per-file salsa-style recomputation.
+- **`mkondo_tumikia_http` real chunked `Transfer-Encoding`, HTTP/1.1 pipelining, and
+  `Expect: 100-continue`** (closes #20, #21, #22). A chunked request body is decoded for real
+  (RFC 7230 §4.1 framing, chunk-size extensions ignored, trailer headers consumed but discarded)
+  instead of being rejected with `501`. Pipelined requests — two or more sent in one TCP
+  write/segment — are all answered in order without extra network reads, via a per-connection
+  `carry` buffer that no longer silently drops bytes read past the current request's boundary.
+  `Expect: 100-continue` gets a real intermediate `HTTP/1.1 100 Continue` response before the
+  body is read. See `docs/design/http-framing-design.md`'s "What changed" section.
+- **Hosted/remote package registry index over HTTP** (closes #40). New `pata_package::
+  remote_registry` module: `fetch_index` fetches and parses a static-file index's
+  `index/<name>/index.json` (Cargo alternative-registry RFC minimum surface), `fetch_and_verify`
+  downloads a version's tarball, verifies its SHA-256 against the index-recorded checksum before
+  extracting, and returns a real post-extraction content hash. `RegistrySource` gains an `Http`
+  variant, resolved through the same `Resolver::resolve` path as local-registry/git sources.
+
+- **`pata jenga` verifies vendored dependency content hash against `pata.lock` before building.**
+  `pata_package::fetch_git`/`hash_dir` previously only ever *wrote* a checksum at fetch time —
+  nothing ever re-checked it, so the lockfile's actual security property (detect a tampered or
+  swapped `.asili/packages/<name>/` directory) never fired. `LockFile::verify_content_integrity`
+  re-hashes every vendored git/registry dependency and rejects the build with a named mismatch if
+  content has drifted since `pata ongeza` fetched it. Path dependencies are exempt (live local
+  source, not fetched content).
+- **Real transitive dependency resolution + conflict detection.** `Resolver::resolve` previously
+  only resolved a project's own direct `[tegemezi]` entries — a registry dependency's own
+  `RegistryEntry.deps` field existed in the schema but nothing read it. Resolution now walks
+  registry-sourced transitive deps breadth-first (skipping `optional: true` edges), and every
+  constraint seen for a given package name (from any direct or transitive dependent) accumulates —
+  a version must satisfy all of them at once, or resolution fails with a named conflict instead of
+  one dependent's requirement silently overwriting another's lock entry. Git/path dependencies are
+  not walked transitively (no manifest format exists yet for either to declare their own deps).
+- **`pata nadhifu --diff`**: prints a unified-diff-style body of what the formatter would change,
+  using the `similar` crate for real line-level diffing, without writing any file.
+- **JSON output for `pata thibitisha`/`pata nadhifu`.** `asili-diagnostics`'s `Diagnostic`/`Span`/
+  `ContextMap` gain `Serialize`. `pata thibitisha` is restructured from fail-fast (first failing
+  check stops the run) to accumulate-and-report: every check (docs, trait completeness, FFI
+  safety, type stability, format, opt-in coverage) always runs and its result is collected, so one
+  run surfaces every problem instead of one at a time across repeated invocations; `--json` prints
+  a structured `{sawa, ukaguzi: [{jina, sawa, ujumbe}]}` array. `pata nadhifu --json` prints
+  `{sawa, jumla, yamebadilishwa: [paths]}`, naming exactly which files would change/changed.
+- **Workspace manifest unified onto `pata.toml`, `Asili.toml` retired.** `pata.toml` gains
+  `[eneo-kazi]` (`wanachama = [...]`) as the one way to declare workspace membership — one
+  manifest file and one Swahili-keyed syntax for both leaf and workspace-root projects, replacing
+  the earlier separate English-keyed `Asili.toml`/`pata_package::Workspace` design.
+  `load_project_config` now parses `pata.toml` with the real `toml` crate instead of the previous
+  hand-rolled line scanner (needed to represent `[eneo-kazi]`'s nested array; malformed `pata.toml`
+  now errors instead of silently skipping unparseable lines). `pata njozi --workspace` scaffolds
+  the unified shape. `pata_package::Workspace`/`WorkspaceConfig`/`Manifest`/`PackageMetadata` are
+  removed.
+- **`pata/cli` integration test building every `examples/` project with zero diagnostics**
+  (`pipeline::compile::tests::every_example_project_builds_with_zero_diagnostics`) — the real gap
+  `docs/design/pata-production-readiness.md` item 5 named: `pata`'s own test suite had no test
+  that builds every example, so a regression in the resolver/semantic-checker/formatter layer
+  `pata` depends on could ship silently, caught only by a human running `pata jenga` by hand.
+  Discovers every example with a `pata.toml` at its own root, plus `examples/cross_package`'s
+  nested `app/` project root as the one special case. Runs as a unit test inside `pipeline::
+  compile.rs` itself rather than a separate `pata/cli/tests/*.rs` integration test — `pata-cli`
+  is a binary-only crate with no `[lib]` target, so an external integration test has no way to
+  call `compile_project` at all. All ~18 real example projects currently build clean.
+- **`pata jenga --muda`**: prints phase-latency timings (`kuchanganua` = compile,
+  `kutoa` = emit) after a successful build, via `pata_cli::pipeline::performance::
+  PerformanceMetrics`/`ScopedTimer` — real code with real unit tests that previously had zero
+  callers from any command (confirmed via `cargo build`'s own dead-code warnings, which are gone
+  for this module now). Works on both the normal build path and the single-file cache-hit
+  early-return path (a separate code path with its own report). Verified against the real
+  `pata-cli` binary.
+- **`pata-dap`: DAP (Debug Adapter Protocol) server, protocol layer complete.** New crate
+  `pata/dap` (lib `pata_dap` + bin `pata-dap`), depending on the real `dap = "=0.4.1-alpha1"`
+  crate (no stable release exists for it; confirmed current via the crates.io API rather than
+  assuming a version). Implements `initialize`/`launch`/`setBreakpoints`/`configurationDone`/
+  `continue`/`stackTrace`/`scopes`/`variables`/`threads`/`disconnect` — the minimum viable DAP
+  surface, not the full spec (no `stepIn`/`stepOut`/watch expressions/conditional breakpoints in
+  this pass). A new `DebugHook` trait (`should_pause`/`resume`/`current_bindings`) is the
+  contract `core/evaluator` will eventually implement for real step-through debugging — genuinely
+  out of scope here, since it needs a hook inside the interpreter's own statement-execution loop,
+  a `core/` change per this repo's established `pata/`-only scope boundary. `pata-dap` runs today
+  against `MockHook`, a real (not test-only) fake with genuine thread-blocking pause/resume, so
+  the protocol layer is complete and verified — 14 tests including one exercising the full stdio
+  loop against real wire-protocol bytes, plus manual verification against the compiled binary
+  over a live pipe — independent of whether `core/evaluator`'s side ever lands. See
+  `docs/design/dap-later.md` for the full status write-up.
+- **Mwalimu (LSP) partial incremental re-resolution** (`docs/design/pata-implementation-spec.md`
+  Section 19's scoped design, not a full salsa-style rewrite): two real, independently-verified
+  fixes to the "full workspace re-check on every edit/external change" cost.
+  - `did_change_watched_files` now invalidates only the specific project root(s) the changed
+    files actually belong to (new `workspace::affected_project_roots`), instead of clearing the
+    *entire* cross-file resolution cache on any watched-file event anywhere — an unrelated
+    sibling project under the same VS Code workspace folder stays a cache hit.
+  - A new `DocStore::diagnostics_for` caches each open document's diagnostics keyed by a content
+    hash (same `DefaultHasher` convention as `pata_core::interface_registry`'s `fingerprint`): a
+    `didChange` whose new text hashes identically to what's cached — a real case some editors
+    fire, e.g. a cursor-only "edit" event — skips re-lex/re-parse/re-analyze entirely instead of
+    recomputing on every keystroke. Cross-file staleness (document A's diagnostics depend on
+    document B, which just changed externally) is handled by explicitly invalidating A's cache
+    entry inside `did_change_watched_files` before recomputing, not left to a same-text false
+    cache hit.
+- **`pata-lint` LINT301: unused local variables.** `rules::logic::check_logic_errors` — real
+  code, no longer the placeholder no-op it was — flags a `weka`/`thabiti` binding never
+  referenced anywhere else in the same function body. Deliberately conservative scope: only
+  `Stmt::Let` bindings (not `for`-loop variables or `match`-arm pattern bindings, both riskier to
+  flag correctly), function-scoped rather than block-scoped (a small false-negative bias toward
+  shadowed names, not false positives), and `_`-prefixed names are never flagged (the established
+  "intentionally unused" convention). Verified end-to-end against the real `pata-lint` binary.
+- **`pata jaribu --chanjo`**: real line-level code coverage. `core/parser`'s `Stmt::line()`
+  (new) plus a new `Runtime::executed_lines`/`record_line` in `core/evaluator` (recorded on
+  every statement `eval_stmt_impl` actually evaluates) feed a new
+  `asili_evaluator::run_test_with_coverage`, aggregated by a rewritten
+  `pata_cli::pipeline::coverage::CoverageMetrics` that walks every function body recursively
+  (including nested `if`/`while`/`for`/`match` blocks) to compute the real denominator. Replaces
+  the previous `CoverageMetrics`, which took a static function-name list — real presence/
+  absence of a name, not anything about what ran inside it, so two tests exercising different
+  branches of one function both counted as "covering" it fully. Verified end-to-end through the
+  real `pata jaribu --chanjo` CLI path against a project whose test only takes one branch of an
+  `ikiwa`/`vinginevyo`: reports 75% (3/4 lines), not 100%.
+- **`#[kabla]`/`#[baada]` setup/teardown fixtures for `pata jaribu`**: a `#[kabla]`-tagged
+  function runs before every `#[jaribio]` test in the same module (file); a `#[baada]`-tagged one
+  runs after — including when the test itself failed, since teardown exists to release resources
+  regardless of outcome. `asili_evaluator::run_test_with_fixtures` (new) wraps the existing
+  timeout-aware test runner, reached from every one of `pata jaribu`'s execution paths
+  (sequential, parallel, timed) through the shared `execute_tests_with_timeout` entry point, so
+  fixture support didn't need separate wiring per path. Required adding `kabla`/`baada` to
+  `core/parser`'s semantic-analyzer attribute allowlist (`SEM008` previously rejected any
+  attribute name it didn't recognize) — a `core/` change, so `docs/spec/06-tooling-and-
+  ecosystem.md`'s attribute table and `docs/language/07-mfumo-wa-aina.md`'s were updated
+  alongside it, not left to drift.
+- **`pata jaribu --muda <sekunde>`**: per-test wall-clock timeout. `asili_evaluator::
+  execute_tests_with_timeout` runs each timed test on its own thread, joined via
+  `recv_timeout` — the evaluator has no cooperative cancellation hook, so a timed-out
+  test's thread is not forcibly killed (safe Rust has no thread-cancellation API), only no
+  longer waited on; the suite reports it as failed and continues. Verified against a real
+  infinite `wakati milele { }` loop, both at the evaluator level and through the actual `pata
+  jaribu --muda` CLI path — the call returns promptly after the timeout rather than hanging.
+- **`pata thibitisha` type-stability check**: when the project is a git repository with at least
+  one `v<semver>` tag (highest by real semver ordering), diffs current public function
+  signatures against that tag's — flags a removed public function, changed parameter count,
+  changed parameter type, or changed return type. No tag / not a git repo means nothing to check,
+  not an error. `pata_cli::pipeline::stability::enforce_type_stability` (previously real code
+  with real logic but zero callers and a placeholder no-op test) is now wired into `thibitisha`'s
+  `run()` and rewritten to auto-discover the latest tag (the prior version required an exact tag
+  name) and check parameter/return types, not just arity.
+- **`pata ongeza --git <url>`**: real dependency fetching. `pata_package::fetch_git` clones via
+  `git2` into `.asili/packages/<lib>/`, strips `.git/` metadata, and computes a real SHA-256
+  content hash over the fetched tree — written into `pata.lock` as that dependency's checksum.
+  The manifest now records `{ git = "...", version = "..." }` (a new `pata_core::Dependency::Git`
+  variant), not a bare version string, so later resolves correctly recognize it as a git source.
+  Verified end-to-end against a real local git repo (`file://` clone), not just unit tests.
+- **`pata_package::Resolver::resolve` does real semver constraint solving**, replacing the old
+  "lock whatever version string is given, verbatim, with no conflict detection" stub. Three
+  dependency shapes: path (unchanged), git (matched against a `.pata-version` marker the fetch
+  wrote), and registry (resolved against a real local index — see below). An
+  already-locked version that still satisfies its constraint is kept rather than re-resolved,
+  avoiding lockfile churn and unnecessary re-fetches on every build. A constraint with nothing
+  real to satisfy it now fails the resolve instead of silently succeeding with a
+  `sha256("{name}@{version}")` placeholder checksum.
+- **Real local package registry** (`pata_package::LocalRegistry`, `RegistryEntry`,
+  `RegistrySource`): a file-based index — one JSON file per package at
+  `.asili/registry/<name>.json`, each entry a published version plus a fetchable source (a git
+  URL or filesystem path). `LocalRegistry::load`/`publish` do real disk I/O (previously
+  in-memory-only with no way to discover what's actually published). A registry-sourced
+  dependency's chosen version is fetched for real (via `fetch_git` or a directory copy) into
+  `.asili/packages/<name>/` and content-hashed — never a placeholder. No hosted index/API server
+  required (per the Zig/Cargo-alternative-registry precedent in
+  `docs/design/pata-production-readiness.md`); a project's own `.asili/registry/` is a real,
+  self-contained index today, with a single documented path to swap in a remote index later.
+- **`pata jenga --workspace-info`**: detect and display workspace member information from
+  `Asili.toml`'s `[workspace]` table, via `find_workspace_root` → `pata_package::Workspace::open`
+  (previously fully implemented in `pata_package` but called from no CLI command at all).
+- **`pata jaribu --nyuzi-za-jaribio <n>`**: parallel test execution using a rayon work-stealing
+  thread pool. Default behavior unchanged (sequential, `nyuzi == 1`); pass a thread count to run
+  tests concurrently.
+- **`pata jaribu --json`**: structured test-result output (`{"jumla", "sawa", "kosa",
+  "majaribio"}`) instead of `[SAWA]`/`[KOSA]` lines, for tooling to consume.
+- **`pata njozi --kiasi` / `--maktaba` / `--workspace`**: template variants for binary vs. library
+  project scaffolding, and a multi-member workspace layout (`Asili.toml` + per-member
+  `pata.toml`s).
+- **`pata njozi`-generated projects now include `.github/workflows/ci.yml`** (build/test/lint
+  stub), matching this repo's own CI workflow shape.
+- **`pata ondoa <lib>`**: the missing counterpart to `pata ongeza` — removes a dependency from
+  `pata.toml` and regenerates `pata.lock`.
+- **Adversarial test coverage for existing `pata-lint` rules** (`LINT001`–`LINT003`, `LINT101`,
+  `LINT201`–`LINT203`): each now has real false-positive/false-negative test cases, not just
+  happy-path coverage.
+- **LSP inlay hints, for real**: `pata/lsp/src/inlay_hints.rs::compute_inlay_hints` now runs the
+  same `SemanticAnalyzer` scope-resolution walk semantic-tokens uses (a new
+  `inlay_type_hints()` accessor collects `(line, column, ValueType)` for every un-annotated
+  `weka`/`thabiti` while `scan_stmt` is already inferring types for scope binding), and renders
+  a real `InlayHintLabel::String(": <Aina>")`. Replaces the previous version, which built every
+  hint with an empty `LabelParts(vec![])` label (rendered as nothing) from a naive per-line text
+  scan that checked for a `kitu` keyword this language's lexer doesn't have (declarations use
+  `weka`).
+- **LSP code actions, for real**: the `code_action` handler's LINT202 fix now matches the
+  lint rule's real Swahili message (`"kazi '<name>' haina maelezo..."`) instead of a
+  `"Function '<name>'"` prefix that never matched anything, so the fix silently never fired even
+  though the surrounding plumbing (`edit: Some(...)`) was correct. A second fix for LINT203
+  ("Ondoa leta isiyotumika") now deletes the flagged import line for real. Both are implemented
+  as a pure `actions::action_for_diagnostic(diag, uri) -> Option<CodeAction>` function, unit
+  tested directly against realistic diagnostic messages rather than only reachable through the
+  full `tower_lsp` server.
+- **`LINT203` ("unused leta") now does real per-name detection**: for each `leta
+  modname::{a, b}` selective import, flags any name that never appears as a word elsewhere in
+  the file — replacing the previous check, which only ever fired when a file had imports *and
+  zero functions* (`module.imports.len() > 0 && module.functions.is_empty()`), a condition that
+  had nothing to do with whether an import was actually used. Wildcard `leta modname` imports
+  aren't checked (no explicit names to search for without full usage resolution).
+- **`pata_lint::config::LintConfig` is wired in**: `pata-lint`'s CLI and the LSP's diagnostics
+  pipeline (`pata/lsp/src/diagnostics.rs::run_lex_parse`) both now load a project's
+  `[lint.rules]` `pata.toml` table via a new `LintConfig::find_and_load` (walks upward from the
+  file/directory being linted to the nearest ancestor `pata.toml` — `pata-lint` has no
+  dependency on `pata-cli`'s own project-root walk, so this is a small independent one) and
+  apply it through a new `lint_source_with_config`: `severity = "ignore"` genuinely suppresses a
+  rule's diagnostics, and `LINT101`'s `options.line_limit` genuinely overrides its default
+  50-statement threshold. `lint_source`/`pata-lint`'s default CLI behavior is unchanged when no
+  `pata.toml`/`[lint.rules]` is present.
+- **`pata_fmt::config::FormatterConfig`'s `indent_style`/`indent_width` are wired in**:
+  `pata-fmt`'s `main.rs` now loads `[fmt]` via a new `FormatterConfig::find_and_load` (same
+  upward-walk shape as `LintConfig`'s) and threads a real indent unit into a new
+  `canonical_format_with_indent`, replacing the printer's previously-hardcoded 4-space indent.
+  `line_width` (line-wrap) is still not applied — `Printer` has no line-length tracking or wrap
+  points at all, so this is honestly out of scope until that's built, not silently claimed done.
+
+### Fixed
+
+- **Sudoku example output helper**: renamed the helper from `chapisha` to `onyesha` so calls
+  to the ambient `chapisha` builtin no longer recursively invoke the helper with a string and
+  trigger the list-indexing runtime error.
+- **`asili-evaluator`'s `wasm32-unknown-unknown` (browser) build**: `rand 0.10` now pulls in
+  `getrandom 0.4`, which needs its `wasm_js` feature enabled to compile for
+  `wasm32-unknown-unknown` — the crate's explicit `getrandom` dependency was still pinned to
+  `0.2`/`"js"` (stale from before `rand`'s upgrade), so `getrandom 0.4` was resolved unconfigured
+  and the browser wasm build (`driver/wasm --features wasm-browser`) failed outright. Found while
+  building `examples/playground`.
+- **Lint test suite**: corrected `LINT101` boundary test (50 statements exactly should not flag;
+  flag only when > 50). Tests now confirm the exact threshold behavior.
+- **`pata-fmt` tab-indent correctness bug**: `Printer::emit_token`'s `needs_space_before` check
+  only tested `self.out.ends_with(' ')` to detect "already at a fresh indent, don't add another
+  leading space" — true for the old hardcoded 4-space indent (which does end in `' '`) but false
+  right after a tab, so configuring `indent_style = "tabs"` produced a spurious extra space after
+  every tab (`"\t weka x = 1"` instead of `"\tweka x = 1"`). Caught by a real test
+  (`tab_indent_is_applied`) added while wiring `FormatterConfig`, not by inspection — this bug
+  was latent in the printer before the config was ever wired to reach it.
+
+### Changed
+
+- **Extracted `pata-core`** (new lib crate: `pata/core`), holding the module resolver
+  (`resolve.rs`), interface registry (`.asi` trait-tracking included), and a `Dependency` enum
+  previously living only in `pata-cli`'s binary-only pipeline modules (so `pata-lsp` couldn't
+  depend on them — a genuine circular-dependency constraint, `pata-cli` itself depends on
+  `pata-lsp` to launch `pata mwalimu`). `pata-cli` now depends on `pata-core` directly;
+  `pata-lsp`'s `workspace.rs` (previously an independent, smaller reimplementation with no
+  vendored-dependency or `.asi` trait visibility) now delegates its file-finding to
+  `pata_core::find_module_file`, seeing exactly what `pata-cli`'s own resolver sees. Verified
+  against the extraction's own stated risk: `pata-cli`'s existing `pipeline::compile`/`resolve`
+  test modules moved and adapted cleanly, all passing.
+- **`pata-fmt` gained a `[lib]` target** (previously `[[bin]]`-only, which is why nothing could
+  depend on it), and both `pata-cli`'s `pipeline::format` and `pata-lsp`'s `format.rs` now
+  delegate to the one real `pata_fmt::canonical_format_with_indent` token-stream printer instead
+  of maintaining separate line-based text transforms that both corrupted string literals
+  containing braces/commas (GitHub issue #18). `pata-cli`'s copy was still live in `pata nadhifu`
+  and `pata thibitisha`'s format-compliance gate despite `pata-fmt` itself having been fixed
+  earlier this cycle — the CLI's own formatter and the LSP's format-on-save were both quietly
+  still broken until this pass. Verified end-to-end against the real `pata-cli` binary: a string
+  literal containing `{`/`}`/`,` now survives `pata nadhifu` byte-for-byte while the surrounding
+  code is correctly reindented.
+
+### Added, but not yet usable (real code, real unit tests, but not actually doing anything a user
+### would notice yet — either not called from any command, or called but producing empty/inert
+### output. Verified by reading the actual call sites and function bodies/return values, not by
+### re-reading commit messages)
+
+- **`pata_fmt::config::FormatterConfig::line_width`**: parsed and unit-tested, but genuinely
+  inert — see the `FormatterConfig` entry above under Added.
+- **`pata_package::VersionConstraint`** (`constraints.rs`, real semver constraint parsing): has
+  real unit tests, but `Resolver::resolve` now does its own direct `semver::VersionReq` parsing
+  rather than going through this wrapper type — not wired in, though superseded rather than
+  strictly blocking (the constraint-solving behavior it would have enabled is now real via a
+  different code path).
+
+### Not started
+
+Real gaps, no commits addressing them yet: `pata-fmt` line-width/wrap-point support;
+`core/evaluator`'s `DebugHook` implementation (real step-through debugging — the `pata-dap`
+protocol layer above is ready for it, but this is `core/`-scope work, not `pata/`). Tracked as
+GitHub issues (see the `Asili Feature release` project board).
+
 ## [0.5.0] — pata-cli; asili-evaluator, pata-package at patch bumps
 
 ### Added

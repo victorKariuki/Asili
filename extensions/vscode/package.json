@@ -80,6 +80,11 @@
           "type": "string",
           "default": "pata",
           "description": "Path to the pata CLI binary, used by \"Run Test\" code lenses. Separate from asili.serverPath since that may point at a bundled pata-lsp with no sibling pata binary."
+        },
+        "asili.linterPath": {
+          "type": "string",
+          "default": "pata-lint",
+          "description": "Path to the globally installed pata-lint binary used by the Asili lint commands."
         }
       }
     },
@@ -87,6 +92,14 @@
       {
         "command": "asili.runTest",
         "title": "Asili: Run Test"
+      },
+      {
+        "command": "asili.lintFile",
+        "title": "Asili: Lint Current File"
+      },
+      {
+        "command": "asili.lintWorkspace",
+        "title": "Asili: Lint Workspace"
       }
     ]
   },

@@ -3,7 +3,7 @@
 
 use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, semantic_check_with_env, extern_env_from_imports, Module};
+use asili_parser::{extern_env_from_imports, parse_tokens, semantic_check_with_env, Module};
 
 fn compile(src: &str) -> Module {
     let toks = tokenize(src).expect("tokenize");
@@ -186,7 +186,10 @@ fn fungo_fungua_without_funga_panics() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]);
-    assert!(result.is_err(), "fungua without a prior funga should be reported, not silently accepted");
+    assert!(
+        result.is_err(),
+        "fungua without a prior funga should be reported, not silently accepted"
+    );
 }
 
 #[test]
@@ -207,7 +210,11 @@ fn kasha_gc_cannot_cross_tenda() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Ukweli(true), "a Kasha_GC value passed to tenda must be rejected, not silently allowed");
+    assert_eq!(
+        result,
+        Value::Ukweli(true),
+        "a Kasha_GC value passed to tenda must be rejected, not silently allowed"
+    );
 }
 
 #[test]
@@ -221,5 +228,8 @@ fn sambamba_requires_leta() {
     let module = parse_tokens(&toks).expect("parse");
     let (fns, consts) = extern_env_from_imports(&module);
     let result = semantic_check_with_env(&module, true, fns, consts);
-    assert!(result.is_err(), "tenda should be unknown without `leta sambamba`");
+    assert!(
+        result.is_err(),
+        "tenda should be unknown without `leta sambamba`"
+    );
 }

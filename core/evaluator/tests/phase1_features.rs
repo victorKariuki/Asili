@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, semantic_check_with_env, FnContract, ValueType};
+use std::collections::HashMap;
 
 /// Test Phase I feature: stdin input via omba()
 #[test]
@@ -13,12 +13,18 @@ fn phase1_stdin_input() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     let mut extern_fns = HashMap::new();
-    extern_fns.insert("chapisha".to_string(), FnContract {
-        params: vec![ValueType::Neno],
-        ret: ValueType::Tupu,
-    });
+    extern_fns.insert(
+        "chapisha".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno],
+            ret: ValueType::Tupu,
+        },
+    );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
-    assert!(result.is_ok(), "stdin input test should pass semantic check");
+    assert!(
+        result.is_ok(),
+        "stdin input test should pass semantic check"
+    );
 }
 
 /// Test Phase I feature: kila_mmoja collection callbacks
@@ -37,7 +43,11 @@ fn phase1_collection_callbacks() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks);
     // Should parse successfully even if semantic analysis has issues
-    assert!(module.is_ok(), "collection callbacks should parse successfully: {:?}", module.err());
+    assert!(
+        module.is_ok(),
+        "collection callbacks should parse successfully: {:?}",
+        module.err()
+    );
 }
 
 /// Test Phase I feature: Time formatting via umbiza()
@@ -53,18 +63,27 @@ fn phase1_time_formatting() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     let mut extern_fns = HashMap::new();
-    extern_fns.insert("majira".to_string(), FnContract {
-        params: vec![],
-        ret: ValueType::Namba,
-    });
-    extern_fns.insert("umbiza".to_string(), FnContract {
-        params: vec![ValueType::Namba],
-        ret: ValueType::Neno,
-    });
-    extern_fns.insert("chapisha".to_string(), FnContract {
-        params: vec![ValueType::Neno],
-        ret: ValueType::Tupu,
-    });
+    extern_fns.insert(
+        "majira".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Namba,
+        },
+    );
+    extern_fns.insert(
+        "umbiza".to_string(),
+        FnContract {
+            params: vec![ValueType::Namba],
+            ret: ValueType::Neno,
+        },
+    );
+    extern_fns.insert(
+        "chapisha".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno],
+            ret: ValueType::Tupu,
+        },
+    );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
     assert!(result.is_ok(), "time formatting should pass semantic check");
 }
@@ -83,24 +102,39 @@ fn phase1_runtime_introspectives() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     let mut extern_fns = HashMap::new();
-    extern_fns.insert("arch".to_string(), FnContract {
-        params: vec![],
-        ret: ValueType::Neno,
-    });
-    extern_fns.insert("ni_debug".to_string(), FnContract {
-        params: vec![],
-        ret: ValueType::Ukweli,
-    });
-    extern_fns.insert("ni_wasm".to_string(), FnContract {
-        params: vec![],
-        ret: ValueType::Ukweli,
-    });
-    extern_fns.insert("chapisha".to_string(), FnContract {
-        params: vec![ValueType::Neno],
-        ret: ValueType::Tupu,
-    });
+    extern_fns.insert(
+        "arch".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Neno,
+        },
+    );
+    extern_fns.insert(
+        "ni_debug".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Ukweli,
+        },
+    );
+    extern_fns.insert(
+        "ni_wasm".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Ukweli,
+        },
+    );
+    extern_fns.insert(
+        "chapisha".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno],
+            ret: ValueType::Tupu,
+        },
+    );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
-    assert!(result.is_ok(), "runtime introspectives should pass semantic check");
+    assert!(
+        result.is_ok(),
+        "runtime introspectives should pass semantic check"
+    );
 }
 
 /// Test Phase I feature: Module imports with type merging
@@ -126,7 +160,11 @@ fn phase1_module_imports() {
     let toks = tokenize(src).expect("tokenize");
     let result = parse_tokens(&toks);
     // This should parse successfully with struct and impl declarations
-    assert!(result.is_ok(), "module imports should parse successfully: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "module imports should parse successfully: {:?}",
+        result.err()
+    );
 }
 
 /// Test Phase I feature: Method call type-checking
@@ -149,7 +187,11 @@ fn phase1_method_call_type_checking() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let result = parse_tokens(&toks);
-    assert!(result.is_ok(), "method call type-checking should parse successfully: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "method call type-checking should parse successfully: {:?}",
+        result.err()
+    );
 }
 
 /// Test Phase I feature: Non-exhaustive match warning
@@ -166,15 +208,20 @@ fn phase1_non_exhaustive_match_warning() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     let mut extern_fns = HashMap::new();
-    extern_fns.insert("chapisha".to_string(), FnContract {
-        params: vec![ValueType::Neno],
-        ret: ValueType::Tupu,
-    });
+    extern_fns.insert(
+        "chapisha".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno],
+            ret: ValueType::Tupu,
+        },
+    );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
     // Should warn about non-exhaustive pattern (SEM023)
     if let Err(errs) = result {
-        assert!(errs.iter().any(|d| d.code == "SEM023"),
-                "should emit SEM023 for non-exhaustive match");
+        assert!(
+            errs.iter().any(|d| d.code == "SEM023"),
+            "should emit SEM023 for non-exhaustive match"
+        );
     }
 }
 
@@ -208,18 +255,24 @@ fn phase1_for_in_iteration() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     let mut extern_fns = HashMap::new();
-    extern_fns.insert("orodha".to_string(), FnContract {
-        params: vec![],
-        ret: ValueType::Orodha(Box::new(ValueType::Namba)),
-    });
-    extern_fns.insert("chapisha".to_string(), FnContract {
-        params: vec![ValueType::Namba],
-        ret: ValueType::Tupu,
-    });
+    extern_fns.insert(
+        "orodha".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Orodha(Box::new(ValueType::Namba)),
+        },
+    );
+    extern_fns.insert(
+        "chapisha".to_string(),
+        FnContract {
+            params: vec![ValueType::Namba],
+            ret: ValueType::Tupu,
+        },
+    );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
     // Should be OK or have warnings only
     match result {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(errs) => {
             // Allow some expected errors like method not found on collections
             // as long as for...in syntax is valid
@@ -249,10 +302,13 @@ fn phase1_evaluation_depth() {
     let toks = tokenize(&src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     let mut extern_fns = HashMap::new();
-    extern_fns.insert("chapisha".to_string(), FnContract {
-        params: vec![ValueType::Neno],
-        ret: ValueType::Tupu,
-    });
+    extern_fns.insert(
+        "chapisha".to_string(),
+        FnContract {
+            params: vec![ValueType::Neno],
+            ret: ValueType::Tupu,
+        },
+    );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
     assert!(result.is_ok(), "deep nesting (100) should pass");
 }

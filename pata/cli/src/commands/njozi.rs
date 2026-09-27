@@ -4,15 +4,8 @@ use std::path::{Path, PathBuf};
 
 // Contract: ../../commands/njozi.md
 pub fn run(args: &[String]) -> CliResult {
-    if args.len() > 2 {
-        return Err(CliError::new(
-            "matumizi: pata njozi [jina_la_mradi] [njia]",
-            2,
-        ));
-    }
-
-    let (project_name, destination) = parse_inputs(args)?;
-    create_scaffold(&project_name, &destination)?;
+    let (project_name, destination, template) = parse_inputs(args)?;
+    create_scaffold(&project_name, &destination, template)?;
     println!(
         "imekamilika: mradi '{}' umeundwa katika {}",
         project_name,
@@ -22,25 +15,51 @@ pub fn run(args: &[String]) -> CliResult {
     Ok(())
 }
 
-fn parse_inputs(args: &[String]) -> Result<(String, PathBuf), CliError> {
-    match args {
-        [] => {
-            let project_name = String::from("asili-app");
-            Ok((project_name.clone(), PathBuf::from(project_name)))
+#[derive(Clone, Copy)]
+enum Template {
+    Binary,
+    Library,
+    Workspace,
+}
+
+fn parse_inputs(args: &[String]) -> Result<(String, PathBuf, Template), CliError> {
+    let mut template = Template::Binary;
+    let mut project_name = None;
+    let mut destination = None;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--maktaba" => {
+                template = Template::Library;
+                i += 1;
+            }
+            "--kiasi" => {
+                template = Template::Binary;
+                i += 1;
+            }
+            "--workspace" => {
+                template = Template::Workspace;
+                i += 1;
+            }
+            other => {
+                if other.starts_with("--") {
+                    return Err(CliError::new(format!("hoja isiyotambuliwa: {other}"), 2));
+                }
+                if project_name.is_none() {
+                    project_name = Some(other.to_string());
+                } else if destination.is_none() {
+                    destination = Some(PathBuf::from(other));
+                }
+                i += 1;
+            }
         }
-        [name] => {
-            validate_project_name(name)?;
-            Ok((name.clone(), PathBuf::from(name)))
-        }
-        [name, dest] => {
-            validate_project_name(name)?;
-            Ok((name.clone(), PathBuf::from(dest)))
-        }
-        _ => Err(CliError::new(
-            "matumizi: pata njozi [jina_la_mradi] [njia]",
-            2,
-        )),
     }
+
+    let name = project_name.unwrap_or_else(|| String::from("asili-app"));
+    validate_project_name(&name)?;
+    let dest = destination.unwrap_or_else(|| PathBuf::from(&name));
+    Ok((name, dest, template))
 }
 
 fn validate_project_name(name: &str) -> Result<(), CliError> {
@@ -50,29 +69,74 @@ fn validate_project_name(name: &str) -> Result<(), CliError> {
     Ok(())
 }
 
-fn create_scaffold(project_name: &str, destination: &Path) -> CliResult {
+fn create_scaffold(project_name: &str, destination: &Path, template: Template) -> CliResult {
     ensure_destination_ready(destination)?;
 
-    fs::create_dir_all(destination.join("src"))
-        .map_err(|err| CliError::new(format!("imeshindwa kuunda src/: {err}"), 1))?;
     fs::create_dir_all(destination.join("kilele"))
         .map_err(|err| CliError::new(format!("imeshindwa kuunda kilele/: {err}"), 1))?;
+    fs::create_dir_all(destination.join(".github/workflows"))
+        .map_err(|err| CliError::new(format!("imeshindwa kuunda .github/workflows/: {err}"), 1))?;
 
-    write_file(
-        &destination.join("pata.toml"),
-        &format!(
-            "[jumla]\njina = \"{project_name}\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n"
-        ),
-    )?;
-    write_file(
-        &destination.join("src/kuu.as"),
-        "leta matumizi\n\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    ikiwa hoja.urefu() > 1 {\n        chapisha(\"Asili scaffold iko tayari.\")\n    } vinginevyo {\n        chapisha(\"Habari Asili!\")\n    }\n}\n",
-    )?;
+    match template {
+        Template::Workspace => {
+            // Workspace root pata.toml declares [eneo-kazi] instead of the [chanzo]/[tegemezi]
+            // a leaf project has — the root itself has no source entrypoint of its own, only
+            // member projects do. One manifest file/syntax for both leaf and workspace-root
+            // projects (see PataWorkspace/find_workspace_root in pipeline/project.rs), replacing
+            // the earlier design of a separate English-keyed Asili.toml.
+            write_file(
+                &destination.join("pata.toml"),
+                &format!(
+                    "[jumla]\njina = \"{project_name}\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[eneo-kazi]\nwanachama = [\"core\", \"lib\"]\n"
+                ),
+            )?;
+            fs::create_dir_all(destination.join("core/src"))
+                .map_err(|e| CliError::new(format!("imeshindwa kuunda core/src/: {e}"), 1))?;
+            fs::create_dir_all(destination.join("lib/src"))
+                .map_err(|e| CliError::new(format!("imeshindwa kuunda lib/src/: {e}"), 1))?;
+            write_file(
+                &destination.join("core/pata.toml"),
+                &format!("[jumla]\njina = \"{}-core\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n", project_name),
+            )?;
+            write_file(
+                &destination.join("lib/pata.toml"),
+                &format!("[jumla]\njina = \"{}-lib\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n", project_name),
+            )?;
+            write_file(
+                &destination.join("core/src/kuu.as"),
+                "leta matumizi\n\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    chapisha(\"Habari kutoka core!\")\n}\n",
+            )?;
+            write_file(
+                &destination.join("lib/src/kuu.as"),
+                "# Maktaba ya Asili\n\nkazi example() -> Tupu {\n    rejesha Tupu\n}\n",
+            )?;
+        }
+        Template::Binary | Template::Library => {
+            write_file(
+                &destination.join("pata.toml"),
+                &format!(
+                    "[jumla]\njina = \"{project_name}\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n"
+                ),
+            )?;
+            fs::create_dir_all(destination.join("src"))
+                .map_err(|err| CliError::new(format!("imeshindwa kuunda src/: {err}"), 1))?;
+            let kuu_content = match template {
+                Template::Binary => "leta matumizi\n\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    ikiwa hoja.urefu() > 1 {\n        chapisha(\"Asili scaffold iko tayari.\")\n    } vinginevyo {\n        chapisha(\"Habari Asili!\")\n    }\n}\n",
+                Template::Library => "# Maktaba ya Asili\n\n# Jumuishe jongoo kuu hapa\nkazi example() -> Tupu {\n    rejesha Tupu\n}\n",
+                Template::Workspace => unreachable!(),
+            };
+            write_file(&destination.join("src/kuu.as"), kuu_content)?;
+        }
+    }
     write_file(
         &destination.join(".gitignore"),
         "kilele/*\n!kilele/.gitkeep\n\n*.asb\n*.asm\n",
     )?;
     write_file(&destination.join("kilele/.gitkeep"), "")?;
+    write_file(
+        &destination.join(".github/workflows/ci.yml"),
+        "name: CI\n\non:\n  push:\n    branches: [main, develop]\n  pull_request:\n    branches: [main, develop]\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - name: Install Rust\n        uses: dtolnay/rust-toolchain@stable\n      - name: Install pata\n        run: cargo install --path . --locked || true\n      - name: pata jenga\n        run: pata jenga\n      - name: pata jaribu\n        run: pata jaribu\n",
+    )?;
 
     Ok(())
 }
@@ -81,7 +145,10 @@ fn ensure_destination_ready(destination: &Path) -> CliResult {
     if destination.exists() {
         let mut entries = fs::read_dir(destination).map_err(|err| {
             CliError::new(
-                format!("imeshindwa kusoma eneo la mradi {}: {err}", destination.display()),
+                format!(
+                    "imeshindwa kusoma eneo la mradi {}: {err}",
+                    destination.display()
+                ),
                 1,
             )
         })?;
@@ -97,7 +164,10 @@ fn ensure_destination_ready(destination: &Path) -> CliResult {
     } else {
         fs::create_dir_all(destination).map_err(|err| {
             CliError::new(
-                format!("imeshindwa kuunda eneo la mradi {}: {err}", destination.display()),
+                format!(
+                    "imeshindwa kuunda eneo la mradi {}: {err}",
+                    destination.display()
+                ),
                 1,
             )
         })?;
@@ -120,7 +190,7 @@ mod tests {
     #[test]
     fn parse_defaults_to_asili_app() {
         let args: Vec<String> = vec![];
-        let (name, path) = parse_inputs(&args).expect("should parse defaults");
+        let (name, path, _) = parse_inputs(&args).expect("should parse defaults");
         assert_eq!(name, "asili-app");
         assert_eq!(path.to_string_lossy(), "asili-app");
     }
@@ -140,6 +210,42 @@ mod tests {
         assert!(project_path.join("src/kuu.as").exists());
         assert!(project_path.join(".gitignore").exists());
         assert!(project_path.join("kilele/.gitkeep").exists());
+
+        let _ = fs::remove_dir_all(temp);
+    }
+
+    /// Real end-to-end: `pata njozi --workspace` scaffolds a project whose root `pata.toml`
+    /// declares `[eneo-kazi]`, and `find_workspace_root` (the same function `pata jenga
+    /// --workspace-info` calls) must discover both members through it — proving the unified
+    /// single-manifest design actually works end-to-end, not just that the file gets written.
+    #[test]
+    fn njozi_workspace_scaffold_is_discoverable_by_find_workspace_root() {
+        let temp = unique_temp_dir("njozi-workspace");
+        let project_path = temp.join("mradi");
+        let args = vec![
+            String::from("--workspace"),
+            String::from("mradi"),
+            project_path.to_string_lossy().to_string(),
+        ];
+
+        run(&args).expect("njozi --workspace should succeed");
+
+        assert!(project_path.join("pata.toml").exists());
+        assert!(
+            !project_path.join("Asili.toml").exists(),
+            "workspace root must not need a separate Asili.toml anymore"
+        );
+        assert!(project_path.join("core/pata.toml").exists());
+        assert!(project_path.join("lib/pata.toml").exists());
+        assert!(project_path.join("core/src/kuu.as").exists());
+        assert!(project_path.join("lib/src/kuu.as").exists());
+
+        let ws = crate::pipeline::project::find_workspace_root(&project_path)
+            .expect("find_workspace_root must discover the freshly scaffolded workspace");
+        assert_eq!(ws.root, project_path);
+        assert_eq!(ws.members.len(), 2);
+        assert!(ws.members.contains_key("core"));
+        assert!(ws.members.contains_key("lib"));
 
         let _ = fs::remove_dir_all(temp);
     }

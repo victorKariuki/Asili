@@ -1,8 +1,8 @@
-use asili_parser::{parse_tokens, ForMode, Module, Expr, Pattern, Stmt, ValueType, TypeExpr};
+use crate::types::{HoverInfo, ScopeContext, SymbolInfo, SymbolKind, TypeInfo};
 use asili_lexer::tokenize;
+use asili_parser::{parse_tokens, Expr, ForMode, Module, Pattern, Stmt, TypeExpr, ValueType};
 use std::collections::{HashMap, HashSet};
 use tower_lsp::lsp_types::{SemanticToken, SemanticTokens};
-use crate::types::{ScopeContext, TypeInfo, SymbolInfo, SymbolKind, HoverInfo};
 
 /// Convert a TypeExpr name string to ValueType (best effort).
 pub fn type_expr_to_value_type(type_expr: &TypeExpr) -> ValueType {
@@ -114,6 +114,13 @@ pub struct SemanticAnalyzer {
     builtin_names: HashSet<String>,
     scopes: Vec<ScopeContext>,
     symbol_table: HashMap<String, SymbolInfo>,
+    /// `(line, column, inferred_type)` for every `weka`/`thabiti` binding with no explicit `:
+    /// Aina` annotation, collected while `scan_stmt` walks `Stmt::Let` — this is the same
+    /// inference `infer_expr_type` already does to populate scope binding for semantic-token
+    /// resolution, just also recorded positionally so `inlay_hints.rs` can render it as a
+    /// `textDocument/inlayHint` without re-walking the module a second time. `line`/`column` are
+    /// 1-based (matching the parser), converted to 0-based at the same point `push_raw` does.
+    inlay_type_hints: Vec<(usize, usize, ValueType)>,
 }
 
 impl SemanticAnalyzer {
@@ -126,7 +133,16 @@ impl SemanticAnalyzer {
             builtin_names: asili_evaluator::builtins::builtins().into_keys().collect(),
             scopes: vec![ScopeContext::new(0, None)],
             symbol_table: HashMap::new(),
+            inlay_type_hints: Vec::new(),
         }
+    }
+
+    /// Inlay-hint candidates gathered during `analyze()`: one `(0-based line, 0-based column
+    /// right after the binding name, inferred type)` triple per un-annotated `weka`/`thabiti`.
+    /// Must be called after `analyze()` — empty otherwise, since collection happens during the
+    /// same statement walk that builds semantic tokens.
+    pub fn inlay_type_hints(&self) -> &[(usize, usize, ValueType)] {
+        &self.inlay_type_hints
     }
 
     pub fn analyze(&mut self) -> SemanticTokens {
@@ -169,7 +185,14 @@ impl SemanticAnalyzer {
     /// there are only a couple of sparse tokens but turns into visible "patches of color in the
     /// wrong place" (e.g. landing on the comment line above the real declaration) once many
     /// tokens are emitted per line.
-    fn push_raw(&mut self, line: usize, column: usize, token_type: TokenType, modifiers: u32, length: usize) {
+    fn push_raw(
+        &mut self,
+        line: usize,
+        column: usize,
+        token_type: TokenType,
+        modifiers: u32,
+        length: usize,
+    ) {
         self.raw_tokens.push(RawToken {
             line: line.saturating_sub(1),
             column: column.saturating_sub(1),
@@ -187,11 +210,18 @@ impl SemanticAnalyzer {
         let constants = self.module.constants.clone();
 
         for f in &functions {
-            self.global_decls.insert(f.name.clone(), (TokenType::Function, 0));
+            self.global_decls
+                .insert(f.name.clone(), (TokenType::Function, 0));
             // line 0 marks a synthetic/builtin declaration with no real source position
             // (see standard_enums() below) — never emit a token for one of those.
             if f.line > 0 {
-                self.push_raw(f.line, f.column, TokenType::Function, TokenModifier::Declaration.to_u32(), f.name.len());
+                self.push_raw(
+                    f.line,
+                    f.column,
+                    TokenType::Function,
+                    TokenModifier::Declaration.to_u32(),
+                    f.name.len(),
+                );
             }
             self.symbol_table.insert(
                 f.name.clone(),
@@ -208,9 +238,16 @@ impl SemanticAnalyzer {
         }
 
         for s in &structs {
-            self.global_decls.insert(s.name.clone(), (TokenType::Type, 0));
+            self.global_decls
+                .insert(s.name.clone(), (TokenType::Type, 0));
             if s.line > 0 {
-                self.push_raw(s.line, s.column, TokenType::Type, TokenModifier::Declaration.to_u32(), s.name.len());
+                self.push_raw(
+                    s.line,
+                    s.column,
+                    TokenType::Type,
+                    TokenModifier::Declaration.to_u32(),
+                    s.name.len(),
+                );
             }
             self.symbol_table.insert(
                 s.name.clone(),
@@ -224,12 +261,19 @@ impl SemanticAnalyzer {
         }
 
         for e in &enums {
-            self.global_decls.insert(e.name.clone(), (TokenType::Type, 0));
+            self.global_decls
+                .insert(e.name.clone(), (TokenType::Type, 0));
             // Chaguo/Tokeo (standard_enums() in core/parser) are synthesized at line 0 with
             // no real source position — skip those, they'd otherwise paint over real code at
             // the very start of every file once sorted first. Same for their variants below.
             if e.line > 0 {
-                self.push_raw(e.line, e.column, TokenType::Type, TokenModifier::Declaration.to_u32(), e.name.len());
+                self.push_raw(
+                    e.line,
+                    e.column,
+                    TokenType::Type,
+                    TokenModifier::Declaration.to_u32(),
+                    e.name.len(),
+                );
             }
             self.symbol_table.insert(
                 e.name.clone(),
@@ -245,15 +289,28 @@ impl SemanticAnalyzer {
             // Give them their own `enumMember` token here instead.
             for v in &e.variants {
                 if v.line > 0 {
-                    self.push_raw(v.line, v.column, TokenType::EnumMember, TokenModifier::Declaration.to_u32(), v.name.len());
+                    self.push_raw(
+                        v.line,
+                        v.column,
+                        TokenType::EnumMember,
+                        TokenModifier::Declaration.to_u32(),
+                        v.name.len(),
+                    );
                 }
             }
         }
 
         for t in &traits {
-            self.global_decls.insert(t.name.clone(), (TokenType::Type, 0));
+            self.global_decls
+                .insert(t.name.clone(), (TokenType::Type, 0));
             if t.line > 0 {
-                self.push_raw(t.line, t.column, TokenType::Type, TokenModifier::Declaration.to_u32(), t.name.len());
+                self.push_raw(
+                    t.line,
+                    t.column,
+                    TokenType::Type,
+                    TokenModifier::Declaration.to_u32(),
+                    t.name.len(),
+                );
             }
             self.symbol_table.insert(
                 t.name.clone(),
@@ -270,7 +327,10 @@ impl SemanticAnalyzer {
             // Module constants are inherently immutable — no `mutable` flag to check, unlike
             // `weka`/`thabiti` locals; `readonly` applies unconditionally, at the declaration
             // and (via global_decls carrying the modifier) at every usage too.
-            self.global_decls.insert(c.name.clone(), (TokenType::Variable, TokenModifier::Readonly.to_u32()));
+            self.global_decls.insert(
+                c.name.clone(),
+                (TokenType::Variable, TokenModifier::Readonly.to_u32()),
+            );
             if c.line > 0 {
                 self.push_raw(
                     c.line,
@@ -291,9 +351,16 @@ impl SemanticAnalyzer {
         for f in &functions {
             self.push_scope(Some(f.name.clone()));
             for param in &f.params {
-                self.current_scope_mut().bind(param.name.clone(), type_expr_to_value_type(&param.ty));
+                self.current_scope_mut()
+                    .bind(param.name.clone(), type_expr_to_value_type(&param.ty));
                 self.bind_local(param.name.clone(), TokenType::Parameter, 0);
-                self.push_raw(param.line, param.column, TokenType::Parameter, TokenModifier::Declaration.to_u32(), param.name.len());
+                self.push_raw(
+                    param.line,
+                    param.column,
+                    TokenType::Parameter,
+                    TokenModifier::Declaration.to_u32(),
+                    param.name.len(),
+                );
             }
             self.scan_block(&f.body);
             self.pop_scope();
@@ -338,29 +405,69 @@ impl SemanticAnalyzer {
 
     fn scan_stmt(&mut self, stmt: &Stmt) {
         match stmt {
-            Stmt::Let { name, value, line, column, ty, mutable, .. } => {
+            Stmt::Let {
+                name,
+                value,
+                line,
+                column,
+                ty,
+                mutable,
+                ..
+            } => {
                 self.scan_expr(value);
                 let inferred_type = if let Some(t) = ty {
                     type_expr_to_value_type(t)
                 } else {
-                    self.infer_expr_type(value)
+                    let inferred = self.infer_expr_type(value);
+                    // Only offer a hint when there's something real to show — `Unknown` would
+                    // render as a literal "Unknown" label in the editor, worse than no hint.
+                    if !matches!(inferred, ValueType::Unknown) {
+                        self.inlay_type_hints.push((
+                            line.saturating_sub(1),
+                            column.saturating_sub(1) + name.len(),
+                            inferred.clone(),
+                        ));
+                    }
+                    inferred
                 };
                 self.current_scope_mut().bind(name.clone(), inferred_type);
                 // `thabiti` (mutable == false) gets the Readonly modifier on its declaration
                 // and every later usage — distinguishing it from `weka` bindings is part of
                 // what makes richer editors (rust-analyzer, etc.) feel more colorful than a
                 // pure-syntax grammar can on its own.
-                let modifiers = if *mutable { 0 } else { TokenModifier::Readonly.to_u32() };
+                let modifiers = if *mutable {
+                    0
+                } else {
+                    TokenModifier::Readonly.to_u32()
+                };
                 self.bind_local(name.clone(), TokenType::Variable, modifiers);
-                self.push_raw(*line, *column, TokenType::Variable, modifiers | TokenModifier::Declaration.to_u32(), name.len());
+                self.push_raw(
+                    *line,
+                    *column,
+                    TokenType::Variable,
+                    modifiers | TokenModifier::Declaration.to_u32(),
+                    name.len(),
+                );
             }
-            Stmt::Assign { name, value, line, column, .. } => {
+            Stmt::Assign {
+                name,
+                value,
+                line,
+                column,
+                ..
+            } => {
                 if let Some((token_type, modifiers)) = self.resolve(name) {
                     self.push_raw(*line, *column, token_type, modifiers, name.len());
                 }
                 self.scan_expr(value);
             }
-            Stmt::If { cond, then_block, else_if, else_block, .. } => {
+            Stmt::If {
+                cond,
+                then_block,
+                else_if,
+                else_block,
+                ..
+            } => {
                 self.scan_expr(cond);
                 self.push_scope(self.current_scope().parent_fn.clone());
                 self.scan_block(then_block);
@@ -383,7 +490,14 @@ impl SemanticAnalyzer {
                 self.scan_block(body);
                 self.pop_scope();
             }
-            Stmt::For { var, var_column, mode, body, line, .. } => {
+            Stmt::For {
+                var,
+                var_column,
+                mode,
+                body,
+                line,
+                ..
+            } => {
                 // Element type follows the same rules as core/parser's semantic analyzer:
                 // iterating a Orodha<T>/Kamusi<K,V> yields T / Jozi<K,V>; `kutoka ... hadi ...`
                 // always yields Namba.
@@ -398,7 +512,13 @@ impl SemanticAnalyzer {
                 self.push_scope(self.current_scope().parent_fn.clone());
                 self.current_scope_mut().bind(var.clone(), var_ty);
                 self.bind_local(var.clone(), TokenType::Variable, 0);
-                self.push_raw(*line, *var_column, TokenType::Variable, TokenModifier::Declaration.to_u32(), var.len());
+                self.push_raw(
+                    *line,
+                    *var_column,
+                    TokenType::Variable,
+                    TokenModifier::Declaration.to_u32(),
+                    var.len(),
+                );
                 if let ForMode::InExpr(expr) = mode {
                     self.scan_expr(expr);
                 }
@@ -448,51 +568,30 @@ impl SemanticAnalyzer {
                     self.scan_expr(arg);
                 }
             }
-            Expr::MethodCall { receiver, args, .. } => {
-                self.scan_expr(receiver);
-                for arg in args {
-                    self.scan_expr(arg);
-                }
-            }
-            Expr::Binary { left, right, .. } => {
-                self.scan_expr(left);
-                self.scan_expr(right);
-            }
-            Expr::Unary { expr: e, .. } => {
-                self.scan_expr(e);
-            }
-            Expr::Cast { expr: e, .. } => {
-                self.scan_expr(e);
-            }
-            Expr::Index { base, index, .. } => {
-                self.scan_expr(base);
-                self.scan_expr(index);
-            }
-            Expr::FieldAccess { receiver, field, field_line, field_column, .. } => {
+            Expr::FieldAccess {
+                receiver,
+                field,
+                field_line,
+                field_column,
+                ..
+            } => {
                 self.scan_expr(receiver);
                 // Field names aren't tracked in any declaration map (struct-field validation
                 // is core/parser's job, not the LSP's) — this is purely a highlight, emitted
                 // unconditionally at the field name's own position.
-                self.push_raw(*field_line, *field_column, TokenType::Property, 0, field.len());
+                self.push_raw(
+                    *field_line,
+                    *field_column,
+                    TokenType::Property,
+                    0,
+                    field.len(),
+                );
             }
-            Expr::Group(e) => {
-                self.scan_expr(e);
-            }
-            Expr::Propagate { expr: e, .. } => {
-                self.scan_expr(e);
-            }
-            Expr::List { elements, .. } => {
-                for e in elements {
-                    self.scan_expr(e);
-                }
-            }
-            Expr::Map { entries, .. } => {
-                for (k, v) in entries {
-                    self.scan_expr(k);
-                    self.scan_expr(v);
-                }
-            }
-            Expr::StructLiteral { fields, field_positions, .. } => {
+            Expr::StructLiteral {
+                fields,
+                field_positions,
+                ..
+            } => {
                 // field_positions is index-aligned with fields (see the NOTE on
                 // Expr::StructLiteral in ast.rs) — zip rather than a shared tuple so the
                 // evaluator/analyzer's existing (String, Expr) destructuring never had to change.
@@ -501,13 +600,23 @@ impl SemanticAnalyzer {
                     self.scan_expr(e);
                 }
             }
-            Expr::EnumConstruct { variant_name, data, line, column, .. } => {
+            Expr::EnumConstruct {
+                variant_name,
+                data,
+                line,
+                column,
+                ..
+            } => {
                 self.push_raw(*line, *column, TokenType::EnumMember, 0, variant_name.len());
                 if let Some(d) = data {
                     self.scan_expr(d);
                 }
             }
-            _ => {}
+            other => {
+                for child in other.children() {
+                    self.scan_expr(child);
+                }
+            }
         }
     }
 
@@ -520,10 +629,28 @@ impl SemanticAnalyzer {
         match pattern {
             Pattern::Ident { name, line, column } => {
                 self.bind_local(name.clone(), TokenType::Variable, 0);
-                self.push_raw(*line, *column, TokenType::Variable, TokenModifier::Declaration.to_u32(), name.len());
+                self.push_raw(
+                    *line,
+                    *column,
+                    TokenType::Variable,
+                    TokenModifier::Declaration.to_u32(),
+                    name.len(),
+                );
             }
-            Pattern::Enum { variant_name, data, variant_line, variant_column, .. } => {
-                self.push_raw(*variant_line, *variant_column, TokenType::EnumMember, 0, variant_name.len());
+            Pattern::Enum {
+                variant_name,
+                data,
+                variant_line,
+                variant_column,
+                ..
+            } => {
+                self.push_raw(
+                    *variant_line,
+                    *variant_column,
+                    TokenType::EnumMember,
+                    0,
+                    variant_name.len(),
+                );
                 if let Some(sub) = data {
                     self.scan_pattern(sub);
                 }
@@ -570,12 +697,8 @@ impl SemanticAnalyzer {
             Expr::Char(_) => ValueType::Herufi,
             Expr::Bool(_) => ValueType::Ukweli,
             Expr::Hamna => ValueType::Hamna,
-            Expr::Ident { name, .. } => {
-                self.get_type_at(0, 0, name).unwrap_or(ValueType::Unknown)
-            }
-            Expr::List { .. } => {
-                ValueType::Orodha(Box::new(ValueType::Unknown))
-            }
+            Expr::Ident { name, .. } => self.get_type_at(0, 0, name).unwrap_or(ValueType::Unknown),
+            Expr::List { .. } => ValueType::Orodha(Box::new(ValueType::Unknown)),
             Expr::Map { .. } => {
                 ValueType::Kamusi(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown))
             }
@@ -603,7 +726,9 @@ impl SemanticAnalyzer {
                     let func = self.module.functions.iter().find(|f| f.name == name)?;
                     Some(HoverInfo::Function {
                         name: func.name.clone(),
-                        params: func.params.iter()
+                        params: func
+                            .params
+                            .iter()
                             .map(|p| (p.name.clone(), type_expr_to_value_type(&p.ty)))
                             .collect(),
                         return_type: type_expr_to_value_type(&func.return_type),
@@ -613,8 +738,17 @@ impl SemanticAnalyzer {
                     let s = self.module.structs.iter().find(|st| st.name == name)?;
                     Some(HoverInfo::Struct {
                         name: s.name.clone(),
-                        fields: s.fields.iter()
-                            .map(|f| (f.0.clone(), f.1.as_ref().map(type_expr_to_value_type).unwrap_or(ValueType::Unknown)))
+                        fields: s
+                            .fields
+                            .iter()
+                            .map(|f| {
+                                (
+                                    f.0.clone(),
+                                    f.1.as_ref()
+                                        .map(type_expr_to_value_type)
+                                        .unwrap_or(ValueType::Unknown),
+                                )
+                            })
                             .collect(),
                     })
                 }

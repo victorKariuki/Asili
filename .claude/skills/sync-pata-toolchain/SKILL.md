@@ -22,10 +22,14 @@ that plus the rest of the toolchain surface that can silently go stale the same 
 | Any of the above, in a way the wiki documents | The matching wiki page(s), per the `update-wiki` skill | Standing project rule — wiki and docs/ must agree with each other and with the code. |
 | A new lint-worthy pattern introduced by a language change (e.g. a new footgun the semantic analyzer now allows) | `pata/lint/src/rules/*.rs` — does an existing or new `LINTxxx` rule need to cover it? | `pata-lint` does **not** hardcode builtin/module names (verified: no `builtins::`/module-name references in `pata/lint/src/*.rs`) — its rules are structural, so it usually doesn't need touching for a builtin change, but a new *syntax form or semantic allowance* can open a gap a lint rule should close. |
 | A new type or value kind the formatter needs to lay out specially | `pata/fmt/src/format.rs` | The formatter is token/line-based (`README.md`: "best-effort") — new syntax with unusual layout needs (multi-line literals, new bracket pairs) may need explicit handling. |
-| A change to `pata.toml`/`Asili.toml` schema or dependency resolution | `pata/package/src/*`, `docs/design/package-manager-design.md`, wiki's `Package-Management` page | Package resolver has its own adapter logic independent of `core/`. |
+| A change to `pata.toml` schema (including `[eneo-kazi]` workspaces) or dependency resolution | `pata/package/src/*`, `docs/design/package-manager-design.md`, wiki's `Package-Management` page | `pata.toml` is the one manifest file/format for both leaf and workspace-root projects (real TOML parsing in `pata-cli`'s `load_project_config`) — independent of `core/`, but its own schema changes need the same doc/wiki sync as anything else user-facing. |
+| A keyword added/removed | `asili_lexer::KEYWORDS` (the one list LSP completion/hover/rename and the formatter read), the VS Code grammar (`extensions/vscode/syntaxes/asili.tmLanguage.json`) and the playground highlighter (`examples/playground/main.js`) | The two editor grammars are regex/JS and cannot import the Rust list — update them by hand in the same change. |
+| An `Expr` variant added/changed | `Expr::children` in `core/parser/src/ast.rs` | Lint's unused-binding rule, LSP semantic highlighting and the parser's own `expr_has_call` walk the tree through it; a variant missing there is invisible to all of them. |
+| Anything touching execution (evaluator, VM, AOT, `.asb`) | The `performance-guardrails` skill | Engines must agree bit-for-bit and the Sudoku benchmark must stay at C speed. |
 
 `pata-lsp` does **not** need manual builtin-name updates — it consumes builtin/module tables
-through the same `asili_parser::builtins` re-export the CLI uses (verified:
+through the same `asili_parser::builtins` re-export the CLI uses (verified; completion lists every
+function in those export tables:
 `pata/lsp/src/symbols.rs` and `semantic.rs` go through the shared table, not a hardcoded copy).
 LSP changes are only needed for *new capability surface* (e.g. a new AST node needing its own
 hover/goto-def handling), not for routine builtin additions.

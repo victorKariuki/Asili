@@ -48,7 +48,11 @@ fn test_enum_method_with_params() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     assert!(module.enums.iter().any(|e| e.name == "Status"));
-    let status_impl = module.impls.iter().find(|i| i.target == "Status").expect("Status impl");
+    let status_impl = module
+        .impls
+        .iter()
+        .find(|i| i.target == "Status")
+        .expect("Status impl");
     assert!(!status_impl.body.is_empty());
     assert_eq!(status_impl.body[0].params.len(), 2);
 }
@@ -78,7 +82,11 @@ fn test_enum_multiple_methods() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     assert!(module.enums.iter().any(|e| e.name == "Message"));
-    let message_impl = module.impls.iter().find(|i| i.target == "Message").expect("Message impl");
+    let message_impl = module
+        .impls
+        .iter()
+        .find(|i| i.target == "Message")
+        .expect("Message impl");
     assert_eq!(message_impl.body.len(), 2);
 }
 
@@ -103,7 +111,11 @@ fn test_enum_method_returns_enum() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     assert!(module.enums.iter().any(|e| e.name == "Option"));
-    let option_impl = module.impls.iter().find(|i| i.target == "Option").expect("Option impl");
+    let option_impl = module
+        .impls
+        .iter()
+        .find(|i| i.target == "Option")
+        .expect("Option impl");
     assert_eq!(option_impl.body[0].name, "unwrap");
 }
 
@@ -134,7 +146,11 @@ fn test_enum_multiple_impls() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     assert!(module.enums.iter().any(|e| e.name == "Result"));
-    let result_impls: Vec<_> = module.impls.iter().filter(|i| i.target == "Result").collect();
+    let result_impls: Vec<_> = module
+        .impls
+        .iter()
+        .filter(|i| i.target == "Result")
+        .collect();
     assert_eq!(result_impls.len(), 2);
 }
 
@@ -158,7 +174,11 @@ fn test_enum_method_move_self() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let box_impl = module.impls.iter().find(|i| i.target == "Box").expect("Box impl");
+    let box_impl = module
+        .impls
+        .iter()
+        .find(|i| i.target == "Box")
+        .expect("Box impl");
     assert_eq!(box_impl.body[0].params[0].name, "self");
 }
 
@@ -182,7 +202,11 @@ fn test_enum_method_complex_return() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let either_impl = module.impls.iter().find(|i| i.target == "Either").expect("Either impl");
+    let either_impl = module
+        .impls
+        .iter()
+        .find(|i| i.target == "Either")
+        .expect("Either impl");
     assert_eq!(either_impl.body[0].return_type.name, "Namba");
 }
 
@@ -229,7 +253,11 @@ fn test_enum_method_no_return() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let event_impl = module.impls.iter().find(|i| i.target == "Event").expect("Event impl");
+    let event_impl = module
+        .impls
+        .iter()
+        .find(|i| i.target == "Event")
+        .expect("Event impl");
     assert_eq!(event_impl.body[0].return_type.name, "Tupu");
 }
 

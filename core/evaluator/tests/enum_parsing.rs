@@ -16,7 +16,11 @@ fn test_parse_simple_enum() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let rangi = module.enums.iter().find(|e| e.name == "Rangi").expect("Rangi enum");
+    let rangi = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Rangi")
+        .expect("Rangi enum");
     assert_eq!(rangi.variants.len(), 3);
     assert_eq!(rangi.variants[0].name, "Nyeusi");
     assert!(rangi.variants[0].data.is_none());
@@ -36,10 +40,20 @@ fn test_parse_enum_with_data() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let matokeo = module.enums.iter().find(|e| e.name == "Matokeo").expect("Matokeo enum");
+    let matokeo = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Matokeo")
+        .expect("Matokeo enum");
     assert_eq!(matokeo.variants.len(), 2);
-    assert!(matokeo.variants[0].data.is_some(), "first variant should have data");
-    assert!(matokeo.variants[1].data.is_some(), "second variant should have data");
+    assert!(
+        matokeo.variants[0].data.is_some(),
+        "first variant should have data"
+    );
+    assert!(
+        matokeo.variants[1].data.is_some(),
+        "second variant should have data"
+    );
 }
 
 /// Test 3: Generic enum
@@ -56,7 +70,11 @@ fn test_parse_generic_enum() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let chaguo_test = module.enums.iter().find(|e| e.name == "Chaguo" && e.generics.len() == 1).expect("Chaguo<T> enum");
+    let chaguo_test = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Chaguo" && e.generics.len() == 1)
+        .expect("Chaguo<T> enum");
     assert_eq!(chaguo_test.generics.len(), 1);
     assert_eq!(chaguo_test.generics[0], "T");
 }
@@ -76,7 +94,11 @@ fn test_parse_enum_complex_types() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let container = module.enums.iter().find(|e| e.name == "Container").expect("Container enum");
+    let container = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Container")
+        .expect("Container enum");
     assert_eq!(container.variants.len(), 3);
 }
 
@@ -143,7 +165,11 @@ fn test_parse_public_enum() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let status = module.enums.iter().find(|e| e.name == "Status").expect("Status enum");
+    let status = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Status")
+        .expect("Status enum");
     assert!(status.is_public, "enum should be public");
 }
 
@@ -160,7 +186,11 @@ fn test_parse_single_variant_enum() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let unit = module.enums.iter().find(|e| e.name == "Unit").expect("Unit enum");
+    let unit = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Unit")
+        .expect("Unit enum");
     assert_eq!(unit.variants.len(), 1);
 }
 
@@ -206,6 +236,10 @@ fn test_parse_enum_trailing_comma() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let status = module.enums.iter().find(|e| e.name == "Status").expect("Status enum");
+    let status = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Status")
+        .expect("Status enum");
     assert_eq!(status.variants.len(), 3);
 }

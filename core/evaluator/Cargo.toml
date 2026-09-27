@@ -29,12 +29,14 @@ signal-hook = "0.4"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rustls = "0.23"
 rustls-pemfile = "2"
+# Loads the LLVM-compiled native library `pata jenga` builds next to an `.asb` (src/aot.rs).
+libloading = "0.8"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-# `rand` (via getrandom 0.2) needs this explicitly enabled to build for wasm32-unknown-unknown
-# (browser) — it calls into `crypto.getRandomValues` via wasm-bindgen's JS glue. A no-op for
-# wasm32-wasip1/wasi targets, which already have native WASI random support.
-getrandom = { version = "0.2", features = ["js"] }
+# `rand` 0.10 pulls in getrandom 0.4, which needs this explicitly enabled to build for
+# wasm32-unknown-unknown (browser) — it calls into `crypto.getRandomValues` via wasm-bindgen's
+# JS glue. A no-op for wasm32-wasip1/wasi targets, which already have native WASI random support.
+getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 asili-lexer = { path = "../lexer" }

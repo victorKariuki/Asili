@@ -2,12 +2,10 @@
 
 ## Kuingiza Moduli (Importing)
 
-```asili
-leta matumizi
-leta hisabati
-```
-
-`leta` at the top of a file imports a standard library module. All its exported functions become available without a namespace prefix.
+Builtin standard-library modules are available without `leta`, except the opt-in `kasha_gc`
+(managed memory), which must be imported explicitly. The keyword remains necessary for
+project and dependency modules; it may also be used as documentation when showing which builtin
+module provides a function.
 
 ---
 
@@ -46,7 +44,7 @@ weka juu = dari(3.2)          # 4
 weka n = nasibu()             # random float [0,1)
 ```
 
-**Maadili ya hisabati (constants)** — available after `leta hisabati`:
+**Maadili ya hisabati (constants)** — available ambiently:
 
 | Jina       | Thamani                    | Maelezo                      |
 |------------|----------------------------|------------------------------|
@@ -68,7 +66,7 @@ weka n = nasibu()             # random float [0,1)
 | `Ukomo`    | ∞                          | Ukomo (alias ya INF)         |
 | `Siyo_Namba`| NaN                       | Siyo Namba (alias ya NAN)    |
 
-**Namba_Kuu / Namba_Sahihi** (usahihi usio na kikomo, pia baada ya `leta hisabati`):
+**Namba_Kuu / Namba_Sahihi** (usahihi usio na kikomo, pia available ambiently):
 
 ```asili
 leta hisabati
@@ -101,14 +99,14 @@ jaribu sikiliza_ishara(2, shimla)   # register signal handler (e.g. SIGINT = 2);
 jaribu rejesha_ishara(2)            # reset signal handler to default; same Tokeo contract
 ```
 
-**Maadili ya mfumo** — available after `leta mfumo`:
+**Maadili ya mfumo** — available ambiently:
 
 | Jina     | Maelezo                         |
 |----------|---------------------------------|
 | `TOLEO`  | Toleo la sasa la Asili (Neno)   |
 | `JINA_OS`| Jina la mfumo wa uendeshaji (Neno) |
 
-**Kishikizo cha Mkondo** (TCP client stream, also available after `leta mfumo`):
+**Kishikizo cha Mkondo** (TCP client stream, available ambiently):
 
 ```asili
 leta mfumo
@@ -153,8 +151,8 @@ hufasiri HTTP/1.1 halisi — `kazi_jina(ombi: OmbiHttp) -> JibuHttp` badala ya
 ```asili
 leta mfumo
 
-weka jsoni = jaribu (kwa_json(orodha(1.0, 2.0, 3.0)))   // Tokeo<Neno, Neno>
-weka thamani = jaribu (kutoka_json(jsoni))                // Tokeo<Kamusi<Neno, Unknown>, Neno>
+weka jsoni = jaribu (kwa_json(orodha(1.0, 2.0, 3.0)))  # Tokeo<Neno, Neno>
+weka thamani = jaribu (kutoka_json(jsoni))  # Tokeo<Kamusi<Neno, Unknown>, Neno>
 ```
 
 Vishikizo vya rasilimali (`Kasha_GC<T>`, `Faili`, `Mkondo`) na miundo ya sambamba (`NjiaTx`/
@@ -187,7 +185,7 @@ weka sasa_namba = majira()             # Namba: raw seconds since epoch (not Wak
 > depending on the time of year (the time-of-day portion is correct). See
 > [implementation-status.md](../design/implementation-status.md).
 
-**Maadili ya majira** — available after `leta majira`:
+**Maadili ya majira** — available ambiently:
 
 | Jina                | Thamani  | Maelezo                        |
 |---------------------|----------|--------------------------------|
@@ -206,13 +204,13 @@ weka ukubwa_w = ukubwa("file.txt")   # Namba (bytes)
 jaribu futa("temp.txt")
 ```
 
-**Maadili ya faili** — available after `leta faili`:
+**Maadili ya faili** — available ambiently:
 
 | Jina             | Maelezo                                     |
 |------------------|---------------------------------------------|
 | `NJIA_SEPARATOR` | Kitenganishi cha njia (`/` au `\` kwenye OS) |
 
-**Kishikizo cha Faili** (handle-based, also available after `leta faili`) — kwa matumizi ya
+**Kishikizo cha Faili** (handle-based, available ambiently) — kwa matumizi ya
 mara kwa mara badala ya kufungua/kufunga faili kila wakati:
 
 ```asili
@@ -276,7 +274,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 
     weka id = jaribu (tenda("mfanyakazi", tx, 5))
     weka jibu = jaribu (rx.pokea())
-    chapisha(jibu kama Neno)          // "25"
+    chapisha(jibu kama Neno)          # "25"
     jaribu (subiri_tenda(id))
 }
 ```
@@ -291,10 +289,12 @@ ulikamilika kwa usalama au ulianguka), si matokeo halisi. Tumia `njia` kutuma ma
 chochote kinachozibeba) hukataliwa na `Kosa` badala ya kuruhusiwa kimya kimya:
 
 ```asili
+leta kasha_gc   # Kasha_GC ni ya hiari: haipatikani bila leta
+
 weka g = kasha_gc_unda(1.0)
 linganisha tenda("kazi_yoyote", g) {
     Tokeo::Sawa(_) => { }
-    Tokeo::Kosa(ujumbe) => { chapisha(ujumbe) }   // "tenda: hoja ina thamani isiyoweza kuvuka nyuzi..."
+    Tokeo::Kosa(ujumbe) => { chapisha(ujumbe) }   # "tenda: hoja ina thamani isiyoweza kuvuka nyuzi..."
 }
 ```
 
@@ -311,7 +311,7 @@ linganisha tenda("kazi_yoyote", g) {
 ```asili
 weka f = jaribu (fungo(0.0))
 f.weka(42.0)
-chapisha(f.pata() kama Neno)   // "42"
+chapisha(f.pata() kama Neno)   # "42"
 ```
 
 | Njia          | Maelezo                                          |

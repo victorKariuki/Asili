@@ -6,9 +6,9 @@ use super::{CliError, CliResult};
 use asili_evaluator::{run_block_in_env_with_telemetry, Env, Value};
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, Stmt};
+use pulldown_cmark::{Event, Parser};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
-use pulldown_cmark::{Parser, Event};
 
 const REPL_FUNC: &str = "__repl__";
 const PROMPT: &str = "> ";
@@ -25,9 +25,13 @@ pub fn run(_args: &[String]) -> CliResult {
     writeln!(stdout, "Asili REPL. Andika 'toka' au 'exit' kuondoka. ?mada = msaada (mf. ?hisabati). ?lugha en/sw = badilisha lugha ya msaada.").map_err(|e| CliError::new(e.to_string(), 1))?;
     loop {
         write!(stdout, "{}", PROMPT).map_err(|e| CliError::new(e.to_string(), 1))?;
-        stdout.flush().map_err(|e| CliError::new(e.to_string(), 1))?;
+        stdout
+            .flush()
+            .map_err(|e| CliError::new(e.to_string(), 1))?;
 
-        let Some(Ok(line)) = lines.next() else { break; };
+        let Some(Ok(line)) = lines.next() else {
+            break;
+        };
         let line = line.trim();
         if line.is_empty() {
             continue;
@@ -58,7 +62,13 @@ pub fn run(_args: &[String]) -> CliResult {
             Ok(m) => m,
             Err(diags) => {
                 for d in &diags {
-                    eprintln!("{}: {} ({}:{})", d.code, d.message, d.span.as_ref().map(|s| s.line).unwrap_or(0), d.span.as_ref().map(|s| s.column).unwrap_or(0));
+                    eprintln!(
+                        "{}: {} ({}:{})",
+                        d.code,
+                        d.message,
+                        d.span.as_ref().map(|s| s.line).unwrap_or(0),
+                        d.span.as_ref().map(|s| s.column).unwrap_or(0)
+                    );
                 }
                 continue;
             }
@@ -79,10 +89,15 @@ pub fn run(_args: &[String]) -> CliResult {
     Ok(())
 }
 
-/// Parse line as block or as "rejesha <expr>". No semantic check — REPL runs in persistent env
+/// Parse line as block or as "rejesha `<expr>`". No semantic check — REPL runs in persistent env
 /// and undefined/type errors are reported at runtime by the evaluator.
-fn parse_repl_line(line: &str) -> Result<(asili_parser::Module, asili_parser::Block), Vec<asili_diagnostics::Diagnostic>> {
-    let try_parse = |wrapped: &str| -> Result<(asili_parser::Module, asili_parser::Block), Vec<asili_diagnostics::Diagnostic>> {
+fn parse_repl_line(
+    line: &str,
+) -> Result<(asili_parser::Module, asili_parser::Block), Vec<asili_diagnostics::Diagnostic>> {
+    let try_parse = |wrapped: &str| -> Result<
+        (asili_parser::Module, asili_parser::Block),
+        Vec<asili_diagnostics::Diagnostic>,
+    > {
         let tokens = tokenize(wrapped)?;
         let module = parse_tokens(&tokens)?;
         let body = module
@@ -95,7 +110,12 @@ fn parse_repl_line(line: &str) -> Result<(asili_parser::Module, asili_parser::Bl
     };
 
     let (module, mut body) = try_parse(&format!("kazi {}() -> Tupu {{ {} }}", REPL_FUNC, line))
-        .or_else(|_| try_parse(&format!("kazi {}() -> Tupu {{ rejesha {} }}", REPL_FUNC, line)))?;
+        .or_else(|_| {
+            try_parse(&format!(
+                "kazi {}() -> Tupu {{ rejesha {} }}",
+                REPL_FUNC, line
+            ))
+        })?;
     // If the only statement is an expression, treat it as "rejesha <expr>" so we print the value.
     if body.statements.len() == 1 {
         if let Stmt::Expr { expr, line } = &body.statements[0] {
@@ -113,7 +133,10 @@ fn show_repl_doc(topic: &str, lang: &str, out: &mut impl Write) -> Result<(), St
     if topic.is_empty() || topic.contains('/') || topic.contains('\\') {
         return Err("jina la mada si sahihi".to_string());
     }
-    let path = Path::new("docs").join("repl").join(lang).join(format!("{}.md", topic));
+    let path = Path::new("docs")
+        .join("repl")
+        .join(lang)
+        .join(format!("{}.md", topic));
     let content = std::fs::read_to_string(&path).map_err(|e| {
         if path.exists() {
             e.to_string()
@@ -138,7 +161,10 @@ fn render_markdown_to_terminal(parser: Parser) -> String {
                 match tag {
                     pulldown_cmark::Tag::Heading { level, .. } => {
                         output.push_str("\x1b[1m"); // bold
-                        if matches!(level, pulldown_cmark::HeadingLevel::H1 | pulldown_cmark::HeadingLevel::H2) {
+                        if matches!(
+                            level,
+                            pulldown_cmark::HeadingLevel::H1 | pulldown_cmark::HeadingLevel::H2
+                        ) {
                             output.push_str("\x1b[36m"); // cyan
                         }
                     }

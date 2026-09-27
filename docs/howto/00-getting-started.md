@@ -58,6 +58,18 @@ To use `pata` from anywhere:
 
 1. **Makefile:** From the repo root, run `make install` (installs to `/usr/local/bin` by default). Use `make install DESTDIR=~/.local/bin` to install to a user directory.
 2. **Script:** Run `./sh/install.sh` to build and install `pata` and `pata-lsp` into `~/.local/bin`. Or pass a directory: `./sh/install.sh /path/to/bin`.
-3. **Manual:** Build with `cargo build --release`, then copy `target/release/pata` and `target/release/pata-lsp` to a directory on your `PATH`.
+3. **Manual:** Build with `cargo build --release`, then copy `target/release/pata`,
+   `target/release/pata-lsp`, and `target/release/pata-lint` to a directory on your `PATH`.
+
+For a Cargo-managed global installation, run:
+
+```bash
+cargo install --path pata/cli --bin pata-cli --force
+cargo install --path pata/lsp --bin pata-lsp --force
+cargo install --path pata/lint --bin pata-lint --force
+```
+
+The VS Code extension uses these global binaries by default. Set `asili.serverPath`,
+`asili.cliPath`, or `asili.linterPath` when they are installed outside `PATH`.
 
 See [spec/06-tooling-and-ecosystem.md](spec/06-tooling-and-ecosystem.md) for the full Pata command reference.

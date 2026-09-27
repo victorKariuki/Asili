@@ -11,6 +11,7 @@ weka tupu = orodha()                  # empty list
 weka namba = orodha(10, 20, 30)       # list of three numbers
 weka maneno = orodha("a", "b", "c")   # list of strings
 weka mseto = [1, 2, 3]                # list literal syntax
+weka sifuri = orodha_rudia(0, 9)      # list containing nine zeroes
 ```
 
 ### Njia (Methods)
@@ -18,7 +19,9 @@ weka mseto = [1, 2, 3]                # list literal syntax
 | Usemi              | Maelezo                                          |
 |--------------------|--------------------------------------------------|
 | `a.urefu()`        | Number of elements                               |
-| `a[i]?`           | Element at index `i`; propagates if out of bounds|
+| `a[i]`            | Element at index `i`; out of range is a runtime error |
+| `a[i]?`           | Element at index `i`; out of range returns the `KosaMipaka` error from the enclosing `kazi` |
+| `a.pata(i)`       | `Chaguo<T>`: `Kuna(x)`, or `Hamna` when out of range |
 | `a.ongeza(x)`      | Append `x` to end                                |
 | `a.ondoa(i)`       | Remove element at index `i`; returns `Chaguo<T>` |
 | `a.kila_mmoja(cb)` | Iterate with callback (no-op if no callback)     |
@@ -26,8 +29,8 @@ weka mseto = [1, 2, 3]                # list literal syntax
 ```asili
 weka a = orodha(5, 10, 15)
 chapisha(a.urefu() kama Neno)    # 3
-chapisha(a[0]? kama Neno)        # 5
-chapisha(a[2]? kama Neno)        # 15
+chapisha(a[0] kama Neno)         # 5
+chapisha(a[2] kama Neno)         # 15
 
 a.ongeza(20)
 chapisha(a.urefu() kama Neno)    # 4
@@ -108,6 +111,12 @@ weka nested = jozi(jozi(1, 2), "tatu")
 weka ndani = nested.kwanza()
 weka a = ndani.kwanza() kama Namba    # 1
 weka b = ndani.pili() kama Namba      # 2
+```
+
+Destructuring binds both members without repetitive access calls:
+
+```asili
+weka (jina, umri) = p
 ```
 
 ---

@@ -1,8 +1,12 @@
 # Pata toolchain: production-readiness roadmap
 
 Scope: `pata/` only (`cli`, `lsp`, `fmt` [logic lives in `cli/src/pipeline/format.rs`], `lint`,
-`package`, `runner`). `core/` (lexer/parser/semantic analyzer/evaluator) is treated as a given —
-see [implementation-status.md](implementation-status.md) for that layer's own gaps.
+`package`, `runner`, `dap`). `core/` (lexer/parser/semantic analyzer/evaluator) is treated as a
+given — see [implementation-status.md](implementation-status.md) for that layer's own gaps. The
+one deliberate exception: `core/evaluator`'s `DebugHook` trait/`RealDebugHook` implementation
+(item 7, DAP) — real step-through debugging needed a hook inside the interpreter's own
+statement-execution loop, which is `core/`-side work by necessity, tracked here rather than
+treated as purely out of scope since `pata-dap`'s own completion depended on it.
 
 This doc sets the **floor** (what must be true before calling the toolchain production-ready) and
 a **stretch tier** (what would make it good, benchmarked against how comparable single-binary
@@ -30,35 +34,27 @@ and more achievable bar.
 
 ## The floor (blocking "production ready")
 
-### 1. `pata ongeza` must actually fetch and verify a dependency's code
+### 1. `pata ongeza` must actually fetch and verify a dependency's code — DONE
 
-**Current state** (verified in [package-manager-design.md](package-manager-design.md) and
-`pata/package/src/resolver.rs`): `pata ongeza` writes an entry to `pata.toml` and `pata.lock`, but
-fetches nothing. `Resolver::resolve` does no I/O — it computes `sha256("{name}@{version}")` (a hash
-of the *name string*, not package content) and inserts a `LockedDependency`. A version dependency
-only resolves at build time if something else has *already* placed source under
-`.asili/packages/<name>/src/<name>.as` "by some out-of-band means" (the code's own comment,
-`resolve.rs:80-83`). There is no HTTP client in `pata-package`'s `Cargo.toml` at all.
+**Update:** fully wired now, confirmed via direct source read (`pata/cli/src/commands/
+ongeza.rs`), not just the earlier-landed library primitives. `pata ongeza <lib> --git <url>
+[--tawi <branch>]` calls `pata_package::fetch_git` for real — a real `git2`-based clone into
+`.asili/packages/<lib>/`, a real SHA-256 content hash over the fetched tree written into
+`pata.lock`. A bare `pata ongeza <lib>` (no `--git`) resolves against the real local/hosted
+registry (item 6, stretch tier) instead of a name-string placeholder. `pata jenga` re-verifies
+every vendored dependency's content hash against `pata.lock` before every build
+(`LockFile::verify_content_integrity`, called from `pata/cli/src/pipeline/project.rs`) — a
+tampered or swapped `.asili/packages/<name>/` directory is a hard build error, the actual
+security property a lockfile is for. Verified end-to-end against a real local git repo
+(`file://` clone) in `ongeza.rs`'s own test module, not just unit tests against the library
+functions in isolation.
 
-This means `pata ongeza <lib> <version>` — the single most basic dependency-management operation —
-currently cannot be used to actually obtain a library. Path dependencies work; everything else is
-theater.
-
-**Floor fix, informed by the Zig precedent** (no registry server required to be legitimate):
-- `[tegemezi]` gains a `git`/`url` + optional `rev`/`tag` source (the manifest type already has
-  `git`/`branch` fields on `DependencyTable`, per `manifest.rs:69-71` — currently threaded through
-  and never used).
-- `pata ongeza` clones/fetches the source into `.asili/packages/<name>/`, computes a **real content
-  hash** (SHA-256 over the fetched tree, not the name string), and writes that hash into
-  `pata.lock`.
-- `pata jenga` (or a new `pata sasisha`/update step) verifies the vendored directory's content hash
-  against the lockfile before building — this is the actual security property a lockfile is for,
-  and today's checksum can't detect a swapped or tampered dependency at all (confirmed: "two
-  different tarballs/directories placed under `.asili/packages/<name>/` for the same `name@version`
-  would produce identical checksums").
-- A registry index (crates.io-style) is explicitly **not** required for this floor item — git/path
-  sources are enough to make dependency management real rather than aspirational. Treat a registry
-  as stretch-tier (below).
+**Original gap (historical — kept for context on why this was the floor's #1 item):**
+`pata ongeza` used to write an entry to `pata.toml`/`pata.lock` without fetching anything;
+`Resolver::resolve` did no I/O and hashed `sha256("{name}@{version}")` (the name string, not
+content) — two different tarballs vendored under the same path would have produced identical
+checksums, so the lockfile had no real tamper-detection property at all. Path dependencies were
+the only mechanism that ever actually worked.
 
 ### 2. CI pipeline
 
@@ -122,20 +118,26 @@ See `pata/cli/src/commands/thibitisha.rs` (`enforce_trait_completeness`/`enforce
 `pata/cli/src/pipeline/interface_registry.rs` (`TraitStub`/`parse_asi_content`'s `sifa` handling),
 and `docs/howto/04-validate-docs.md` for the user-facing writeup.
 
-### 5. Semantic-analyzer test coverage under the surface pata drives
+### 5. Semantic-analyzer test coverage under the surface pata drives — DONE (the pata-side fix)
 
-Technically a `core/` item, but it's on the floor here because it's the one gap that has already
-caused **real, user-facing toolchain bugs** — three of the 22 documented bugs in
-[implementation-status.md](implementation-status.md) were exactly the class of thing `pata jenga`/
-`pata thibitisha` silently shipped wrong (a struct field's type annotation discarded; a struct/pair
-destructuring pattern rejected at compile time; module constants unresolvable). `pata`'s own test
-suite can't catch these because `semantic_check_with_env_and_modules` — the actual entry point
-`pata-cli` calls — has zero direct test callers.
+**Update:** `pata_cli::pipeline::compile::tests::every_example_project_builds_with_zero_diagnostics`
+now builds every real project under `examples/` (discovering `examples/cross_package`'s nested
+`app/` root as the one special case) and asserts `compile_project` succeeds for each — a
+regression in the resolver/semantic-checker/formatter layer `pata` depends on is now caught by
+`pata`'s own test suite (and therefore CI, item 2) rather than discovered by a user running `pata
+jenga` by hand. Lives as a unit test inside `pipeline::compile.rs` itself, not a separate
+`pata/cli/tests/*.rs` integration test — `pata-cli` has no `[lib]` target, so an external
+integration test can't call `compile_project` at all.
 
-**Floor fix:** this doesn't mean fixing all ~50 untested `SEM0xx` codes (that's `core/`'s job and
-out of this doc's scope) — it means `pata/cli` gains integration tests that build every example
-under `examples/` and assert zero diagnostics, so a regression in the layer pata depends on is
-caught by pata's own CI (item 2), not discovered by a user.
+**Original gap:** Technically a `core/` item, but it was on the floor here because it's the one
+gap that had already caused **real, user-facing toolchain bugs** — three of the 22 documented bugs
+in [implementation-status.md](implementation-status.md) were exactly the class of thing `pata
+jenga`/`pata thibitisha` silently shipped wrong (a struct field's type annotation discarded; a
+struct/pair destructuring pattern rejected at compile time; module constants unresolvable).
+`pata`'s own test suite couldn't catch these because `semantic_check_with_env_and_modules` — the
+actual entry point `pata-cli` calls — had zero direct test callers. This fix doesn't mean fixing
+all ~50 untested `SEM0xx` codes (that's still `core/`'s job and out of this doc's scope) — only
+the `pata`-side integration-test gap, which is what's actually done now.
 
 ---
 
@@ -143,34 +145,58 @@ caught by pata's own CI (item 2), not discovered by a user.
 
 Benchmarked against Cargo, Gleam, and Zig — ordered roughly by leverage, not urgency.
 
-### 6. A real package registry (Gleam/Hex-style), once the floor's git-source path is stable
+### 6. A real package registry (Gleam/Hex-style) — DONE, local and hosted both
 
-Gleam's `gleam.toml` (manifest) + `manifest.toml` (lockfile, not uploaded) + Hex.pm (registry) split
-is the cleanest model for a small-language ecosystem: single binary, one hosted index, real
-version-constraint resolution (`>= 1.2.0 and < 2.0.0`-style ranges, not just pinned exact versions).
-`pata_package::Resolver::resolve` today doesn't even do constraint solving — it takes whatever
-version string is given and locks it verbatim (`_existing_lock` parameter is unused, prefixed `_`).
-A real resolver (SAT-style or Cargo's own greedy-with-backtracking algorithm) plus a lightweight
-self-hostable index (Kellnr/Alexandrie-style — Cargo's alternative-registry RFC shows the minimum
-API surface: a JSON index + tarball download endpoint) is the natural next step after item 1 proves
-out the fetch/verify path on git sources.
+**Update:** `pata_package::LocalRegistry` is a real, working file-based index (one JSON file per
+package at `.asili/registry/<name>.json`, each a published version plus a fetchable git/path
+source) with real semver constraint solving (`Resolver::resolve` now does direct `semver::
+VersionReq` matching, no longer the "lock whatever string is given verbatim" stub) and real
+transitive dependency resolution — a registry package's own declared deps are fetched/locked
+too, breadth-first, with real version-conflict detection across dependents requiring
+incompatible ranges of the same transitive package. A `remote_registry` module adds the hosted
+half: `fetch_index`/`fetch_and_verify` fetch a static-file HTTP index (Cargo alternative-registry
+RFC minimum surface — a JSON index + tarball download endpoint, no API server) and verify a
+downloaded tarball's SHA-256 before extracting, wired into `Resolver::resolve` via a new
+`RegistrySource::Http` variant. Confirmed via a real end-to-end resolver test exercising the
+`Http` source end to end, not just the module existing in isolation.
 
-### 7. Wire up the already-built `Workspace`/multi-package support
+### 7. Wire up multi-package workspace support — DONE, unified onto one manifest
 
-`pata_package::Workspace::open` (`workspace.rs`, 173 lines) is fully implemented and unit-tested —
-`[workspace] members`, path validation, aggregated dependencies — but **zero `pata` CLI commands
-call it**. This is pure upside: no new design needed, just wiring `pata jenga`/`pata ongeza` to open
-a workspace when `Asili.toml`'s `[workspace]` table exists (today only `pata.toml`, a different
-format entirely, is read — see the adapter-approach section of
-[package-manager-design.md](package-manager-design.md)).
+`pata jenga` calls `find_workspace_root` (`pata/cli/src/pipeline/project.rs`), which discovers a
+workspace root by finding a `pata.toml` whose `[eneo-kazi].wanachama` table is non-empty —
+confirmed via direct `grep`. This item's original implementation used a separate `Asili.toml`
+manifest (`pata_package::Workspace`); that was later unified into `pata.toml` itself (real TOML
+parsing replacing the earlier hand-rolled line scanner, plus a Swahili `[eneo-kazi]` table) so a
+workspace root and an ordinary project share one manifest file and one syntax — see
+[package-manager-design.md](package-manager-design.md) for the current design.
+`pata_package::Workspace`/`WorkspaceConfig`/`Manifest` were deleted once nothing outside their own
+tests referenced them. `pata ongeza` itself is not workspace-aware yet (still resolves against the
+single project's `pata.toml`); that's the remaining gap if workspace-scoped dependency addition is
+needed later.
 
-### 8. LSP incremental re-resolution
+### 8. LSP incremental re-resolution — PARTIALLY DONE (closes most of #25)
 
-Mwalimu (`pata/lsp`) is the toolchain's most complete piece — diagnostics, hover, completion, goto-
-def, references, rename, workspace symbols. Its own doc names the gap: every edit triggers a full
-workspace re-check, no incremental model. Not urgent (correctness > speed here), but the ceiling on
-"feels production-grade" for any project past a few dozen files. Rust-analyzer's salsa-based
-incremental recomputation is the reference architecture if this is ever prioritized.
+**Update:** Three real, scoped fixes have landed (`pata-implementation-spec.md` Section 19's
+decision — real, targeted caching at three layers, not a full salsa rewrite):
+`did_change_watched_files` invalidates only the specific project root(s) whose files actually
+changed (`workspace::affected_project_roots`), not the entire cross-file resolution cache;
+`DocStore::diagnostics_for` skips re-lex/re-parse/re-analyze on a `didChange` whose text hashes
+identically to what's cached; and (new) `workspace::ModuleCache` caches each project-local file's
+parsed `WorkspaceModule` keyed by its own content hash, so a re-walk of a project's import graph
+(triggered by `did_change_watched_files` evicting that root) reuses every unchanged file's
+already-parsed module instead of re-tokenizing/re-parsing it — verified directly via a real
+parse-count counter in two tests (`resolve_workspace_reuses_cached_module_without_reparsing_
+unchanged_file`, `resolve_workspace_reparses_a_file_whose_content_actually_changed`). What's still
+missing, genuinely: `ModuleCache` closes the "re-parse every file" gap but a re-walk still
+traverses the *whole* import graph from the entrypoint on every cache-refreshing call — there's no
+query that starts from "what depends on the one file that changed" and works outward, true
+per-file salsa-style recomputation. That remainder is the actual rust-analyzer-reference-
+architecture-sized item, not the caching wins above.
+
+**Original gap:** Mwalimu (`pata/lsp`) is the toolchain's most complete piece — diagnostics,
+hover, completion, goto-def, references, rename, workspace symbols. Its own doc named the gap:
+every edit triggers a full workspace re-check, no incremental model. Not urgent (correctness >
+speed here), but the ceiling on "feels production-grade" for any project past a few dozen files.
 
 ### 9. Lint rule depth
 
@@ -228,14 +254,11 @@ means **any "full" work on `pata-cli`'s resolver, formatter, or interface regist
 not reach the LSP** unless a shared library crate is extracted first — hence item 0 below, ahead
 of the formatter and package-manager work that would otherwise need to be built twice.
 
-**The bytecode VM is a `core/evaluator` subsystem, not a `pata/` one.** `pata tenda` (`pata/
-runner`) already dispatches to `run_bytecode` when given a bytecode-format `.asb` — the consuming
-side is fine. The gap is entirely upstream: `core/evaluator/src/bytecode.rs`'s ISA is an admitted
-skeleton (its own comment: `TODO(Phase II/IV): missing opcodes needed for real programs`), and
-nothing in `pata jenga`'s pipeline ever emits that format. Per this doc's established scope
-(`pata/` toolchain only, `core/` treated as a given), the VM itself is out of scope here; only the
-small `pata jenga` wiring change once the VM is real would be in scope, called out as externally
-blocked rather than silently included in sizing below.
+**The bytecode VM is a `core/evaluator` subsystem, not a `pata/` one.** When this doc was
+written the VM was a skeleton nothing emitted, so it was called out as externally blocked.
+**Update (September 2026): done.** `pata jenga` now emits register bytecode for most programs
+and compiles it ahead of time to native code through LLVM; `pata tenda`, `jenga --tenda` and the
+runner share `asili_evaluator::run_artifact` (see [performance.md](performance.md)).
 
 ### Dependency graph
 
@@ -255,7 +278,7 @@ blocked rather than silently included in sizing below.
 3. Real dependency resolver (semver constraint solving) + registry backend
    └─ builds on 2
 
-4. Workspace (Asili.toml [workspace]) wired into pata jenga/ongeza
+4. Workspace (pata.toml [eneo-kazi], unified single-manifest design) wired into pata jenga/ongeza
    └─ independent of 2/3 internally, but only valuable once 2 makes deps real
 
 5. pata thibitisha type-stability check (git-tag baseline)
@@ -279,9 +302,8 @@ blocked rather than silently included in sizing below.
       already done (can generate a workflow stub), sequenced after those land
 ```
 
-`core/evaluator` bytecode-VM completion is called out separately at the end as **externally
-blocked, not sequenced** — revisiting the `pata/`-only scope boundary to include it is a decision
-for whoever picks this doc up next, not assumed here.
+`core/evaluator` bytecode-VM completion was called out separately at the end as externally
+blocked; it has since shipped (see the end of this doc).
 
 ### Sizing legend
 
@@ -330,14 +352,19 @@ download, no API server required) — self-hostable (Kellnr/Alexandrie-style), n
 hosted service Asili itself runs. Explicitly the largest single item in this plan; needs its own
 design doc before implementation starts.
 
-### 4. `Workspace`/`Asili.toml` wired into `pata jenga`/`pata ongeza` — **M**
+### 4. Workspace support wired into `pata jenga`/`pata ongeza` — **DONE (unified onto `pata.toml`)**
 
-`pata_package::Workspace::open` (`pata/package/src/workspace.rs`) is already fully implemented
-and unit-tested — this item is wiring, not new design: `pata jenga`/`pata ongeza` open a
-workspace when `Asili.toml`'s `[workspace]` table exists. Open question, not resolved here:
-whether `pata.toml`'s Swahili dialect gains its own `[workspace]` section instead of requiring
-the separate `Asili.toml` file, given the two-manifest-format situation documented in
-[package-manager-design.md](package-manager-design.md).
+Resolved: `pata.toml` gained its own `[eneo-kazi]` (Swahili "workspace") table
+(`wanachama = [...]`) instead of requiring a separate `Asili.toml` file. This meant migrating
+`load_project_config`'s parser from a hand-rolled line scanner to a real TOML library
+(`toml::Table`) — needed anyway to represent `[eneo-kazi]`'s nested array correctly, and a
+byproduct benefit is malformed `pata.toml` now errors instead of silently skipping unparseable
+lines. `find_workspace_root` discovers a workspace root by walking upward for a `pata.toml` with a
+non-empty `[eneo-kazi]`; `pata jenga --workspace-info` and `pata njozi --workspace` both use the
+unified format. `pata_package::Workspace`/`WorkspaceConfig`/`Manifest` (the old `Asili.toml`-only
+types) were deleted once nothing outside their own tests referenced them. See
+[package-manager-design.md](package-manager-design.md) for the full design. `pata ongeza` itself
+remaining not workspace-aware is unchanged by this — still a real gap, tracked in item 7 above.
 
 ### 5. `pata thibitisha` type-stability check — **M**
 
@@ -358,10 +385,16 @@ function-count-ratio check); richer assertion helpers beyond bare `paparika`.
 True incremental re-resolution (salsa-style), replacing full-workspace-recheck-on-every-edit.
 Inlay hints (inferred types, parameter names at call sites) — explicitly named as missing in the
 crate's own doc comment. Code actions/quick-fixes beyond the one existing doc-stub insertion.
-Workspace-wide rename needs explicit verification (currently only confirmed single-document). DAP
-(debugger) is a separate protocol/server entirely, sequenced last within this item since
-[dap-later.md](dap-later.md) already exists as a design placeholder and nothing else in this plan
-depends on it — its own potential future `L`-or-larger item, not estimated in detail here.
+Workspace-wide rename needs explicit verification (currently only confirmed single-document).
+
+**DAP (debugger): done.** `pata-dap`'s protocol layer (already complete) is now backed by a real
+`DebugHook` implementation in `core/evaluator` (`debug_hook::RealDebugHook`, wired into
+`eval_stmt_impl` via `Runtime::debug_hook`) instead of only `MockHook` — a `launch`+
+`setBreakpoints`+`configurationDone` DAP sequence genuinely compiles and runs a target `.as` file,
+pauses it at a real breakpoint, and reports real live variable bindings. Verified via a real
+integration test (`pata/dap/src/runner.rs`) and manually against the compiled binary over a live
+stdio pipe. See [dap-later.md](dap-later.md) for the full write-up. Single-file `launch` only (no
+project/dependency-aware compilation) remains a real, documented gap.
 
 ### 8. `pata-lint` rule depth + new rules — **M**
 
@@ -378,11 +411,11 @@ Template variants (library vs. binary). Workspace scaffolding (multi-package `[w
 layout), meaningful only after item 4. Generate a `.github/workflows/ci.yml` stub alongside new
 projects, dogfooding the CI work already merged to this repo.
 
-### Called out, not sequenced: `core/evaluator` bytecode VM completion
+### Called out, not sequenced: `core/evaluator` bytecode VM completion — done
 
-Out of this doc's `pata/`-toolchain scope. Noted here as the reason `pata jenga` can't emit real
-bytecode today, with a pointer to `core/evaluator/src/bytecode.rs`'s own `TODO(Phase II/IV)`
-comment, so the dependency is documented rather than silently absent from this plan.
+Originally out of this doc's `pata/`-toolchain scope and the reason `pata jenga` couldn't emit real
+bytecode. Shipped since: a typed register VM plus LLVM ahead-of-time native code, with
+`pata jenga` emitting bytecode by default — see [performance.md](performance.md).
 
 ---
 
