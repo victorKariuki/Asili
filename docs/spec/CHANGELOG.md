@@ -4,6 +4,11 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Standard library ([05-standard-library.md](05-standard-library.md)): `kasha_gc` is excluded
+  from the ambient builtin exports and again requires `leta kasha_gc`; an explicit import may
+  shadow an ambient name, and only two explicit imports of one name clash (`SEM090`/`SEM091`).
+  The `mfumo` section no longer claims `leta mfumo` is required.
+
 - Syntax ([03-syntax.md](03-syntax.md)): `//` is floor division (`a // b` ≡ `sakafu(a / b)`, plus
   `//=`); comments are `#` only, with `///` for documentation comments. Indexing an `Orodha`
   yields the element (`a[i]: T`, out of range is a runtime error); `a[i]?`/`jaribu a[i]` keep the
