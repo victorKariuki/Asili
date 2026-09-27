@@ -369,7 +369,6 @@ mod tests {
     use super::run;
     use crate::commands::TEST_CWD_LOCK;
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn fails_when_public_item_has_no_docs() {
@@ -525,122 +524,29 @@ mod tests {
     }
 
     fn temp_project_uncovered_public_fn() -> std::path::PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("pata-thibitisha-cov-{stamp}"));
-        fs::create_dir_all(dir.join("src")).expect("mkdir");
-        fs::write(
-            dir.join("pata.toml"),
-            "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n",
-        )
-        .expect("manifest");
-        fs::write(
-            dir.join("src/kuu.as"),
-            "leta matumizi\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    chapisha(\"x\")\n}\n\n/// Jumlisha namba mbili.\numma kazi jumlisha(a: Namba, b: Namba) -> Namba {\n    rejesha a + b\n}\n",
-        )
-        .expect("src");
-        dir
+        crate::test_support::temp_project("thibitisha-cov", "leta matumizi\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    chapisha(\"x\")\n}\n\n/// Jumlisha namba mbili.\numma kazi jumlisha(a: Namba, b: Namba) -> Namba {\n    rejesha a + b\n}\n")
     }
 
     fn temp_project_no_public() -> std::path::PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("pata-thibitisha-ok-{stamp}"));
-        fs::create_dir_all(dir.join("src")).expect("mkdir");
-        fs::write(
-            dir.join("pata.toml"),
-            "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n",
-        )
-        .expect("manifest");
-        fs::write(
-            dir.join("src/kuu.as"),
+        crate::test_support::temp_project(
+            "thibitisha-ok",
             "leta matumizi\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    chapisha(\"x\")\n}\n",
         )
-        .expect("src");
-        dir
     }
 
     fn temp_project_trait_implemented() -> std::path::PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("pata-thibitisha-trait-ok-{stamp}"));
-        fs::create_dir_all(dir.join("src")).expect("mkdir");
-        fs::write(
-            dir.join("pata.toml"),
-            "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n",
-        )
-        .expect("manifest");
-        fs::write(
-            dir.join("src/kuu.as"),
-            "leta matumizi\n\n/// Inayoonyeshwa.\nsifa Inayoonyeshwa {\n    kazi onyesha(self: Self) -> Neno\n}\n\n/// Paka.\numbo Paka {\n    jina: Neno\n}\nshughuli ya Paka kwa Inayoonyeshwa {\n    kazi onyesha(self: Paka) -> Neno {\n        rejesha self.jina\n    }\n}\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    chapisha(\"x\")\n}\n",
-        )
-        .expect("src");
-        dir
+        crate::test_support::temp_project("thibitisha-trait-ok", "leta matumizi\n\n/// Inayoonyeshwa.\nsifa Inayoonyeshwa {\n    kazi onyesha(self: Self) -> Neno\n}\n\n/// Paka.\numbo Paka {\n    jina: Neno\n}\nshughuli ya Paka kwa Inayoonyeshwa {\n    kazi onyesha(self: Paka) -> Neno {\n        rejesha self.jina\n    }\n}\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    chapisha(\"x\")\n}\n")
     }
 
     fn temp_project_trait_unimplemented() -> std::path::PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("pata-thibitisha-trait-missing-{stamp}"));
-        fs::create_dir_all(dir.join("src")).expect("mkdir");
-        fs::write(
-            dir.join("pata.toml"),
-            "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n",
-        )
-        .expect("manifest");
-        fs::write(
-            dir.join("src/kuu.as"),
-            "leta matumizi\n/// Inayoonyeshwa.\nsifa Inayoonyeshwa { kazi onyesha(self: Self) -> Neno }\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }\n",
-        )
-        .expect("src");
-        dir
+        crate::test_support::temp_project("thibitisha-trait-missing", "leta matumizi\n/// Inayoonyeshwa.\nsifa Inayoonyeshwa { kazi onyesha(self: Self) -> Neno }\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }\n")
     }
 
     fn temp_project_unsafe_ffi_signature() -> std::path::PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("pata-thibitisha-ffi-{stamp}"));
-        fs::create_dir_all(dir.join("src")).expect("mkdir");
-        fs::write(
-            dir.join("pata.toml"),
-            "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n",
-        )
-        .expect("manifest");
-        fs::write(
-            dir.join("src/kuu.as"),
-            "leta matumizi\n#[kiunganishi]\nkazi kutoka_c(x: Orodha<Namba>) -> Namba { rejesha 0 }\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }\n",
-        )
-        .expect("src");
-        dir
+        crate::test_support::temp_project("thibitisha-ffi", "leta matumizi\n#[kiunganishi]\nkazi kutoka_c(x: Orodha<Namba>) -> Namba { rejesha 0 }\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }\n")
     }
 
     fn temp_project() -> std::path::PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("pata-thibitisha-{stamp}"));
-        fs::create_dir_all(dir.join("src")).expect("mkdir");
-        fs::write(
-            dir.join("pata.toml"),
-            "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n",
-        )
-        .expect("manifest");
-        fs::write(
-            dir.join("src/kuu.as"),
-            "leta matumizi\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }\numma kazi wazi() -> Tupu { }",
-        )
-        .expect("src");
-        dir
+        crate::test_support::temp_project("thibitisha", "leta matumizi\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha(\"x\") }\numma kazi wazi() -> Tupu { }")
     }
 }
