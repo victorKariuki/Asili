@@ -16,21 +16,6 @@ const BUILTIN_TYPES: &[&str] = &[
     "Tokeo", "Biti8", "Biti16", "Biti32", "Biti64", "uBiti8", "uBiti16", "uBiti32", "uBiti64",
 ];
 
-const BUILTIN_FUNCTIONS: &[&str] = &[
-    "chapisha",
-    "paparika",
-    "onyo",
-    "makosa",
-    "omba",
-    "orodha",
-    "kamusi",
-    "kamusi_tupu",
-    "jozi",
-    "tokeo",
-    "kosa",
-    "chaguo",
-];
-
 // ── Parse helpers ─────────────────────────────────────────────────────────────
 
 /// Try to parse source into a Module. Returns None on lex/parse failure.
@@ -84,12 +69,29 @@ pub fn completion_items(source: &str) -> Vec<CompletionItem> {
         });
     }
 
-    // Built-in functions
-    for bf in BUILTIN_FUNCTIONS {
+    // Built-in functions — from the same export tables the semantic analyzer checks calls
+    // against, so completion offers exactly what compiles.
+    let mut builtins: Vec<(String, String)> = asili_parser::builtins::BUILTIN_MODULE_NAMES
+        .iter()
+        .filter_map(|m| asili_parser::builtins::builtin_module_exports(m))
+        .flat_map(|table| table.functions)
+        .map(|(name, c)| {
+            let params: Vec<String> = c.params.iter().map(format_type).collect();
+            let detail = format!(
+                "kazi {name}({}) -> {}",
+                params.join(", "),
+                format_type(&c.ret)
+            );
+            (name, detail)
+        })
+        .collect();
+    builtins.sort();
+    builtins.dedup_by(|a, b| a.0 == b.0);
+    for (name, detail) in builtins {
         items.push(CompletionItem {
-            label: bf.to_string(),
+            label: name,
             kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("(builtin)".to_string()),
+            detail: Some(detail),
             ..Default::default()
         });
     }
