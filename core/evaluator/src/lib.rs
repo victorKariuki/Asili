@@ -1,5 +1,7 @@
 //! Asili interpreter and TIR/ASB emission.
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod aot;
 mod asb;
 pub mod builtins;
 mod bytecode;
@@ -8,6 +10,8 @@ mod env;
 mod eval;
 #[cfg(not(target_arch = "wasm32"))]
 mod jit;
+#[cfg(not(target_arch = "wasm32"))]
+mod native;
 mod platform;
 pub mod runtime;
 mod signal;
@@ -16,8 +20,11 @@ mod value;
 
 pub use crate::builtins::BuiltinFn;
 pub use asb::{load_asb, load_asb_bytecode, parse_format, AsbLoadError};
+#[cfg(not(target_arch = "wasm32"))]
+pub use bytecode::run_bytecode_native;
 pub use bytecode::{
-    compile_module, run_bytecode, run_bytecode_function, BinaryCode, BytecodeProgram, Opcode,
+    compile_module, run_bytecode, run_bytecode_function, run_bytecode_function_on, BinaryCode,
+    BytecodeProgram, Engine, Opcode,
 };
 pub use env::Env;
 pub use eval::eval_expr;
@@ -467,6 +474,49 @@ fn run_test_with_timeout(
 
 /// Emit .asb as bytes.  The Sudoku-compatible subset is lowered to bytecode; unsupported syntax
 /// deliberately keeps the serialized-AST artifact and therefore the existing evaluator fallback.
+/// Why an `.asb` artifact could not be run.
+#[derive(Debug)]
+pub enum RunAsbError {
+    /// The artifact (or its format) could not be decoded.
+    Load(String),
+    /// The program itself failed.
+    Run(EvalError),
+}
+
+/// Run an `.asb` artifact's `kuu`. Bytecode artifacts use the ahead-of-time native library
+/// `pata jenga` built next to them (`<name>.so`/`.dylib`/`.dll`) when it exists and was built
+/// from exactly this bytecode, and otherwise the register VM; serialized-AST artifacts use the
+/// tree-walking evaluator.
+pub fn run_asb(
+    bytes: &[u8],
+    asb_path: Option<&std::path::Path>,
+    args: Vec<String>,
+) -> Result<(), RunAsbError> {
+    if parse_format(bytes).as_deref() == Some("bytecode") {
+        let program = load_asb_bytecode(bytes).map_err(|e| RunAsbError::Load(e.to_string()))?;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let aot_enabled = std::env::var("ASILI_AOT").map(|v| v != "0").unwrap_or(true);
+            let library = asb_path.filter(|_| aot_enabled).and_then(|path| {
+                let stem = path.file_stem()?.to_str()?;
+                let lib = path.with_file_name(aot::library_file_name(stem));
+                // A missing or stale library just means running on the VM.
+                lib.is_file()
+                    .then(|| aot::NativeLibrary::load(&lib, &program).ok())
+                    .flatten()
+            });
+            return run_bytecode_native(&program, library.as_ref(), args).map_err(RunAsbError::Run);
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = asb_path;
+            return run_bytecode(&program, args).map_err(RunAsbError::Run);
+        }
+    }
+    let module = load_asb(bytes).map_err(|e| RunAsbError::Load(e.to_string()))?;
+    run_main(&module, args).map_err(RunAsbError::Run)
+}
+
 pub fn emit_asb(module: &Module, source: &str) -> Vec<u8> {
     let vm_candidate = module
         .functions

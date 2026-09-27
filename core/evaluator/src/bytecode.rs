@@ -278,6 +278,12 @@ pub enum Opcode {
         dst: Reg,
         items: Vec<Reg>,
     },
+    /// `orodha_rudia(value, count)` into an `Orodha<Namba>` register.
+    ListRepeat {
+        dst: Reg,
+        value: Reg,
+        count: Reg,
+    },
     /// `b[i]?` on an `Orodha<Namba>`: out of bounds returns the `Tokeo` error from the function.
     ListGet {
         dst: Reg,
@@ -1241,13 +1247,26 @@ impl<'a> FunctionCompiler<'a> {
         {
             if let Expr::Ident { name, .. } = &**receiver {
                 if let Some(local) = self.lookup(name).cloned() {
-                    if local.op.ty == Ty::List && method_name == "ondoa" && args.len() == 1 {
-                        let idx = self.expr_as(&args[0], Ty::Num)?;
-                        self.emit(Opcode::ListRemove {
-                            list: local.op.reg,
-                            idx: idx.reg,
-                        });
-                        return Some(());
+                    // Statement-level numeric-list mutations: no `Tupu`/`Chaguo` result.
+                    let list = local.op.reg;
+                    match (local.op.ty, method_name.as_str(), args.len()) {
+                        (Ty::List, "ondoa", 1) => {
+                            let idx = self.expr_as(&args[0], Ty::Num)?.reg;
+                            self.emit(Opcode::ListRemove { list, idx });
+                            return Some(());
+                        }
+                        (Ty::List, "ongeza", 1) => {
+                            let src = self.expr_as(&args[0], Ty::Num)?.reg;
+                            self.emit(Opcode::ListPush { list, src });
+                            return Some(());
+                        }
+                        (Ty::List, "ingiza", 2) => {
+                            let idx = self.expr_as(&args[0], Ty::Num)?.reg;
+                            let src = self.expr_as(&args[1], Ty::Num)?.reg;
+                            self.emit(Opcode::ListSet { list, idx, src });
+                            return Some(());
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -1753,6 +1772,18 @@ impl<'a> FunctionCompiler<'a> {
             return None;
         }
         if let Some(builtin) = self.program.builtins.get(name).copied() {
+            if let (Some(out), "orodha_rudia", 2) = (dst, name.as_str(), args.len()) {
+                if out.ty == Ty::List && self.infer(&args[0]) == Ty::Num {
+                    let value = self.expr_as(&args[0], Ty::Num)?.reg;
+                    let count = self.expr_as(&args[1], Ty::Num)?.reg;
+                    self.emit(Opcode::ListRepeat {
+                        dst: out.reg,
+                        value,
+                        count,
+                    });
+                    return Some(out);
+                }
+            }
             if matches!(name.as_str(), "sakafu" | "dari")
                 && args.len() == 1
                 && self.infer(&args[0]) == Ty::Num
@@ -1955,6 +1986,73 @@ pub fn run_bytecode(program: &BytecodeProgram, args: Vec<String>) -> Result<(), 
     Ok(())
 }
 
+/// Execute the entry function using an ahead-of-time compiled library built for `program`
+/// (see [`crate::aot`]); without one this is [`run_bytecode`].
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_bytecode_native(
+    program: &BytecodeProgram,
+    library: Option<&crate::aot::NativeLibrary>,
+    args: Vec<String>,
+) -> Result<(), EvalError> {
+    let index = program
+        .functions
+        .iter()
+        .position(|f| f.name == program.entry)
+        .ok_or_else(|| EvalError::Unknown(format!("kazi '{}' haikupatikana", program.entry)))?;
+    let hoja = Value::Orodha(args.into_iter().map(Value::Neno).collect());
+    let mut vm = match library {
+        Some(lib) => Vm::with_aot(program, lib)?,
+        None => Vm::new(program)?,
+    };
+    vm.call_values(index, vec![hoja])?;
+    Ok(())
+}
+
+/// Which execution engine runs bytecode, for differential testing of the native tiers.
+#[derive(Clone, Copy)]
+pub enum Engine<'l> {
+    /// The register VM's interpreter only.
+    Interpreter,
+    /// The Cranelift JIT (with the interpreter for anything it hands back).
+    #[cfg(not(target_arch = "wasm32"))]
+    Jit,
+    /// An LLVM AOT library built for this program.
+    #[cfg(not(target_arch = "wasm32"))]
+    Aot(&'l crate::aot::NativeLibrary),
+    /// Keeps the lifetime used on targets without native tiers.
+    #[cfg(target_arch = "wasm32")]
+    #[doc(hidden)]
+    _Unused(std::marker::PhantomData<&'l ()>),
+}
+
+/// Run a named function on a specific engine.
+pub fn run_bytecode_function_on(
+    engine: Engine<'_>,
+    program: &BytecodeProgram,
+    name: &str,
+    args: Vec<Value>,
+) -> Result<Value, EvalError> {
+    let index = program
+        .functions
+        .iter()
+        .position(|f| f.name == name)
+        .ok_or_else(|| EvalError::UndefinedVar(name.to_string()))?;
+    let mut vm = match engine {
+        Engine::Interpreter => Vm::new_inner(program, false)?,
+        #[cfg(target_arch = "wasm32")]
+        Engine::_Unused(_) => Vm::new_inner(program, false)?,
+        #[cfg(not(target_arch = "wasm32"))]
+        Engine::Jit => {
+            let mut vm = Vm::new_inner(program, false)?;
+            vm.jit = crate::jit::compile_program(program, &NATIVE_RUNTIME);
+            vm
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        Engine::Aot(lib) => Vm::with_aot(program, lib)?,
+    };
+    vm.call_values(index, args)
+}
+
 /// Execute a named bytecode function. Useful for embedders and focused VM tests; the CLI entry
 /// point above keeps the `kuu(hoja)` interface.
 pub fn run_bytecode_function(
@@ -2000,13 +2098,26 @@ struct Vm<'p> {
     depth: usize,
     #[cfg(not(target_arch = "wasm32"))]
     jit: Option<crate::jit::Jit>,
+    /// Ahead-of-time compiled functions (`pata jenga`'s LLVM library), preferred over the JIT.
+    #[cfg(not(target_arch = "wasm32"))]
+    aot: Option<&'p crate::aot::NativeLibrary>,
     /// Outcome of an instruction that native code handed to `exec_slow` and that ended the call.
+    #[cfg(not(target_arch = "wasm32"))]
     pending: Option<Flow>,
 }
 
-/// `exec_slow` entry point for native code: `0` to continue, else a `jit::STATUS_*`.
 #[cfg(not(target_arch = "wasm32"))]
-extern "C" fn jit_exec(
+pub(crate) static NATIVE_RUNTIME: crate::native::Runtime = crate::native::Runtime {
+    exec: native_exec,
+    list_ptr: crate::native::list_ptr,
+    list_len: crate::native::list_len,
+    list_push: crate::native::list_push,
+    list_remove: crate::native::list_remove,
+};
+
+/// `exec_slow` entry point for native code: `0` to continue, else a `native::STATUS_*`.
+#[cfg(not(target_arch = "wasm32"))]
+extern "C" fn native_exec(
     vm: *mut std::ffi::c_void,
     frame: *mut Frame,
     function: u32,
@@ -2022,11 +2133,11 @@ extern "C" fn jit_exec(
         Flow::Next => 0,
         flow @ Flow::Finish(_) => {
             vm.pending = Some(flow);
-            crate::jit::STATUS_FINISH as u32
+            crate::native::STATUS_FINISH as u32
         }
         flow @ Flow::Fail(_) => {
             vm.pending = Some(flow);
-            crate::jit::STATUS_FAIL as u32
+            crate::native::STATUS_FAIL as u32
         }
     }
 }
@@ -2075,6 +2186,12 @@ fn flag(b: bool) -> f64 {
 
 impl<'p> Vm<'p> {
     fn new(program: &'p BytecodeProgram) -> Result<Self, EvalError> {
+        Self::new_inner(program, true)
+    }
+
+    fn new_inner(program: &'p BytecodeProgram, allow_jit: bool) -> Result<Self, EvalError> {
+        #[cfg(target_arch = "wasm32")]
+        let _ = allow_jit;
         let names = builtin_names();
         let mut table = builtins();
         let mut list = Vec::with_capacity(names.len());
@@ -2093,13 +2210,27 @@ impl<'p> Vm<'p> {
             pool: Vec::new(),
             depth: 0,
             #[cfg(not(target_arch = "wasm32"))]
-            jit: if crate::jit::enabled() {
-                crate::jit::compile_program(program, &crate::jit::Callbacks { exec: jit_exec })
+            aot: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            jit: if allow_jit && crate::jit::enabled() {
+                crate::jit::compile_program(program, &NATIVE_RUNTIME)
             } else {
                 None
             },
+            #[cfg(not(target_arch = "wasm32"))]
             pending: None,
         })
+    }
+
+    /// A VM running `library`'s machine code; the JIT is not needed and not built.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn with_aot(
+        program: &'p BytecodeProgram,
+        library: &'p crate::aot::NativeLibrary,
+    ) -> Result<Self, EvalError> {
+        let mut vm = Self::new_inner(program, false)?;
+        vm.aot = Some(library);
+        Ok(vm)
     }
 
     fn frame_for(&mut self, f: &BytecodeFunc) -> Frame {
@@ -2147,10 +2278,14 @@ impl<'p> Vm<'p> {
         }
         let result = stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || {
             #[cfg(not(target_arch = "wasm32"))]
+            if let Some(native) = self.aot.map(|lib| lib.funcs[index]) {
+                return self.run_native(native, index, frame);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
             if let Some(native) = self.jit.as_ref().and_then(|j| j.funcs[index]) {
                 return self.run_native(native, index, frame);
             }
-            self.run(index, frame)
+            self.run(index, frame, 0)
         });
         self.depth -= 1;
         result
@@ -2159,7 +2294,7 @@ impl<'p> Vm<'p> {
     #[cfg(not(target_arch = "wasm32"))]
     fn run_native(
         &mut self,
-        native: crate::jit::NativeFn,
+        native: crate::native::NativeFn,
         index: usize,
         mut frame: Frame,
     ) -> Result<Ret, EvalError> {
@@ -2168,10 +2303,13 @@ impl<'p> Vm<'p> {
         // SAFETY: `native` was compiled from `program.functions[index]` for exactly this frame
         // layout (`frame_for` sized every register file), and the frame is not resized while
         // the call runs.
-        let status = unsafe { native(vm, &mut frame, nums) };
+        let status = unsafe { native(&NATIVE_RUNTIME, vm, &mut frame, nums) };
         let pc = (status & 0xffff_ffff) as usize;
+        if status >> 32 == crate::native::STATUS_DEOPT {
+            return self.run(index, frame, pc);
+        }
         let result = match status >> 32 {
-            crate::jit::STATUS_RETURN => Ok(match &self.program.functions[index].code[pc] {
+            crate::native::STATUS_RETURN => Ok(match &self.program.functions[index].code[pc] {
                 Opcode::Return { src } => match src.ty {
                     Ty::Num | Ty::Bool => Ret::Num(frame.nums[src.reg as usize]),
                     Ty::List => Ret::List(std::mem::take(&mut frame.lists[src.reg as usize])),
@@ -2272,10 +2410,10 @@ impl<'p> Vm<'p> {
         }
     }
 
-    fn run(&mut self, index: usize, mut frame: Frame) -> Result<Ret, EvalError> {
+    fn run(&mut self, index: usize, mut frame: Frame, start: usize) -> Result<Ret, EvalError> {
         let program = self.program;
         let code = &program.functions[index].code;
-        let mut pc = 0usize;
+        let mut pc = start;
         macro_rules! finish {
             ($ret:expr) => {{
                 let ret = $ret;
@@ -2421,6 +2559,16 @@ impl<'p> Vm<'p> {
             Opcode::Pow { dst, a, b } => n[*dst as usize] = n[*a as usize].powf(n[*b as usize]),
             Opcode::Floor { dst, src } => n[*dst as usize] = n[*src as usize].floor(),
             Opcode::Ceil { dst, src } => n[*dst as usize] = n[*src as usize].ceil(),
+            Opcode::ListRepeat { dst, value, count } => {
+                let count = n[*count as usize];
+                if !(count.is_finite() && count >= 0.0 && count.fract() == 0.0) {
+                    fail!(type_err(
+                        "orodha_rudia inahitaji idadi ya Namba kamili isiyo hasi"
+                    ));
+                }
+                let v = n[*value as usize];
+                frame.lists[*dst as usize] = vec![v; count as usize];
+            }
             Opcode::MakeNumList { dst, items } => {
                 let list: Vec<f64> = items.iter().map(|r| n[*r as usize]).collect();
                 frame.lists[*dst as usize] = list;

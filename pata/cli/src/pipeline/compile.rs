@@ -329,6 +329,31 @@ pub fn compile_single_file(
     })
 }
 
+/// Ahead-of-time compile a bytecode artifact to native code (LLVM, via `clang`) next to it.
+/// Never fails the build: without a compiler the artifact simply runs on the VM.
+fn build_native_library(asb: &[u8], target: &Path, name: &str) {
+    use asili_evaluator::aot::{build_library, library_file_name, AotError};
+    let stale = target.join(library_file_name(name));
+    if parse_format(asb).as_deref() != Some("bytecode") {
+        let _ = fs::remove_file(&stale);
+        return;
+    }
+    let Ok(program) = asili_evaluator::load_asb_bytecode(asb) else {
+        return;
+    };
+    match build_library(&program, target, name) {
+        Ok(path) => println!("msimbo asilia: {}", path.display()),
+        Err(AotError::Unavailable(why)) => {
+            let _ = fs::remove_file(&stale);
+            println!("msimbo asilia haukujengwa ({why}); kilele kitaendeshwa na VM");
+        }
+        Err(AotError::Failed(why)) => {
+            let _ = fs::remove_file(&stale);
+            eprintln!("onyo: msimbo asilia haukujengwa: {why}");
+        }
+    }
+}
+
 pub fn emit_build_artifacts(
     root: &Path,
     compiled: &CompileOutput,
@@ -348,6 +373,8 @@ pub fn emit_build_artifacts(
             1,
         )
     })?;
+
+    build_native_library(&asb, &target, &compiled.config.name);
 
     let meta = target.join(format!("{}.build.manifest", compiled.config.name));
     let input_hash_line = compiled

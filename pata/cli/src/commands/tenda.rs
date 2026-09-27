@@ -1,7 +1,7 @@
 //! Run from .asb artifact or .build.manifest (no recompile).
 
 use super::{CliError, CliResult};
-use asili_evaluator::{load_asb, load_asb_bytecode, parse_format, run_bytecode, run_main};
+use asili_evaluator::{run_asb, RunAsbError};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -93,17 +93,9 @@ pub fn run(args: &[String]) -> CliResult {
     }
     let bytes = fs::read(&asb_path)
         .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", asb_path.display()), 1))?;
-    let format = parse_format(&bytes).unwrap_or_else(|| "serialized".to_string());
-    if format == "bytecode" {
-        let program = load_asb_bytecode(&bytes)
-            .map_err(|e| CliError::new(format!("kuipakia asb bytecode: {e}"), 1))?;
-        run_bytecode(&program, program_args)
-            .map_err(|e| CliError::new(format!("kuendesha kuu: {e}"), 1))?;
-    } else {
-        let module =
-            load_asb(&bytes).map_err(|e| CliError::new(format!("kuipakia asb: {e}"), 1))?;
-        run_main(&module, program_args)
-            .map_err(|e| CliError::new(format!("kuendesha kuu: {e}"), 1))?;
-    }
+    run_asb(&bytes, Some(&asb_path), program_args).map_err(|e| match e {
+        RunAsbError::Load(e) => CliError::new(format!("kuipakia asb: {e}"), 1),
+        RunAsbError::Run(e) => CliError::new(format!("kuendesha kuu: {e}"), 1),
+    })?;
     Ok(())
 }

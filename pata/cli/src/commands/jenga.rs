@@ -4,7 +4,7 @@ use crate::pipeline::compile::{
 };
 use crate::pipeline::performance::{PerformanceMetrics, ScopedTimer};
 use crate::pipeline::project::find_workspace_root;
-use asili_evaluator::{load_asb, parse_format, run_main};
+use asili_evaluator::{load_asb, parse_format, run_asb, run_main, RunAsbError};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -124,7 +124,7 @@ pub fn run(args: &[String]) -> CliResult {
     };
 
     let emit_timer = ScopedTimer::new("kutoa");
-    let _artifact = if compiled.from_cache {
+    let artifact = if compiled.from_cache {
         let target = out.as_ref().cloned().unwrap_or_else(|| root.join("kilele"));
         let a = target.join(format!("{}.asb", compiled.config.name));
         println!("imejengwa (cache): {}", a.display());
@@ -137,8 +137,15 @@ pub fn run(args: &[String]) -> CliResult {
     metrics.record_phase(emit_timer.name(), emit_timer.elapsed());
 
     if do_run {
-        run_main(&compiled.module, program_args)
-            .map_err(|e| CliError::new(format!("kuendesha kuu: {e}"), 1))?;
+        // Run what was just built (bytecode + native code when available), exactly as
+        // `pata tenda` would, rather than re-interpreting the in-memory AST.
+        let bytes = fs::read(&artifact).map_err(|e| {
+            CliError::new(format!("imeshindwa kusoma {}: {e}", artifact.display()), 1)
+        })?;
+        run_asb(&bytes, Some(&artifact), program_args).map_err(|e| match e {
+            RunAsbError::Load(e) => CliError::new(format!("kuipakia asb: {e}"), 1),
+            RunAsbError::Run(e) => CliError::new(format!("kuendesha kuu: {e}"), 1),
+        })?;
     }
 
     if show_timing {
