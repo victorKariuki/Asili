@@ -4,7 +4,7 @@
 //! optimizes and links it with `clang -O2` into a shared library next to the `.asb`, and
 //! `pata tenda` loads that library and runs its functions instead of interpreting them.
 //!
-//! The translation mirrors the Cranelift JIT (`jit.rs`):
+//! The translation:
 //!
 //! * every `nums` register is an `alloca double` that LLVM's `mem2reg`/SROA promote to SSA
 //!   registers, and numeric literals become constants;
@@ -914,7 +914,7 @@ impl<'a> FnEmitter<'a> {
                 self.line(format!("br i1 {c}, label %L{target}, label %L{}", pc + 1));
                 return true;
             }
-            Opcode::ListGet { dst, list, idx } => {
+            Opcode::ListGet { dst, list, idx, .. } => {
                 let addr = self.element(*list, *idx, pc, op);
                 let v = self.fresh();
                 self.line(format!("{v} = load double, ptr {addr}"));

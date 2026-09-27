@@ -1,4 +1,4 @@
-//! Differential tests: the tree-walking evaluator and every bytecode tier (interpreter, JIT,
+//! Differential tests: the tree-walking evaluator and every bytecode tier (the VM interpreter
 //! and the LLVM AOT library when `clang` is available) must agree on each snippet — values
 //! and error messages alike. Operator, cast, method, unwrapping, iteration and display
 //! semantics are shared code (`eval::ops`, `eval::methods`), and these tests keep it that way.
@@ -45,11 +45,6 @@ fn agree(name: &str, source: &str, functions: &[&str]) {
             vm(Engine::Interpreter),
             tree,
             "{name}::{function}: VM vs tree-walker"
-        );
-        assert_eq!(
-            vm(Engine::Jit),
-            tree,
-            "{name}::{function}: JIT vs tree-walker"
         );
         if let Some(lib) = &lib {
             assert_eq!(
@@ -250,5 +245,57 @@ fn loops_iteration_and_ranges() {
         }
         "#,
         &["masafa", "kamusi_jumla", "lebo"],
+    );
+}
+
+#[test]
+fn indexing_without_question_mark() {
+    agree(
+        "index",
+        r#"
+        kazi soma() -> Namba {
+            weka b: Orodha<Namba> = [4, 5, 6]
+            rejesha b[0] + b[2] * 10
+        }
+        kazi nje() -> Namba {
+            weka b: Orodha<Namba> = [4, 5, 6]
+            rejesha b[3]
+        }
+        kazi nje_hasi() -> Namba {
+            weka b: Orodha<Namba> = [4, 5, 6]
+            rejesha b[0 - 1] + b[7]
+        }
+        kazi na_swali() -> Namba {
+            weka b: Orodha<Namba> = [4, 5, 6]
+            rejesha b[3]?
+        }
+        kazi jaribu_nje() -> Namba {
+            weka b: Orodha<Namba> = [4, 5, 6]
+            rejesha jaribu b[3]
+        }
+        kazi maneno() -> Neno {
+            weka m: Orodha<Neno> = ["a", "b"]
+            rejesha m[1] + m[0]
+        }
+        kazi maneno_nje() -> Neno {
+            weka m: Orodha<Neno> = ["a", "b"]
+            rejesha m[2]
+        }
+        kazi kamusi_pata() -> Namba {
+            weka k = kamusi()
+            k.ingiza("a", 3)
+            rejesha k["a"]
+        }
+        "#,
+        &[
+            "soma",
+            "nje",
+            "nje_hasi",
+            "na_swali",
+            "jaribu_nje",
+            "maneno",
+            "maneno_nje",
+            "kamusi_pata",
+        ],
     );
 }

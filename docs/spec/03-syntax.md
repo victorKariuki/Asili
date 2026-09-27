@@ -38,6 +38,7 @@ Primary numeric operators for `Namba` and fixed-width `Biti*`/`uBiti*` types:
 | `-` | Tofauti | Subtraction |
 | `*` | Zao | Multiplication |
 | `/` | Gawio | Division. For `Namba`, follows IEEE 754 (`Ukomo`, `-Ukomo`, `Siyo_Namba` where applicable). |
+| `//` | Gawio la sakafu | Floor division: `a // b` ≡ `sakafu(a / b)` (rounds toward −∞). |
 | `%` | Baki | Remainder |
 | `**` | Kipeo | Exponentiation |
 
@@ -69,8 +70,13 @@ Bitwise operators for integer/fixed-width bit types:
 ### Assignment and compound assignment
 
 - `=` assigns a value (move by default; implicit copy only for `Nakala` types).
-- Compound forms are supported: `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=` — on a variable
-  and on a list element (`a[i] op= v` ≡ `a[i] = a[i]? op v`; the index may not contain a call,
+- Indexing an `Orodha<T>`: `a[i]` is the element (`T`); an out-of-range index is a runtime
+  error. `a[i]?` (and `jaribu a[i]`) instead turn it into the `KosaMipaka` `Tokeo` error, and
+  `a.pata(i)` gives a `Chaguo<T>`. `Kamusi` indexing (`m[k]`) is unchanged.
+- Floor division: `a // b` ≡ `sakafu(a / b)`. Comments use `#`, documentation comments `///`
+  (a plain `//` is no longer a comment).
+- Compound forms are supported: `+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `&=`, `|=`, `^=` — on a variable
+  and on a list element (`a[i] op= v` ≡ `a[i] = a[i] op v`; the index may not contain a call,
   `PAR096`).
 
 ### Special protocol operations

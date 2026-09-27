@@ -44,9 +44,9 @@ The repository follows a Linux-kernel–style modular layout. Each directory is 
 - **evaluator/** — Executes `.asb` artifacts. Programs the bytecode compiler can lower run on a
   typed register VM (`bytecode.rs`); `pata jenga` additionally compiles that bytecode ahead of
   time to native code through LLVM IR and `clang` (`aot.rs`, a `<name>.so`/`.dylib`/`.dll` next
-  to the `.asb`), and without it a Cranelift JIT (`jit.rs`) compiles it at load time. Both
-  native tiers share `native.rs` (runtime ABI, integer range analysis, deoptimization back into
-  the VM). Programs using constructs the VM does not lower keep the serialized-AST artifact and
+  to the `.asb`), run instead of the interpreter when present; without `clang` the program runs
+  on the VM. `native.rs` holds the runtime ABI, the integer range analysis and deoptimization
+  back into the VM. Programs using constructs the VM does not lower keep the serialized-AST artifact and
   the tree-walking evaluator. All engines share one implementation of operators, methods, casts
   and iteration (`eval/ops.rs`, `eval/methods.rs`). Integration tests live in `tests/`.
 - **diagnostics/** — The "Mwalimu" error reporting system (Context Map).

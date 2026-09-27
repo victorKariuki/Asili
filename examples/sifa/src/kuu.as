@@ -13,7 +13,7 @@ shughuli ya Paka kwa Inayoonyeshwa {
     }
 }
 
-// Sintaksia ya nukta-mbili, sawa na "kwa" hapo juu.
+# Sintaksia ya nukta-mbili, sawa na "kwa" hapo juu.
 shughuli ya Mbwa: Inayoonyeshwa {
     kazi onyesha(self: Mbwa) -> Neno {
         rejesha "Mbwa(" + self.jina + ", mwenye: " + self.mwenye + ")"

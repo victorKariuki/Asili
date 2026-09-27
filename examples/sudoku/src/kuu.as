@@ -14,13 +14,13 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     # Bit masks of the digits already used in each row, column and 3x3 box.
     weka safu: Orodha<Namba> = orodha_rudia(0, N), nguzo: Orodha<Namba> = orodha_rudia(0, N), sanduku: Orodha<Namba> = orodha_rudia(0, N)
     kwa i kutoka 0 hadi S {
-        weka v = b[i]?
+        weka v = b[i]
         ikiwa v != 0 {
-            weka r = sakafu(i / N), c = i % N
+            weka r = i // N, c = i % N
             weka x = 1 << (v - 1)
             safu[r] |= x
             nguzo[c] |= x
-            sanduku[sakafu(r / 3) * 3 + sakafu(c / 3)] |= x
+            sanduku[r // 3 * 3 + c // 3] |= x
         }
     }
     # Iterative MRV backtracking: always branch on the empty cell with the fewest candidates.
@@ -33,9 +33,9 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
         ikiwa seli.urefu() == kina {
             weka bora = - 1, idadi = 10
             kwa p kutoka 0 hadi S {
-                ikiwa b[p]? == 0 {
-                    weka r = sakafu(p / N), c = p % N
-                    weka tumika = safu[r]? | nguzo[c]? | sanduku[sakafu(r / 3) * 3 + sakafu(c / 3)]?
+                ikiwa b[p] == 0 {
+                    weka r = p // N, c = p % N
+                    weka tumika = safu[r] | nguzo[c] | sanduku[r // 3 * 3 + c // 3]
                     weka n: Namba = 0
                     kwa v kutoka 1 hadi 10 {
                         ikiwa tumika & (1 << (v - 1)) == 0 {
@@ -53,11 +53,11 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
             seli.ongeza(bora)
             ijayo.ongeza(1)
         }
-        weka p = seli[kina]?
-        weka r = sakafu(p / N), c = p % N
-        weka q = sakafu(r / 3) * 3 + sakafu(c / 3)
-        weka tumika = safu[r]? | nguzo[c]? | sanduku[q]?
-        weka v = ijayo[kina]?
+        weka p = seli[kina]
+        weka r = p // N, c = p % N
+        weka q = r // 3 * 3 + c // 3
+        weka tumika = safu[r] | nguzo[c] | sanduku[q]
+        weka v = ijayo[kina]
         weka imewekwa: Ukweli = si_kweli
         wakati v <= N {
             majaribio += 1
@@ -80,13 +80,13 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
             kina -= 1
             marudio += 1
             ikiwa kina >= 0 {
-                weka zamani = seli[kina]?
-                weka zr = sakafu(zamani / N), zc = zamani % N
-                weka x = 1 << (b[zamani]? - 1)
+                weka zamani = seli[kina]
+                weka zr = zamani // N, zc = zamani % N
+                weka x = 1 << (b[zamani] - 1)
                 b[zamani] = 0
                 safu[zr] ^= x
                 nguzo[zc] ^= x
-                sanduku[sakafu(zr / 3) * 3 + sakafu(zc / 3)] ^= x
+                sanduku[zr // 3 * 3 + zc // 3] ^= x
             }
         }
     }

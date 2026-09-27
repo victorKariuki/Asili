@@ -19,7 +19,9 @@ weka sifuri = orodha_rudia(0, 9)      # list containing nine zeroes
 | Usemi              | Maelezo                                          |
 |--------------------|--------------------------------------------------|
 | `a.urefu()`        | Number of elements                               |
-| `a[i]?`           | Element at index `i`; propagates if out of bounds|
+| `a[i]`            | Element at index `i`; out of range is a runtime error |
+| `a[i]?`           | Element at index `i`; out of range returns the `KosaMipaka` error from the enclosing `kazi` |
+| `a.pata(i)`       | `Chaguo<T>`: `Kuna(x)`, or `Hamna` when out of range |
 | `a.ongeza(x)`      | Append `x` to end                                |
 | `a.ondoa(i)`       | Remove element at index `i`; returns `Chaguo<T>` |
 | `a.kila_mmoja(cb)` | Iterate with callback (no-op if no callback)     |
@@ -27,8 +29,8 @@ weka sifuri = orodha_rudia(0, 9)      # list containing nine zeroes
 ```asili
 weka a = orodha(5, 10, 15)
 chapisha(a.urefu() kama Neno)    # 3
-chapisha(a[0]? kama Neno)        # 5
-chapisha(a[2]? kama Neno)        # 15
+chapisha(a[0] kama Neno)         # 5
+chapisha(a[2] kama Neno)         # 15
 
 a.ongeza(20)
 chapisha(a.urefu() kama Neno)    # 4

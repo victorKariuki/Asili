@@ -76,6 +76,16 @@ pub struct BytecodeFunc {
     pub code: Vec<Opcode>,
 }
 
+/// How an indexing instruction treats an out-of-range `Orodha` index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IndexMode {
+    /// Plain `b[i]`: the element; out of range is a runtime error.
+    Element,
+    /// `b[i]?`: out of range returns the `KosaMipaka` `Tokeo` error from the function
+    /// (`ListGet`), or yields the `Tokeo` value (`ValIndex`, for `?`/`jaribu` to unwrap).
+    Tokeo,
+}
+
 /// Comparison selector for the generic compare-and-branch opcode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CmpOp {
@@ -300,11 +310,12 @@ pub enum Opcode {
         value: Reg,
         count: Reg,
     },
-    /// `b[i]?` on an `Orodha<Namba>`: out of bounds returns the `Tokeo` error from the function.
+    /// `b[i]` / `b[i]?` on an `Orodha<Namba>`; `mode` decides what out of range does.
     ListGet {
         dst: Reg,
         list: Reg,
         idx: Reg,
+        mode: IndexMode,
     },
     /// `b[i]` without `?`: `vals[dst]` receives the `Tokeo`.
     ListGetTokeo {
@@ -397,6 +408,7 @@ pub enum Opcode {
         dst: Reg,
         base: Reg,
         idx: Reg,
+        mode: IndexMode,
     },
     /// `nums[dst] = vals[src].urefu()`.
     ValLen {
@@ -887,6 +899,7 @@ impl<'a> FunctionCompiler<'a> {
             Expr::MethodCall {
                 method_name, args, ..
             } if method_name == "urefu" && args.is_empty() => Ty::Num,
+            Expr::Index { base, .. } if self.infer(base) == Ty::List => Ty::Num,
             Expr::Propagate { expr, .. } => match &**expr {
                 Expr::Index { base, .. } if self.infer(base) == Ty::List => Ty::Num,
                 _ => Ty::Val,
@@ -1253,28 +1266,26 @@ impl<'a> FunctionCompiler<'a> {
                     target: 0,
                 });
                 let body_top = self.here();
+                // The index is always in range here.
                 if source.ty == Ty::List {
                     self.emit(Opcode::ListGet {
                         dst: item.reg,
                         list: source.reg,
                         idx,
+                        mode: IndexMode::Element,
                     });
                 } else {
                     let boxed_idx = self.temp(Ty::Val).reg;
-                    let tokeo = self.temp(Ty::Val).reg;
                     let unwrapped = self.temp(Ty::Val);
                     self.emit(Opcode::BoxNum {
                         dst: boxed_idx,
                         src: idx,
                     });
                     self.emit(Opcode::ValIndex {
-                        dst: tokeo,
+                        dst: unwrapped.reg,
                         base: source.reg,
                         idx: boxed_idx,
-                    });
-                    self.emit(Opcode::Unwrap {
-                        dst: unwrapped.reg,
-                        src: tokeo,
+                        mode: IndexMode::Element,
                     });
                     self.convert(unwrapped, item)?;
                 }
@@ -1535,13 +1546,17 @@ impl<'a> FunctionCompiler<'a> {
                 let base_op = self.expr(base)?;
                 if base_op.ty == Ty::List {
                     let idx = self.expr_as(index, Ty::Num)?;
-                    let out = self.dst_or_temp(dst, Ty::Val);
-                    self.emit(Opcode::ListGetTokeo {
+                    let out = self.dst_or_temp(dst, Ty::Num);
+                    self.emit(Opcode::ListGet {
                         dst: out.reg,
                         list: base_op.reg,
                         idx: idx.reg,
+                        mode: IndexMode::Element,
                     });
-                    return Some(out);
+                    return Some(Operand {
+                        ty: Ty::Num,
+                        reg: out.reg,
+                    });
                 }
                 let base_val = self.as_val(base_op)?;
                 let idx = self.expr_as(index, Ty::Val)?;
@@ -1550,6 +1565,7 @@ impl<'a> FunctionCompiler<'a> {
                     dst: out.reg,
                     base: base_val.reg,
                     idx: idx.reg,
+                    mode: IndexMode::Element,
                 });
                 Some(out)
             }
@@ -1563,6 +1579,7 @@ impl<'a> FunctionCompiler<'a> {
                             dst: out.reg,
                             list: list.reg,
                             idx: idx.reg,
+                            mode: IndexMode::Tokeo,
                         });
                         return Some(Operand {
                             ty: Ty::Num,
@@ -1570,7 +1587,7 @@ impl<'a> FunctionCompiler<'a> {
                         });
                     }
                 }
-                let src = self.expr_as(inner, Ty::Val)?;
+                let src = self.tokeo_operand(inner)?;
                 let out = self.dst_or_temp(dst, Ty::Val);
                 self.emit(Opcode::Unwrap {
                     dst: out.reg,
@@ -1647,7 +1664,7 @@ impl<'a> FunctionCompiler<'a> {
                     Some(out)
                 }
                 UnaryOp::Jaribu => {
-                    let src = self.expr_as(inner, Ty::Val)?;
+                    let src = self.tokeo_operand(inner)?;
                     let out = self.dst_or_temp(dst, Ty::Val);
                     self.emit(Opcode::Jaribu {
                         dst: out.reg,
@@ -1715,6 +1732,34 @@ impl<'a> FunctionCompiler<'a> {
             | Expr::EnumConstruct { .. }
             | Expr::FieldAccess { .. } => None,
         }
+    }
+
+    /// The value `?`/`jaribu` unwrap: for an index expression, the `Tokeo` form of the read
+    /// (out of range as a `KosaMipaka` error); otherwise the expression itself.
+    fn tokeo_operand(&mut self, expr: &Expr) -> Option<Operand> {
+        let Expr::Index { base, index, .. } = expr else {
+            return self.expr_as(expr, Ty::Val);
+        };
+        let base_op = self.expr(base)?;
+        let out = self.temp(Ty::Val);
+        if base_op.ty == Ty::List {
+            let idx = self.expr_as(index, Ty::Num)?.reg;
+            self.emit(Opcode::ListGetTokeo {
+                dst: out.reg,
+                list: base_op.reg,
+                idx,
+            });
+        } else {
+            let base = self.as_val(base_op)?.reg;
+            let idx = self.expr_as(index, Ty::Val)?.reg;
+            self.emit(Opcode::ValIndex {
+                dst: out.reg,
+                base,
+                idx,
+                mode: IndexMode::Tokeo,
+            });
+        }
+        Some(out)
     }
 
     fn as_val(&mut self, op: Operand) -> Option<Operand> {
@@ -2129,9 +2174,6 @@ pub fn run_bytecode_native(
 pub enum Engine<'l> {
     /// The register VM's interpreter only.
     Interpreter,
-    /// The Cranelift JIT (with the interpreter for anything it hands back).
-    #[cfg(not(target_arch = "wasm32"))]
-    Jit,
     /// An LLVM AOT library built for this program.
     #[cfg(not(target_arch = "wasm32"))]
     Aot(&'l crate::aot::NativeLibrary),
@@ -2154,15 +2196,9 @@ pub fn run_bytecode_function_on(
         .position(|f| f.name == name)
         .ok_or_else(|| EvalError::UndefinedVar(name.to_string()))?;
     let mut vm = match engine {
-        Engine::Interpreter => Vm::new_inner(program, false)?,
+        Engine::Interpreter => Vm::new(program)?,
         #[cfg(target_arch = "wasm32")]
-        Engine::_Unused(_) => Vm::new_inner(program, false)?,
-        #[cfg(not(target_arch = "wasm32"))]
-        Engine::Jit => {
-            let mut vm = Vm::new_inner(program, false)?;
-            vm.jit = crate::jit::compile_program(program, &NATIVE_RUNTIME);
-            vm
-        }
+        Engine::_Unused(_) => Vm::new(program)?,
         #[cfg(not(target_arch = "wasm32"))]
         Engine::Aot(lib) => Vm::with_aot(program, lib)?,
     };
@@ -2186,7 +2222,7 @@ pub fn run_bytecode_function(
 }
 
 /// One call's register files. Native code reads `nums` through a raw pointer and `lists`
-/// through `jit::list_ptr`/`list_len`, so neither may be resized while the call runs.
+/// through `native::list_ptr`/`list_len`, so neither may be resized while the call runs.
 #[derive(Default)]
 pub(crate) struct Frame {
     pub(crate) nums: Vec<f64>,
@@ -2212,9 +2248,7 @@ struct Vm<'p> {
     builtin_index: HashMap<String, usize>,
     pool: Vec<Frame>,
     depth: usize,
-    #[cfg(not(target_arch = "wasm32"))]
-    jit: Option<crate::jit::Jit>,
-    /// Ahead-of-time compiled functions (`pata jenga`'s LLVM library), preferred over the JIT.
+    /// Ahead-of-time compiled functions (`pata jenga`'s LLVM library), used instead of the interpreter.
     #[cfg(not(target_arch = "wasm32"))]
     aot: Option<&'p crate::aot::NativeLibrary>,
     /// Outcome of an instruction that native code handed to `exec_slow` and that ended the call.
@@ -2302,12 +2336,6 @@ fn flag(b: bool) -> f64 {
 
 impl<'p> Vm<'p> {
     fn new(program: &'p BytecodeProgram) -> Result<Self, EvalError> {
-        Self::new_inner(program, true)
-    }
-
-    fn new_inner(program: &'p BytecodeProgram, allow_jit: bool) -> Result<Self, EvalError> {
-        #[cfg(target_arch = "wasm32")]
-        let _ = allow_jit;
         let names = builtin_names();
         let mut table = builtins();
         let mut list = Vec::with_capacity(names.len());
@@ -2328,23 +2356,17 @@ impl<'p> Vm<'p> {
             #[cfg(not(target_arch = "wasm32"))]
             aot: None,
             #[cfg(not(target_arch = "wasm32"))]
-            jit: if allow_jit && crate::jit::enabled() {
-                crate::jit::compile_program(program, &NATIVE_RUNTIME)
-            } else {
-                None
-            },
-            #[cfg(not(target_arch = "wasm32"))]
             pending: None,
         })
     }
 
-    /// A VM running `library`'s machine code; the JIT is not needed and not built.
+    /// A VM running `library`'s ahead-of-time compiled machine code.
     #[cfg(not(target_arch = "wasm32"))]
     fn with_aot(
         program: &'p BytecodeProgram,
         library: &'p crate::aot::NativeLibrary,
     ) -> Result<Self, EvalError> {
-        let mut vm = Self::new_inner(program, false)?;
+        let mut vm = Self::new(program)?;
         vm.aot = Some(library);
         Ok(vm)
     }
@@ -2395,10 +2417,6 @@ impl<'p> Vm<'p> {
         let result = stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || {
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(native) = self.aot.map(|lib| lib.funcs[index]) {
-                return self.run_native(native, index, frame);
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            if let Some(native) = self.jit.as_ref().and_then(|j| j.funcs[index]) {
                 return self.run_native(native, index, frame);
             }
             self.run(index, frame, 0)
@@ -2508,54 +2526,27 @@ impl<'p> Vm<'p> {
             pc += 1;
             let n = &mut frame.nums;
             match op {
-                Opcode::Mov { dst, src } => n[*dst as usize] = n[*src as usize],
-                Opcode::Add { dst, a, b } => n[*dst as usize] = n[*a as usize] + n[*b as usize],
-                Opcode::Sub { dst, a, b } => n[*dst as usize] = n[*a as usize] - n[*b as usize],
-                Opcode::Mul { dst, a, b } => n[*dst as usize] = n[*a as usize] * n[*b as usize],
-                Opcode::Div { dst, a, b } => n[*dst as usize] = n[*a as usize] / n[*b as usize],
-                Opcode::Rem { dst, a, b } => n[*dst as usize] = n[*a as usize] % n[*b as usize],
-                Opcode::Pow { dst, a, b } => n[*dst as usize] = n[*a as usize].powf(n[*b as usize]),
-                Opcode::BitAnd { dst, a, b } => {
-                    n[*dst as usize] = ((n[*a as usize] as i64) & (n[*b as usize] as i64)) as f64
+                Opcode::Jump { target } => {
+                    pc = *target as usize;
+                    continue;
                 }
-                Opcode::BitOr { dst, a, b } => {
-                    n[*dst as usize] = ((n[*a as usize] as i64) | (n[*b as usize] as i64)) as f64
-                }
-                Opcode::BitXor { dst, a, b } => {
-                    n[*dst as usize] = ((n[*a as usize] as i64) ^ (n[*b as usize] as i64)) as f64
-                }
-                Opcode::Shl { dst, a, b } => {
-                    n[*dst as usize] =
-                        (n[*a as usize] as i64).wrapping_shl(shift_amount(n[*b as usize])) as f64
-                }
-                Opcode::Shr { dst, a, b } => {
-                    n[*dst as usize] =
-                        (n[*a as usize] as i64).wrapping_shr(shift_amount(n[*b as usize])) as f64
-                }
-                Opcode::Neg { dst, src } => n[*dst as usize] = -n[*src as usize],
-                Opcode::BitNot { dst, src } => n[*dst as usize] = !(n[*src as usize] as i64) as f64,
-                Opcode::Not { dst, src } => n[*dst as usize] = flag(n[*src as usize] == 0.0),
-                Opcode::Floor { dst, src } => n[*dst as usize] = n[*src as usize].floor(),
-                Opcode::Ceil { dst, src } => n[*dst as usize] = n[*src as usize].ceil(),
-                Opcode::Trunc { dst, src } => n[*dst as usize] = (n[*src as usize] as i64) as f64,
-                Opcode::Cmp { op, dst, a, b } => {
-                    n[*dst as usize] = flag(compare(*op, n[*a as usize], n[*b as usize]))
-                }
-                Opcode::Jump { target } => pc = *target as usize,
                 Opcode::JumpIfFalse { cond, target } => {
                     if n[*cond as usize] == 0.0 {
                         pc = *target as usize;
                     }
+                    continue;
                 }
                 Opcode::JumpIfTrue { cond, target } => {
                     if n[*cond as usize] != 0.0 {
                         pc = *target as usize;
                     }
+                    continue;
                 }
                 Opcode::JumpIfNot { op, a, b, target } => {
                     if !compare(*op, n[*a as usize], n[*b as usize]) {
                         pc = *target as usize;
                     }
+                    continue;
                 }
                 Opcode::ForStep { ctr, end, target } => {
                     let next = n[*ctr as usize] + 1.0;
@@ -2563,28 +2554,22 @@ impl<'p> Vm<'p> {
                     if next < n[*end as usize] {
                         pc = *target as usize;
                     }
+                    continue;
                 }
-                Opcode::ListGet { dst, list, idx } => {
+                // In-range list access inline; anything else (errors) goes to `exec_slow`.
+                Opcode::ListGet { dst, list, idx, .. } => {
                     let i = to_index(n[*idx as usize]);
-                    let l = &frame.lists[*list as usize];
-                    match l.get(i) {
-                        Some(v) => frame.nums[*dst as usize] = *v,
-                        None => {
-                            let err = methods::out_of_bounds(i, l.len());
-                            finish!(Ret::Val(err));
-                        }
+                    if let Some(v) = frame.lists[*list as usize].get(i) {
+                        frame.nums[*dst as usize] = *v;
+                        continue;
                     }
                 }
                 Opcode::ListSet { list, idx, src } => {
-                    let i = to_index(n[*idx as usize]);
-                    let v = n[*src as usize];
-                    match frame.lists[*list as usize].get_mut(i) {
-                        Some(slot) => *slot = v,
-                        None => fail!(type_err("ingiza: index nje ya mipaka")),
+                    let (i, v) = (to_index(n[*idx as usize]), n[*src as usize]);
+                    if let Some(slot) = frame.lists[*list as usize].get_mut(i) {
+                        *slot = v;
+                        continue;
                     }
-                }
-                Opcode::ListLen { dst, list } => {
-                    n[*dst as usize] = frame.lists[*list as usize].len() as f64
                 }
                 Opcode::Return { src } => {
                     let ret = match src.ty {
@@ -2598,17 +2583,22 @@ impl<'p> Vm<'p> {
                     finish!(ret);
                 }
                 Opcode::ReturnTupu => finish!(Ret::Val(Value::Tupu)),
-                other => match self.exec_slow(other, &mut frame) {
-                    Flow::Next => {}
-                    Flow::Finish(ret) => finish!(ret),
-                    Flow::Fail(err) => fail!(err),
-                },
+                _ => {
+                    if numeric_op(op, n) {
+                        continue;
+                    }
+                }
+            }
+            match self.exec_slow(op, &mut frame) {
+                Flow::Next => {}
+                Flow::Finish(ret) => finish!(ret),
+                Flow::Fail(err) => fail!(err),
             }
         }
     }
 
     /// Execute one non-control instruction. Shared by the interpreter (for everything off the
-    /// numeric fast path) and by JIT-compiled code (for instructions it does not compile).
+    /// numeric fast path) and by native code (for instructions it does not compile).
     fn exec_slow(&mut self, op: &Opcode, frame: &mut Frame) -> Flow {
         let program = self.program;
         macro_rules! finish {
@@ -2621,17 +2611,11 @@ impl<'p> Vm<'p> {
                 return Flow::Fail($err);
             }};
         }
+        if numeric_op(op, &mut frame.nums) {
+            return Flow::Next;
+        }
         let n = &mut frame.nums;
         match op {
-            Opcode::Mov { dst, src } => n[*dst as usize] = n[*src as usize],
-            Opcode::Add { dst, a, b } => n[*dst as usize] = n[*a as usize] + n[*b as usize],
-            Opcode::Sub { dst, a, b } => n[*dst as usize] = n[*a as usize] - n[*b as usize],
-            Opcode::Mul { dst, a, b } => n[*dst as usize] = n[*a as usize] * n[*b as usize],
-            Opcode::Div { dst, a, b } => n[*dst as usize] = n[*a as usize] / n[*b as usize],
-            Opcode::Rem { dst, a, b } => n[*dst as usize] = n[*a as usize] % n[*b as usize],
-            Opcode::Pow { dst, a, b } => n[*dst as usize] = n[*a as usize].powf(n[*b as usize]),
-            Opcode::Floor { dst, src } => n[*dst as usize] = n[*src as usize].floor(),
-            Opcode::Ceil { dst, src } => n[*dst as usize] = n[*src as usize].ceil(),
             Opcode::ListRepeat { dst, value, count } => {
                 let count = n[*count as usize];
                 if !(count.is_finite() && count >= 0.0 && count.fract() == 0.0) {
@@ -2646,14 +2630,19 @@ impl<'p> Vm<'p> {
                 let list: Vec<f64> = items.iter().map(|r| n[*r as usize]).collect();
                 frame.lists[*dst as usize] = list;
             }
-            Opcode::ListGet { dst, list, idx } => {
+            Opcode::ListGet {
+                dst,
+                list,
+                idx,
+                mode,
+            } => {
                 let i = to_index(n[*idx as usize]);
                 let l = &frame.lists[*list as usize];
-                match l.get(i) {
-                    Some(v) => frame.nums[*dst as usize] = *v,
-                    None => {
-                        let err = methods::out_of_bounds(i, l.len());
-                        finish!(Ret::Val(err));
+                match (l.get(i), mode) {
+                    (Some(v), _) => frame.nums[*dst as usize] = *v,
+                    (None, IndexMode::Element) => fail!(methods::out_of_bounds_error(i, l.len())),
+                    (None, IndexMode::Tokeo) => {
+                        finish!(Ret::Val(methods::out_of_bounds(i, l.len())))
                     }
                 }
             }
@@ -2763,9 +2752,17 @@ impl<'p> Vm<'p> {
                     Err(e) => fail!(e),
                 }
             }
-            Opcode::ValIndex { dst, base, idx } => {
-                match methods::index_value(&frame.vals[*base as usize], &frame.vals[*idx as usize])
-                {
+            Opcode::ValIndex {
+                dst,
+                base,
+                idx,
+                mode,
+            } => {
+                let read = match mode {
+                    IndexMode::Element => methods::index_element,
+                    IndexMode::Tokeo => methods::index_value,
+                };
+                match read(&frame.vals[*base as usize], &frame.vals[*idx as usize]) {
                     Ok(v) => frame.vals[*dst as usize] = v,
                     Err(e) => fail!(e),
                 }
@@ -2910,23 +2907,33 @@ impl<'p> Vm<'p> {
                     Err(e) => fail!(e),
                 }
             }
+            // Handled by `numeric_op` above.
+            Opcode::Mov { .. }
+            | Opcode::Add { .. }
+            | Opcode::Sub { .. }
+            | Opcode::Mul { .. }
+            | Opcode::Div { .. }
+            | Opcode::Rem { .. }
+            | Opcode::Pow { .. }
+            | Opcode::BitAnd { .. }
+            | Opcode::BitOr { .. }
+            | Opcode::BitXor { .. }
+            | Opcode::Shl { .. }
+            | Opcode::Shr { .. }
+            | Opcode::Neg { .. }
+            | Opcode::BitNot { .. }
+            | Opcode::Not { .. }
+            | Opcode::Floor { .. }
+            | Opcode::Ceil { .. }
+            | Opcode::Trunc { .. }
+            | Opcode::Cmp { .. } => unreachable!("numeric_op handles numeric instructions"),
             Opcode::Jump { .. }
             | Opcode::JumpIfFalse { .. }
             | Opcode::JumpIfTrue { .. }
             | Opcode::JumpIfNot { .. }
             | Opcode::ForStep { .. }
             | Opcode::Return { .. }
-            | Opcode::ReturnTupu
-            | Opcode::Neg { .. }
-            | Opcode::BitNot { .. }
-            | Opcode::Not { .. }
-            | Opcode::Trunc { .. }
-            | Opcode::Cmp { .. }
-            | Opcode::BitAnd { .. }
-            | Opcode::BitOr { .. }
-            | Opcode::BitXor { .. }
-            | Opcode::Shl { .. }
-            | Opcode::Shr { .. } => {
+            | Opcode::ReturnTupu => {
                 fail!(EvalError::Unknown(
                     "amri ya udhibiti nje ya mzunguko".into()
                 ))
@@ -2934,6 +2941,40 @@ impl<'p> Vm<'p> {
         }
         Flow::Next
     }
+}
+
+/// Execute a pure `nums`-register instruction; `false` if `op` is not one. The single
+/// implementation of numeric semantics for the interpreter loop and `exec_slow`.
+#[inline(always)]
+fn numeric_op(op: &Opcode, n: &mut [f64]) -> bool {
+    let r = |x: &Reg| *x as usize;
+    match op {
+        Opcode::Mov { dst, src } => n[r(dst)] = n[r(src)],
+        Opcode::Add { dst, a, b } => n[r(dst)] = n[r(a)] + n[r(b)],
+        Opcode::Sub { dst, a, b } => n[r(dst)] = n[r(a)] - n[r(b)],
+        Opcode::Mul { dst, a, b } => n[r(dst)] = n[r(a)] * n[r(b)],
+        Opcode::Div { dst, a, b } => n[r(dst)] = n[r(a)] / n[r(b)],
+        Opcode::Rem { dst, a, b } => n[r(dst)] = n[r(a)] % n[r(b)],
+        Opcode::Pow { dst, a, b } => n[r(dst)] = n[r(a)].powf(n[r(b)]),
+        Opcode::BitAnd { dst, a, b } => n[r(dst)] = ((n[r(a)] as i64) & (n[r(b)] as i64)) as f64,
+        Opcode::BitOr { dst, a, b } => n[r(dst)] = ((n[r(a)] as i64) | (n[r(b)] as i64)) as f64,
+        Opcode::BitXor { dst, a, b } => n[r(dst)] = ((n[r(a)] as i64) ^ (n[r(b)] as i64)) as f64,
+        Opcode::Shl { dst, a, b } => {
+            n[r(dst)] = (n[r(a)] as i64).wrapping_shl(shift_amount(n[r(b)])) as f64
+        }
+        Opcode::Shr { dst, a, b } => {
+            n[r(dst)] = (n[r(a)] as i64).wrapping_shr(shift_amount(n[r(b)])) as f64
+        }
+        Opcode::Neg { dst, src } => n[r(dst)] = -n[r(src)],
+        Opcode::BitNot { dst, src } => n[r(dst)] = !(n[r(src)] as i64) as f64,
+        Opcode::Not { dst, src } => n[r(dst)] = flag(n[r(src)] == 0.0),
+        Opcode::Floor { dst, src } => n[r(dst)] = n[r(src)].floor(),
+        Opcode::Ceil { dst, src } => n[r(dst)] = n[r(src)].ceil(),
+        Opcode::Trunc { dst, src } => n[r(dst)] = (n[r(src)] as i64) as f64,
+        Opcode::Cmp { op, dst, a, b } => n[r(dst)] = flag(compare(*op, n[r(a)], n[r(b)])),
+        _ => return false,
+    }
+    true
 }
 
 fn copy_operand(from: &Frame, src: Operand, to: &mut Frame, dst: Operand) {

@@ -36,8 +36,8 @@
           "name": "comment.line.number-sign.asili"
         },
         {
-          "match": "//.*$",
-          "name": "comment.line.double-slash.asili"
+          "match": "///.*$",
+          "name": "comment.line.documentation.asili"
         }
       ]
     },
@@ -274,11 +274,11 @@
           "name": "keyword.operator.logical.asili"
         },
         {
-          "match": "\\+=|-=|\\*=|/=|=",
+          "match": "//=|\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|=",
           "name": "keyword.operator.assignment.asili"
         },
         {
-          "match": "[+\\-*/%]",
+          "match": "//|[+\\-*/%]",
           "name": "keyword.operator.arithmetic.asili"
         },
         {

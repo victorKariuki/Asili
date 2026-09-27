@@ -8,12 +8,12 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     jaribu (w.andika("Habari kutoka Asili!\n"))
     w.funga()
 
-    // Faili hufungwa kiotomatiki hata bila .funga() wazi -- tazama nje-ya-wigo hapa chini.
+    # Faili hufungwa kiotomatiki hata bila .funga() wazi -- tazama nje-ya-wigo hapa chini.
     ikiwa kweli {
         weka wa_muda = jaribu (faili_fungua(njia.clona(), "ongeza"))
         jaribu (wa_muda.andika("Mstari wa pili.\n"))
     }
-    // `wa_muda` alitoka nje ya wigo pale bila .funga(); OS handle bado ilifungwa.
+    # `wa_muda` alitoka nje ya wigo pale bila .funga(); OS handle bado ilifungwa.
 
     weka r = jaribu (faili_fungua(njia, "soma"))
     weka maudhui = jaribu (r.soma())

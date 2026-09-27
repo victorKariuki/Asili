@@ -3,7 +3,7 @@
 # Usage: ./run.sh [runs]   (default 5; prints the best wall time per implementation)
 #
 # Asili tiers: asili-aot = LLVM native library built by `pata jenga` (needs clang),
-# asili-jit = Cranelift JIT (ASILI_AOT=0), asili-vm = register-VM interpreter (also ASILI_JIT=0).
+# asili-vm = register-VM interpreter (ASILI_AOT=0).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
@@ -36,5 +36,4 @@ best rust "$out/sudoku_rs"
 command -v python3 >/dev/null && best python python3 "$here/sudoku.py"
 asb="$here/../kilele/sudoku.asb"
 best asili-aot "$root/target/release/pata-cli" tenda "$asb"
-ASILI_AOT=0 best asili-jit "$root/target/release/pata-cli" tenda "$asb"
-ASILI_AOT=0 ASILI_JIT=0 best asili-vm "$root/target/release/pata-cli" tenda "$asb"
+ASILI_AOT=0 best asili-vm "$root/target/release/pata-cli" tenda "$asb"

@@ -35,7 +35,7 @@ const asiliMode = {
       stream.skipToEnd();
       return "comment";
     }
-    if (stream.match("//")) {
+    if (stream.match("///")) {
       stream.skipToEnd();
       return "comment";
     }

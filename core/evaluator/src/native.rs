@@ -1,6 +1,6 @@
-//! Shared support for native code (the Cranelift JIT in `jit.rs` and the LLVM AOT backend in
-//! `aot.rs`): the calling convention between machine code and the VM, and per-instruction
-//! register effects used to spill/reload around interpreter callbacks.
+//! Support for ahead-of-time native code (`aot.rs`), kept separate from the LLVM emitter: the
+//! calling convention between machine code and the VM, per-instruction register effects used to
+//! spill/reload around interpreter callbacks, and the integer range analysis.
 
 use crate::bytecode::{CmpOp, Frame, Opcode, Reg, Ty};
 use std::ffi::c_void;

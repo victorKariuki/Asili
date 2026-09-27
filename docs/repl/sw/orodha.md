@@ -6,7 +6,9 @@ Orodha ni mkusanyiko unaohesabu kwa index.
 
 - `orodha(...)` — unda orodha kutoka hoja (mf. `orodha(1, 2, 3)`)
 - `a.urefu()` — urefu wa orodha
-- `a[0]` — kipengele kwa index (kwanza = 0); rejesha `Tokeo` (bounds-checked)
+- `a[0]` — kipengele kwa index (kwanza = 0); index nje ya mipaka husimamisha programu kwa kosa
+- `a[0]?` — kipengele, au hurudisha kosa la `KosaMipaka` kutoka kazi ikiwa index iko nje ya mipaka
+- `a.pata(i)` — `Chaguo`: `Kuna(x)` au `Hamna` ikiwa index iko nje ya mipaka
 - `a.ongeza(x)` — ongeza kipengele mwishoni
 - `a.ondoa(i)` — ondoa kipengele kwa index; rejesha Chaguo
 

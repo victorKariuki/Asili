@@ -92,6 +92,42 @@ impl<'a> Analyzer<'a> {
         None
     }
 
+    /// Type of `base[index]`, and whether `base` is an `Orodha`. Indexing an `Orodha<T>` yields
+    /// `T` (out of range is a runtime error; `b[i]?`/`jaribu b[i]` turn it into a `Tokeo` error
+    /// instead); indexing a `Kamusi<K, V>` yields `V`.
+    fn check_index(
+        &mut self,
+        base: &Expr,
+        index: &Expr,
+        line: usize,
+        scopes: &mut Vec<HashMap<String, Binding>>,
+    ) -> (ValueType, bool) {
+        let base_ty = self.check_expr(base, scopes, UseMode::BorrowImm);
+        let idx_ty = self.check_expr(index, scopes, UseMode::Move);
+        match &base_ty {
+            ValueType::Orodha(inner) => {
+                if idx_ty != ValueType::Namba && idx_ty != ValueType::Unknown {
+                    self.errors.push(
+                        Diagnostic::new("SEM102", "fahirisi inahitaji Namba")
+                            .with_stage("semantiki")
+                            .with_span(line, 1),
+                    );
+                }
+                (*inner.clone(), true)
+            }
+            ValueType::Kamusi(_, v) => (*v.clone(), false),
+            ValueType::Unknown => (ValueType::Unknown, false),
+            _ => {
+                self.errors.push(
+                    Diagnostic::new("SEM103", "fahirisi inahitaji Orodha au Kamusi")
+                        .with_stage("semantiki")
+                        .with_span(line, 1),
+                );
+                (ValueType::Unknown, false)
+            }
+        }
+    }
+
     fn collect_idents_from_expr(expr: &Expr) -> Vec<String> {
         match expr {
             Expr::Ident { name: n, .. } => vec![n.clone()],
@@ -1152,7 +1188,21 @@ impl<'a> Analyzer<'a> {
                 let t = match op {
                     UnaryOp::BorrowImm => self.check_expr(expr, scopes, UseMode::BorrowImm),
                     UnaryOp::BorrowMut => self.check_expr(expr, scopes, UseMode::BorrowMut),
-                    UnaryOp::Jaribu => self.check_expr(expr, scopes, UseMode::Move),
+                    // `jaribu b[i]` on an `Orodha`: the element (out of range aborts).
+                    UnaryOp::Jaribu => match &**expr {
+                        Expr::Index {
+                            base,
+                            index,
+                            line: index_line,
+                        } => {
+                            let (t, is_list) = self.check_index(base, index, *index_line, scopes);
+                            if is_list {
+                                return t;
+                            }
+                            t
+                        }
+                        _ => self.check_expr(expr, scopes, UseMode::Move),
+                    },
                     _ => self.check_expr(expr, scopes, UseMode::Move),
                 };
                 match op {
@@ -1879,34 +1929,7 @@ impl<'a> Analyzer<'a> {
                 }
                 ValueType::Struct(enum_name.clone())
             }
-            Expr::Index { base, index, line } => {
-                let base_ty = self.check_expr(base, scopes, UseMode::BorrowImm);
-                let idx_ty = self.check_expr(index, scopes, UseMode::Move);
-                match &base_ty {
-                    ValueType::Orodha(inner) => {
-                        if idx_ty != ValueType::Namba && idx_ty != ValueType::Unknown {
-                            self.errors.push(
-                                Diagnostic::new("SEM102", "fahirisi inahitaji Namba")
-                                    .with_stage("semantiki")
-                                    .with_span(*line, 1),
-                            );
-                        }
-                        ValueType::Tokeo(
-                            inner.clone(),
-                            Box::new(ValueType::Struct("KosaMipaka".to_string())),
-                        )
-                    }
-                    ValueType::Kamusi(_, v) => *v.clone(),
-                    _ => {
-                        self.errors.push(
-                            Diagnostic::new("SEM103", "fahirisi inahitaji Orodha au Kamusi")
-                                .with_stage("semantiki")
-                                .with_span(*line, 1),
-                        );
-                        ValueType::Unknown
-                    }
-                }
-            }
+            Expr::Index { base, index, line } => self.check_index(base, index, *line, scopes).0,
             Expr::FieldAccess {
                 receiver,
                 field,
@@ -1948,6 +1971,18 @@ impl<'a> Analyzer<'a> {
                 }
             }
             Expr::Propagate { expr, line } => {
+                // `b[i]?` on an `Orodha`: the element, with out-of-range returned as the error.
+                if let Expr::Index {
+                    base,
+                    index,
+                    line: index_line,
+                } = &**expr
+                {
+                    let (t, is_list) = self.check_index(base, index, *index_line, scopes);
+                    if is_list {
+                        return t;
+                    }
+                }
                 let t = self.check_expr(expr, scopes, UseMode::Move);
                 let idents = Self::collect_idents_from_expr(expr);
                 self.mark_tokeo_consumed(scopes, &idents);

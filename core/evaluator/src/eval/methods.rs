@@ -8,16 +8,48 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::value::{self, EvalError, MapKey, Value};
 
-/// `Tokeo` error value produced by an out-of-bounds `Orodha` read.
+fn out_of_bounds_message(idx: usize, len: usize) -> String {
+    format!("fahirisi nje ya mipaka: {} (urefu {})", idx, len)
+}
+
+/// `Tokeo` error value of an out-of-bounds `b[i]?` / `jaribu b[i]`.
 pub(crate) fn out_of_bounds(idx: usize, len: usize) -> Value {
-    let msg = format!("fahirisi nje ya mipaka: {} (urefu {})", idx, len);
     let kosa = Value::Struct(
         "KosaMipaka".to_string(),
-        vec![("ujumbe".to_string(), Value::Neno(msg))],
+        vec![(
+            "ujumbe".to_string(),
+            Value::Neno(out_of_bounds_message(idx, len)),
+        )],
     );
     Value::Tokeo(Err(Box::new(kosa)))
 }
 
+/// Runtime error of an out-of-bounds plain `b[i]`.
+pub(crate) fn out_of_bounds_error(idx: usize, len: usize) -> EvalError {
+    EvalError::Panic(out_of_bounds_message(idx, len))
+}
+
+/// `base[index]`: an `Orodha` element (out of range is an error) or a `Kamusi` value.
+pub(crate) fn index_element(base: &Value, index: &Value) -> Result<Value, EvalError> {
+    match base {
+        Value::Orodha(v) => {
+            let idx = list_index(index)?;
+            v.get(idx)
+                .cloned()
+                .ok_or_else(|| out_of_bounds_error(idx, v.len()))
+        }
+        _ => index_value(base, index),
+    }
+}
+
+fn list_index(index: &Value) -> Result<usize, EvalError> {
+    let idx = value::as_f64(index)
+        .ok_or_else(|| EvalError::TypeErr("fahirisi inahitaji Namba".into()))?;
+    Ok((idx as i64).max(0) as usize)
+}
+
+/// `base[index]` as a `Tokeo` (the form `b[i]?` and `jaribu b[i]` unwrap): an `Orodha` element
+/// or a `KosaMipaka` error, or a `Kamusi` value.
 pub(crate) fn index_value(base: &Value, index: &Value) -> Result<Value, EvalError> {
     match base {
         Value::Kamusi(m) => {
@@ -26,9 +58,7 @@ pub(crate) fn index_value(base: &Value, index: &Value) -> Result<Value, EvalErro
         }
 
         Value::Orodha(v) => {
-            let idx = value::as_f64(index)
-                .ok_or_else(|| EvalError::TypeErr("fahirisi inahitaji Namba".into()))?;
-            let idx = (idx as i64).max(0) as usize;
+            let idx = list_index(index)?;
             if idx >= v.len() {
                 Ok(out_of_bounds(idx, v.len()))
             } else {
