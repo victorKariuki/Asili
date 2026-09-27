@@ -36,6 +36,24 @@ impl Env {
         None
     }
 
+    pub(crate) fn get_ref(&self, name: &str) -> Option<&Value> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(value) = scope.get(name) {
+                return Some(value);
+            }
+        }
+        None
+    }
+
+    pub(crate) fn get_mut(&mut self, name: &str) -> Option<&mut Value> {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(value) = scope.get_mut(name) {
+                return Some(value);
+            }
+        }
+        None
+    }
+
     // HACK: set() falls back to inserting into the global (first) scope when the name is not found
     // in any existing scope. This silently creates a global from inside a function body, which masks
     // undefined-variable bugs. Should return an error (or at minimum panic in debug builds) when
@@ -76,11 +94,20 @@ impl Env {
             scope.insert("TUPU".to_string(), Value::Tupu);
             scope.insert("Ukomo".to_string(), Value::Namba(f64::INFINITY));
             scope.insert("Siyo_Namba".to_string(), Value::Namba(f64::NAN));
-            scope.insert("TOLEO".to_string(), Value::Neno(option_env!("CARGO_PKG_VERSION").unwrap_or("0.0.0").into()));
-            scope.insert("JINA_OS".to_string(), Value::Neno(std::env::consts::OS.into()));
+            scope.insert(
+                "TOLEO".to_string(),
+                Value::Neno(option_env!("CARGO_PKG_VERSION").unwrap_or("0.0.0").into()),
+            );
+            scope.insert(
+                "JINA_OS".to_string(),
+                Value::Neno(std::env::consts::OS.into()),
+            );
             scope.insert("SEKUNDE_KWA_SIKU".to_string(), Value::Namba(86400.0));
             scope.insert("MWANZO_WA_ZAMANI".to_string(), Value::Namba(0.0));
-            scope.insert("NJIA_SEPARATOR".to_string(), Value::Neno(std::path::MAIN_SEPARATOR.to_string()));
+            scope.insert(
+                "NJIA_SEPARATOR".to_string(),
+                Value::Neno(std::path::MAIN_SEPARATOR.to_string()),
+            );
             scope.insert("PI".to_string(), Value::Namba(std::f64::consts::PI));
             scope.insert("E".to_string(), Value::Namba(std::f64::consts::E));
             scope.insert(
@@ -90,12 +117,15 @@ impl Env {
             scope.insert("TAU".to_string(), Value::Namba(2.0 * std::f64::consts::PI));
             scope.insert("LN10".to_string(), Value::Namba(10.0_f64.ln()));
             scope.insert("LN2".to_string(), Value::Namba(2.0_f64.ln()));
-            scope.insert("LOG10E".to_string(), Value::Namba(std::f64::consts::E.log10()));
-            scope.insert("LOG2E".to_string(), Value::Namba(std::f64::consts::E.log2()));
             scope.insert(
-                "KIPEUO1_2".to_string(),
-                Value::Namba(1.0 / 2.0_f64.sqrt()),
+                "LOG10E".to_string(),
+                Value::Namba(std::f64::consts::E.log10()),
             );
+            scope.insert(
+                "LOG2E".to_string(),
+                Value::Namba(std::f64::consts::E.log2()),
+            );
+            scope.insert("KIPEUO1_2".to_string(), Value::Namba(1.0 / 2.0_f64.sqrt()));
             scope.insert("KIPEUO2".to_string(), Value::Namba(2.0_f64.sqrt()));
             scope.insert("KIPEUO3".to_string(), Value::Namba(3.0_f64.sqrt()));
             scope.insert("KIPEUO5".to_string(), Value::Namba(5.0_f64.sqrt()));

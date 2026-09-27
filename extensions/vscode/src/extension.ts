@@ -1,6 +1,6 @@
 import * as path from "path";
 import * as fs from "fs";
-import { commands, window, workspace, ExtensionContext, Terminal, Uri } from "vscode";
+import { commands, window, workspace, ExtensionContext, Terminal, Uri, TextDocument } from "vscode";
 import {
   LanguageClient,
   LanguageClientOptions,
@@ -10,6 +10,7 @@ import {
 
 let client: LanguageClient | undefined;
 let testTerminal: Terminal | undefined;
+let lintTerminal: Terminal | undefined;
 
 /**
  * Walk up from `fileDir` looking for the nearest `pata.toml` — that directory is the
@@ -28,12 +29,31 @@ function findProjectRoot(fileDir: string): string {
     if (fs.existsSync(path.join(dir, "pata.toml"))) {
       return dir;
     }
+
     const parent = path.dirname(dir);
     if (parent === dir) {
       return fileDir;
     }
     dir = parent;
   }
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function lintCommand(document: TextDocument | undefined, workspaceRoot: string | undefined): void {
+  const config = workspace.getConfiguration("asili");
+  const linterPath = config.get<string>("linterPath") ?? "pata-lint";
+  const target = document ? document.uri.fsPath : workspaceRoot ?? ".";
+  const root = findProjectRoot(path.dirname(target));
+  if (!lintTerminal || lintTerminal.exitStatus !== undefined) {
+    lintTerminal = window.createTerminal("Asili Lint");
+  }
+  lintTerminal.show(true);
+  lintTerminal.sendText(
+    `cd ${shellQuote(root)} && ${shellQuote(linterPath)} ${shellQuote(target)}`
+  );
 }
 
 /**
@@ -94,6 +114,19 @@ export function activate(context: ExtensionContext): void {
       }
       testTerminal.show(true);
       testTerminal.sendText(`cd "${root}" && ${pataPath} jaribu --filter "${testName}"`);
+    })
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand("asili.lintFile", (uri?: Uri) => {
+      const target = uri ?? window.activeTextEditor?.document.uri;
+      const document = target
+        ? workspace.textDocuments.find((item) => item.uri.toString() === target.toString())
+        : undefined;
+      lintCommand(document, workspace.workspaceFolders?.[0]?.uri.fsPath);
+    }),
+    commands.registerCommand("asili.lintWorkspace", () => {
+      lintCommand(undefined, workspace.workspaceFolders?.[0]?.uri.fsPath);
     })
   );
 }

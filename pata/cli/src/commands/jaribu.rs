@@ -1,17 +1,24 @@
 use super::{CliError, CliResult};
-use crate::pipeline::compile::{list_project_tests, run_project_tests_parallel, run_project_tests_with_coverage};
+use crate::pipeline::compile::{
+    list_project_tests, run_project_tests_parallel, run_project_tests_with_coverage,
+};
 use std::path::Path;
 
 // Exit codes: 0 = all tests passed; 1 = one or more tests failed; 2 = usage or config error.
 // Contract: ../../commands/jaribu.md
 pub fn run(args: &[String]) -> CliResult {
-    let (filter, fail_fast, list_only, json, num_threads, timeout_secs, coverage) = parse_args(args)?;
+    let (filter, fail_fast, list_only, json, num_threads, timeout_secs, coverage) =
+        parse_args(args)?;
     let timeout = timeout_secs.map(std::time::Duration::from_secs_f64);
 
     if list_only {
         let names = list_project_tests(Path::new("."))?;
         let names: Vec<&str> = match &filter {
-            Some(f) => names.iter().filter(|n| n.contains(f.as_str())).map(String::as_str).collect(),
+            Some(f) => names
+                .iter()
+                .filter(|n| n.contains(f.as_str()))
+                .map(String::as_str)
+                .collect(),
             None => names.iter().map(String::as_str).collect(),
         };
         if json {
@@ -26,11 +33,18 @@ pub fn run(args: &[String]) -> CliResult {
     }
 
     if coverage {
-        let (results, metrics) = run_project_tests_with_coverage(Path::new("."), filter.as_deref())?;
+        let (results, metrics) =
+            run_project_tests_with_coverage(Path::new("."), filter.as_deref())?;
         return report_results(&results, json, Some(&metrics));
     }
 
-    let results = run_project_tests_parallel(Path::new("."), filter.as_deref(), fail_fast, num_threads, timeout)?;
+    let results = run_project_tests_parallel(
+        Path::new("."),
+        filter.as_deref(),
+        fail_fast,
+        num_threads,
+        timeout,
+    )?;
     report_results(&results, json, None)
 }
 
@@ -40,7 +54,11 @@ pub fn run(args: &[String]) -> CliResult {
 /// numbers are informational only in this command (no `--chanjo-kiwango` threshold flag exists
 /// yet; `pata thibitisha --kiwango-cha-jaribio` is the separate, already-existing
 /// coverage-*threshold* gate, a different metric — function-count ratio, not line coverage).
-fn report_results(results: &[asili_evaluator::TestResult], json: bool, metrics: Option<&crate::pipeline::coverage::CoverageMetrics>) -> CliResult {
+fn report_results(
+    results: &[asili_evaluator::TestResult],
+    json: bool,
+    metrics: Option<&crate::pipeline::coverage::CoverageMetrics>,
+) -> CliResult {
     let mut passed = 0usize;
     let mut failed = 0usize;
     for r in results {
@@ -78,7 +96,12 @@ fn report_results(results: &[asili_evaluator::TestResult], json: bool, metrics: 
                 println!("[KOSA] {} - {}", r.name, r.message);
             }
         }
-        println!("jumla: {} | sawa: {} | kosa: {}", results.len(), passed, failed);
+        println!(
+            "jumla: {} | sawa: {} | kosa: {}",
+            results.len(),
+            passed,
+            failed
+        );
         if let Some(m) = metrics {
             println!("{}", m.report());
         }
@@ -96,7 +119,20 @@ fn report_results(results: &[asili_evaluator::TestResult], json: bool, metrics: 
     Ok(())
 }
 
-fn parse_args(args: &[String]) -> Result<(Option<String>, bool, bool, bool, Option<usize>, Option<f64>, bool), CliError> {
+fn parse_args(
+    args: &[String],
+) -> Result<
+    (
+        Option<String>,
+        bool,
+        bool,
+        bool,
+        Option<usize>,
+        Option<f64>,
+        bool,
+    ),
+    CliError,
+> {
     let mut filter = None;
     let mut fail_fast = false;
     let mut list_only = false;
@@ -139,9 +175,9 @@ fn parse_args(args: &[String]) -> Result<(Option<String>, bool, bool, bool, Opti
                 let Some(v) = args.get(i + 1) else {
                     return Err(CliError::new("--muda inahitaji sekunde", 2));
                 };
-                let secs = v.parse::<f64>().map_err(|_| {
-                    CliError::new(format!("--muda: '{}' si sekunde halali", v), 2)
-                })?;
+                let secs = v
+                    .parse::<f64>()
+                    .map_err(|_| CliError::new(format!("--muda: '{}' si sekunde halali", v), 2))?;
                 if secs <= 0.0 {
                     return Err(CliError::new("--muda inahitaji thamani chanya", 2));
                 }
@@ -160,7 +196,15 @@ fn parse_args(args: &[String]) -> Result<(Option<String>, bool, bool, bool, Opti
             }
         }
     }
-    Ok((filter, fail_fast, list_only, json, num_threads, timeout_secs, coverage))
+    Ok((
+        filter,
+        fail_fast,
+        list_only,
+        json,
+        num_threads,
+        timeout_secs,
+        coverage,
+    ))
 }
 
 #[cfg(test)]
@@ -299,7 +343,8 @@ mod tests {
         let root = temp_project();
         std::env::set_current_dir(&root).expect("chdir");
 
-        let err = run(&["--muda".to_string(), "sivyo".to_string()]).expect_err("should reject non-numeric --muda");
+        let err = run(&["--muda".to_string(), "sivyo".to_string()])
+            .expect_err("should reject non-numeric --muda");
         assert_eq!(err.exit_code, 2);
 
         std::env::set_current_dir(&original).expect("restore cwd");
@@ -313,7 +358,8 @@ mod tests {
         let root = temp_project();
         std::env::set_current_dir(&root).expect("chdir");
 
-        let err = run(&["--muda".to_string(), "0".to_string()]).expect_err("should reject non-positive --muda");
+        let err = run(&["--muda".to_string(), "0".to_string()])
+            .expect_err("should reject non-positive --muda");
         assert_eq!(err.exit_code, 2);
 
         std::env::set_current_dir(&original).expect("restore cwd");
@@ -331,11 +377,15 @@ mod tests {
         std::env::set_current_dir(&root).expect("chdir");
 
         let start = std::time::Instant::now();
-        let err = run(&["--muda".to_string(), "0.2".to_string()]).expect_err("timed-out test should fail the run");
+        let err = run(&["--muda".to_string(), "0.2".to_string()])
+            .expect_err("timed-out test should fail the run");
         let elapsed = start.elapsed();
 
         assert_eq!(err.exit_code, 1);
-        assert!(elapsed < std::time::Duration::from_secs(3), "took {elapsed:?}, should return shortly after the 0.2s timeout");
+        assert!(
+            elapsed < std::time::Duration::from_secs(3),
+            "took {elapsed:?}, should return shortly after the 0.2s timeout"
+        );
 
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(root);

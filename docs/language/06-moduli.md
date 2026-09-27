@@ -2,12 +2,9 @@
 
 ## Kuingiza Moduli (Importing)
 
-```asili
-leta matumizi
-leta hisabati
-```
-
-`leta` at the top of a file imports a standard library module. All its exported functions become available without a namespace prefix.
+Builtin standard-library modules are available without `leta`. The keyword remains necessary for
+project and dependency modules; it may also be used as documentation when showing which builtin
+module provides a function.
 
 ---
 
@@ -46,7 +43,7 @@ weka juu = dari(3.2)          # 4
 weka n = nasibu()             # random float [0,1)
 ```
 
-**Maadili ya hisabati (constants)** — available after `leta hisabati`:
+**Maadili ya hisabati (constants)** — available ambiently:
 
 | Jina       | Thamani                    | Maelezo                      |
 |------------|----------------------------|------------------------------|
@@ -68,7 +65,7 @@ weka n = nasibu()             # random float [0,1)
 | `Ukomo`    | ∞                          | Ukomo (alias ya INF)         |
 | `Siyo_Namba`| NaN                       | Siyo Namba (alias ya NAN)    |
 
-**Namba_Kuu / Namba_Sahihi** (usahihi usio na kikomo, pia baada ya `leta hisabati`):
+**Namba_Kuu / Namba_Sahihi** (usahihi usio na kikomo, pia available ambiently):
 
 ```asili
 leta hisabati
@@ -101,14 +98,14 @@ jaribu sikiliza_ishara(2, shimla)   # register signal handler (e.g. SIGINT = 2);
 jaribu rejesha_ishara(2)            # reset signal handler to default; same Tokeo contract
 ```
 
-**Maadili ya mfumo** — available after `leta mfumo`:
+**Maadili ya mfumo** — available ambiently:
 
 | Jina     | Maelezo                         |
 |----------|---------------------------------|
 | `TOLEO`  | Toleo la sasa la Asili (Neno)   |
 | `JINA_OS`| Jina la mfumo wa uendeshaji (Neno) |
 
-**Kishikizo cha Mkondo** (TCP client stream, also available after `leta mfumo`):
+**Kishikizo cha Mkondo** (TCP client stream, available ambiently):
 
 ```asili
 leta mfumo
@@ -187,7 +184,7 @@ weka sasa_namba = majira()             # Namba: raw seconds since epoch (not Wak
 > depending on the time of year (the time-of-day portion is correct). See
 > [implementation-status.md](../design/implementation-status.md).
 
-**Maadili ya majira** — available after `leta majira`:
+**Maadili ya majira** — available ambiently:
 
 | Jina                | Thamani  | Maelezo                        |
 |---------------------|----------|--------------------------------|
@@ -206,13 +203,13 @@ weka ukubwa_w = ukubwa("file.txt")   # Namba (bytes)
 jaribu futa("temp.txt")
 ```
 
-**Maadili ya faili** — available after `leta faili`:
+**Maadili ya faili** — available ambiently:
 
 | Jina             | Maelezo                                     |
 |------------------|---------------------------------------------|
 | `NJIA_SEPARATOR` | Kitenganishi cha njia (`/` au `\` kwenye OS) |
 
-**Kishikizo cha Faili** (handle-based, also available after `leta faili`) — kwa matumizi ya
+**Kishikizo cha Faili** (handle-based, available ambiently) — kwa matumizi ya
 mara kwa mara badala ya kufungua/kufunga faili kila wakati:
 
 ```asili

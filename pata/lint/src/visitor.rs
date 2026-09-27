@@ -1,6 +1,6 @@
 //! AST visitor trait for lint rules
 
-use asili_parser::{Module, Stmt, Expr};
+use asili_parser::{Expr, Module, Stmt};
 
 /// Visitor trait for traversing AST
 pub trait Visitor {

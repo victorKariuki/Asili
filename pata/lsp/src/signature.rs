@@ -128,7 +128,9 @@ pub fn compute_signature_help(
     if let Some(f) = module.functions.iter().find(|f| f.name == name) {
         return Some(signature_from_params(
             &name,
-            f.params.iter().map(|p| (p.name.as_str(), p.ty.name.as_str())),
+            f.params
+                .iter()
+                .map(|p| (p.name.as_str(), p.ty.name.as_str())),
             &f.return_type.name,
             active_param,
         ));
@@ -137,10 +139,17 @@ pub fn compute_signature_help(
     // 2. A public function in a resolved cross-file (project-local) module — still real names.
     if let Some(ws) = workspace {
         for wm in ws.modules.values() {
-            if let Some(f) = wm.module.functions.iter().find(|f| f.name == name && f.is_public) {
+            if let Some(f) = wm
+                .module
+                .functions
+                .iter()
+                .find(|f| f.name == name && f.is_public)
+            {
                 return Some(signature_from_params(
                     &name,
-                    f.params.iter().map(|p| (p.name.as_str(), p.ty.name.as_str())),
+                    f.params
+                        .iter()
+                        .map(|p| (p.name.as_str(), p.ty.name.as_str())),
                     &f.return_type.name,
                     active_param,
                 ));
@@ -165,7 +174,11 @@ pub fn compute_signature_help(
             params.join(", "),
             crate::types::format_type(&contract.ret)
         );
-        return Some(SignatureInfo { label, params, active_param });
+        return Some(SignatureInfo {
+            label,
+            params,
+            active_param,
+        });
     }
 
     None
@@ -179,5 +192,9 @@ fn signature_from_params<'a>(
 ) -> SignatureInfo {
     let params: Vec<String> = params.map(|(n, t)| format!("{n}: {t}")).collect();
     let label = format!("kazi {}({}) -> {}", name, params.join(", "), return_type);
-    SignatureInfo { label, params, active_param }
+    SignatureInfo {
+        label,
+        params,
+        active_param,
+    }
 }

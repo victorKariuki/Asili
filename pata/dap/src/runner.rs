@@ -34,7 +34,12 @@ pub fn real_session() -> Arc<DapSession<RealDebugHook>> {
     let session = DapSession::new(Arc::clone(&hook));
     let paused_at_line = session.paused_at_line_handle();
     let session = session.with_on_configuration_done(move |program, breakpoint_lines| {
-        launch_and_monitor(Arc::clone(&hook_for_callback), Arc::clone(&paused_at_line), breakpoint_lines, program);
+        launch_and_monitor(
+            Arc::clone(&hook_for_callback),
+            Arc::clone(&paused_at_line),
+            breakpoint_lines,
+            program,
+        );
     });
     Arc::new(session)
 }
@@ -127,19 +132,28 @@ mod tests {
 
         let mut launch_args = LaunchRequestArguments::default();
         let mut data = serde_json::Map::new();
-        data.insert("program".to_string(), serde_json::json!(path.to_string_lossy()));
+        data.insert(
+            "program".to_string(),
+            serde_json::json!(path.to_string_lossy()),
+        );
         launch_args.additional_data = Some(serde_json::Value::Object(data));
         session.handle(&req(1, Command::Launch(launch_args)));
 
         let mut bp_args = SetBreakpointsArguments::default();
-        bp_args.breakpoints = Some(vec![SourceBreakpoint { line: 3, ..Default::default() }]);
+        bp_args.breakpoints = Some(vec![SourceBreakpoint {
+            line: 3,
+            ..Default::default()
+        }]);
         session.handle(&req(2, Command::SetBreakpoints(bp_args)));
 
         session.handle(&req(3, Command::ConfigurationDone));
 
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while session.hook().paused_at_line() != Some(3) {
-            assert!(std::time::Instant::now() < deadline, "breakpoint never fired within 5s");
+            assert!(
+                std::time::Instant::now() < deadline,
+                "breakpoint never fired within 5s"
+            );
             std::thread::sleep(Duration::from_millis(10));
         }
 

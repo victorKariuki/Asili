@@ -22,7 +22,10 @@ pub enum Dependency {
     /// given at `ongeza` time (e.g. `^0.1`), not necessarily the exact fetched version (that's
     /// recorded in `pata.lock`, and in the vendored `.pata-version` marker `fetch_git`'s caller
     /// writes).
-    Git { url: String, version: String },
+    Git {
+        url: String,
+        version: String,
+    },
 }
 
 impl From<&str> for Dependency {
@@ -36,7 +39,9 @@ impl std::fmt::Display for Dependency {
         match self {
             Dependency::Version(v) => write!(f, "\"{}\"", v),
             Dependency::Path(p) => write!(f, "{{ path = \"{}\" }}", p.display()),
-            Dependency::Git { url, version } => write!(f, "{{ git = \"{}\", version = \"{}\" }}", url, version),
+            Dependency::Git { url, version } => {
+                write!(f, "{{ git = \"{}\", version = \"{}\" }}", url, version)
+            }
         }
     }
 }

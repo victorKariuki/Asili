@@ -55,7 +55,10 @@ pub fn run(args: &[String]) -> CliResult {
         return Ok(());
     }
 
-    println!("imekamilika: mafaili {} yalikaguliwa, {} yamebadilishwa", total, changed);
+    println!(
+        "imekamilika: mafaili {} yalikaguliwa, {} yamebadilishwa",
+        total, changed
+    );
     Ok(())
 }
 
@@ -113,7 +116,11 @@ mod tests {
         let original = std::env::current_dir().expect("cwd");
         let root = temp_dir();
         std::env::set_current_dir(&root).expect("chdir");
-        fs::write("src/kuu.as", "leta matumizi\nkazi  kuu(){chapisha(\"x\")}\n").expect("write");
+        fs::write(
+            "src/kuu.as",
+            "leta matumizi\nkazi  kuu(){chapisha(\"x\")}\n",
+        )
+        .expect("write");
 
         let err = run(&["--kagua".into()]).expect_err("should fail check");
         assert_eq!(err.exit_code, 1);
@@ -134,11 +141,15 @@ mod tests {
         let unformatted = "leta matumizi\nkazi  kuu(){chapisha(\"x\")}\n";
         fs::write("src/kuu.as", unformatted).expect("write");
 
-        let err = run(&["--diff".into()]).expect_err("diff mode should still exit nonzero when changes exist");
+        let err = run(&["--diff".into()])
+            .expect_err("diff mode should still exit nonzero when changes exist");
         assert_eq!(err.exit_code, 1);
 
         let on_disk = fs::read_to_string("src/kuu.as").expect("read back");
-        assert_eq!(on_disk, unformatted, "--diff must never modify the file on disk");
+        assert_eq!(
+            on_disk, unformatted,
+            "--diff must never modify the file on disk"
+        );
 
         std::env::set_current_dir(&original).expect("restore");
         let _ = fs::remove_dir_all(root);
@@ -152,7 +163,8 @@ mod tests {
         let original = std::env::current_dir().expect("cwd");
         let root = temp_dir();
         std::env::set_current_dir(&root).expect("chdir");
-        let formatted = "leta matumizi\n\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    chapisha(\"x\")\n}\n";
+        let formatted =
+            "leta matumizi\n\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    chapisha(\"x\")\n}\n";
         fs::write("src/kuu.as", formatted).expect("write");
 
         // Only assert success if the formatter already considers this idempotent input clean —
@@ -176,9 +188,14 @@ mod tests {
         let original = std::env::current_dir().expect("cwd");
         let root = temp_dir();
         std::env::set_current_dir(&root).expect("chdir");
-        fs::write("src/kuu.as", "leta matumizi\nkazi  kuu(){chapisha(\"x\")}\n").expect("write");
+        fs::write(
+            "src/kuu.as",
+            "leta matumizi\nkazi  kuu(){chapisha(\"x\")}\n",
+        )
+        .expect("write");
 
-        let err = run(&["--kagua".into(), "--json".into()]).expect_err("should fail check in json mode too");
+        let err = run(&["--kagua".into(), "--json".into()])
+            .expect_err("should fail check in json mode too");
         assert_eq!(err.exit_code, 1);
 
         std::env::set_current_dir(&original).expect("restore");

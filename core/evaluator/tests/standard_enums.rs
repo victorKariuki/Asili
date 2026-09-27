@@ -23,7 +23,11 @@ fn test_chaguo_variants() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let chaguo = module.enums.iter().find(|e| e.name == "Chaguo").expect("Chaguo");
+    let chaguo = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Chaguo")
+        .expect("Chaguo");
     assert_eq!(chaguo.variants.len(), 2);
     assert_eq!(chaguo.variants[0].name, "Kuna");
     assert_eq!(chaguo.variants[1].name, "Hamna");
@@ -38,7 +42,11 @@ fn test_chaguo_generic() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let chaguo = module.enums.iter().find(|e| e.name == "Chaguo").expect("Chaguo");
+    let chaguo = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Chaguo")
+        .expect("Chaguo");
     assert_eq!(chaguo.generics.len(), 1);
     assert_eq!(chaguo.generics[0], "T");
 }
@@ -65,7 +73,11 @@ fn test_tokeo_variants() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let tokeo = module.enums.iter().find(|e| e.name == "Tokeo").expect("Tokeo");
+    let tokeo = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Tokeo")
+        .expect("Tokeo");
     assert_eq!(tokeo.variants.len(), 2);
     assert_eq!(tokeo.variants[0].name, "Sawa");
     assert_eq!(tokeo.variants[1].name, "Kosa");
@@ -80,7 +92,11 @@ fn test_tokeo_generic() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let tokeo = module.enums.iter().find(|e| e.name == "Tokeo").expect("Tokeo");
+    let tokeo = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Tokeo")
+        .expect("Tokeo");
     assert_eq!(tokeo.generics.len(), 2);
     assert_eq!(tokeo.generics[0], "T");
     assert_eq!(tokeo.generics[1], "E");
@@ -164,8 +180,16 @@ fn test_standard_enums_public() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let chaguo = module.enums.iter().find(|e| e.name == "Chaguo").expect("Chaguo");
+    let chaguo = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Chaguo")
+        .expect("Chaguo");
     assert!(chaguo.is_public);
-    let tokeo = module.enums.iter().find(|e| e.name == "Tokeo").expect("Tokeo");
+    let tokeo = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Tokeo")
+        .expect("Tokeo");
     assert!(tokeo.is_public);
 }

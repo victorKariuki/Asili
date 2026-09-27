@@ -1,12 +1,14 @@
 //! LSP diagnostics: convert Asili diagnostics and run lex/parse pipeline.
 
+use crate::workspace::WorkspaceIndex;
 use asili_diagnostics::Diagnostic as AsiliDiagnostic;
 use asili_lexer::tokenize;
-use asili_parser::{extern_env_from_imports, merge_modules, parse_tokens, semantic_check_with_env_and_modules};
+use asili_parser::{
+    extern_env_from_imports, merge_modules, parse_tokens, semantic_check_with_env_and_modules,
+};
 use pata_lint::{config::LintConfig, lint_source_with_config};
 use std::path::Path;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
-use crate::workspace::WorkspaceIndex;
 
 /// Extract a symbol name from a diagnostic message of the form "prefix: name".
 fn extract_symbol_from_message(msg: &str) -> Option<&str> {
@@ -23,9 +25,13 @@ fn find_symbol_on_line(line_text: &str, symbol: &str) -> Option<(u32, u32)> {
     let mut offset = 0usize;
     while let Some(pos) = search.find(symbol) {
         let abs = offset + pos;
-        let before = abs == 0 || !line_text.as_bytes()[abs - 1].is_ascii_alphanumeric() && line_text.as_bytes()[abs - 1] != b'_';
+        let before = abs == 0
+            || !line_text.as_bytes()[abs - 1].is_ascii_alphanumeric()
+                && line_text.as_bytes()[abs - 1] != b'_';
         let after_idx = abs + symbol.len();
-        let after = after_idx >= line_text.len() || !line_text.as_bytes()[after_idx].is_ascii_alphanumeric() && line_text.as_bytes()[after_idx] != b'_';
+        let after = after_idx >= line_text.len()
+            || !line_text.as_bytes()[after_idx].is_ascii_alphanumeric()
+                && line_text.as_bytes()[after_idx] != b'_';
         if before && after {
             return Some((abs as u32, after_idx as u32));
         }
@@ -35,48 +41,71 @@ fn find_symbol_on_line(line_text: &str, symbol: &str) -> Option<(u32, u32)> {
     None
 }
 
-pub fn asili_diagnostics_to_lsp_with_source(diags: &[AsiliDiagnostic], source: &str) -> Vec<Diagnostic> {
+pub fn asili_diagnostics_to_lsp_with_source(
+    diags: &[AsiliDiagnostic],
+    source: &str,
+) -> Vec<Diagnostic> {
     let source_lines: Vec<&str> = source.lines().collect();
     diags
         .iter()
         .map(|d| {
-            let range = d.span.as_ref().map(|s| {
-                let line_idx = (s.line.saturating_sub(1)) as u32;
-                let col = (s.column.saturating_sub(1)) as u32;
+            let range = d
+                .span
+                .as_ref()
+                .map(|s| {
+                    let line_idx = (s.line.saturating_sub(1)) as u32;
+                    let col = (s.column.saturating_sub(1)) as u32;
 
-                // Try to get a precise span from the source text when col is 0 (parser placeholder).
-                let (start_col, end_col) = if col == 0 {
-                    if let Some(line_text) = source_lines.get(line_idx as usize) {
-                        // Extract symbol from the diagnostic message and locate it on the line.
-                        let symbol = extract_symbol_from_message(&d.message).unwrap_or("");
-                        if let Some((sc, ec)) = find_symbol_on_line(line_text, symbol) {
-                            (sc, ec)
+                    // Try to get a precise span from the source text when col is 0 (parser placeholder).
+                    let (start_col, end_col) = if col == 0 {
+                        if let Some(line_text) = source_lines.get(line_idx as usize) {
+                            // Extract symbol from the diagnostic message and locate it on the line.
+                            let symbol = extract_symbol_from_message(&d.message).unwrap_or("");
+                            if let Some((sc, ec)) = find_symbol_on_line(line_text, symbol) {
+                                (sc, ec)
+                            } else {
+                                // Fall back: highlight the first identifier token on the line.
+                                let trimmed_start = line_text.len() - line_text.trim_start().len();
+                                let rest = line_text.trim_start();
+                                let word_len = rest
+                                    .find(|c: char| !c.is_alphanumeric() && c != '_')
+                                    .unwrap_or(rest.len());
+                                (trimmed_start as u32, (trimmed_start + word_len) as u32)
+                            }
                         } else {
-                            // Fall back: highlight the first identifier token on the line.
-                            let trimmed_start = line_text.len() - line_text.trim_start().len();
-                            let rest = line_text.trim_start();
-                            let word_len = rest.find(|c: char| !c.is_alphanumeric() && c != '_').unwrap_or(rest.len());
-                            (trimmed_start as u32, (trimmed_start + word_len) as u32)
+                            (col, col + 1)
                         }
                     } else {
                         (col, col + 1)
-                    }
-                } else {
-                    (col, col + 1)
-                };
+                    };
 
-                Range {
-                    start: Position { line: line_idx, character: start_col },
-                    end: Position { line: line_idx, character: end_col },
-                }
-            }).unwrap_or(Range {
-                start: Position { line: 0, character: 0 },
-                end: Position { line: 0, character: 1 },
-            });
+                    Range {
+                        start: Position {
+                            line: line_idx,
+                            character: start_col,
+                        },
+                        end: Position {
+                            line: line_idx,
+                            character: end_col,
+                        },
+                    }
+                })
+                .unwrap_or(Range {
+                    start: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 0,
+                        character: 1,
+                    },
+                });
             Diagnostic {
                 range,
                 severity: Some(DiagnosticSeverity::ERROR),
-                code: Some(tower_lsp::lsp_types::NumberOrString::String(d.code.to_string())),
+                code: Some(tower_lsp::lsp_types::NumberOrString::String(
+                    d.code.to_string(),
+                )),
                 code_description: None,
                 source: Some(d.stage.to_string()),
                 message: d.message.clone(),
@@ -87,7 +116,6 @@ pub fn asili_diagnostics_to_lsp_with_source(diags: &[AsiliDiagnostic], source: &
         })
         .collect()
 }
-
 
 /// `workspace` is the project's resolved cross-file index (see `crate::workspace`), when one
 /// is available — `None` degrades to the old stdlib-only behavior (e.g. before the first
@@ -100,7 +128,11 @@ pub fn asili_diagnostics_to_lsp_with_source(diags: &[AsiliDiagnostic], source: &
 /// (walking upward via `LintConfig::find_and_load`) so LSP-published lint diagnostics respect
 /// the same per-rule severity/options `pata-lint`'s CLI does — `None` (e.g. an unsaved buffer
 /// with no on-disk path) lints with every rule at its default settings.
-pub fn run_lex_parse(text: &str, workspace: Option<&WorkspaceIndex>, file_path: Option<&Path>) -> Vec<AsiliDiagnostic> {
+pub fn run_lex_parse(
+    text: &str,
+    workspace: Option<&WorkspaceIndex>,
+    file_path: Option<&Path>,
+) -> Vec<AsiliDiagnostic> {
     let mut out = Vec::new();
     let tokens = match tokenize(text) {
         Ok(t) => t,
@@ -132,12 +164,25 @@ pub fn run_lex_parse(text: &str, workspace: Option<&WorkspaceIndex>, file_path: 
     // imported it, so a missing `leta` was never caught.
     let (semantic_module, resolved_modules) = match workspace {
         Some(ws) => {
-            let module_map = ws.modules.iter().map(|(k, v)| (k.clone(), v.module.clone())).collect();
-            (merge_modules(&module, &module_map), ws.resolved_module_names())
+            let module_map = ws
+                .modules
+                .iter()
+                .map(|(k, v)| (k.clone(), v.module.clone()))
+                .collect();
+            (
+                merge_modules(&module, &module_map),
+                ws.resolved_module_names(),
+            )
         }
         None => (module, Default::default()),
     };
-    if let Err(sem_errors) = semantic_check_with_env_and_modules(&semantic_module, false, extern_fns, extern_consts, resolved_modules) {
+    if let Err(sem_errors) = semantic_check_with_env_and_modules(
+        &semantic_module,
+        false,
+        extern_fns,
+        extern_consts,
+        resolved_modules,
+    ) {
         out.extend(sem_errors);
     }
 
@@ -174,8 +219,8 @@ mod tests {
 
     #[test]
     fn run_lex_parse_respects_project_pata_toml_lint_rules() {
-        let root = std::env::temp_dir()
-            .join(format!("pata-lsp-test-diag-config-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("pata-lsp-test-diag-config-{}", std::process::id()));
         let src_dir = root.join("src");
         std::fs::create_dir_all(&src_dir).unwrap();
         std::fs::write(

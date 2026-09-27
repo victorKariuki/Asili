@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use crate::value::{Value, MapKey};
 use super::BuiltinFn;
+use crate::value::{MapKey, Value};
 
 static START_TIME: OnceLock<f64> = OnceLock::new();
 
@@ -26,34 +26,45 @@ fn get_start_time() -> f64 {
 }
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
-    m.insert("toleo".to_string(), Box::new(|_args: &[Value]| {
-        Ok(Value::Neno(
-            option_env!("CARGO_PKG_VERSION").unwrap_or("0.0.0").into(),
-        ))
-    }));
-    m.insert("jina_os".to_string(), Box::new(|_args: &[Value]| {
-        Ok(Value::Neno(std::env::consts::OS.into()))
-    }));
-    m.insert("arch".to_string(), Box::new(|_args: &[Value]| {
-        Ok(Value::Neno(std::env::consts::ARCH.into()))
-    }));
-    m.insert("ni_debug".to_string(), Box::new(|_args: &[Value]| {
-        Ok(Value::Ukweli(cfg!(debug_assertions)))
-    }));
-    m.insert("ni_wasm".to_string(), Box::new(|_args: &[Value]| {
-        Ok(Value::Ukweli(cfg!(target_arch = "wasm32")))
-    }));
-    m.insert("mazingira".to_string(), Box::new(|_args: &[Value]| {
-        let mut map = HashMap::new();
-        #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
-        {
-            for (key, val) in std::env::vars() {
-                map.insert(MapKey::Neno(key), Value::Neno(val));
+    m.insert(
+        "toleo".to_string(),
+        Box::new(|_args: &[Value]| {
+            Ok(Value::Neno(
+                option_env!("CARGO_PKG_VERSION").unwrap_or("0.0.0").into(),
+            ))
+        }),
+    );
+    m.insert(
+        "jina_os".to_string(),
+        Box::new(|_args: &[Value]| Ok(Value::Neno(std::env::consts::OS.into()))),
+    );
+    m.insert(
+        "arch".to_string(),
+        Box::new(|_args: &[Value]| Ok(Value::Neno(std::env::consts::ARCH.into()))),
+    );
+    m.insert(
+        "ni_debug".to_string(),
+        Box::new(|_args: &[Value]| Ok(Value::Ukweli(cfg!(debug_assertions)))),
+    );
+    m.insert(
+        "ni_wasm".to_string(),
+        Box::new(|_args: &[Value]| Ok(Value::Ukweli(cfg!(target_arch = "wasm32")))),
+    );
+    m.insert(
+        "mazingira".to_string(),
+        Box::new(|_args: &[Value]| {
+            let mut map = HashMap::new();
+            #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+            {
+                for (key, val) in std::env::vars() {
+                    map.insert(MapKey::Neno(key), Value::Neno(val));
+                }
             }
-        }
-        Ok(Value::Kamusi(map))
-    }));
-    m.insert("muda_wa_kuanza".to_string(), Box::new(|_args: &[Value]| {
-        Ok(Value::Wakati(get_start_time()))
-    }));
+            Ok(Value::Kamusi(map))
+        }),
+    );
+    m.insert(
+        "muda_wa_kuanza".to_string(),
+        Box::new(|_args: &[Value]| Ok(Value::Wakati(get_start_time()))),
+    );
 }

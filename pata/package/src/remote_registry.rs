@@ -42,7 +42,11 @@ pub struct RemoteIndexEntry {
 /// for `name` on a remote static-file index. A real HTTP GET (via `ureq`), so this needs network
 /// access; callers resolving against a fully local project should never reach this path.
 pub fn fetch_index(index_base: &str, name: &str) -> Result<Vec<RemoteIndexEntry>> {
-    let url = format!("{}/index/{}/index.json", index_base.trim_end_matches('/'), name);
+    let url = format!(
+        "{}/index/{}/index.json",
+        index_base.trim_end_matches('/'),
+        name
+    );
     let body = ureq::get(&url)
         .call()
         .with_context(|| format!("imeshindwa kupata faharasa ya rejista kutoka {url}"))?
@@ -73,7 +77,10 @@ pub fn fetch_and_verify(entry: &RemoteIndexEntry, dest_dir: &Path) -> Result<Str
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
     let digest = hasher.finalize();
-    let actual = digest.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let actual = digest
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
     if !actual.eq_ignore_ascii_case(&entry.checksum) {
         anyhow::bail!(
             "hundi ya usalama imeshindwa kwa {}: tarajiwa {}, halisi {actual}",
@@ -115,7 +122,9 @@ mod tests {
             header.set_size(content.len() as u64);
             header.set_mode(0o644);
             header.set_cksum();
-            builder.append_data(&mut header, file_name, content).expect("append tar entry");
+            builder
+                .append_data(&mut header, file_name, content)
+                .expect("append tar entry");
             builder.finish().expect("finish tar");
         }
         let mut gz = GzEncoder::new(Vec::new(), Compression::default());
@@ -126,7 +135,11 @@ mod tests {
     fn sha256_hex(bytes: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(bytes);
-        hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>()
+        hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
     }
 
     /// Spin up a real local HTTP server (`tiny_http`, dev-only) serving a fixed `index.json` and
@@ -141,7 +154,10 @@ mod tests {
         let server = tiny_http::Server::http(addr).expect("start tiny_http server");
         let base_url = format!("http://{addr}");
 
-        let tarball = build_tarball("greeter.as", b"umma kazi salamu() -> Neno { rejesha \"hi\" }");
+        let tarball = build_tarball(
+            "greeter.as",
+            b"umma kazi salamu() -> Neno { rejesha \"hi\" }",
+        );
         let checksum = sha256_hex(&tarball);
         let index_json = format!(
             r#"[{{"version":"1.0.0","checksum":"{checksum}","url":"{base_url}/pkg-1.0.0.tar.gz"}}]"#
@@ -167,10 +183,18 @@ mod tests {
         assert_eq!(entries[0].version, "1.0.0");
         assert_eq!(entries[0].checksum, checksum);
 
-        let dest = std::env::temp_dir().join(format!("pata-remote-registry-test-{}", std::process::id()));
+        let dest =
+            std::env::temp_dir().join(format!("pata-remote-registry-test-{}", std::process::id()));
         let real_checksum = fetch_and_verify(&entries[0], &dest).expect("fetch_and_verify ok");
-        assert_eq!(real_checksum.len(), 64, "expected a real 64-hex-char SHA-256 digest");
-        assert!(dest.join("greeter.as").is_file(), "tarball must actually be extracted");
+        assert_eq!(
+            real_checksum.len(),
+            64,
+            "expected a real 64-hex-char SHA-256 digest"
+        );
+        assert!(
+            dest.join("greeter.as").is_file(),
+            "tarball must actually be extracted"
+        );
         assert_eq!(
             std::fs::read_to_string(dest.join("greeter.as")).unwrap(),
             "umma kazi salamu() -> Neno { rejesha \"hi\" }"
@@ -204,9 +228,15 @@ mod tests {
             checksum: "0".repeat(64), // deliberately wrong
             url: format!("{base_url}/pkg.tar.gz"),
         };
-        let dest = std::env::temp_dir().join(format!("pata-remote-registry-mismatch-{}", std::process::id()));
+        let dest = std::env::temp_dir().join(format!(
+            "pata-remote-registry-mismatch-{}",
+            std::process::id()
+        ));
         let result = fetch_and_verify(&entry, &dest);
-        assert!(result.is_err(), "a checksum mismatch must fail, not silently extract");
+        assert!(
+            result.is_err(),
+            "a checksum mismatch must fail, not silently extract"
+        );
 
         handle.join().expect("server thread");
         std::fs::remove_dir_all(&dest).ok();

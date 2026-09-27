@@ -44,10 +44,7 @@ fn parse_inputs(args: &[String]) -> Result<(String, PathBuf, Template), CliError
             }
             other => {
                 if other.starts_with("--") {
-                    return Err(CliError::new(
-                        format!("hoja isiyotambuliwa: {other}"),
-                        2,
-                    ));
+                    return Err(CliError::new(format!("hoja isiyotambuliwa: {other}"), 2));
                 }
                 if project_name.is_none() {
                     project_name = Some(other.to_string());
@@ -93,12 +90,10 @@ fn create_scaffold(project_name: &str, destination: &Path, template: Template) -
                     "[jumla]\njina = \"{project_name}\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[eneo-kazi]\nwanachama = [\"core\", \"lib\"]\n"
                 ),
             )?;
-            fs::create_dir_all(destination.join("core/src")).map_err(|e| {
-                CliError::new(format!("imeshindwa kuunda core/src/: {e}"), 1)
-            })?;
-            fs::create_dir_all(destination.join("lib/src")).map_err(|e| {
-                CliError::new(format!("imeshindwa kuunda lib/src/: {e}"), 1)
-            })?;
+            fs::create_dir_all(destination.join("core/src"))
+                .map_err(|e| CliError::new(format!("imeshindwa kuunda core/src/: {e}"), 1))?;
+            fs::create_dir_all(destination.join("lib/src"))
+                .map_err(|e| CliError::new(format!("imeshindwa kuunda lib/src/: {e}"), 1))?;
             write_file(
                 &destination.join("core/pata.toml"),
                 &format!("[jumla]\njina = \"{}-core\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n", project_name),
@@ -150,7 +145,10 @@ fn ensure_destination_ready(destination: &Path) -> CliResult {
     if destination.exists() {
         let mut entries = fs::read_dir(destination).map_err(|err| {
             CliError::new(
-                format!("imeshindwa kusoma eneo la mradi {}: {err}", destination.display()),
+                format!(
+                    "imeshindwa kusoma eneo la mradi {}: {err}",
+                    destination.display()
+                ),
                 1,
             )
         })?;
@@ -166,7 +164,10 @@ fn ensure_destination_ready(destination: &Path) -> CliResult {
     } else {
         fs::create_dir_all(destination).map_err(|err| {
             CliError::new(
-                format!("imeshindwa kuunda eneo la mradi {}: {err}", destination.display()),
+                format!(
+                    "imeshindwa kuunda eneo la mradi {}: {err}",
+                    destination.display()
+                ),
                 1,
             )
         })?;
@@ -230,7 +231,10 @@ mod tests {
         run(&args).expect("njozi --workspace should succeed");
 
         assert!(project_path.join("pata.toml").exists());
-        assert!(!project_path.join("Asili.toml").exists(), "workspace root must not need a separate Asili.toml anymore");
+        assert!(
+            !project_path.join("Asili.toml").exists(),
+            "workspace root must not need a separate Asili.toml anymore"
+        );
         assert!(project_path.join("core/pata.toml").exists());
         assert!(project_path.join("lib/pata.toml").exists());
         assert!(project_path.join("core/src/kuu.as").exists());

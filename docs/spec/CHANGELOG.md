@@ -4,6 +4,12 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Standard library ([05-standard-library.md](05-standard-library.md)): builtin modules are
+  available without explicit `leta`; project and dependency modules remain explicit.
+
+- Architecture ([02-architecture-and-files.md](02-architecture-and-files.md)): document the real `.asb` stack-VM path for the
+  Sudoku-compatible subset and the serialized-AST fallback for unsupported constructs.
+
 - Architecture ([02-architecture-and-files.md](02-architecture-and-files.md)): added a
   `/extensions/vscode` row to the project-structure table (previously undocumented despite
   existing); noted the linter and DAP server in the `/pata` row's tooling list.

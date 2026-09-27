@@ -10,7 +10,7 @@
 use asili_parser::Module;
 use std::fmt;
 
-const ASB_HEADER_PREFIX: &str = "ASB-STUB\nversion=3\nformat=serialized\n";
+const ASB_HEADER_PREFIX: &str = "ASB-STUB\nversion=4\nformat=serialized\n";
 const PAYLOAD_MARKER: &[u8] = b"\nPAYLOAD\n";
 
 /// Parse format from .asb header (e.g. "serialized" or "bytecode"). Returns None if header missing.
@@ -63,6 +63,23 @@ pub fn emit_asb_bytes(module: &Module, source: &str) -> Vec<u8> {
     out
 }
 
+/// Emit a real bytecode artifact.  The header remains intentionally simple and textual so older
+/// runners can reject it cleanly, while the payload is the same deterministic bincode envelope
+/// used by the AST fallback.
+pub fn emit_bytecode_bytes(program: &crate::bytecode::BytecodeProgram, source: &str) -> Vec<u8> {
+    let payload = bincode::serialize(program).expect("BytecodeProgram serialization");
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    source.hash(&mut h);
+    let header = format!(
+        "ASB-STUB\nversion=4\nformat=bytecode\nmodule_hash={:016x}\nPAYLOAD\n",
+        h.finish()
+    );
+    let mut out = header.into_bytes();
+    out.extend_from_slice(&payload);
+    out
+}
+
 /// Load a Module from .asb bytes. Expects format=serialized and a PAYLOAD section.
 pub fn load_asb(bytes: &[u8]) -> Result<Module, AsbLoadError> {
     let payload = payload_slice(bytes)?;
@@ -74,7 +91,9 @@ fn payload_slice(bytes: &[u8]) -> Result<&[u8], AsbLoadError> {
         .windows(PAYLOAD_MARKER.len())
         .position(|w| w == PAYLOAD_MARKER)
         .ok_or_else(|| {
-            AsbLoadError::InvalidFormat("alama ya PAYLOAD haipo; jenga upya ili kupata kilele kinachotendeka".to_string())
+            AsbLoadError::InvalidFormat(
+                "alama ya PAYLOAD haipo; jenga upya ili kupata kilele kinachotendeka".to_string(),
+            )
         })?;
     Ok(&bytes[pos + PAYLOAD_MARKER.len()..])
 }

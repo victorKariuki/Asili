@@ -1,6 +1,6 @@
+use asili_evaluator::run_function;
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, semantic_check_with_env};
-use asili_evaluator::run_function;
 use std::collections::HashMap;
 
 fn parse_and_eval(src: &str, func: &str) -> asili_evaluator::Value {

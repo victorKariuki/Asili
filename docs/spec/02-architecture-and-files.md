@@ -41,7 +41,9 @@ The repository follows a Linux-kernel–style modular layout. Each directory is 
 
 - **lexer/** — Tokenizes Swahili input from `.as` and `.asi` files.
 - **parser/** — Generates the AST; split into cursor (token stream), parse (statements/expressions), and semantic (types + analyzer). Integration tests live in `tests/`.
-- **evaluator/** — Tree-walking engine that processes `.asb` (Asili Bytecode). Integration tests live in `tests/`.
+- **evaluator/** — Executes `.asb` artifacts: the Sudoku-compatible subset uses the stack VM,
+  while unsupported constructs retain the tree-walking AST fallback. Integration tests live in
+  `tests/`.
 - **diagnostics/** — The "Mwalimu" error reporting system (Context Map).
 
 ### /driver (Mfumo)

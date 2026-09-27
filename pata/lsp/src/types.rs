@@ -72,10 +72,7 @@ pub enum HoverInfo {
     /// A keyword like `kazi`, `ikiwa`, etc.
     Keyword(String),
     /// A variable or parameter with inferred type.
-    Variable {
-        name: String,
-        type_: ValueType,
-    },
+    Variable { name: String, type_: ValueType },
     /// A function with its signature.
     Function {
         name: String,

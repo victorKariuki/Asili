@@ -6,8 +6,66 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-21
+
 ### Added
 
+- **Value-producing conditionals**: `ikiwa ... { thamani } vinginevyo { thamani }` and
+  `au_ikiwa` branches can now be used directly in expressions.
+- **Pair destructuring**: declarations such as `weka (jina, umri) = p` now bind both members
+  of a `Jozi` without repetitive `.kwanza()` and `.pili()` calls.
+- **Symbolic bitwise aliases**: `&`, `|`, `^`, `<<`, and `>>` now complement the existing
+  Swahili bitwise operators without removing their readable spellings.
+- **Collection helpers**: `Orodha` now provides `pata`, `badilisha`, `ramani`, `chuja`, `hesabu`,
+  `chunguza`, `unganisha`, and `kila_na_fahirisi` for safe access, replacement, transformation,
+  filtering, predicates, joining, and indexed callbacks.
+- **List shaping and string pipelines**: `Orodha.vipande(size)` chunks lists,
+  `Orodha.kwa_neno()` converts elements to strings, and `Orodha.jiunge(separator)` joins the
+  resulting values, allowing concise row/line rendering without manual index loops.
+- **String convenience methods**: `Neno` now supports `tupu()`, `ina(sub)`, `hesabu(sub)`, and
+  `rudia(n)` for common emptiness, containment, counting, and repetition operations without
+  hand-written loops.
+- **VS Code global-tool workflow**: the extension now exposes current-file and workspace lint
+  commands backed by `pata-lint`, with configurable `asili.linterPath`; installation guidance
+  covers globally installing `pata-cli`, `pata-lsp`, and `pata-lint`.
+- **Ambient builtin stdlib**: builtin standard-library exports are now available without
+  repetitive `leta` declarations; explicit imports remain required for project and dependency
+  modules.
+- **Repeated list construction**: the new `orodha_rudia(thamani, idadi)` prelude builtin
+  creates a list by repeating a value, including validation that the count is a finite,
+  non-negative integer.
+- **Grouped declarations**: one `weka` or `thabiti` declaration can now introduce multiple
+  comma-separated bindings, such as `weka r = 0.0, c = 0.0`, reducing repeated declaration
+  keywords while preserving normal inferred types and ownership checks.
+- **Evaluator execution metrics**: `run_function_with_metrics` now reports statement,
+  expression, index-read, method-call, and function-call counts for profiling hot programs
+  without changing ordinary runtime behavior.
+- **Evaluator collection fast paths**: identifier-based list and map indexing now borrows the
+  collection and clones only the selected element instead of cloning the entire collection.
+- **Evaluator mutation dispatch fast paths**: identifier-bound `Orodha` and `Kamusi` mutation
+  methods now update the binding without first cloning the receiver collection.
+- **Sudoku solver example** (`examples/sudoku`): a runnable MRV backtracking solver using a
+  flat numeric board and row/column/sub-grid bit masks; the legendary Arto Inkala "world's
+  hardest Sudoku" fixture completes in about 2.25–2.38 seconds in repeated release bytecode
+  runs and reports 90,665 candidate attempts and 10,041 backtracks for repeatable benchmarking.
+- **Sudoku bytecode VM**: `pata jenga` now lowers the loop/list-heavy Sudoku subset (arithmetic,
+  comparisons, indexing, mutation, builtin and user-function calls) to a compact `.asb` stack
+  bytecode artifact. `pata tenda` and `pata-runner` execute those artifacts directly, while
+  unsupported syntax keeps the serialized-AST evaluator fallback.
+- **Bytecode list fast paths**: local `Orodha` indexing and `.urefu()` now use specialized VM
+  instructions that avoid cloning the whole list; the Sudoku artifact improves from roughly
+  0.07–0.10 seconds to roughly 0.05 seconds in repeated release runs.
+- **Typed Sudoku VM hot paths**: numeric locals and arithmetic use unboxed VM numbers (with
+  integer-safe bit-mask results), numeric-list reads/writes avoid collection cloning, builtin
+  indices are cached per VM run, recursive frames/stacks are pooled, and counted-loop/index-add
+  operations have fused instructions. The Inkala fixture remains source-semantic and completes
+  in about 2.25–2.38 seconds in repeated release bytecode runs.
+- **Direct numeric index lowering**: identity additions such as `data[i + 0.0]?` now lower
+  directly to a numeric-list read when the compiler can prove both locals are numeric, avoiding
+  a temporary arithmetic result while preserving the generic indexing fallback.
+- **Typed numeric builtin lowering**: numeric `sakafu`, shifts, and bitwise builtin calls in the
+  bytecode subset now execute as unboxed VM operations instead of going through builtin dispatch;
+  the Inkala benchmark drops from roughly 2.41 seconds to 2.24 seconds per release run.
 - **Real step-through debugging via `pata-dap`** (closes #43). `DebugHook` moves from `pata/dap`
   into `core/evaluator` (`debug_hook` module) — the crate that needs to implement it — with a
   real `RealDebugHook`: breakpoints genuinely pause the executing thread (`Mutex<bool>` +
@@ -273,6 +331,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Sudoku example output helper**: renamed the helper from `chapisha` to `onyesha` so calls
+  to the ambient `chapisha` builtin no longer recursively invoke the helper with a string and
+  trigger the list-indexing runtime error.
 - **`asili-evaluator`'s `wasm32-unknown-unknown` (browser) build**: `rand 0.10` now pulls in
   `getrandom 0.4`, which needs its `wasm_js` feature enabled to compile for
   `wasm32-unknown-unknown` — the crate's explicit `getrandom` dependency was still pinned to

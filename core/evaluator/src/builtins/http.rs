@@ -78,7 +78,9 @@ fn read_request(stream: &mut MkondoStream, carry: &mut Vec<u8>) -> ParseOutcome 
             match req.parse(&buf) {
                 Ok(httparse::Status::Complete(offset)) => header_end = Some(offset),
                 Ok(httparse::Status::Partial) => {}
-                Err(_) => return ParseOutcome::BadRequest("mstari wa ombi au vichwa batili".to_string()),
+                Err(_) => {
+                    return ParseOutcome::BadRequest("mstari wa ombi au vichwa batili".to_string())
+                }
             }
         }
 
@@ -96,16 +98,22 @@ fn read_request(stream: &mut MkondoStream, carry: &mut Vec<u8>) -> ParseOutcome 
             let headers: Vec<(String, String)> = req
                 .headers
                 .iter()
-                .map(|h| (h.name.to_string(), String::from_utf8_lossy(h.value).into_owned()))
+                .map(|h| {
+                    (
+                        h.name.to_string(),
+                        String::from_utf8_lossy(h.value).into_owned(),
+                    )
+                })
                 .collect();
 
             let content_length = headers
                 .iter()
                 .find(|(k, _)| k.eq_ignore_ascii_case("content-length"))
                 .and_then(|(_, v)| v.trim().parse::<usize>().ok());
-            let is_chunked = headers
-                .iter()
-                .any(|(k, v)| k.eq_ignore_ascii_case("transfer-encoding") && v.to_ascii_lowercase().contains("chunked"));
+            let is_chunked = headers.iter().any(|(k, v)| {
+                k.eq_ignore_ascii_case("transfer-encoding")
+                    && v.to_ascii_lowercase().contains("chunked")
+            });
 
             // 100-continue (issue #22): once headers are known complete, tell an uploading client
             // to go ahead and send the body — before we've read any of it. Correctness note: a
@@ -116,12 +124,15 @@ fn read_request(stream: &mut MkondoStream, carry: &mut Vec<u8>) -> ParseOutcome 
             // once `Expect: 100-continue` is present, rather than trying to pre-consult the
             // handler.
             if !continue_sent {
-                let expects_continue = headers
-                    .iter()
-                    .any(|(k, v)| k.eq_ignore_ascii_case("expect") && v.trim().eq_ignore_ascii_case("100-continue"));
+                let expects_continue = headers.iter().any(|(k, v)| {
+                    k.eq_ignore_ascii_case("expect")
+                        && v.trim().eq_ignore_ascii_case("100-continue")
+                });
                 if expects_continue {
                     if let Err(e) = stream.write_all(b"HTTP/1.1 100 Continue\r\n\r\n") {
-                        return ParseOutcome::BadRequest(format!("imeshindwa kuandika 100 Continue: {e}"));
+                        return ParseOutcome::BadRequest(format!(
+                            "imeshindwa kuandika 100 Continue: {e}"
+                        ));
                     }
                     continue_sent = true;
                 }
@@ -133,7 +144,15 @@ fn read_request(stream: &mut MkondoStream, carry: &mut Vec<u8>) -> ParseOutcome 
                         let body = String::from_utf8_lossy(&buf[offset..body_end]).into_owned();
                         let keep_alive = connection_keep_alive(&headers, version);
                         *carry = buf.split_off(body_end);
-                        ParseOutcome::Ok(ParsedRequest { method, path, headers, body }, keep_alive)
+                        ParseOutcome::Ok(
+                            ParsedRequest {
+                                method,
+                                path,
+                                headers,
+                                body,
+                            },
+                            keep_alive,
+                        )
                     }
                     Err(msg) => ParseOutcome::BadRequest(msg),
                 };
@@ -149,7 +168,15 @@ fn read_request(stream: &mut MkondoStream, carry: &mut Vec<u8>) -> ParseOutcome 
                 // of discarding it, so the next `read_request` call sees it before touching the
                 // network again.
                 *carry = buf.split_off(needed);
-                return ParseOutcome::Ok(ParsedRequest { method, path, headers, body }, keep_alive);
+                return ParseOutcome::Ok(
+                    ParsedRequest {
+                        method,
+                        path,
+                        headers,
+                        body,
+                    },
+                    keep_alive,
+                );
             }
             // else: headers complete but body not fully received yet — fall through to read more.
         }
@@ -160,11 +187,16 @@ fn read_request(stream: &mut MkondoStream, carry: &mut Vec<u8>) -> ParseOutcome 
                 return if buf.is_empty() {
                     ParseOutcome::ConnectionClosed
                 } else {
-                    ParseOutcome::BadRequest("muunganisho umefungwa kabla ombi kukamilika".to_string())
+                    ParseOutcome::BadRequest(
+                        "muunganisho umefungwa kabla ombi kukamilika".to_string(),
+                    )
                 };
             }
             Ok(n) => buf.extend_from_slice(&chunk[..n]),
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+            Err(e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
                 return ParseOutcome::BadRequest("muda wa kusoma umeisha".to_string());
             }
             Err(e) => return ParseOutcome::BadRequest(format!("hitilafu ya kusoma: {e}")),
@@ -191,7 +223,11 @@ fn read_request(stream: &mut MkondoStream, carry: &mut Vec<u8>) -> ParseOutcome 
 /// `Neno` via `String::from_utf8_lossy` by the caller — the interpreter has no `Value::Bytes`
 /// variant, so a binary chunked upload is exactly as lossy as a binary fixed-length one already
 /// was. Not a regression introduced here, not fixed by it either.
-fn decode_chunked_body(stream: &mut MkondoStream, buf: &mut Vec<u8>, body_start: usize) -> Result<usize, String> {
+fn decode_chunked_body(
+    stream: &mut MkondoStream,
+    buf: &mut Vec<u8>,
+    body_start: usize,
+) -> Result<usize, String> {
     let mut decoded: Vec<u8> = Vec::new();
     let mut cursor = body_start;
 
@@ -265,7 +301,10 @@ fn read_more(stream: &mut MkondoStream, buf: &mut Vec<u8>) -> Result<(), String>
             buf.extend_from_slice(&chunk[..n]);
             Ok(())
         }
-        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+        Err(e)
+            if e.kind() == std::io::ErrorKind::WouldBlock
+                || e.kind() == std::io::ErrorKind::TimedOut =>
+        {
             Err("muda wa kusoma umeisha".to_string())
         }
         Err(e) => Err(format!("hitilafu ya kusoma: {e}")),
@@ -291,7 +330,12 @@ fn connection_keep_alive(headers: &[(String, String)], version: u8) -> bool {
     }
 }
 
-fn write_response(stream: &mut MkondoStream, status: u16, headers: &[(String, String)], body: &str) -> std::io::Result<()> {
+fn write_response(
+    stream: &mut MkondoStream,
+    status: u16,
+    headers: &[(String, String)],
+    body: &str,
+) -> std::io::Result<()> {
     let reason = status_reason(status);
     let mut out = format!("HTTP/1.1 {status} {reason}\r\n");
     let mut has_content_length = false;
@@ -344,8 +388,13 @@ fn request_to_value(req: &ParsedRequest) -> Value {
 /// exact struct — anything with the right field names/types works, since `Value::Struct`'s name
 /// is never checked here, matching the JSON codec's own struct-shape leniency.
 fn value_to_response(v: &Value) -> Option<(u16, Vec<(String, String)>, String)> {
-    let Value::Struct(_, fields) = v else { return None };
-    let hali = fields.iter().find(|(n, _)| n == "hali").and_then(|(_, v)| value::as_f64(v))?;
+    let Value::Struct(_, fields) = v else {
+        return None;
+    };
+    let hali = fields
+        .iter()
+        .find(|(n, _)| n == "hali")
+        .and_then(|(_, v)| value::as_f64(v))?;
     let mwili = fields
         .iter()
         .find(|(n, _)| n == "mwili")
@@ -401,7 +450,9 @@ pub(crate) fn mkondo_tumikia_http(
     #[cfg(not(target_arch = "wasm32"))]
     let tls_inner: Option<&Value> = match args.get(3) {
         Some(Value::Chaguo(Some(inner))) => Some(inner.as_ref()),
-        Some(Value::Enum(en, vn, Some(inner))) if en == "Chaguo" && vn == "Kuna" => Some(inner.as_ref()),
+        Some(Value::Enum(en, vn, Some(inner))) if en == "Chaguo" && vn == "Kuna" => {
+            Some(inner.as_ref())
+        }
         Some(Value::Chaguo(None)) => None,
         Some(Value::Enum(en, vn, None)) if en == "Chaguo" && vn == "Hamna" => None,
         None | Some(Value::Hamna) => None,
@@ -489,8 +540,16 @@ fn http_worker_loop(
             let jibu_result = crate::run_function(module, kazi_name, vec![ombi]);
             let write_ok = match jibu_result {
                 Ok(jibu_val) => match value_to_response(&jibu_val) {
-                    Some((status, headers, body)) => write_response(&mut mkondo_stream, status, &headers, &body).is_ok(),
-                    None => write_response(&mut mkondo_stream, 500, &[], "jibu batili kutoka kwa kazi_jina").is_ok(),
+                    Some((status, headers, body)) => {
+                        write_response(&mut mkondo_stream, status, &headers, &body).is_ok()
+                    }
+                    None => write_response(
+                        &mut mkondo_stream,
+                        500,
+                        &[],
+                        "jibu batili kutoka kwa kazi_jina",
+                    )
+                    .is_ok(),
                 },
                 Err(_) => write_response(&mut mkondo_stream, 500, &[], "hitilafu ya ndani").is_ok(),
             };

@@ -84,7 +84,11 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
         .and_then(|v| v.as_table())
         .and_then(|t| t.get("wanachama"))
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>());
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<_>>()
+        });
 
     let mut deps: BTreeMap<String, Dependency> = BTreeMap::new();
     if let Some(tegemezi) = table.get("tegemezi").and_then(|v| v.as_table()) {
@@ -100,10 +104,13 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
                     if let Some(p) = path_val {
                         deps.insert(key.clone(), Dependency::Path(PathBuf::from(p)));
                     } else if let Some(url) = git_val {
-                        deps.insert(key.clone(), Dependency::Git {
-                            url: url.to_string(),
-                            version: version_val.unwrap_or("*").to_string(),
-                        });
+                        deps.insert(
+                            key.clone(),
+                            Dependency::Git {
+                                url: url.to_string(),
+                                version: version_val.unwrap_or("*").to_string(),
+                            },
+                        );
                     }
                 }
                 _ => {}
@@ -173,8 +180,17 @@ pub fn update_dependency(root: &Path, dep: &str, version: &str) -> Result<(), Cl
 /// (`pata_package::Resolver::resolve`) correctly treats this as a git dependency (matched
 /// against its vendored `.pata-version` marker) rather than a registry one (matched against a
 /// local index that has no entry for it).
-pub fn update_dependency_git(root: &Path, dep: &str, version: &str, git_url: &str) -> Result<(), CliError> {
-    update_dependency_entry(root, dep, &dependency_toml_line(dep, version, Some(git_url)))
+pub fn update_dependency_git(
+    root: &Path,
+    dep: &str,
+    version: &str,
+    git_url: &str,
+) -> Result<(), CliError> {
+    update_dependency_entry(
+        root,
+        dep,
+        &dependency_toml_line(dep, version, Some(git_url)),
+    )
 }
 
 fn dependency_toml_line(dep: &str, version: &str, git_url: Option<&str>) -> String {
@@ -234,7 +250,11 @@ fn update_dependency_entry(root: &Path, dep: &str, new_line: &str) -> Result<(),
     fs::write(&path, final_content)
         .map_err(|e| CliError::new(format!("imeshindwa kuandika {}: {e}", path.display()), 1))?;
 
-    let action = if replaced { "imesasishwa" } else { "imeongezwa" };
+    let action = if replaced {
+        "imesasishwa"
+    } else {
+        "imeongezwa"
+    };
     println!("tegemezi '{dep}' {action}");
     Ok(())
 }
@@ -291,18 +311,22 @@ pub fn remove_dependency(cfg: &mut ProjectConfig, name: &str) -> Result<(), CliE
 fn to_package_dependency(dep: &Dependency) -> pata_package::manifest::Dependency {
     match dep {
         Dependency::Version(v) => pata_package::manifest::Dependency::Version(v.clone()),
-        Dependency::Path(p) => pata_package::manifest::Dependency::Table(pata_package::manifest::DependencyTable {
-            version: "0.0.0".to_string(),
-            path: Some(p.to_string_lossy().to_string()),
-            git: None,
-            branch: None,
-        }),
-        Dependency::Git { url, version } => pata_package::manifest::Dependency::Table(pata_package::manifest::DependencyTable {
-            version: version.clone(),
-            path: None,
-            git: Some(url.clone()),
-            branch: None,
-        }),
+        Dependency::Path(p) => {
+            pata_package::manifest::Dependency::Table(pata_package::manifest::DependencyTable {
+                version: "0.0.0".to_string(),
+                path: Some(p.to_string_lossy().to_string()),
+                git: None,
+                branch: None,
+            })
+        }
+        Dependency::Git { url, version } => {
+            pata_package::manifest::Dependency::Table(pata_package::manifest::DependencyTable {
+                version: version.clone(),
+                path: None,
+                git: Some(url.clone()),
+                branch: None,
+            })
+        }
     }
 }
 
@@ -344,15 +368,21 @@ pub fn read_lockfile(root: &Path) -> Result<Option<BTreeMap<String, Dependency>>
 /// detect before. Returns the mismatching dependency names, empty when nothing is locked yet or
 /// everything still matches — never errors just because there's no lockfile (a fresh single-file
 /// build has none).
-pub fn verify_lockfile_integrity(root: &Path) -> Result<Vec<pata_package::IntegrityMismatch>, CliError> {
+pub fn verify_lockfile_integrity(
+    root: &Path,
+) -> Result<Vec<pata_package::IntegrityMismatch>, CliError> {
     let path = root.join("pata.lock");
     if !path.is_file() {
         return Ok(Vec::new());
     }
     let lock = pata_package::LockFile::load(&path)
         .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", path.display()), 1))?;
-    lock.verify_content_integrity(root)
-        .map_err(|e| CliError::new(format!("imeshindwa kuthibitisha uadilifu wa tegemezi: {e}"), 1))
+    lock.verify_content_integrity(root).map_err(|e| {
+        CliError::new(
+            format!("imeshindwa kuthibitisha uadilifu wa tegemezi: {e}"),
+            1,
+        )
+    })
 }
 
 /// Resolve `cfg.dependencies` and write pata.lock via `pata_package`'s resolver/lock format.
@@ -452,7 +482,10 @@ pub fn find_workspace_root(start: &Path) -> Option<PataWorkspace> {
                         .map(|m| (m.clone(), dir.join(&m)))
                         .collect();
                     if !members.is_empty() {
-                        return Some(PataWorkspace { root: dir.to_path_buf(), members });
+                        return Some(PataWorkspace {
+                            root: dir.to_path_buf(),
+                            members,
+                        });
                     }
                 }
             }

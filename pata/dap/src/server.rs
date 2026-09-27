@@ -61,7 +61,10 @@ impl<H: DebugHook> DapSession<H> {
     /// the preceding `launch` request (`None` if the client never sent one) and the breakpoint
     /// lines from the preceding `setBreakpoints` request. Builder-style so
     /// `crate::runner::real_session` can construct a fully-wired session in one expression.
-    pub fn with_on_configuration_done(mut self, f: impl Fn(Option<String>, Vec<i64>) + Send + Sync + 'static) -> Self {
+    pub fn with_on_configuration_done(
+        mut self,
+        f: impl Fn(Option<String>, Vec<i64>) + Send + Sync + 'static,
+    ) -> Self {
         self.on_configuration_done = Some(Box::new(f));
         self
     }
@@ -70,7 +73,8 @@ impl<H: DebugHook> DapSession<H> {
     /// has actually blocked (see `crate::runner`'s monitor thread), so a subsequent `stackTrace`
     /// request reports the real paused location rather than a stale or default one.
     pub fn set_paused_line(&self, line: i64) {
-        self.paused_at_line.store(line, std::sync::atomic::Ordering::SeqCst);
+        self.paused_at_line
+            .store(line, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Shared handle to this session's `paused_at_line`, for a background monitor thread to
@@ -128,7 +132,12 @@ impl<H: DebugHook> DapSession<H> {
                     })
                     .collect();
                 (
-                    ok_response(req, ResponseBody::SetBreakpoints(responses::SetBreakpointsResponse { breakpoints })),
+                    ok_response(
+                        req,
+                        ResponseBody::SetBreakpoints(responses::SetBreakpointsResponse {
+                            breakpoints,
+                        }),
+                    ),
                     vec![],
                 )
             }
@@ -141,32 +150,54 @@ impl<H: DebugHook> DapSession<H> {
                 (ack(req), vec![])
             }
             Command::Threads => {
-                let threads = vec![Thread { id: 1, name: "kuu".to_string() }];
-                (ok_response(req, ResponseBody::Threads(responses::ThreadsResponse { threads })), vec![])
+                let threads = vec![Thread {
+                    id: 1,
+                    name: "kuu".to_string(),
+                }];
+                (
+                    ok_response(
+                        req,
+                        ResponseBody::Threads(responses::ThreadsResponse { threads }),
+                    ),
+                    vec![],
+                )
             }
             Command::Continue(_) => {
                 self.hook.resume();
                 (
-                    ok_response(req, ResponseBody::Continue(responses::ContinueResponse { all_threads_continued: Some(true) })),
+                    ok_response(
+                        req,
+                        ResponseBody::Continue(responses::ContinueResponse {
+                            all_threads_continued: Some(true),
+                        }),
+                    ),
                     vec![],
                 )
             }
             Command::StackTrace(_) => {
                 let source_path = self.source_path.lock().unwrap().clone();
-                let line = self.paused_at_line.load(std::sync::atomic::Ordering::SeqCst);
+                let line = self
+                    .paused_at_line
+                    .load(std::sync::atomic::Ordering::SeqCst);
                 let stack_frames = vec![StackFrame {
                     id: 1,
                     name: "kuu".to_string(),
-                    source: Some(Source { path: source_path, ..Default::default() }),
+                    source: Some(Source {
+                        path: source_path,
+                        ..Default::default()
+                    }),
                     line,
                     column: 0,
                     ..Default::default()
                 }];
                 (
-                    ok_response(req, ResponseBody::StackTrace(responses::StackTraceResponse {
-                        stack_frames,
-                        total_frames: Some(1),
-                    })),
+                    ok_response(
+                        req,
+                        ResponseBody::StackTrace(responses::StackTraceResponse {
+                            stack_frames,
+                            total_frames: Some(1),
+                        }),
+                    ),
                     vec![],
                 )
             }
@@ -177,7 +208,13 @@ impl<H: DebugHook> DapSession<H> {
                     expensive: false,
                     ..Default::default()
                 }];
-                (ok_response(req, ResponseBody::Scopes(responses::ScopesResponse { scopes })), vec![])
+                (
+                    ok_response(
+                        req,
+                        ResponseBody::Scopes(responses::ScopesResponse { scopes }),
+                    ),
+                    vec![],
+                )
             }
             Command::Variables(_) => {
                 let variables: Vec<Variable> = self
@@ -191,11 +228,18 @@ impl<H: DebugHook> DapSession<H> {
                         ..Default::default()
                     })
                     .collect();
-                (ok_response(req, ResponseBody::Variables(responses::VariablesResponse { variables })), vec![])
+                (
+                    ok_response(
+                        req,
+                        ResponseBody::Variables(responses::VariablesResponse { variables }),
+                    ),
+                    vec![],
+                )
             }
             Command::Disconnect(_) => (ack(req), vec![Event::Terminated(None)]),
             other => (
-                req.clone().error(&format!("amri haijatekelezwa: {}", command_name(other))),
+                req.clone()
+                    .error(&format!("amri haijatekelezwa: {}", command_name(other))),
                 vec![],
             ),
         }
@@ -343,11 +387,27 @@ mod tests {
         assert!(resp.success);
 
         // The stored path surfaces in a later stackTrace response's Source.
-        let (st_resp, _) = s.handle(&req(3, Command::StackTrace(StackTraceArguments {
-            thread_id: 1, start_frame: None, levels: None, format: None,
-        })));
-        let ResponseBody::StackTrace(body) = st_resp.body.unwrap() else { panic!("expected StackTrace body") };
-        assert_eq!(body.stack_frames[0].source.as_ref().unwrap().path.as_deref(), Some("/tmp/mfano.as"));
+        let (st_resp, _) = s.handle(&req(
+            3,
+            Command::StackTrace(StackTraceArguments {
+                thread_id: 1,
+                start_frame: None,
+                levels: None,
+                format: None,
+            }),
+        ));
+        let ResponseBody::StackTrace(body) = st_resp.body.unwrap() else {
+            panic!("expected StackTrace body")
+        };
+        assert_eq!(
+            body.stack_frames[0]
+                .source
+                .as_ref()
+                .unwrap()
+                .path
+                .as_deref(),
+            Some("/tmp/mfano.as")
+        );
     }
 
     #[test]
@@ -356,8 +416,14 @@ mod tests {
         let args = SetBreakpointsArguments {
             source: dap::types::Source::default(),
             breakpoints: Some(vec![
-                SourceBreakpoint { line: 5, ..Default::default() },
-                SourceBreakpoint { line: 9, ..Default::default() },
+                SourceBreakpoint {
+                    line: 5,
+                    ..Default::default()
+                },
+                SourceBreakpoint {
+                    line: 9,
+                    ..Default::default()
+                },
             ]),
             #[allow(deprecated)]
             lines: None,
@@ -365,7 +431,9 @@ mod tests {
         };
         let (resp, _) = s.handle(&req(4, Command::SetBreakpoints(args)));
         assert!(resp.success);
-        let ResponseBody::SetBreakpoints(body) = resp.body.unwrap() else { panic!("expected SetBreakpoints body") };
+        let ResponseBody::SetBreakpoints(body) = resp.body.unwrap() else {
+            panic!("expected SetBreakpoints body")
+        };
         assert_eq!(body.breakpoints.len(), 2);
         assert!(body.breakpoints.iter().all(|b| b.verified));
         assert_eq!(body.breakpoints[0].line, Some(5));
@@ -386,24 +454,43 @@ mod tests {
         let pause_thread = std::thread::spawn(move || hook_for_pause.should_pause(3));
 
         for _ in 0..100 {
-            if hook.did_pause() { break; }
+            if hook.did_pause() {
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert!(hook.did_pause());
 
-        let (resp, _) = s.handle(&req(5, Command::Continue(ContinueArguments { thread_id: 1, single_thread: None })));
+        let (resp, _) = s.handle(&req(
+            5,
+            Command::Continue(ContinueArguments {
+                thread_id: 1,
+                single_thread: None,
+            }),
+        ));
         assert!(resp.success);
-        assert!(pause_thread.join().unwrap(), "continue must have released the paused thread");
+        assert!(
+            pause_thread.join().unwrap(),
+            "continue must have released the paused thread"
+        );
     }
 
     #[test]
     fn stack_trace_reports_the_last_paused_line() {
         let s = session();
         s.set_paused_line(42);
-        let (resp, _) = s.handle(&req(6, Command::StackTrace(StackTraceArguments {
-            thread_id: 1, start_frame: None, levels: None, format: None,
-        })));
-        let ResponseBody::StackTrace(body) = resp.body.unwrap() else { panic!("expected StackTrace body") };
+        let (resp, _) = s.handle(&req(
+            6,
+            Command::StackTrace(StackTraceArguments {
+                thread_id: 1,
+                start_frame: None,
+                levels: None,
+                format: None,
+            }),
+        ));
+        let ResponseBody::StackTrace(body) = resp.body.unwrap() else {
+            panic!("expected StackTrace body")
+        };
         assert_eq!(body.stack_frames[0].line, 42);
     }
 
@@ -411,7 +498,9 @@ mod tests {
     fn scopes_returns_a_locals_scope() {
         let s = session();
         let (resp, _) = s.handle(&req(7, Command::Scopes(ScopesArguments { frame_id: 1 })));
-        let ResponseBody::Scopes(body) = resp.body.unwrap() else { panic!("expected Scopes body") };
+        let ResponseBody::Scopes(body) = resp.body.unwrap() else {
+            panic!("expected Scopes body")
+        };
         assert_eq!(body.scopes.len(), 1);
         assert_eq!(body.scopes[0].name, "Locals");
     }
@@ -422,10 +511,19 @@ mod tests {
         hook.set_bindings(vec![("jumla".to_string(), "10".to_string())]);
         let s = DapSession::new(hook);
 
-        let (resp, _) = s.handle(&req(8, Command::Variables(VariablesArguments {
-            variables_reference: 1, filter: None, start: None, count: None, format: None,
-        })));
-        let ResponseBody::Variables(body) = resp.body.unwrap() else { panic!("expected Variables body") };
+        let (resp, _) = s.handle(&req(
+            8,
+            Command::Variables(VariablesArguments {
+                variables_reference: 1,
+                filter: None,
+                start: None,
+                count: None,
+                format: None,
+            }),
+        ));
+        let ResponseBody::Variables(body) = resp.body.unwrap() else {
+            panic!("expected Variables body")
+        };
         assert_eq!(body.variables.len(), 1);
         assert_eq!(body.variables[0].name, "jumla");
         assert_eq!(body.variables[0].value, "10");
@@ -444,8 +542,14 @@ mod tests {
     fn an_unimplemented_command_returns_a_real_error_response() {
         let s = session();
         let (resp, _) = s.handle(&req(10, Command::Pause(Default::default())));
-        assert!(!resp.success, "an unimplemented command must fail, not silently succeed");
-        assert!(matches!(resp.message, Some(responses::ResponseMessage::Error(_))));
+        assert!(
+            !resp.success,
+            "an unimplemented command must fail, not silently succeed"
+        );
+        assert!(matches!(
+            resp.message,
+            Some(responses::ResponseMessage::Error(_))
+        ));
     }
 
     /// Full end-to-end: real DAP wire-protocol bytes (`Content-Length: N\r\n\r\n<json>`) in,
@@ -453,15 +557,23 @@ mod tests {
     /// `DapSession::handle` in isolation. Matches the `dap` crate's own `server.rs` test pattern.
     #[test]
     fn run_handles_a_real_wire_protocol_request_end_to_end() {
-        let request_json = r#"{"seq":1,"type":"request","command":"initialize","arguments":{"adapterID":"test"}}"#;
-        let input = format!("Content-Length: {}\r\n\r\n{}", request_json.len(), request_json);
+        let request_json =
+            r#"{"seq":1,"type":"request","command":"initialize","arguments":{"adapterID":"test"}}"#;
+        let input = format!(
+            "Content-Length: {}\r\n\r\n{}",
+            request_json.len(),
+            request_json
+        );
 
         let mut output = Vec::new();
         let hook = Arc::new(MockHook::new());
         run(hook, std::io::Cursor::new(input.into_bytes()), &mut output);
 
         let output_str = String::from_utf8(output).expect("valid utf8 output");
-        assert!(output_str.contains("Content-Length:"), "output should be real wire-protocol framed, got: {output_str}");
+        assert!(
+            output_str.contains("Content-Length:"),
+            "output should be real wire-protocol framed, got: {output_str}"
+        );
         assert!(output_str.contains("\"success\":true"), "got: {output_str}");
     }
 }

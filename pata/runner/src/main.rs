@@ -39,7 +39,10 @@ fn main() {
     {
         path
     } else {
-        eprintln!("tenda inahitaji .asb au .build.manifest, si: {}", path.display());
+        eprintln!(
+            "tenda inahitaji .asb au .build.manifest, si: {}",
+            path.display()
+        );
         process::exit(2);
     };
     if !asb_path.exists() {

@@ -99,7 +99,9 @@ pub fn lower_to_tir(module: &Module) -> TypedIrModule {
         .iter()
         .map(|i| match &i.path {
             ImportPath::Full(s) => s.clone(),
-            ImportPath::Selective { module: m, names } => format!("{}::{{{}}}", m, names.join(", ")),
+            ImportPath::Selective { module: m, names } => {
+                format!("{}::{{{}}}", m, names.join(", "))
+            }
         })
         .collect();
     TypedIrModule { functions, imports }
@@ -127,8 +129,9 @@ pub fn emit_asb_from_tir(tir: &TypedIrModule, source: &str) -> String {
 
 pub fn validate_module(module: &Module) -> Result<(), Vec<Diagnostic>> {
     if module.functions.is_empty() {
-        return Err(vec![Diagnostic::new("EVAL001", "moduli haina kazi yoyote")
-            .with_stage("kitekelezi")]);
+        return Err(vec![
+            Diagnostic::new("EVAL001", "moduli haina kazi yoyote").with_stage("kitekelezi")
+        ]);
     }
     Ok(())
 }

@@ -1,7 +1,7 @@
-use std::fs;
-use std::path::PathBuf;
 use clap::Parser;
 use pata_lint::{config::LintConfig, lint_source_with_config};
+use std::fs;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "pata-lint")]
@@ -42,7 +42,11 @@ fn main() {
     }
 }
 
-fn lint_file(path: &PathBuf, errors_only: bool, config: &LintConfig) -> Result<(), Box<dyn std::error::Error>> {
+fn lint_file(
+    path: &PathBuf,
+    errors_only: bool,
+    config: &LintConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
     let source = fs::read_to_string(path)?;
     match lint_source_with_config(&source, config) {
         Ok(diags) => {
@@ -72,7 +76,11 @@ fn lint_file(path: &PathBuf, errors_only: bool, config: &LintConfig) -> Result<(
     }
 }
 
-fn lint_directory(dir: &PathBuf, errors_only: bool, config: &LintConfig) -> Result<(), Box<dyn std::error::Error>> {
+fn lint_directory(
+    dir: &PathBuf,
+    errors_only: bool,
+    config: &LintConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut had_error = false;
     for entry in fs::read_dir(dir)? {
         let entry = entry?;

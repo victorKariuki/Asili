@@ -28,7 +28,9 @@ pub struct Error {
 
 impl Error {
     pub fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into() }
+        Self {
+            message: message.into(),
+        }
     }
 }
 
@@ -41,7 +43,9 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 pub use dependency::Dependency;
-pub use interface_registry::{InterfaceRegistry, ModuleInterface, StdlibEnv, TraitStub, TraitMethodStub};
+pub use interface_registry::{
+    InterfaceRegistry, ModuleInterface, StdlibEnv, TraitMethodStub, TraitStub,
+};
 pub use resolve::{
     build_export_table, check_duplicate_imports, dependency_order, find_module_file,
     merge_for_semantic, resolve_all, ExportTable, ResolvedModule, ResolvedProgram,

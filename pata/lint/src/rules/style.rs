@@ -21,12 +21,15 @@ pub fn check_style_issues_with_limit(module: &Module, line_limit: usize) -> Vec<
         let func_lines = func.body.statements.len();
         if func_lines > line_limit {
             diags.push(
-                Diagnostic::new("LINT101", format!(
-                    "kazi '{}' ina kauli {} — fikiria kuigawanya",
-                    func.name, func_lines
-                ))
+                Diagnostic::new(
+                    "LINT101",
+                    format!(
+                        "kazi '{}' ina kauli {} — fikiria kuigawanya",
+                        func.name, func_lines
+                    ),
+                )
                 .with_stage("ukaguzi")
-                .with_span(func.line, 1)
+                .with_span(func.line, 1),
             );
         }
     }

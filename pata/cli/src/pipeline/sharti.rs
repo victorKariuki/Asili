@@ -6,14 +6,27 @@ use asili_parser::{item_survives, Module, Target};
 /// Remove top-level items (enums, structs, traits, impls, functions) whose `#[sharti(...)]`
 /// predicate excludes `target`. Runs before semantic analysis, so excluded items never need to
 /// type-check for a target that doesn't build them.
-pub fn filter_module_for_target(module: &mut Module, target: &Target) -> Result<(), Vec<Diagnostic>> {
+pub fn filter_module_for_target(
+    module: &mut Module,
+    target: &Target,
+) -> Result<(), Vec<Diagnostic>> {
     let mut errors = Vec::new();
 
-    module.enums.retain(|e| survives(&e.attrs, e.line, target, &mut errors));
-    module.structs.retain(|s| survives(&s.attrs, s.line, target, &mut errors));
-    module.traits.retain(|t| survives(&t.attrs, t.line, target, &mut errors));
-    module.impls.retain(|i| survives(&i.attrs, i.line, target, &mut errors));
-    module.functions.retain(|f| survives(&f.attrs, f.line, target, &mut errors));
+    module
+        .enums
+        .retain(|e| survives(&e.attrs, e.line, target, &mut errors));
+    module
+        .structs
+        .retain(|s| survives(&s.attrs, s.line, target, &mut errors));
+    module
+        .traits
+        .retain(|t| survives(&t.attrs, t.line, target, &mut errors));
+    module
+        .impls
+        .retain(|i| survives(&i.attrs, i.line, target, &mut errors));
+    module
+        .functions
+        .retain(|f| survives(&f.attrs, f.line, target, &mut errors));
 
     if errors.is_empty() {
         Ok(())

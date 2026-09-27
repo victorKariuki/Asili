@@ -38,7 +38,11 @@ pub fn read_stdin() -> Result<String, EvalError> {
     }
 }
 
-#[cfg(all(target_arch = "wasm32", feature = "wasm-browser", not(feature = "wasm-wasi")))]
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "wasm-browser",
+    not(feature = "wasm-wasi")
+))]
 mod browser {
     use wasm_bindgen::prelude::*;
 
@@ -51,28 +55,56 @@ mod browser {
     }
 }
 
-#[cfg(all(target_arch = "wasm32", feature = "wasm-browser", not(feature = "wasm-wasi")))]
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "wasm-browser",
+    not(feature = "wasm-wasi")
+))]
 pub fn write_stdout(s: &str) {
     browser::log(s);
 }
 
-#[cfg(all(target_arch = "wasm32", feature = "wasm-browser", not(feature = "wasm-wasi")))]
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "wasm-browser",
+    not(feature = "wasm-wasi")
+))]
 pub fn write_stderr(s: &str) {
     browser::error(s);
 }
 
-#[cfg(all(target_arch = "wasm32", feature = "wasm-browser", not(feature = "wasm-wasi")))]
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "wasm-browser",
+    not(feature = "wasm-wasi")
+))]
 pub fn read_stdin() -> Result<String, EvalError> {
-    Err(EvalError::Panic("omba: stdin haipatikani kwenye kivinjari".to_string()))
+    Err(EvalError::Panic(
+        "omba: stdin haipatikani kwenye kivinjari".to_string(),
+    ))
 }
 
-#[cfg(all(target_arch = "wasm32", not(feature = "wasm-browser"), not(feature = "wasm-wasi")))]
+#[cfg(all(
+    target_arch = "wasm32",
+    not(feature = "wasm-browser"),
+    not(feature = "wasm-wasi")
+))]
 pub fn write_stdout(_s: &str) {}
 
-#[cfg(all(target_arch = "wasm32", not(feature = "wasm-browser"), not(feature = "wasm-wasi")))]
+#[cfg(all(
+    target_arch = "wasm32",
+    not(feature = "wasm-browser"),
+    not(feature = "wasm-wasi")
+))]
 pub fn write_stderr(_s: &str) {}
 
-#[cfg(all(target_arch = "wasm32", not(feature = "wasm-browser"), not(feature = "wasm-wasi")))]
+#[cfg(all(
+    target_arch = "wasm32",
+    not(feature = "wasm-browser"),
+    not(feature = "wasm-wasi")
+))]
 pub fn read_stdin() -> Result<String, EvalError> {
-    Err(EvalError::Panic("omba: stdin haipatikani kwenye WASM".to_string()))
+    Err(EvalError::Panic(
+        "omba: stdin haipatikani kwenye WASM".to_string(),
+    ))
 }

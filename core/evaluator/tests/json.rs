@@ -3,7 +3,7 @@
 
 use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, semantic_check_with_env, extern_env_from_imports, Module};
+use asili_parser::{extern_env_from_imports, parse_tokens, semantic_check_with_env, Module};
 
 fn compile(src: &str) -> Module {
     let toks = tokenize(src).expect("tokenize");
@@ -43,7 +43,9 @@ fn kwa_json_encodes_a_struct_reflectively() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "thamani", vec![]).expect("runs");
-    let Value::Neno(s) = result else { panic!("expected Neno") };
+    let Value::Neno(s) = result else {
+        panic!("expected Neno")
+    };
     let parsed: serde_json::Value = serde_json::from_str(&s).expect("valid json");
     assert_eq!(parsed, serde_json::json!({"x": 1.0, "y": "hi"}));
 }
@@ -77,7 +79,11 @@ fn kutoka_json_rejects_invalid_json() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "thamani", vec![]).expect("runs");
-    assert_eq!(result, Value::Ukweli(true), "invalid JSON must return Tokeo(Kosa(...)), not panic");
+    assert_eq!(
+        result,
+        Value::Ukweli(true),
+        "invalid JSON must return Tokeo(Kosa(...)), not panic"
+    );
 }
 
 #[test]
@@ -117,5 +123,9 @@ fn kwa_json_rejects_kasha_gc_handle() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "thamani", vec![]).expect("runs");
-    assert_eq!(result, Value::Ukweli(true), "Kasha_GC handles have no JSON representation");
+    assert_eq!(
+        result,
+        Value::Ukweli(true),
+        "Kasha_GC handles have no JSON representation"
+    );
 }

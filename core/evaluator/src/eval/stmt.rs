@@ -3,12 +3,13 @@
 use asili_parser::{AssignOp, ForMode, Stmt};
 
 use crate::runtime::Runtime;
-use crate::value::{self, assign_f64_op, handle_loop_out, EvalError, EvalOut, LoopAction, Value};
 use crate::signal;
+use crate::value::{self, assign_f64_op, handle_loop_out, EvalError, EvalOut, LoopAction, Value};
 
 use super::expr::match_and_bind_pattern;
 
 pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOut, EvalError> {
+    rt.count_statement();
     rt.record_line(stmt.line());
 
     if let Some(hook) = &rt.debug_hook {
@@ -21,7 +22,13 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
     let sig = signal::take_pending();
     if sig != 0 {
         if let Some(handler_name) = signal::get_handler(sig) {
-            if let Some(f) = rt.module.functions.iter().find(|x| x.name == handler_name).cloned() {
+            if let Some(f) = rt
+                .module
+                .functions
+                .iter()
+                .find(|x| x.name == handler_name)
+                .cloned()
+            {
                 rt.env.push_scope();
                 super::eval_block_impl(&f.body, rt)?;
                 rt.env.pop_scope();
@@ -35,17 +42,29 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             rt.env.define(name, v);
             Ok(EvalOut::Next)
         }
-        Stmt::Assign { name, op, value, .. } => {
+        Stmt::LetPattern { pattern, value, .. } => {
+            let value = super::eval_expr_impl(value, rt)?;
+            if !super::expr::match_and_bind_pattern(pattern, &value, rt) {
+                return Err(EvalError::TypeErr(
+                    "muundo wa weka haulingani na thamani".into(),
+                ));
+            }
+            Ok(EvalOut::Next)
+        }
+        Stmt::Assign {
+            name, op, value, ..
+        } => {
             let rhs = super::eval_expr_impl(value, rt)?;
-            let current = rt.env.get(name).ok_or_else(|| EvalError::UndefinedVar(name.clone()))?;
+            let current = rt
+                .env
+                .get(name)
+                .ok_or_else(|| EvalError::UndefinedVar(name.clone()))?;
             let new_val = match op {
                 AssignOp::Assign => rhs,
-                AssignOp::AddAssign => {
-                    match (value::as_string(&current), value::as_string(&rhs)) {
-                        (Some(s1), Some(s2)) => Value::Neno(format!("{s1}{s2}")),
-                        _ => assign_f64_op(&current, &rhs, "+=", |a, b| a + b)?,
-                    }
-                }
+                AssignOp::AddAssign => match (value::as_string(&current), value::as_string(&rhs)) {
+                    (Some(s1), Some(s2)) => Value::Neno(format!("{s1}{s2}")),
+                    _ => assign_f64_op(&current, &rhs, "+=", |a, b| a + b)?,
+                },
                 AssignOp::SubAssign => assign_f64_op(&current, &rhs, "-=", |a, b| a - b)?,
                 AssignOp::MulAssign => assign_f64_op(&current, &rhs, "*=", |a, b| a * b)?,
                 AssignOp::DivAssign => assign_f64_op(&current, &rhs, "/=", |a, b| a / b)?,
@@ -158,10 +177,7 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                         }
                         Value::Kamusi(map) => {
                             for (key, val) in map {
-                                let pair = Value::Jozi(
-                                    Box::new(key.to_value()),
-                                    Box::new(val),
-                                );
+                                let pair = Value::Jozi(Box::new(key.to_value()), Box::new(val));
                                 rt.env.push_scope();
                                 rt.env.define(var, pair);
                                 let out = super::eval_block_impl(body, rt)?;
@@ -175,7 +191,7 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                         }
                         _ => {
                             return Err(EvalError::TypeErr(
-                                "kwa...katika inashughulikia Orodha na Kamusi tu".to_string()
+                                "kwa...katika inashughulikia Orodha na Kamusi tu".to_string(),
                             ));
                         }
                     }

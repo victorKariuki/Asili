@@ -253,7 +253,20 @@ Full source: [examples/all_types/src/kuu.as](../../examples/all_types/src/kuu.as
 
 ---
 
-## 8. Pembejeo ya Mtumiaji (Interactive Input)
+## 8. Sudoku Solver — `examples/sudoku`
+
+A complete backtracking solver using a flat numeric board, incremental row/column/sub-grid bit
+masks, and minimum-remaining-values (MRV) cell selection. It demonstrates an explicit
+backtracking stack, nested loops, bitwise operations, and candidate/backtrack counters.
+The fixture is Arto Inkala's famously difficult "world's hardest Sudoku"; the optimized
+bytecode run completes it with 7,145 candidate attempts and 761 backtracks. The output helper
+is named `onyesha` so it does not shadow the ambient builtin `chapisha`.
+
+Full source: [examples/sudoku/src/kuu.as](../../examples/sudoku/src/kuu.as)
+
+---
+
+## 9. Pembejeo ya Mtumiaji (Interactive Input)
 
 ```asili
 leta matumizi
@@ -286,3 +299,4 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 | `unary_ops`            | [kuu.as](../../examples/unary_ops/src/kuu.as)        | Unary ops, NaN, Inf              |
 | `all_types`            | [kuu.as](../../examples/all_types/src/kuu.as)        | Every type and cast combination  |
 | `astar`                | [kuu.as](../../examples/astar/src/kuu.as)            | Real algorithm, all features     |
+| `sudoku`               | [kuu.as](../../examples/sudoku/src/kuu.as)           | MRV, bit masks, backtracking, validation |

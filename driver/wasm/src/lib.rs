@@ -45,7 +45,9 @@ pub fn run_bundle(entry_name: &str, modules: &HashMap<String, String>) -> Result
         if parsed.contains_key(&name) {
             continue;
         }
-        let Some(source) = modules.get(&name) else { continue };
+        let Some(source) = modules.get(&name) else {
+            continue;
+        };
         let tokens = tokenize(source).map_err(|d| format!("lex ({name}): {:?}", d))?;
         let module = parse_tokens(&tokens).map_err(|d| format!("parse ({name}): {:?}", d))?;
         for imp in &module.imports {

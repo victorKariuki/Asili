@@ -22,7 +22,13 @@ Mfano:
 /// Resolve artifact path from a .build.manifest file. Returns path to .asb (relative to manifest dir or absolute).
 fn artifact_from_manifest(manifest_path: &Path) -> Result<PathBuf, CliError> {
     let content = fs::read_to_string(manifest_path).map_err(|e| {
-        CliError::new(format!("imeshindwa kusoma manifest {}: {e}", manifest_path.display()), 1)
+        CliError::new(
+            format!(
+                "imeshindwa kusoma manifest {}: {e}",
+                manifest_path.display()
+            ),
+            1,
+        )
     })?;
     let artifact = content
         .lines()
@@ -34,17 +40,12 @@ fn artifact_from_manifest(manifest_path: &Path) -> Result<PathBuf, CliError> {
                 1,
             )
         })?;
-    let manifest_dir = manifest_path
-        .parent()
-        .unwrap_or_else(|| Path::new("."));
+    let manifest_dir = manifest_path.parent().unwrap_or_else(|| Path::new("."));
     Ok(manifest_dir.join(artifact))
 }
 
 pub fn run(args: &[String]) -> CliResult {
-    if args
-        .iter()
-        .any(|a| a == "--msaada")
-    {
+    if args.iter().any(|a| a == "--msaada") {
         print!("{TENDA_USAGE}");
         return Ok(());
     }
@@ -90,27 +91,19 @@ pub fn run(args: &[String]) -> CliResult {
             1,
         ));
     }
-    let bytes = fs::read(&asb_path).map_err(|e| {
-        CliError::new(
-            format!("imeshindwa kusoma {}: {e}", asb_path.display()),
-            1,
-        )
-    })?;
+    let bytes = fs::read(&asb_path)
+        .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", asb_path.display()), 1))?;
     let format = parse_format(&bytes).unwrap_or_else(|| "serialized".to_string());
     if format == "bytecode" {
-        let program = load_asb_bytecode(&bytes).map_err(|e| {
-            CliError::new(format!("kuipakia asb bytecode: {e}"), 1)
-        })?;
-        run_bytecode(&program, program_args).map_err(|e| {
-            CliError::new(format!("kuendesha kuu: {e}"), 1)
-        })?;
+        let program = load_asb_bytecode(&bytes)
+            .map_err(|e| CliError::new(format!("kuipakia asb bytecode: {e}"), 1))?;
+        run_bytecode(&program, program_args)
+            .map_err(|e| CliError::new(format!("kuendesha kuu: {e}"), 1))?;
     } else {
-        let module = load_asb(&bytes).map_err(|e| {
-            CliError::new(format!("kuipakia asb: {e}"), 1)
-        })?;
-        run_main(&module, program_args).map_err(|e| {
-            CliError::new(format!("kuendesha kuu: {e}"), 1)
-        })?;
+        let module =
+            load_asb(&bytes).map_err(|e| CliError::new(format!("kuipakia asb: {e}"), 1))?;
+        run_main(&module, program_args)
+            .map_err(|e| CliError::new(format!("kuendesha kuu: {e}"), 1))?;
     }
     Ok(())
 }

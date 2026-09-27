@@ -188,12 +188,17 @@ fn tokenize_inner(
                 continue;
             }
 
-            if "(){}:,.;+-*/%<>!=[]?#&|".contains(ch) {
+            if "(){}:,.;+-*/%<>!=[]?#&|^".contains(ch) {
                 let start_col = col;
                 let mut lexeme = ch.to_string();
                 if i + 1 < chars.len() {
                     let pair = format!("{}{}", ch, chars[i + 1]);
-                    if ["==", "!=", ">=", "<=", "->", "+=", "-=", "*=", "/=", "=>", "::", "**", "&&", "||"].contains(&pair.as_str()) {
+                    if [
+                        "==", "!=", ">=", "<=", "->", "+=", "-=", "*=", "/=", "=>", "::", "**",
+                        "&&", "||", "<<", ">>",
+                    ]
+                    .contains(&pair.as_str())
+                    {
                         lexeme = pair;
                         i += 1;
                         col += 1;
@@ -215,15 +220,18 @@ fn tokenize_inner(
                 let c = chars[i];
                 // Include decimal point in numeric literals: if building a digit-only token
                 // and we see '.' followed by a digit, absorb both to form e.g. "100.0".
-                if c == '.' && word.chars().all(|ch| ch.is_ascii_digit()) && !word.is_empty()
-                    && i + 1 < chars.len() && chars[i + 1].is_ascii_digit()
+                if c == '.'
+                    && word.chars().all(|ch| ch.is_ascii_digit())
+                    && !word.is_empty()
+                    && i + 1 < chars.len()
+                    && chars[i + 1].is_ascii_digit()
                 {
                     word.push('.');
                     i += 1;
                     col += 1;
                     continue;
                 }
-                if c.is_whitespace() || "(){}:,.;+-*/%<>!=[]#&?|\"".contains(c) {
+                if c.is_whitespace() || "(){}:,.;+-*/%<>!=[]#&|^?\"".contains(c) {
                     break;
                 }
                 word.push(c);
@@ -265,7 +273,10 @@ mod tests {
     fn string_escapes_decoded() {
         let src = r#"weka s = "a\n\t\"\\b""#;
         let t = tokenize(src).expect("tokenize");
-        let s_tok = t.iter().find(|x| x.lexeme.starts_with('"')).expect("string token");
+        let s_tok = t
+            .iter()
+            .find(|x| x.lexeme.starts_with('"'))
+            .expect("string token");
         assert!(s_tok.lexeme.contains('\n'));
         assert!(s_tok.lexeme.contains('\t'));
         assert!(s_tok.lexeme.ends_with('"'));
@@ -277,7 +288,11 @@ mod tests {
         let src = "ni_namba?(3)";
         let t = tokenize(src).expect("tokenize");
         let lexemes: Vec<&str> = t.iter().map(|x| x.lexeme.as_str()).collect();
-        assert_eq!(lexemes, ["ni_namba", "?", "(", "3", ")"], "ni_namba? should be two tokens");
+        assert_eq!(
+            lexemes,
+            ["ni_namba", "?", "(", "3", ")"],
+            "ni_namba? should be two tokens"
+        );
     }
 
     #[test]
@@ -293,7 +308,10 @@ mod tests {
         let src = "weka x = 1 # maoni\nweka y = 2 // maoni mengine\n";
         let plain = tokenize(src).expect("tokenize");
         let (with_trivia, _) = tokenize_with_trivia(src).expect("tokenize_with_trivia");
-        assert_eq!(plain, with_trivia, "trivia capture must not change the token stream");
+        assert_eq!(
+            plain, with_trivia,
+            "trivia capture must not change the token stream"
+        );
     }
 
     #[test]

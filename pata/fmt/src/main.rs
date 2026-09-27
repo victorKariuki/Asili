@@ -64,7 +64,12 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn format_files(files: &[PathBuf], check_only: bool, show_diff: bool, config: &FormatterConfig) -> Result<(usize, usize)> {
+fn format_files(
+    files: &[PathBuf],
+    check_only: bool,
+    show_diff: bool,
+    config: &FormatterConfig,
+) -> Result<(usize, usize)> {
     let mut changed = 0;
     let indent_unit = config.indent_unit();
     for file in files {

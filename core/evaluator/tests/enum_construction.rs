@@ -17,7 +17,10 @@ fn test_enum_construct_simple() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    assert!(module.enums.iter().any(|e| e.name == "Color"), "should parse Color enum");
+    assert!(
+        module.enums.iter().any(|e| e.name == "Color"),
+        "should parse Color enum"
+    );
     let e = module.enums.iter().find(|e| e.name == "Color").unwrap();
     assert_eq!(e.variants.len(), 3);
 }
@@ -37,7 +40,11 @@ fn test_enum_construct_with_data() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let e = module.enums.iter().find(|e| e.name == "Option").expect("Option enum");
+    let e = module
+        .enums
+        .iter()
+        .find(|e| e.name == "Option")
+        .expect("Option enum");
     assert_eq!(e.variants[0].name, "Some");
     assert!(e.variants[0].data.is_some());
 }
@@ -169,8 +176,14 @@ fn test_multiple_enum_types() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    assert!(module.enums.iter().any(|e| e.name == "Shape"), "should have Shape enum");
-    assert!(module.enums.iter().any(|e| e.name == "Color"), "should have Color enum");
+    assert!(
+        module.enums.iter().any(|e| e.name == "Shape"),
+        "should have Shape enum"
+    );
+    assert!(
+        module.enums.iter().any(|e| e.name == "Color"),
+        "should have Color enum"
+    );
 }
 
 /// Test 9: Enum construction with multiple variants

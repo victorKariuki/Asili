@@ -35,11 +35,7 @@ pub fn format_to_edits(text: &str, file_path: Option<&Path>) -> Option<Vec<TextE
     // Count lines in original document to create end range
     let line_count = text.lines().count() as u32;
     let last_line = if line_count == 0 { 0 } else { line_count - 1 };
-    let last_line_len = text
-        .lines()
-        .last()
-        .map(|l| l.len() as u32)
-        .unwrap_or(0);
+    let last_line_len = text.lines().last().map(|l| l.len() as u32).unwrap_or(0);
 
     // Replace entire document
     Some(vec![TextEdit {
@@ -94,7 +90,10 @@ mod tests {
     fn test_format_preserves_string_literal_contents() {
         let input = r#"chapisha("a, b {c}")"#;
         let output = format_document(input, None);
-        assert!(output.contains(r#""a, b {c}""#), "string literal contents must survive formatting verbatim, got: {output}");
+        assert!(
+            output.contains(r#""a, b {c}""#),
+            "string literal contents must survive formatting verbatim, got: {output}"
+        );
     }
 
     #[test]
@@ -102,15 +101,15 @@ mod tests {
         let root = std::env::temp_dir().join(format!("pata-lsp-fmt-test-{}", std::process::id()));
         let src_dir = root.join("src");
         std::fs::create_dir_all(&src_dir).unwrap();
-        std::fs::write(
-            root.join("pata.toml"),
-            "[fmt]\nindent_style = \"tabs\"\n",
-        ).unwrap();
+        std::fs::write(root.join("pata.toml"), "[fmt]\nindent_style = \"tabs\"\n").unwrap();
         let file_path = src_dir.join("kuu.as");
 
         let input = "kazi kuu() -> Tupu {\nweka x = 1\n}\n";
         let output = format_document(input, Some(&file_path));
-        assert!(output.contains("\n\tweka x = 1"), "should use tab indent from pata.toml, got: {output:?}");
+        assert!(
+            output.contains("\n\tweka x = 1"),
+            "should use tab indent from pata.toml, got: {output:?}"
+        );
 
         std::fs::remove_dir_all(&root).ok();
     }

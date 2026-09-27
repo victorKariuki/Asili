@@ -8,8 +8,8 @@
 //! wire format itself without needing a `.as` source file on disk.
 
 use asili_evaluator::debug_hook::DebugHook;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 /// A fake debug session: pauses whenever the current line is in `breakpoints`, tracks
 /// paused/resumed state with a real mutex + condvar (so `should_pause` genuinely blocks a
@@ -100,7 +100,10 @@ mod tests {
     fn should_pause_returns_false_for_a_line_with_no_breakpoint() {
         let hook = MockHook::new();
         hook.set_breakpoints(vec![10]);
-        assert!(!hook.should_pause(5), "a line with no breakpoint must not pause");
+        assert!(
+            !hook.should_pause(5),
+            "a line with no breakpoint must not pause"
+        );
         assert!(!hook.did_pause());
     }
 
@@ -123,11 +126,17 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        assert!(hook.did_pause(), "should_pause should have started blocking by now");
+        assert!(
+            hook.did_pause(),
+            "should_pause should have started blocking by now"
+        );
 
         hook.resume();
         let result = pause_thread.join().unwrap();
-        assert!(result, "should_pause must return true after actually pausing");
+        assert!(
+            result,
+            "should_pause must return true after actually pausing"
+        );
     }
 
     #[test]

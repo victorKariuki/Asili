@@ -114,7 +114,11 @@ impl LocalRegistry {
     /// registry configured should resolve as "nothing found there," not fail outright.
     pub fn load(root: impl AsRef<Path>) -> Result<Self> {
         let root = root.as_ref().to_path_buf();
-        let mut reg = Self { root: Some(root.clone()), packages: BTreeMap::new(), entries: BTreeMap::new() };
+        let mut reg = Self {
+            root: Some(root.clone()),
+            packages: BTreeMap::new(),
+            entries: BTreeMap::new(),
+        };
         if !root.is_dir() {
             return Ok(reg);
         }
@@ -253,47 +257,67 @@ mod tests {
             vers: "1.0.0".to_string(),
             deps: vec![],
             yanked: None,
-            source: RegistrySource::Path { path: "/tmp/jitu-1.0.0".to_string() },
+            source: RegistrySource::Path {
+                path: "/tmp/jitu-1.0.0".to_string(),
+            },
         })
         .expect("publish");
 
-        assert!(dir.join("jitu.json").is_file(), "publish must write a real index file");
+        assert!(
+            dir.join("jitu.json").is_file(),
+            "publish must write a real index file"
+        );
 
         let loaded = LocalRegistry::load(&dir).expect("load");
         let meta = loaded.lookup("jitu").expect("jitu should be indexed");
         assert_eq!(meta.latest, "1.0.0");
         let entries = loaded.entries_for("jitu");
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].source, RegistrySource::Path { path: "/tmp/jitu-1.0.0".to_string() });
+        assert_eq!(
+            entries[0].source,
+            RegistrySource::Path {
+                path: "/tmp/jitu-1.0.0".to_string()
+            }
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn publish_multiple_versions_and_yanked_are_excluded_from_metadata() {
-        let dir = std::env::temp_dir().join(format!("pata-registry-test-yank-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("pata-registry-test-yank-{}", std::process::id()));
         let mut reg = LocalRegistry::at(&dir).expect("open registry");
         reg.publish(RegistryEntry {
             name: "jitu".to_string(),
             vers: "1.0.0".to_string(),
             deps: vec![],
             yanked: None,
-            source: RegistrySource::Path { path: "/tmp/jitu-1.0.0".to_string() },
-        }).unwrap();
+            source: RegistrySource::Path {
+                path: "/tmp/jitu-1.0.0".to_string(),
+            },
+        })
+        .unwrap();
         reg.publish(RegistryEntry {
             name: "jitu".to_string(),
             vers: "1.1.0".to_string(),
             deps: vec![],
             yanked: Some(true),
-            source: RegistrySource::Path { path: "/tmp/jitu-1.1.0".to_string() },
-        }).unwrap();
+            source: RegistrySource::Path {
+                path: "/tmp/jitu-1.1.0".to_string(),
+            },
+        })
+        .unwrap();
         reg.publish(RegistryEntry {
             name: "jitu".to_string(),
             vers: "1.2.0".to_string(),
             deps: vec![],
             yanked: None,
-            source: RegistrySource::Path { path: "/tmp/jitu-1.2.0".to_string() },
-        }).unwrap();
+            source: RegistrySource::Path {
+                path: "/tmp/jitu-1.2.0".to_string(),
+            },
+        })
+        .unwrap();
 
         let loaded = LocalRegistry::load(&dir).expect("load");
         let meta = loaded.lookup("jitu").expect("indexed");
@@ -308,33 +332,50 @@ mod tests {
 
     #[test]
     fn load_from_nonexistent_root_returns_empty_registry_not_error() {
-        let dir = std::env::temp_dir().join(format!("pata-registry-test-missing-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("pata-registry-test-missing-{}", std::process::id()));
         let reg = LocalRegistry::load(&dir).expect("load on missing dir must not error");
         assert_eq!(reg.list_packages().count(), 0);
     }
 
     #[test]
     fn republishing_the_same_version_replaces_not_duplicates() {
-        let dir = std::env::temp_dir().join(format!("pata-registry-test-repub-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("pata-registry-test-repub-{}", std::process::id()));
         let mut reg = LocalRegistry::at(&dir).expect("open registry");
         reg.publish(RegistryEntry {
             name: "jitu".to_string(),
             vers: "1.0.0".to_string(),
             deps: vec![],
             yanked: None,
-            source: RegistrySource::Path { path: "/tmp/first".to_string() },
-        }).unwrap();
+            source: RegistrySource::Path {
+                path: "/tmp/first".to_string(),
+            },
+        })
+        .unwrap();
         reg.publish(RegistryEntry {
             name: "jitu".to_string(),
             vers: "1.0.0".to_string(),
             deps: vec![],
             yanked: None,
-            source: RegistrySource::Path { path: "/tmp/second".to_string() },
-        }).unwrap();
+            source: RegistrySource::Path {
+                path: "/tmp/second".to_string(),
+            },
+        })
+        .unwrap();
 
         let entries = reg.entries_for("jitu");
-        assert_eq!(entries.len(), 1, "re-publishing the same version must replace, not duplicate");
-        assert_eq!(entries[0].source, RegistrySource::Path { path: "/tmp/second".to_string() });
+        assert_eq!(
+            entries.len(),
+            1,
+            "re-publishing the same version must replace, not duplicate"
+        );
+        assert_eq!(
+            entries[0].source,
+            RegistrySource::Path {
+                path: "/tmp/second".to_string()
+            }
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }

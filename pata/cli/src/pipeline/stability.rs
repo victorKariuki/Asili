@@ -32,8 +32,12 @@ pub fn enforce_type_stability(root: &Path, current: &Module) -> Result<(), CliEr
         return Ok(());
     };
 
-    let Ok(baseline_tokens) = asili_lexer::tokenize(&baseline_src) else { return Ok(()) };
-    let Ok(baseline_module) = asili_parser::parse_tokens(&baseline_tokens) else { return Ok(()) };
+    let Ok(baseline_tokens) = asili_lexer::tokenize(&baseline_src) else {
+        return Ok(());
+    };
+    let Ok(baseline_module) = asili_parser::parse_tokens(&baseline_tokens) else {
+        return Ok(());
+    };
 
     let mut breaking_changes = Vec::new();
 
@@ -49,7 +53,10 @@ pub fn enforce_type_stability(root: &Path, current: &Module) -> Result<(), CliEr
         if new_fn.params.len() != old_fn.params.len() {
             breaking_changes.push(format!(
                 "kazi ya umma '{}' idadi ya hoja imebadilika tangu {} ({} -> {})",
-                old_fn.name, tag_name, old_fn.params.len(), new_fn.params.len()
+                old_fn.name,
+                tag_name,
+                old_fn.params.len(),
+                new_fn.params.len()
             ));
             continue; // a length mismatch makes per-position comparison below meaningless
         }
@@ -86,7 +93,9 @@ fn most_recent_semver_tag(repo: &git2::Repository) -> Option<String> {
         .flatten()
         .filter_map(|t| {
             let ver_str = t.strip_prefix('v')?;
-            semver::Version::parse(ver_str).ok().map(|v| (v, t.to_string()))
+            semver::Version::parse(ver_str)
+                .ok()
+                .map(|v| (v, t.to_string()))
         })
         .max_by(|a, b| a.0.cmp(&b.0))
         .map(|(_, tag)| tag)
@@ -130,7 +139,9 @@ fn read_entrypoint_at_tag(repo: &git2::Repository, tag: &str, _root: &Path) -> O
 
     let entry_entry = tree.get_path(Path::new(&entry_rel)).ok()?;
     let entry_blob = entry_entry.to_object(repo).ok()?.peel_to_blob().ok()?;
-    std::str::from_utf8(entry_blob.content()).ok().map(|s| s.to_string())
+    std::str::from_utf8(entry_blob.content())
+        .ok()
+        .map(|s| s.to_string())
 }
 
 #[cfg(test)]
@@ -147,11 +158,19 @@ mod tests {
             .current_dir(dir)
             .status()
             .expect("git command should spawn");
-        assert!(status.success(), "git {:?} failed in {}", args, dir.display());
+        assert!(
+            status.success(),
+            "git {:?} failed in {}",
+            args,
+            dir.display()
+        );
     }
 
     fn temp_repo() -> std::path::PathBuf {
-        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let dir = std::env::temp_dir().join(format!("pata-stability-test-{stamp}"));
         fs::create_dir_all(dir.join("src")).unwrap();
         dir
@@ -208,7 +227,10 @@ mod tests {
     fn fails_on_removed_public_function() {
         let _guard = TEST_CWD_LOCK.lock().expect("lock");
         let dir = temp_repo();
-        write_project(&dir, "umma kazi f() -> Tupu { rejesha Tupu }\numma kazi g() -> Tupu { rejesha Tupu }\n");
+        write_project(
+            &dir,
+            "umma kazi f() -> Tupu { rejesha Tupu }\numma kazi g() -> Tupu { rejesha Tupu }\n",
+        );
         run_git(&dir, &["init", "-q"]);
         run_git(&dir, &["config", "user.email", "t@example.com"]);
         run_git(&dir, &["config", "user.name", "T"]);
@@ -218,7 +240,8 @@ mod tests {
 
         // g() removed in the "current" module (in-memory, doesn't need a new commit).
         let current = parse("umma kazi f() -> Tupu { rejesha Tupu }\n");
-        let err = enforce_type_stability(&dir, &current).expect_err("removed public fn should fail");
+        let err =
+            enforce_type_stability(&dir, &current).expect_err("removed public fn should fail");
         assert!(err.message.contains("'g'"), "{}", err.message);
         assert!(err.message.contains("imeondolewa"), "{}", err.message);
 
@@ -257,7 +280,8 @@ mod tests {
         run_git(&dir, &["tag", "v1.0.0"]);
 
         let current = parse("umma kazi f(a: Neno) -> Tupu { rejesha Tupu }\n");
-        let err = enforce_type_stability(&dir, &current).expect_err("param type change should fail");
+        let err =
+            enforce_type_stability(&dir, &current).expect_err("param type change should fail");
         assert!(err.message.contains("aina imebadilika"), "{}", err.message);
 
         fs::remove_dir_all(&dir).ok();
@@ -276,7 +300,8 @@ mod tests {
         run_git(&dir, &["tag", "v1.0.0"]);
 
         let current = parse("umma kazi f() -> Neno { rejesha \"x\" }\n");
-        let err = enforce_type_stability(&dir, &current).expect_err("return type change should fail");
+        let err =
+            enforce_type_stability(&dir, &current).expect_err("return type change should fail");
         assert!(err.message.contains("aina ya kurejesha"), "{}", err.message);
 
         fs::remove_dir_all(&dir).ok();
@@ -296,7 +321,10 @@ mod tests {
 
         let current = parse("umma kazi f(a: Namba) -> Neno { rejesha \"x\" }\numma kazi mpya() -> Tupu { rejesha Tupu }\n");
         let result = enforce_type_stability(&dir, &current);
-        assert!(result.is_ok(), "adding a new public function must not be flagged as breaking");
+        assert!(
+            result.is_ok(),
+            "adding a new public function must not be flagged as breaking"
+        );
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -316,7 +344,10 @@ mod tests {
 
         let repo = git2::Repository::open(&dir).unwrap();
         let tag = most_recent_semver_tag(&repo).expect("a tag should be found");
-        assert_eq!(tag, "v10.0.0", "v10.0.0 must sort after v2.0.0 by real semver ordering, not lexically");
+        assert_eq!(
+            tag, "v10.0.0",
+            "v10.0.0 must sort after v2.0.0 by real semver ordering, not lexically"
+        );
 
         fs::remove_dir_all(&dir).ok();
     }

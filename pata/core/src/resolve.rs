@@ -45,7 +45,11 @@ pub fn build_export_table(module: &Module) -> ExportTable {
     let mut constants = HashMap::new();
     for f in &module.functions {
         if f.is_public {
-            let params = f.params.iter().map(|p| parse_value_type(&p.ty.name)).collect();
+            let params = f
+                .params
+                .iter()
+                .map(|p| parse_value_type(&p.ty.name))
+                .collect();
             let ret = parse_value_type(&f.return_type.name);
             functions.insert(f.name.clone(), FnContract { params, ret });
         }
@@ -54,7 +58,10 @@ pub fn build_export_table(module: &Module) -> ExportTable {
         let ty = parse_value_type(&c.ty.name);
         constants.insert(c.name.clone(), ty);
     }
-    ExportTable { functions, constants }
+    ExportTable {
+        functions,
+        constants,
+    }
 }
 
 /// Search path order: root, root/lib, then root/lib/std (stdlib .asi). Returns (path, true if stdlib .asi).
@@ -86,7 +93,10 @@ pub fn find_module_file(
     // subdirectory, is a legitimate shape for a small dependency and shouldn't require one. If
     // neither is vendored, resolution falls through to the generic candidates below and
     // ultimately reports RES002 with the full searched-path list.
-    if matches!(dependencies.get(name), Some(Dependency::Version(_)) | Some(Dependency::Git { .. })) {
+    if matches!(
+        dependencies.get(name),
+        Some(Dependency::Version(_)) | Some(Dependency::Git { .. })
+    ) {
         let vendor_root = pata_package::Paths::new(root).package_path(name);
         let candidates = [
             vendor_root.join("src").join(format!("{name}.as")),
@@ -103,7 +113,10 @@ pub fn find_module_file(
         (root.join(format!("{name}.as")), false),
         (root.join("lib").join(format!("{name}.as")), false),
         (root.join("lib").join(name).join("mod.as"), false),
-        (root.join("lib").join("std").join(format!("{name}.asi")), true),
+        (
+            root.join("lib").join("std").join(format!("{name}.asi")),
+            true,
+        ),
     ];
     for (p, is_asi) in &candidates {
         if p.is_file() {
@@ -135,7 +148,10 @@ fn resolve_one(
     }
     if let Some(iface) = registry.get(name) {
         let (functions, constants) = iface.to_export_table();
-        let exports = ExportTable { functions, constants };
+        let exports = ExportTable {
+            functions,
+            constants,
+        };
         resolved.insert(
             name.to_string(),
             ResolvedModule {
@@ -162,14 +178,20 @@ fn resolve_one(
                 root.join(format!("{name}.as")).display(),
                 root.join("lib").join(format!("{name}.as")).display(),
                 root.join("lib").join(name).join("mod.as").display(),
-                root.join("lib").join("std").join(format!("{name}.asi")).display()
+                root.join("lib")
+                    .join("std")
+                    .join(format!("{name}.asi"))
+                    .display()
             );
             errors.push(
-                Diagnostic::new("RES002", format!("moduli '{name}' haikupatikana: {searched}"))
-                    .with_stage("utatuzi"),
+                Diagnostic::new(
+                    "RES002",
+                    format!("moduli '{name}' haikupatikana: {searched}"),
+                )
+                .with_stage("utatuzi"),
             );
             return;
-        },
+        }
     };
     loading.insert(name.to_string());
 
@@ -178,7 +200,10 @@ fn resolve_one(
         match registry.get_or_load(name, &path) {
             Ok(iface) => {
                 let (functions, constants) = iface.to_export_table();
-                let exports = ExportTable { functions, constants };
+                let exports = ExportTable {
+                    functions,
+                    constants,
+                };
                 let module = Module {
                     imports: vec![],
                     constants: vec![],
@@ -198,9 +223,7 @@ fn resolve_one(
                 );
             }
             Err(e) => {
-                errors.push(
-                    Diagnostic::new("RES003", e.message.clone()).with_stage("utatuzi"),
-                );
+                errors.push(Diagnostic::new("RES003", e.message.clone()).with_stage("utatuzi"));
             }
         }
         return;
@@ -210,12 +233,15 @@ fn resolve_one(
         Ok(s) => s,
         Err(e) => {
             errors.push(
-                Diagnostic::new("RES003", format!("imeshindwa kusoma {}: {e}", path.display()))
-                    .with_stage("utatuzi"),
+                Diagnostic::new(
+                    "RES003",
+                    format!("imeshindwa kusoma {}: {e}", path.display()),
+                )
+                .with_stage("utatuzi"),
             );
             loading.remove(name);
             return;
-        },
+        }
     };
     let tokens = match tokenize(&source) {
         Ok(t) => t,
@@ -225,7 +251,7 @@ fn resolve_one(
             }
             loading.remove(name);
             return;
-        },
+        }
     };
     let module = match parse_tokens(&tokens) {
         Ok(m) => m,
@@ -235,14 +261,22 @@ fn resolve_one(
             }
             loading.remove(name);
             return;
-        },
+        }
     };
     for imp in &module.imports {
         let dep_name = match &imp.path {
             ImportPath::Full(n) => n.as_str(),
             ImportPath::Selective { module: n, .. } => n.as_str(),
         };
-        resolve_one(dep_name, root, dependencies, resolved, loading, errors, registry);
+        resolve_one(
+            dep_name,
+            root,
+            dependencies,
+            resolved,
+            loading,
+            errors,
+            registry,
+        );
     }
     loading.remove(name);
     let exports = build_export_table(&module);
@@ -271,7 +305,15 @@ pub fn resolve_all(
             ImportPath::Full(n) => n.as_str(),
             ImportPath::Selective { module: n, .. } => n.as_str(),
         };
-        resolve_one(name, root, dependencies, &mut resolved, &mut loading, &mut errors, registry);
+        resolve_one(
+            name,
+            root,
+            dependencies,
+            &mut resolved,
+            &mut loading,
+            &mut errors,
+            registry,
+        );
     }
     if !errors.is_empty() {
         return Err(errors);
@@ -306,9 +348,14 @@ pub fn merge_for_semantic(
     for imp in &module.imports {
         let (module_name, names_to_import) = match &imp.path {
             ImportPath::Full(name) => (name.as_str(), None as Option<Vec<String>>),
-            ImportPath::Selective { module: name, names } => (name.as_str(), Some(names.clone())),
+            ImportPath::Selective {
+                module: name,
+                names,
+            } => (name.as_str(), Some(names.clone())),
         };
-        let Some(res) = resolved.get(module_name) else { continue };
+        let Some(res) = resolved.get(module_name) else {
+            continue;
+        };
         for (name, contract) in &res.exports.functions {
             let include = match &names_to_import {
                 None => true,
@@ -356,8 +403,8 @@ pub fn dependency_order(resolved: &HashMap<String, ResolvedModule>) -> Vec<Strin
             }
         }
         // HACK: dependency_order() panics if a cycle slips through (e.g. RES001 was not triggered).
-    // Should return Result<Vec<String>, Diagnostic> so the caller can surface the error cleanly.
-    let name = found.expect("cycle in resolved modules (should be prevented by RES001)");
+        // Should return Result<Vec<String>, Diagnostic> so the caller can surface the error cleanly.
+        let name = found.expect("cycle in resolved modules (should be prevented by RES001)");
         remaining.remove(&name);
         order.push(name);
     }
@@ -382,18 +429,28 @@ pub fn check_duplicate_imports(
     for imp in &entrypoint.imports {
         let (module_name, names_to_import) = match &imp.path {
             ImportPath::Full(name) => (name.as_str(), None as Option<Vec<String>>),
-            ImportPath::Selective { module: name, names } => (name.as_str(), Some(names.clone())),
+            ImportPath::Selective {
+                module: name,
+                names,
+            } => (name.as_str(), Some(names.clone())),
         };
-        let Some(res) = resolved.get(module_name) else { continue };
+        let Some(res) = resolved.get(module_name) else {
+            continue;
+        };
         for name in res.exports.functions.keys() {
             let include = names_to_import.as_ref().is_none_or(|n| n.contains(name));
             if include {
                 if let Some(from) = seen_functions.get(name) {
                     if *from != "msingi" || !res.is_stdlib {
                         errors.push(
-                            Diagnostic::new("SEM090", format!("jina lamerudia: '{name}' limetoka {from} na {module_name}"))
-                                .with_stage("semantiki")
-                                .with_span(imp.line, 1),
+                            Diagnostic::new(
+                                "SEM090",
+                                format!(
+                                    "jina lamerudia: '{name}' limetoka {from} na {module_name}"
+                                ),
+                            )
+                            .with_stage("semantiki")
+                            .with_span(imp.line, 1),
                         );
                     }
                 } else {
@@ -407,9 +464,12 @@ pub fn check_duplicate_imports(
                 if let Some(from) = seen_constants.get(name) {
                     if *from != "msingi" || !res.is_stdlib {
                         errors.push(
-                            Diagnostic::new("SEM091", format!("jina lamerudia: '{name}' (thabiti) limetoka {from}"))
-                                .with_stage("semantiki")
-                                .with_span(imp.line, 1),
+                            Diagnostic::new(
+                                "SEM091",
+                                format!("jina lamerudia: '{name}' (thabiti) limetoka {from}"),
+                            )
+                            .with_stage("semantiki")
+                            .with_span(imp.line, 1),
                         );
                     }
                 } else {

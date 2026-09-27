@@ -6,8 +6,8 @@
 //! incremental-computation framework that section's own "Decision made" explicitly rejected as
 //! a rewrite, not an incremental improvement.
 
-use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use tokio::sync::RwLock;
 use tower_lsp::lsp_types::Diagnostic;
@@ -73,7 +73,12 @@ impl DocStore {
 
     /// Return all (uri, text) pairs currently stored.
     pub async fn all(&self) -> Vec<(String, String)> {
-        self.inner.read().await.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        self.inner
+            .read()
+            .await
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 
     /// Return `uri`'s cached diagnostics if `text` hashes identically to what's cached for it
@@ -93,12 +98,16 @@ impl DocStore {
         }
 
         #[cfg(test)]
-        self.recompute_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.recompute_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         let diagnostics = compute();
         self.cache.write().await.insert(
             uri.to_string(),
-            CachedAnalysis { content_hash: hash, diagnostics: diagnostics.clone() },
+            CachedAnalysis {
+                content_hash: hash,
+                diagnostics: diagnostics.clone(),
+            },
         );
         diagnostics
     }
@@ -127,7 +136,9 @@ mod tests {
     #[tokio::test]
     async fn diagnostics_for_computes_on_first_call() {
         let store = DocStore::new();
-        let diags = store.diagnostics_for("file:///a.as", "text v1", Vec::new).await;
+        let diags = store
+            .diagnostics_for("file:///a.as", "text v1", Vec::new)
+            .await;
         assert_eq!(diags, Vec::<Diagnostic>::new());
         assert_eq!(store.recompute_count.load(Ordering::SeqCst), 1);
     }
@@ -135,11 +146,19 @@ mod tests {
     #[tokio::test]
     async fn diagnostics_for_reuses_cache_on_identical_text() {
         let store = DocStore::new();
-        let _ = store.diagnostics_for("file:///a.as", "same text", Vec::new).await;
-        let _ = store.diagnostics_for("file:///a.as", "same text", || {
-            panic!("must not recompute on a hash match")
-        }).await;
-        assert_eq!(store.recompute_count.load(Ordering::SeqCst), 1, "second identical-text call must be a cache hit, not a second recompute");
+        let _ = store
+            .diagnostics_for("file:///a.as", "same text", Vec::new)
+            .await;
+        let _ = store
+            .diagnostics_for("file:///a.as", "same text", || {
+                panic!("must not recompute on a hash match")
+            })
+            .await;
+        assert_eq!(
+            store.recompute_count.load(Ordering::SeqCst),
+            1,
+            "second identical-text call must be a cache hit, not a second recompute"
+        );
     }
 
     #[tokio::test]
@@ -147,37 +166,63 @@ mod tests {
         let store = DocStore::new();
         let _ = store.diagnostics_for("file:///a.as", "v1", Vec::new).await;
         let _ = store.diagnostics_for("file:///a.as", "v2", Vec::new).await;
-        assert_eq!(store.recompute_count.load(Ordering::SeqCst), 2, "different text must genuinely recompute, not reuse v1's cache entry");
+        assert_eq!(
+            store.recompute_count.load(Ordering::SeqCst),
+            2,
+            "different text must genuinely recompute, not reuse v1's cache entry"
+        );
     }
 
     #[tokio::test]
     async fn invalidate_forces_recompute_even_with_identical_text() {
         let store = DocStore::new();
-        let _ = store.diagnostics_for("file:///a.as", "same text", Vec::new).await;
+        let _ = store
+            .diagnostics_for("file:///a.as", "same text", Vec::new)
+            .await;
         store.invalidate("file:///a.as").await;
-        let _ = store.diagnostics_for("file:///a.as", "same text", Vec::new).await;
+        let _ = store
+            .diagnostics_for("file:///a.as", "same text", Vec::new)
+            .await;
         assert_eq!(store.recompute_count.load(Ordering::SeqCst), 2, "an explicit invalidate must force recomputation on the next call, even with unchanged text");
     }
 
     #[tokio::test]
     async fn remove_clears_both_text_and_cache() {
         let store = DocStore::new();
-        store.insert("file:///a.as".to_string(), "text".to_string()).await;
-        let _ = store.diagnostics_for("file:///a.as", "text", Vec::new).await;
+        store
+            .insert("file:///a.as".to_string(), "text".to_string())
+            .await;
+        let _ = store
+            .diagnostics_for("file:///a.as", "text", Vec::new)
+            .await;
         store.remove("file:///a.as").await;
 
         assert_eq!(store.get("file:///a.as").await, None);
         // After remove, the cache entry is gone too -- the next diagnostics_for call for the
         // same URI must recompute, not find a stale leftover entry.
-        let _ = store.diagnostics_for("file:///a.as", "text", Vec::new).await;
-        assert_eq!(store.recompute_count.load(Ordering::SeqCst), 2, "remove() must clear the cache entry, not just the text");
+        let _ = store
+            .diagnostics_for("file:///a.as", "text", Vec::new)
+            .await;
+        assert_eq!(
+            store.recompute_count.load(Ordering::SeqCst),
+            2,
+            "remove() must clear the cache entry, not just the text"
+        );
     }
 
     #[tokio::test]
     async fn different_uris_have_independent_cache_entries() {
         let store = DocStore::new();
-        let _ = store.diagnostics_for("file:///a.as", "same text", Vec::new).await;
-        let _ = store.diagnostics_for("file:///b.as", "same text", Vec::new).await;
-        assert_eq!(store.recompute_count.load(Ordering::SeqCst), 2, "two different URIs with identical text must not share a cache entry");
+        let _ = store
+            .diagnostics_for("file:///a.as", "same text", Vec::new)
+            .await;
+        let _ = store
+            .diagnostics_for("file:///b.as", "same text", Vec::new)
+            .await;
+        assert_eq!(
+            store.recompute_count.load(Ordering::SeqCst),
+            2,
+            "two different URIs with identical text must not share a cache entry"
+        );
     }
 }

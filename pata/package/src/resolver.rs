@@ -64,7 +64,8 @@ impl Resolver {
         // requirements is a detected conflict rather than a silent overwrite.
         let mut registry_constraints: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut queue: VecDeque<(String, String)> = VecDeque::new(); // (name, version_req)
-        let mut queued_registry_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut queued_registry_names: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
 
         for (name, dep) in dependencies {
             let locked = if let Some(path) = dep.path() {
@@ -77,7 +78,10 @@ impl Resolver {
             } else if let Some(git_url) = dep.git() {
                 resolve_git_dependency(root, name, dep.version(), git_url)?
             } else {
-                registry_constraints.entry(name.clone()).or_default().push(dep.version().to_string());
+                registry_constraints
+                    .entry(name.clone())
+                    .or_default()
+                    .push(dep.version().to_string());
                 if queued_registry_names.insert(name.clone()) {
                     queue.push_back((name.clone(), dep.version().to_string()));
                 }
@@ -94,20 +98,22 @@ impl Resolver {
         let registry = if registry_constraints.is_empty() {
             None
         } else {
-            Some(
-                LocalRegistry::load(&registry_root)
-                    .with_context(|| format!("imeshindwa kusoma rejista {}", registry_root.display()))?,
-            )
+            Some(LocalRegistry::load(&registry_root).with_context(|| {
+                format!("imeshindwa kusoma rejista {}", registry_root.display())
+            })?)
         };
 
-        let mut resolved_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut resolved_names: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
         while let Some((name, _first_req)) = queue.pop_front() {
             if resolved_names.contains(&name) {
                 continue;
             }
             resolved_names.insert(name.clone());
 
-            let registry = registry.as_ref().expect("registry loaded whenever the queue is non-empty");
+            let registry = registry
+                .as_ref()
+                .expect("registry loaded whenever the queue is non-empty");
             let constraints = registry_constraints.get(&name).cloned().unwrap_or_default();
             let (locked, entry_deps) = resolve_registry_dependency_transitive(
                 root,
@@ -119,8 +125,13 @@ impl Resolver {
 
             for dep in &entry_deps {
                 if !dep.optional {
-                    registry_constraints.entry(dep.name.clone()).or_default().push(dep.req.clone());
-                    if !resolved_names.contains(&dep.name) && queued_registry_names.insert(dep.name.clone()) {
+                    registry_constraints
+                        .entry(dep.name.clone())
+                        .or_default()
+                        .push(dep.req.clone());
+                    if !resolved_names.contains(&dep.name)
+                        && queued_registry_names.insert(dep.name.clone())
+                    {
                         queue.push_back((dep.name.clone(), dep.req.clone()));
                     }
                 }
@@ -137,7 +148,12 @@ impl Resolver {
 /// registry lists multiple versions of a specific git source. Its `.pata-version` marker
 /// (written by `pata ongeza --git`) says what was actually fetched; the constraint either
 /// accepts it (real content checksum) or the resolve fails honestly.
-fn resolve_git_dependency(root: &Path, name: &str, version_req: &str, git_url: &str) -> Result<LockedDependency> {
+fn resolve_git_dependency(
+    root: &Path,
+    name: &str,
+    version_req: &str,
+    git_url: &str,
+) -> Result<LockedDependency> {
     let req = semver::VersionReq::parse(version_req)
         .with_context(|| format!("tegemezi '{name}': muundo batili wa toleo '{version_req}'"))?;
 
@@ -261,12 +277,14 @@ fn resolve_registry_dependency_transitive(
 /// directories) are copied directly; `Http` sources (a hosted static-file index — see
 /// `remote_registry.rs`) download and checksum-verify a tarball before extracting. All three
 /// produce a real `hash_dir` checksum over the actual fetched bytes, never a placeholder.
-fn fetch_from_registry_source(source: &crate::registry::RegistrySource, dest: &Path) -> Result<String> {
+fn fetch_from_registry_source(
+    source: &crate::registry::RegistrySource,
+    dest: &Path,
+) -> Result<String> {
     use crate::registry::RegistrySource;
     match source {
         RegistrySource::Git { url, rev } => {
-            crate::fetch::fetch_git(url, rev.as_deref(), dest)
-                .map_err(|e| anyhow::anyhow!("{e}"))
+            crate::fetch::fetch_git(url, rev.as_deref(), dest).map_err(|e| anyhow::anyhow!("{e}"))
         }
         RegistrySource::Path { path } => {
             if dest.exists() {
@@ -368,7 +386,10 @@ mod tests {
             }),
         );
         let lock = Resolver::resolve(&root, &deps, None)?;
-        assert_eq!(lock.dependencies["local"].path, Some("../local".to_string()));
+        assert_eq!(
+            lock.dependencies["local"].path,
+            Some("../local".to_string())
+        );
         std::fs::remove_dir_all(&root).ok();
         Ok(())
     }
@@ -378,9 +399,15 @@ mod tests {
         let _guard = TEST_ROOT_LOCK.lock().unwrap();
         let root = temp_root("noindex");
         let mut deps = BTreeMap::new();
-        deps.insert("stdlib".to_string(), Dependency::Version("1.0.0".to_string()));
+        deps.insert(
+            "stdlib".to_string(),
+            Dependency::Version("1.0.0".to_string()),
+        );
         let result = Resolver::resolve(&root, &deps, None);
-        assert!(result.is_err(), "no registry index and nothing vendored should fail to resolve, not silently succeed");
+        assert!(
+            result.is_err(),
+            "no registry index and nothing vendored should fail to resolve, not silently succeed"
+        );
         std::fs::remove_dir_all(&root).ok();
     }
 
@@ -403,21 +430,33 @@ mod tests {
             vers: "1.2.3".to_string(),
             deps: vec![],
             yanked: None,
-            source: RegistrySource::Path { path: published_dir.to_string_lossy().to_string() },
+            source: RegistrySource::Path {
+                path: published_dir.to_string_lossy().to_string(),
+            },
         })?;
 
         let mut deps = BTreeMap::new();
-        deps.insert("stdlib".to_string(), Dependency::Version("^1.2.0".to_string()));
+        deps.insert(
+            "stdlib".to_string(),
+            Dependency::Version("^1.2.0".to_string()),
+        );
         let lock = Resolver::resolve(&root, &deps, None)?;
 
         assert_eq!(lock.dependencies["stdlib"].version, "1.2.3");
         assert_eq!(lock.dependencies["stdlib"].source, "registry");
-        assert_eq!(lock.dependencies["stdlib"].checksum.len(), 64, "expected a real 64-hex-char SHA-256 digest");
+        assert_eq!(
+            lock.dependencies["stdlib"].checksum.len(),
+            64,
+            "expected a real 64-hex-char SHA-256 digest"
+        );
 
         // The real content actually landed on disk, not just a checksum computed in the abstract.
         let vendored = root.join(".asili/packages/stdlib/stdlib.as");
         assert!(vendored.is_file());
-        assert_eq!(std::fs::read_to_string(&vendored).unwrap(), "kazi jina() -> Neno { rejesha \"stdlib\" }");
+        assert_eq!(
+            std::fs::read_to_string(&vendored).unwrap(),
+            "kazi jina() -> Neno { rejesha \"stdlib\" }"
+        );
 
         std::fs::remove_dir_all(&root).ok();
         Ok(())
@@ -429,7 +468,10 @@ mod tests {
         let root = temp_root("registry-range");
         let published_dir = root.join("published");
         std::fs::create_dir_all(&published_dir).unwrap();
-        std::fs::File::create(published_dir.join("f.as")).unwrap().write_all(b"x").unwrap();
+        std::fs::File::create(published_dir.join("f.as"))
+            .unwrap()
+            .write_all(b"x")
+            .unwrap();
 
         let mut registry = LocalRegistry::at(root.join(".asili/registry"))?;
         registry.publish(RegistryEntry {
@@ -437,7 +479,9 @@ mod tests {
             vers: "1.0.0".to_string(),
             deps: vec![],
             yanked: None,
-            source: RegistrySource::Path { path: published_dir.to_string_lossy().to_string() },
+            source: RegistrySource::Path {
+                path: published_dir.to_string_lossy().to_string(),
+            },
         })?;
 
         let mut deps = BTreeMap::new();
@@ -455,7 +499,10 @@ mod tests {
         let root = temp_root("reuse-lock");
         let published_dir = root.join("published");
         std::fs::create_dir_all(&published_dir).unwrap();
-        std::fs::File::create(published_dir.join("f.as")).unwrap().write_all(b"v1").unwrap();
+        std::fs::File::create(published_dir.join("f.as"))
+            .unwrap()
+            .write_all(b"v1")
+            .unwrap();
 
         let mut registry = LocalRegistry::at(root.join(".asili/registry"))?;
         registry.publish(RegistryEntry {
@@ -463,7 +510,9 @@ mod tests {
             vers: "1.0.0".to_string(),
             deps: vec![],
             yanked: None,
-            source: RegistrySource::Path { path: published_dir.to_string_lossy().to_string() },
+            source: RegistrySource::Path {
+                path: published_dir.to_string_lossy().to_string(),
+            },
         })?;
         // Also publish a newer version, to prove it's NOT picked once 1.0.0 is already locked
         // and still satisfies the constraint.
@@ -472,30 +521,43 @@ mod tests {
             vers: "1.5.0".to_string(),
             deps: vec![],
             yanked: None,
-            source: RegistrySource::Path { path: published_dir.to_string_lossy().to_string() },
+            source: RegistrySource::Path {
+                path: published_dir.to_string_lossy().to_string(),
+            },
         })?;
 
         let mut deps = BTreeMap::new();
         deps.insert("lib".to_string(), Dependency::Version("^1.0.0".to_string()));
         let first_lock = Resolver::resolve(&root, &deps, None)?;
-        assert_eq!(first_lock.dependencies["lib"].version, "1.5.0", "first resolve picks the highest match");
+        assert_eq!(
+            first_lock.dependencies["lib"].version, "1.5.0",
+            "first resolve picks the highest match"
+        );
 
         // Simulate an existing lock pinned at 1.0.0 (as if the user vendored/locked it earlier).
         let mut pinned = LockFile::new();
-        pinned.lock_dependency("lib".to_string(), LockedDependency {
-            version: "1.0.0".to_string(),
-            checksum: "irrelevant".to_string(),
-            path: None,
-            source: "registry".to_string(),
-        });
+        pinned.lock_dependency(
+            "lib".to_string(),
+            LockedDependency {
+                version: "1.0.0".to_string(),
+                checksum: "irrelevant".to_string(),
+                path: None,
+                source: "registry".to_string(),
+            },
+        );
         // Re-fetch 1.0.0's real content so the vendor dir matches what the lock claims.
         fetch_from_registry_source(
-            &RegistrySource::Path { path: published_dir.to_string_lossy().to_string() },
+            &RegistrySource::Path {
+                path: published_dir.to_string_lossy().to_string(),
+            },
             &root.join(".asili/packages/lib"),
         )?;
 
         let second_lock = Resolver::resolve(&root, &deps, Some(&pinned))?;
-        assert_eq!(second_lock.dependencies["lib"].version, "1.0.0", "existing lock still satisfying the constraint must be kept, not re-resolved to 1.5.0");
+        assert_eq!(
+            second_lock.dependencies["lib"].version, "1.0.0",
+            "existing lock still satisfying the constraint must be kept, not re-resolved to 1.5.0"
+        );
 
         std::fs::remove_dir_all(&root).ok();
         Ok(())
@@ -516,7 +578,10 @@ mod tests {
             }),
         );
         let result = Resolver::resolve(&root, &deps, None);
-        assert!(result.is_err(), "a git dependency with nothing fetched yet must fail to resolve");
+        assert!(
+            result.is_err(),
+            "a git dependency with nothing fetched yet must fail to resolve"
+        );
         std::fs::remove_dir_all(&root).ok();
     }
 
@@ -566,10 +631,16 @@ mod tests {
 
         let inner_dir = root.join("inner-src");
         std::fs::create_dir_all(&inner_dir).unwrap();
-        std::fs::File::create(inner_dir.join("inner.as")).unwrap().write_all(b"inner content").unwrap();
+        std::fs::File::create(inner_dir.join("inner.as"))
+            .unwrap()
+            .write_all(b"inner content")
+            .unwrap();
         let outer_dir = root.join("outer-src");
         std::fs::create_dir_all(&outer_dir).unwrap();
-        std::fs::File::create(outer_dir.join("outer.as")).unwrap().write_all(b"outer content").unwrap();
+        std::fs::File::create(outer_dir.join("outer.as"))
+            .unwrap()
+            .write_all(b"outer content")
+            .unwrap();
 
         let mut registry = LocalRegistry::at(root.join(".asili/registry"))?;
         registry.publish(RegistryEntry {
@@ -577,18 +648,29 @@ mod tests {
             vers: "2.0.0".to_string(),
             deps: vec![],
             yanked: None,
-            source: RegistrySource::Path { path: inner_dir.to_string_lossy().to_string() },
+            source: RegistrySource::Path {
+                path: inner_dir.to_string_lossy().to_string(),
+            },
         })?;
         registry.publish(RegistryEntry {
             name: "app-lib".to_string(),
             vers: "1.0.0".to_string(),
-            deps: vec![RegistryDep { name: "inner-lib".to_string(), req: "^2.0".to_string(), optional: false }],
+            deps: vec![RegistryDep {
+                name: "inner-lib".to_string(),
+                req: "^2.0".to_string(),
+                optional: false,
+            }],
             yanked: None,
-            source: RegistrySource::Path { path: outer_dir.to_string_lossy().to_string() },
+            source: RegistrySource::Path {
+                path: outer_dir.to_string_lossy().to_string(),
+            },
         })?;
 
         let mut deps = BTreeMap::new();
-        deps.insert("app-lib".to_string(), Dependency::Version("^1.0".to_string()));
+        deps.insert(
+            "app-lib".to_string(),
+            Dependency::Version("^1.0".to_string()),
+        );
         let lock = Resolver::resolve(&root, &deps, None)?;
 
         assert_eq!(lock.dependencies["app-lib"].version, "1.0.0");
@@ -596,7 +678,10 @@ mod tests {
             lock.dependencies["inner-lib"].version, "2.0.0",
             "inner-lib was never in [tegemezi] directly — it must still be locked via app-lib's declared registry dep"
         );
-        assert!(root.join(".asili/packages/inner-lib").is_dir(), "transitive dep must actually be fetched, not just locked in the abstract");
+        assert!(
+            root.join(".asili/packages/inner-lib").is_dir(),
+            "transitive dep must actually be fetched, not just locked in the abstract"
+        );
 
         std::fs::remove_dir_all(&root).ok();
         Ok(())
@@ -613,13 +698,22 @@ mod tests {
 
         let shared_dir = root.join("shared-src");
         std::fs::create_dir_all(&shared_dir).unwrap();
-        std::fs::File::create(shared_dir.join("f.as")).unwrap().write_all(b"x").unwrap();
+        std::fs::File::create(shared_dir.join("f.as"))
+            .unwrap()
+            .write_all(b"x")
+            .unwrap();
         let a_dir = root.join("a-src");
         std::fs::create_dir_all(&a_dir).unwrap();
-        std::fs::File::create(a_dir.join("f.as")).unwrap().write_all(b"a").unwrap();
+        std::fs::File::create(a_dir.join("f.as"))
+            .unwrap()
+            .write_all(b"a")
+            .unwrap();
         let b_dir = root.join("b-src");
         std::fs::create_dir_all(&b_dir).unwrap();
-        std::fs::File::create(b_dir.join("f.as")).unwrap().write_all(b"b").unwrap();
+        std::fs::File::create(b_dir.join("f.as"))
+            .unwrap()
+            .write_all(b"b")
+            .unwrap();
 
         let mut registry = LocalRegistry::at(root.join(".asili/registry"))?;
         registry.publish(RegistryEntry {
@@ -627,28 +721,44 @@ mod tests {
             vers: "1.0.0".to_string(),
             deps: vec![],
             yanked: None,
-            source: RegistrySource::Path { path: shared_dir.to_string_lossy().to_string() },
+            source: RegistrySource::Path {
+                path: shared_dir.to_string_lossy().to_string(),
+            },
         })?;
         registry.publish(RegistryEntry {
             name: "shared-lib".to_string(),
             vers: "2.0.0".to_string(),
             deps: vec![],
             yanked: None,
-            source: RegistrySource::Path { path: shared_dir.to_string_lossy().to_string() },
+            source: RegistrySource::Path {
+                path: shared_dir.to_string_lossy().to_string(),
+            },
         })?;
         registry.publish(RegistryEntry {
             name: "pkg-a".to_string(),
             vers: "1.0.0".to_string(),
-            deps: vec![RegistryDep { name: "shared-lib".to_string(), req: "^1.0".to_string(), optional: false }],
+            deps: vec![RegistryDep {
+                name: "shared-lib".to_string(),
+                req: "^1.0".to_string(),
+                optional: false,
+            }],
             yanked: None,
-            source: RegistrySource::Path { path: a_dir.to_string_lossy().to_string() },
+            source: RegistrySource::Path {
+                path: a_dir.to_string_lossy().to_string(),
+            },
         })?;
         registry.publish(RegistryEntry {
             name: "pkg-b".to_string(),
             vers: "1.0.0".to_string(),
-            deps: vec![RegistryDep { name: "shared-lib".to_string(), req: "^2.0".to_string(), optional: false }],
+            deps: vec![RegistryDep {
+                name: "shared-lib".to_string(),
+                req: "^2.0".to_string(),
+                optional: false,
+            }],
             yanked: None,
-            source: RegistrySource::Path { path: b_dir.to_string_lossy().to_string() },
+            source: RegistrySource::Path {
+                path: b_dir.to_string_lossy().to_string(),
+            },
         })?;
 
         let mut deps = BTreeMap::new();
@@ -656,9 +766,15 @@ mod tests {
         deps.insert("pkg-b".to_string(), Dependency::Version("^1.0".to_string()));
         let result = Resolver::resolve(&root, &deps, None);
 
-        assert!(result.is_err(), "incompatible transitive constraints on shared-lib (^1.0 vs ^2.0) must fail to resolve");
+        assert!(
+            result.is_err(),
+            "incompatible transitive constraints on shared-lib (^1.0 vs ^2.0) must fail to resolve"
+        );
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("shared-lib"), "conflict error should name the conflicting package, got: {msg}");
+        assert!(
+            msg.contains("shared-lib"),
+            "conflict error should name the conflicting package, got: {msg}"
+        );
 
         std::fs::remove_dir_all(&root).ok();
         Ok(())
@@ -673,22 +789,38 @@ mod tests {
 
         let outer_dir = root.join("outer-src");
         std::fs::create_dir_all(&outer_dir).unwrap();
-        std::fs::File::create(outer_dir.join("f.as")).unwrap().write_all(b"x").unwrap();
+        std::fs::File::create(outer_dir.join("f.as"))
+            .unwrap()
+            .write_all(b"x")
+            .unwrap();
 
         let mut registry = LocalRegistry::at(root.join(".asili/registry"))?;
         registry.publish(RegistryEntry {
             name: "app-lib".to_string(),
             vers: "1.0.0".to_string(),
-            deps: vec![RegistryDep { name: "never-fetched".to_string(), req: "^1.0".to_string(), optional: true }],
+            deps: vec![RegistryDep {
+                name: "never-fetched".to_string(),
+                req: "^1.0".to_string(),
+                optional: true,
+            }],
             yanked: None,
-            source: RegistrySource::Path { path: outer_dir.to_string_lossy().to_string() },
+            source: RegistrySource::Path {
+                path: outer_dir.to_string_lossy().to_string(),
+            },
         })?;
 
         let mut deps = BTreeMap::new();
-        deps.insert("app-lib".to_string(), Dependency::Version("^1.0".to_string()));
+        deps.insert(
+            "app-lib".to_string(),
+            Dependency::Version("^1.0".to_string()),
+        );
         let lock = Resolver::resolve(&root, &deps, None)?;
 
-        assert_eq!(lock.dependencies.len(), 1, "optional transitive dep must not be locked");
+        assert_eq!(
+            lock.dependencies.len(),
+            1,
+            "optional transitive dep must not be locked"
+        );
         assert!(!lock.dependencies.contains_key("never-fetched"));
 
         std::fs::remove_dir_all(&root).ok();
@@ -725,7 +857,9 @@ mod tests {
             header.set_size(file_content.len() as u64);
             header.set_mode(0o644);
             header.set_cksum();
-            builder.append_data(&mut header, "httplib.as", &file_content[..]).expect("append tar entry");
+            builder
+                .append_data(&mut header, "httplib.as", &file_content[..])
+                .expect("append tar entry");
             builder.finish().expect("finish tar");
         }
         let mut gz = GzEncoder::new(Vec::new(), Compression::default());
@@ -734,7 +868,11 @@ mod tests {
 
         let mut hasher = Sha256::new();
         hasher.update(&tarball);
-        let checksum = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let checksum = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
 
         let handle = std::thread::spawn(move || {
             let request = server.recv().expect("recv request");
@@ -748,11 +886,17 @@ mod tests {
             vers: "2.0.0".to_string(),
             deps: vec![],
             yanked: None,
-            source: RegistrySource::Http { url: format!("{base_url}/httplib-2.0.0.tar.gz"), checksum },
+            source: RegistrySource::Http {
+                url: format!("{base_url}/httplib-2.0.0.tar.gz"),
+                checksum,
+            },
         })?;
 
         let mut deps = BTreeMap::new();
-        deps.insert("httplib".to_string(), Dependency::Version("^2.0".to_string()));
+        deps.insert(
+            "httplib".to_string(),
+            Dependency::Version("^2.0".to_string()),
+        );
         let lock = Resolver::resolve(&root, &deps, None)?;
 
         assert_eq!(lock.dependencies["httplib"].version, "2.0.0");
@@ -760,7 +904,10 @@ mod tests {
         assert_eq!(lock.dependencies["httplib"].checksum.len(), 64);
 
         let vendored = root.join(".asili/packages/httplib/httplib.as");
-        assert!(vendored.is_file(), "tarball must actually be downloaded and extracted");
+        assert!(
+            vendored.is_file(),
+            "tarball must actually be downloaded and extracted"
+        );
         assert_eq!(std::fs::read(&vendored).unwrap(), file_content);
 
         handle.join().expect("server thread");

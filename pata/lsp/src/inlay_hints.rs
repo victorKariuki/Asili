@@ -16,8 +16,12 @@ use crate::semantic::SemanticAnalyzer;
 /// binding name. Returns an empty list (not an error) for unparseable source — same
 /// fails-quiet convention as `hover`/`semantic_tokens` elsewhere in this crate.
 pub fn compute_inlay_hints(text: &str) -> Vec<InlayHint> {
-    let Ok(tokens) = tokenize(text) else { return Vec::new() };
-    let Ok(module) = parse_tokens(&tokens) else { return Vec::new() };
+    let Ok(tokens) = tokenize(text) else {
+        return Vec::new();
+    };
+    let Ok(module) = parse_tokens(&tokens) else {
+        return Vec::new();
+    };
 
     let mut analyzer = SemanticAnalyzer::new(module);
     analyzer.analyze();

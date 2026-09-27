@@ -1,11 +1,16 @@
 //! Hover content formatters for different symbol types.
 
-use asili_parser::{Function, StructDecl, TraitDecl, ValueType};
 use crate::types::format_type;
+use asili_parser::{Function, StructDecl, TraitDecl, ValueType};
 
 /// Format hover content for a function with its full signature.
-pub fn format_function_hover(func: &Function, param_types: Vec<ValueType>, return_type: &ValueType) -> String {
-    let params_str = func.params
+pub fn format_function_hover(
+    func: &Function,
+    param_types: Vec<ValueType>,
+    return_type: &ValueType,
+) -> String {
+    let params_str = func
+        .params
         .iter()
         .zip(param_types.iter())
         .map(|(p, t)| format!("{}: {}", p.name, format_type(t)))
@@ -22,18 +27,15 @@ pub fn format_function_hover(func: &Function, param_types: Vec<ValueType>, retur
 
 /// Format hover content for a struct with its fields.
 pub fn format_struct_hover(s: &StructDecl, field_types: Vec<ValueType>) -> String {
-    let fields_str = s.fields
+    let fields_str = s
+        .fields
         .iter()
         .zip(field_types.iter())
         .map(|(f, t)| format!("  {}: {}", f.0, format_type(t)))
         .collect::<Vec<_>>()
         .join(",\n");
 
-    format!(
-        "**Struct:** `umbo {} {{\n{}\n}}`",
-        s.name,
-        fields_str
-    )
+    format!("**Struct:** `umbo {} {{\n{}\n}}`", s.name, fields_str)
 }
 
 /// Format hover content for a trait (without method list for now).

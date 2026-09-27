@@ -37,15 +37,19 @@ pub fn fetch_git(url: &str, branch: Option<&str>, dest: &Path) -> Result<String,
     if let Some(b) = branch {
         builder.branch(b);
     }
-    builder
-        .clone(url, dest)
-        .map_err(|e| FetchError::GitClone { url: url.to_string(), source: e })?;
+    builder.clone(url, dest).map_err(|e| FetchError::GitClone {
+        url: url.to_string(),
+        source: e,
+    })?;
     // Remove .git metadata from the vendored copy
     let git_dir = dest.join(".git");
     if git_dir.exists() {
         let _ = fs::remove_dir_all(&git_dir);
     }
-    hash_dir(dest).map_err(|e| FetchError::Hash { path: dest.display().to_string(), source: e })
+    hash_dir(dest).map_err(|e| FetchError::Hash {
+        path: dest.display().to_string(),
+        source: e,
+    })
 }
 
 /// Deterministic content hash over every regular file under `dir`, recursively.
@@ -61,7 +65,10 @@ pub fn hash_dir(dir: &Path) -> std::io::Result<String> {
         hasher.update(&bytes);
     }
     let digest = hasher.finalize();
-    Ok(digest.iter().map(|b| format!("{b:02x}")).collect::<String>())
+    Ok(digest
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>())
 }
 
 fn collect_files(root: &Path, dir: &Path, out: &mut Vec<String>) -> std::io::Result<()> {
@@ -71,7 +78,11 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<String>) -> std::io::Res
         if path.is_dir() {
             collect_files(root, &path, out)?;
         } else {
-            let rel = path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
+            let rel = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
             out.push(rel);
         }
     }
@@ -93,8 +104,14 @@ mod tests {
                 .as_nanos()
         ));
         fs::create_dir_all(dir.join("sub")).unwrap();
-        fs::File::create(dir.join("a.txt")).unwrap().write_all(b"hello").unwrap();
-        fs::File::create(dir.join("sub/b.txt")).unwrap().write_all(b"world").unwrap();
+        fs::File::create(dir.join("a.txt"))
+            .unwrap()
+            .write_all(b"hello")
+            .unwrap();
+        fs::File::create(dir.join("sub/b.txt"))
+            .unwrap()
+            .write_all(b"world")
+            .unwrap();
 
         let h1 = hash_dir(&dir).unwrap();
         let h2 = hash_dir(&dir).unwrap();
@@ -113,9 +130,15 @@ mod tests {
                 .as_nanos()
         ));
         fs::create_dir_all(&dir).unwrap();
-        fs::File::create(dir.join("a.txt")).unwrap().write_all(b"hello").unwrap();
+        fs::File::create(dir.join("a.txt"))
+            .unwrap()
+            .write_all(b"hello")
+            .unwrap();
         let h1 = hash_dir(&dir).unwrap();
-        fs::File::create(dir.join("a.txt")).unwrap().write_all(b"goodbye").unwrap();
+        fs::File::create(dir.join("a.txt"))
+            .unwrap()
+            .write_all(b"goodbye")
+            .unwrap();
         let h2 = hash_dir(&dir).unwrap();
         assert_ne!(h1, h2);
 

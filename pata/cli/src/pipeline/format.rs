@@ -25,7 +25,8 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), CliError> {
     for entry in fs::read_dir(dir)
         .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", dir.display()), 1))?
     {
-        let entry = entry.map_err(|e| CliError::new(format!("hitilafu ya kusoma kiingilio: {e}"), 1))?;
+        let entry =
+            entry.map_err(|e| CliError::new(format!("hitilafu ya kusoma kiingilio: {e}"), 1))?;
         let path = entry.path();
         if path.file_name().map(|n| n == "kilele").unwrap_or(false) {
             continue;
@@ -58,7 +59,10 @@ pub fn check_or_write(files: &[PathBuf], check_only: bool) -> Result<(usize, usi
 /// Like `check_or_write`, but also returns which files changed (not just the count) — for
 /// `--json` output, where a CI pipeline or editor needs to know *which* files failed the format
 /// gate, not just how many.
-pub fn check_or_write_named(files: &[PathBuf], check_only: bool) -> Result<(usize, Vec<PathBuf>), CliError> {
+pub fn check_or_write_named(
+    files: &[PathBuf],
+    check_only: bool,
+) -> Result<(usize, Vec<PathBuf>), CliError> {
     let mut changed = Vec::new();
     for file in files {
         let original = fs::read_to_string(file)

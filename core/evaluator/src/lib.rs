@@ -12,13 +12,16 @@ mod signal;
 mod tir;
 mod value;
 
+pub use crate::builtins::BuiltinFn;
 pub use asb::{load_asb, load_asb_bytecode, parse_format, AsbLoadError};
-pub use bytecode::{run_bytecode, BytecodeProgram};
+pub use bytecode::{
+    compile_module, run_bytecode, run_bytecode_function, BinaryCode, BytecodeProgram, Opcode,
+};
 pub use env::Env;
 pub use eval::eval_expr;
-pub use tir::{emit_asb_from_tir, lower_to_tir, TypedIrFunction, TypedIrModule, validate_module};
+pub use runtime::EvalMetrics;
+pub use tir::{emit_asb_from_tir, lower_to_tir, validate_module, TypedIrFunction, TypedIrModule};
 pub use value::{ErrorKind, EvalError, EvalOut, Value};
-pub use crate::builtins::BuiltinFn;
 
 use asili_parser::{Block, Function, Module};
 use std::collections::HashMap;
@@ -32,11 +35,7 @@ pub struct TestResult {
 
 /// Run a block with an existing env (e.g. for REPL). Uses the given module for symbol resolution.
 /// Pushes a new scope for the block; bindings do not persist after the block ends.
-pub fn run_block(
-    module: &Module,
-    block: &Block,
-    env: &mut Env,
-) -> Result<Value, EvalError> {
+pub fn run_block(module: &Module, block: &Block, env: &mut Env) -> Result<Value, EvalError> {
     let mut rt = runtime::Runtime::new(env, module);
     match eval::eval_block_impl(block, &mut rt) {
         Ok(EvalOut::Return(v)) => Ok(v),
@@ -46,11 +45,7 @@ pub fn run_block(
 }
 
 /// Run a block in the current env without a new scope. Use for REPL so that `weka` bindings persist.
-pub fn run_block_in_env(
-    module: &Module,
-    block: &Block,
-    env: &mut Env,
-) -> Result<Value, EvalError> {
+pub fn run_block_in_env(module: &Module, block: &Block, env: &mut Env) -> Result<Value, EvalError> {
     run_block_in_env_with_telemetry(module, block, env).map(|(v, _)| v)
 }
 
@@ -146,6 +141,7 @@ pub fn run_function_with_telemetry(
             f.params.len()
         )));
     }
+
     let mut env = Env::new();
     env.seed_global_constants();
     let mut rt = runtime::Runtime::new(&mut env, module);
@@ -160,6 +156,43 @@ pub fn run_function_with_telemetry(
     match out {
         Ok(EvalOut::Return(v)) => Ok((v, rt.peak_depth())),
         Ok(_) => Ok((Value::Tupu, rt.peak_depth())),
+        Err(e) => Err(e),
+    }
+}
+
+pub fn run_function_with_metrics(
+    module: &Module,
+    func_name: &str,
+    args: Vec<Value>,
+) -> Result<(Value, EvalMetrics), EvalError> {
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == func_name)
+        .ok_or_else(|| EvalError::UndefinedVar(func_name.to_string()))?;
+    if f.params.len() != args.len() {
+        return Err(EvalError::TypeErr(format!(
+            "kazi {} inahitaji hoja {}",
+            func_name,
+            f.params.len()
+        )));
+    }
+    let mut env = Env::new();
+    env.seed_global_constants();
+    let mut rt = runtime::Runtime::new(&mut env, module);
+    rt.enable_metrics();
+    seed_module_constants(module, &mut rt)?;
+    rt.env.push_scope();
+    for (i, p) in f.params.iter().enumerate() {
+        let val = args.get(i).cloned().unwrap_or(Value::Hamna);
+        rt.env.define(&p.name, val);
+    }
+    let out = eval::eval_block_impl(&f.body, &mut rt);
+    rt.env.pop_scope();
+    let metrics = rt.metrics().cloned().unwrap_or_default();
+    match out {
+        Ok(EvalOut::Return(v)) => Ok((v, metrics)),
+        Ok(_) => Ok((Value::Tupu, metrics)),
         Err(e) => Err(e),
     }
 }
@@ -229,7 +262,10 @@ pub fn run_test_with_module(module: &Module, function: &Function) -> TestResult 
 /// (`Stmt::line()` recorded on every statement evaluated), not a function-name presence check.
 /// A test that panics still reports whatever lines ran before the panic, since partial coverage
 /// from a failing test is real coverage, not nothing.
-pub fn run_test_with_coverage(module: &Module, function: &Function) -> (TestResult, std::collections::HashSet<usize>) {
+pub fn run_test_with_coverage(
+    module: &Module,
+    function: &Function,
+) -> (TestResult, std::collections::HashSet<usize>) {
     let mut env = Env::new();
     env.seed_global_constants();
     let mut rt = runtime::Runtime::new(&mut env, module);
@@ -245,18 +281,27 @@ pub fn run_test_with_coverage(module: &Module, function: &Function) -> (TestResu
 
     let lines = rt.executed_lines.unwrap_or_default();
     let test_result = match result {
-        Ok(()) => TestResult { name: function.name.clone(), passed: true, message: "sawa".to_string() },
-        Err(EvalError::Panic(msg)) => TestResult { name: function.name.clone(), passed: false, message: msg },
-        Err(e) => TestResult { name: function.name.clone(), passed: false, message: e.to_string() },
+        Ok(()) => TestResult {
+            name: function.name.clone(),
+            passed: true,
+            message: "sawa".to_string(),
+        },
+        Err(EvalError::Panic(msg)) => TestResult {
+            name: function.name.clone(),
+            passed: false,
+            message: msg,
+        },
+        Err(e) => TestResult {
+            name: function.name.clone(),
+            passed: false,
+            message: e.to_string(),
+        },
     };
     (test_result, lines)
 }
 
 /// Execute tests by running each function. Each test is tied to its module.
-pub fn execute_tests(
-    modules_and_tests: &[(Module, Function)],
-    fail_fast: bool,
-) -> Vec<TestResult> {
+pub fn execute_tests(modules_and_tests: &[(Module, Function)], fail_fast: bool) -> Vec<TestResult> {
     execute_tests_with_timeout(modules_and_tests, fail_fast, None)
 }
 
@@ -308,11 +353,19 @@ pub fn execute_tests_with_timeout(
 /// Every `#[baada]` still runs even if an earlier one in the same module panics, and even if the
 /// test body itself failed — teardown functions exist to release resources acquired by setup,
 /// and one broken teardown shouldn't prevent the others from having a chance to run.
-pub fn run_test_with_fixtures(module: &Module, function: &Function, timeout: Option<std::time::Duration>) -> TestResult {
-    let setup_fns: Vec<&Function> = module.functions.iter()
+pub fn run_test_with_fixtures(
+    module: &Module,
+    function: &Function,
+    timeout: Option<std::time::Duration>,
+) -> TestResult {
+    let setup_fns: Vec<&Function> = module
+        .functions
+        .iter()
         .filter(|f| f.attrs.iter().any(|a| a.name == "kabla"))
         .collect();
-    let teardown_fns: Vec<&Function> = module.functions.iter()
+    let teardown_fns: Vec<&Function> = module
+        .functions
+        .iter()
         .filter(|f| f.attrs.iter().any(|a| a.name == "baada"))
         .collect();
 
@@ -321,7 +374,11 @@ pub fn run_test_with_fixtures(module: &Module, function: &Function, timeout: Opt
             return TestResult {
                 name: function.name.clone(),
                 passed: false,
-                message: format!("kabla '{}' imeshindwa: {}", setup.name, fixture_error_message(e)),
+                message: format!(
+                    "kabla '{}' imeshindwa: {}",
+                    setup.name,
+                    fixture_error_message(e)
+                ),
             };
         }
     }
@@ -341,7 +398,11 @@ pub fn run_test_with_fixtures(module: &Module, function: &Function, timeout: Opt
                 result = TestResult {
                     name: function.name.clone(),
                     passed: false,
-                    message: format!("baada '{}' imeshindwa: {}", teardown.name, fixture_error_message(e)),
+                    message: format!(
+                        "baada '{}' imeshindwa: {}",
+                        teardown.name,
+                        fixture_error_message(e)
+                    ),
                 };
             }
         }
@@ -360,7 +421,11 @@ fn fixture_error_message(e: EvalError) -> String {
 /// Run one test with a wall-clock timeout, on a dedicated thread. See
 /// `execute_tests_with_timeout`'s doc comment for what happens on an actual timeout (the thread
 /// is not killed, only no longer waited on).
-fn run_test_with_timeout(module: &Module, function: &Function, timeout: std::time::Duration) -> TestResult {
+fn run_test_with_timeout(
+    module: &Module,
+    function: &Function,
+    timeout: std::time::Duration,
+) -> TestResult {
     let test_name = function.name.clone();
     let module_for_thread = module.clone();
     let function_for_thread = function.clone();
@@ -390,12 +455,42 @@ fn run_test_with_timeout(module: &Module, function: &Function, timeout: std::tim
         Err(_) => TestResult {
             name: test_name,
             passed: false,
-            message: format!("muda umekwisha baada ya {:?} (jaribio limeachwa likiendelea kwa nyuma)", timeout),
+            message: format!(
+                "muda umekwisha baada ya {:?} (jaribio limeachwa likiendelea kwa nyuma)",
+                timeout
+            ),
         },
     }
 }
 
-/// Emit .asb as bytes (header + serialized Module). Use for run-from-.asb.
+/// Emit .asb as bytes.  The Sudoku-compatible subset is lowered to bytecode; unsupported syntax
+/// deliberately keeps the serialized-AST artifact and therefore the existing evaluator fallback.
 pub fn emit_asb(module: &Module, source: &str) -> Vec<u8> {
+    let vm_candidate = module
+        .functions
+        .iter()
+        .any(|f| bytecode_loop_in_block(&f.body));
+    if vm_candidate {
+        if let Some(program) = bytecode::compile_module(module) {
+            return asb::emit_bytecode_bytes(&program, source);
+        }
+    }
     asb::emit_asb_bytes(module, source)
+}
+
+fn bytecode_loop_in_block(block: &asili_parser::Block) -> bool {
+    block.statements.iter().any(|stmt| match stmt {
+        asili_parser::Stmt::While { .. } | asili_parser::Stmt::For { .. } => true,
+        asili_parser::Stmt::If {
+            then_block,
+            else_if,
+            else_block,
+            ..
+        } => {
+            bytecode_loop_in_block(then_block)
+                || else_if.iter().any(|(_, b)| bytecode_loop_in_block(b))
+                || else_block.as_ref().is_some_and(bytecode_loop_in_block)
+        }
+        _ => false,
+    })
 }

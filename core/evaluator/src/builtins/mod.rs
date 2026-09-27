@@ -23,7 +23,7 @@ mod syscall;
 
 use std::collections::HashMap;
 
-use crate::value::{Value, EvalError};
+use crate::value::{EvalError, Value};
 
 pub type BuiltinFn = Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>;
 
@@ -68,9 +68,13 @@ pub fn builtin_names() -> Vec<String> {
     let mut names: Vec<String> = m.keys().cloned().collect();
     // Ensure "chapisha" is index 0 for backward compatibility
     names.sort_by(|a, b| {
-        if a == "chapisha" { std::cmp::Ordering::Less }
-        else if b == "chapisha" { std::cmp::Ordering::Greater }
-        else { a.cmp(b) }
+        if a == "chapisha" {
+            std::cmp::Ordering::Less
+        } else if b == "chapisha" {
+            std::cmp::Ordering::Greater
+        } else {
+            a.cmp(b)
+        }
     });
     names
 }

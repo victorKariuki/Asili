@@ -18,6 +18,10 @@ All built-in types support method call syntax: `thamani.njia(hoja...)`.
 | `s.badilisha(kwa, na)`  | `Neno`           | Replace all occurrences of `kwa` with `na`                |
 | `s.kwa_herufi_ndogo()`  | `Neno`           | Convert to lowercase                                       |
 | `s.kwa_herufi_kubwa()`  | `Neno`           | Convert to uppercase                                       |
+| `s.tupu()`              | `Ukweli`         | Whether the string has no characters                       |
+| `s.ina(sub)`            | `Ukweli`         | Whether the string contains `sub`                          |
+| `s.hesabu(sub)`         | `Namba`          | Count non-overlapping occurrences of `sub`                 |
+| `s.rudia(n)`            | `Neno`           | Repeat the string `n` times                                |
 | `s.anza_na(kiambishi)`  | `Ukweli`         | `kweli` if string starts with `kiambishi`                 |
 | `s.maliza_na(kiishio)`  | `Ukweli`         | `kweli` if string ends with `kiishio`                     |
 | `s.herufi_kwa(i)`       | `Chaguo<Herufi>` | Character at grapheme position `i` (like `urefu()` counts), or `Hamna` if out of range |
@@ -68,6 +72,17 @@ s.herufi_kwa(99)   # Chaguo(Hamna) — out of range, not a panic
 | `a.ongeza(x)`     | `Tupu`         | Append `x` to end (mutates in place)            |
 | `a.ondoa(i)`      | `Chaguo<T>`    | Remove and return element at index `i`; `Hamna` if out of bounds |
 | `a.kila_mmoja(f)` | `Tupu`         | Call function `f` (passed as a **string literal** naming it) for each element; no-op if no argument |
+| `a.pata(i)`       | `Chaguo<T>`    | Read an element safely by index                         |
+| `a.badilisha(i,v)`| `Tupu`         | Replace an existing element in place                    |
+| `a.ramani(f)`     | `Orodha<T>`    | Map each element through a named function                |
+| `a.chuja(f)`      | `Orodha<T>`    | Keep elements for which a named function returns `kweli` |
+| `a.hesabu(f)`     | `Namba`        | Count elements for which a named function returns `kweli`|
+| `a.chunguza(f)`   | `Ukweli`       | Check whether any element passes a named predicate       |
+| `a.unganisha(sep)`| `Neno`         | Join a list of strings with a separator                  |
+| `a.jiunge(sep)`    | `Neno`         | Join values convertible to strings with a separator      |
+| `a.kwa_neno()`     | `Orodha<Neno>` | Convert every element to a string                        |
+| `a.vipande(size)`  | `Orodha<Orodha<T>>` | Split the list into chunks of at most `size` elements |
+| `a.kila_na_fahirisi(f)` | `Tupu`   | Call a named function with each element and its index    |
 | `a.ingiza(i, v)`  | `Tupu`         | Replace the element at index `i` with `v` (mutates in place); panics if `i` is out of bounds — does **not** grow the list. `a[i] = v` desugars to this call. |
 | `a[i]?`           | `T`            | Index with error propagation (not a method — see below) |
 
@@ -88,6 +103,11 @@ kazi chapisha_kitu(x: Namba) -> Tupu {
   chapisha(x kama Neno)
 }
 a.kila_mmoja("chapisha_kitu")
+
+kazi kwa_mstari(row: Orodha<Namba>) -> Neno {
+  rejesha row.kwa_neno().jiunge(" ")
+}
+weka mistari = a.vipande(2).ramani("kwa_mstari").jiunge("\n")
 ```
 
 ### Kufikia Kipengele (Indexing)

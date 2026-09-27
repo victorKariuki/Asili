@@ -1,18 +1,43 @@
 //! Hover response: resolve position to token and module symbol with type information.
 
+use crate::hover_format::{
+    format_function_hover, format_identifier_hover, format_keyword_hover, format_struct_hover,
+    format_trait_hover, format_variable_hover,
+};
+use crate::semantic::SemanticAnalyzer;
 use asili_lexer::tokenize;
 use asili_parser::parse_tokens;
 use tower_lsp::lsp_types::{Hover, HoverContents, MarkedString, Position, Range};
-use crate::semantic::SemanticAnalyzer;
-use crate::hover_format::{
-    format_keyword_hover, format_function_hover, format_variable_hover, format_struct_hover,
-    format_trait_hover, format_identifier_hover,
-};
 
 const KEYWORDS: &[&str] = &[
-    "leta", "kazi", "umbo", "sifa", "shughuli", "ya", "weka", "thabiti", "rejesha", "ikiwa",
-    "vinginevyo", "kwa", "wakati", "linganisha", "vunja", "endelea", "lebo", "tupa", "jaribu",
-    "kama", "azima", "azima_tenda", "umma", "katika", "kutoka", "au_ikiwa", "chapisha", "paparika",
+    "leta",
+    "kazi",
+    "umbo",
+    "sifa",
+    "shughuli",
+    "ya",
+    "weka",
+    "thabiti",
+    "rejesha",
+    "ikiwa",
+    "vinginevyo",
+    "kwa",
+    "wakati",
+    "linganisha",
+    "vunja",
+    "endelea",
+    "lebo",
+    "tupa",
+    "jaribu",
+    "kama",
+    "azima",
+    "azima_tenda",
+    "umma",
+    "katika",
+    "kutoka",
+    "au_ikiwa",
+    "chapisha",
+    "paparika",
 ];
 
 /// Compute hover at (line, character) in LSP 0-based coordinates with semantic analysis.
@@ -61,17 +86,16 @@ pub fn compute_hover(text: &str, line_0: u32, character_0: u32) -> Option<Hover>
             } else if let Some(f) = module.functions.iter().find(|f| f.name == tok.lexeme) {
                 let return_type = analyzer.get_hover_info(&f.name).and_then(|h| {
                     use crate::types::HoverInfo;
-                    if let HoverInfo::Function {
-                        return_type, ..
-                    } = h
-                    {
+                    if let HoverInfo::Function { return_type, .. } = h {
                         Some(return_type)
                     } else {
                         None
                     }
                 });
                 if let Some(return_type) = return_type {
-                    let param_types = f.params.iter()
+                    let param_types = f
+                        .params
+                        .iter()
                         .map(|p| crate::semantic::type_expr_to_value_type(&p.ty))
                         .collect();
                     format_function_hover(f, param_types, &return_type)
@@ -87,8 +111,14 @@ pub fn compute_hover(text: &str, line_0: u32, character_0: u32) -> Option<Hover>
             return Some(Hover {
                 contents: HoverContents::Scalar(MarkedString::String(content)),
                 range: Some(Range {
-                    start: Position { line: line_0, character: start_char },
-                    end: Position { line: line_0, character: end_char },
+                    start: Position {
+                        line: line_0,
+                        character: start_char,
+                    },
+                    end: Position {
+                        line: line_0,
+                        character: end_char,
+                    },
                 }),
             });
         }

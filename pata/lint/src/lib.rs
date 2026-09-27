@@ -1,12 +1,12 @@
 //! Asili linter for code style and best practices
 
+pub mod config;
 pub mod rules;
 pub mod visitor;
-pub mod config;
 
 use asili_diagnostics::Diagnostic;
-use asili_parser::parse_tokens;
 use asili_lexer::tokenize;
+use asili_parser::parse_tokens;
 use config::LintConfig;
 
 /// Lint a source file and return warnings/suggestions
@@ -24,7 +24,10 @@ pub fn lint_source(source: &str) -> Result<Vec<Diagnostic>, String> {
 /// severity tier below "info" to demote it to, and a linter option a user set to silence a rule
 /// should actually silence it. LINT101's `line_limit` option (if set) overrides its default
 /// 50-statement threshold.
-pub fn lint_source_with_config(source: &str, config: &LintConfig) -> Result<Vec<Diagnostic>, String> {
+pub fn lint_source_with_config(
+    source: &str,
+    config: &LintConfig,
+) -> Result<Vec<Diagnostic>, String> {
     let tokens = match tokenize(source) {
         Ok(t) => t,
         Err(diags) => return Err(format!("leksika imeshindwa: makosa {}", diags.len())),
@@ -37,7 +40,8 @@ pub fn lint_source_with_config(source: &str, config: &LintConfig) -> Result<Vec<
 
     let mut lints = Vec::new();
 
-    if config.is_enabled("LINT001") || config.is_enabled("LINT002") || config.is_enabled("LINT003") {
+    if config.is_enabled("LINT001") || config.is_enabled("LINT002") || config.is_enabled("LINT003")
+    {
         lints.extend(rules::naming::check_naming_conventions(&module));
     }
     if config.is_enabled("LINT101") {
@@ -45,9 +49,12 @@ pub fn lint_source_with_config(source: &str, config: &LintConfig) -> Result<Vec<
             .option_int("LINT101", "line_limit")
             .and_then(|n| usize::try_from(n).ok())
             .unwrap_or(rules::style::DEFAULT_LINE_LIMIT);
-        lints.extend(rules::style::check_style_issues_with_limit(&module, line_limit));
+        lints.extend(rules::style::check_style_issues_with_limit(
+            &module, line_limit,
+        ));
     }
-    if config.is_enabled("LINT201") || config.is_enabled("LINT202") || config.is_enabled("LINT203") {
+    if config.is_enabled("LINT201") || config.is_enabled("LINT202") || config.is_enabled("LINT203")
+    {
         lints.extend(rules::best_practices::check_best_practices(&module, source));
     }
     if config.is_enabled("LINT301") {
@@ -93,7 +100,13 @@ mod tests {
         let mut opts = BTreeMap::new();
         opts.insert("line_limit".to_string(), serde_json::json!(20));
         let mut rules = BTreeMap::new();
-        rules.insert("LINT101".to_string(), RuleConfig { severity: None, options: Some(opts) });
+        rules.insert(
+            "LINT101".to_string(),
+            RuleConfig {
+                severity: None,
+                options: Some(opts),
+            },
+        );
         let config = LintConfig { rules: Some(rules) };
 
         let diags = lint_source_with_config(&src, &config).expect("lint");
@@ -106,7 +119,10 @@ mod tests {
         let mut rules = BTreeMap::new();
         rules.insert(
             "LINT101".to_string(),
-            RuleConfig { severity: Some("ignore".to_string()), options: None },
+            RuleConfig {
+                severity: Some("ignore".to_string()),
+                options: None,
+            },
         );
         let config = LintConfig { rules: Some(rules) };
 
@@ -123,7 +139,10 @@ mod tests {
         let mut rules = BTreeMap::new();
         rules.insert(
             "LINT002".to_string(),
-            RuleConfig { severity: Some("ignore".to_string()), options: None },
+            RuleConfig {
+                severity: Some("ignore".to_string()),
+                options: None,
+            },
         );
         let config = LintConfig { rules: Some(rules) };
 

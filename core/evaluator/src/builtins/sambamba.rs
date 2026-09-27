@@ -34,8 +34,8 @@ use std::thread::JoinHandle;
 
 use asili_parser::Module;
 
-use crate::value::{self, EvalError, Value};
 use super::BuiltinFn;
+use crate::value::{self, EvalError, Value};
 
 static NEXT_HANDLE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -53,7 +53,8 @@ fn handles() -> &'static Mutex<HashMap<u64, JoinHandle<Result<(), String>>>> {
 pub(crate) fn tenda(module: &Module, args: &[Value]) -> Result<Value, EvalError> {
     let kazi_name = value::as_string(args.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
     let raw_args = args.get(1..).unwrap_or(&[]);
-    let call_args: Vec<value::SendValue> = match raw_args.iter().map(Value::try_into_send).collect() {
+    let call_args: Vec<value::SendValue> = match raw_args.iter().map(Value::try_into_send).collect()
+    {
         Some(v) => v,
         None => {
             return Ok(Value::Tokeo(Err(Box::new(Value::Neno(
@@ -68,7 +69,10 @@ pub(crate) fn tenda(module: &Module, args: &[Value]) -> Result<Value, EvalError>
     }
     let module_owned = module.clone();
     let handle = std::thread::spawn(move || {
-        let call_args: Vec<Value> = call_args.into_iter().map(value::SendValue::into_value).collect();
+        let call_args: Vec<Value> = call_args
+            .into_iter()
+            .map(value::SendValue::into_value)
+            .collect();
         crate::run_function(&module_owned, &kazi_name, call_args)
             .map(|_| ())
             .map_err(|e| e.to_string())
@@ -79,44 +83,61 @@ pub(crate) fn tenda(module: &Module, args: &[Value]) -> Result<Value, EvalError>
 }
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
-    m.insert("subiri_tenda".to_string(), Box::new(|args: &[Value]| {
-        let id = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0) as u64;
-        let handle = handles().lock().unwrap().remove(&id);
-        match handle {
-            None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!(
-                "subiri_tenda: uzi haujulikani au tayari umesubiriwa: {id}"
-            )))))),
-            Some(h) => match h.join() {
-                Ok(Ok(())) => Ok(Value::Tokeo(Ok(Box::new(Value::Tupu)))),
-                Ok(Err(msg)) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(msg))))),
-                Err(_) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                    "subiri_tenda: uzi ulianguka (panic)".to_string(),
+    m.insert(
+        "subiri_tenda".to_string(),
+        Box::new(|args: &[Value]| {
+            let id = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0) as u64;
+            let handle = handles().lock().unwrap().remove(&id);
+            match handle {
+                None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!(
+                    "subiri_tenda: uzi haujulikani au tayari umesubiriwa: {id}"
+                )))))),
+                Some(h) => match h.join() {
+                    Ok(Ok(())) => Ok(Value::Tokeo(Ok(Box::new(Value::Tupu)))),
+                    Ok(Err(msg)) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(msg))))),
+                    Err(_) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                        "subiri_tenda: uzi ulianguka (panic)".to_string(),
+                    ))))),
+                },
+            }
+        }),
+    );
+    m.insert(
+        "njia".to_string(),
+        Box::new(|_args: &[Value]| {
+            let (tx, rx) = mpsc::channel::<value::SendValue>();
+            Ok(Value::Jozi(
+                Box::new(Value::NjiaTx(Arc::new(Mutex::new(tx)))),
+                Box::new(Value::NjiaRx(Arc::new(Mutex::new(rx)))),
+            ))
+        }),
+    );
+    m.insert(
+        "njia_na_kikomo".to_string(),
+        Box::new(|args: &[Value]| {
+            let kikomo = value::as_f64(args.first().unwrap_or(&Value::Hamna))
+                .unwrap_or(0.0)
+                .max(0.0) as usize;
+            let (tx, rx) = mpsc::sync_channel::<value::SendValue>(kikomo);
+            Ok(Value::Jozi(
+                Box::new(Value::NjiaTxBounded(Arc::new(Mutex::new(tx)))),
+                Box::new(Value::NjiaRxBounded(Arc::new(Mutex::new(rx)))),
+            ))
+        }),
+    );
+    m.insert(
+        "fungo".to_string(),
+        Box::new(|args: &[Value]| {
+            let inner = args.first().cloned().unwrap_or(Value::Hamna);
+            match inner.try_into_send() {
+                Some(sv) => Ok(Value::Tokeo(Ok(Box::new(Value::Fungo(Arc::new(
+                    value::FungoCell::new(sv),
+                )))))),
+                None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                    "fungo: thamani ya ndani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)"
+                        .to_string(),
                 ))))),
-            },
-        }
-    }));
-    m.insert("njia".to_string(), Box::new(|_args: &[Value]| {
-        let (tx, rx) = mpsc::channel::<value::SendValue>();
-        Ok(Value::Jozi(
-            Box::new(Value::NjiaTx(Arc::new(Mutex::new(tx)))),
-            Box::new(Value::NjiaRx(Arc::new(Mutex::new(rx)))),
-        ))
-    }));
-    m.insert("njia_na_kikomo".to_string(), Box::new(|args: &[Value]| {
-        let kikomo = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0).max(0.0) as usize;
-        let (tx, rx) = mpsc::sync_channel::<value::SendValue>(kikomo);
-        Ok(Value::Jozi(
-            Box::new(Value::NjiaTxBounded(Arc::new(Mutex::new(tx)))),
-            Box::new(Value::NjiaRxBounded(Arc::new(Mutex::new(rx)))),
-        ))
-    }));
-    m.insert("fungo".to_string(), Box::new(|args: &[Value]| {
-        let inner = args.first().cloned().unwrap_or(Value::Hamna);
-        match inner.try_into_send() {
-            Some(sv) => Ok(Value::Tokeo(Ok(Box::new(Value::Fungo(Arc::new(value::FungoCell::new(sv))))))),
-            None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                "fungo: thamani ya ndani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)".to_string(),
-            ))))),
-        }
-    }));
+            }
+        }),
+    );
 }

@@ -53,9 +53,35 @@ const NO_SPACE_AFTER: &[&str] = &["(", "[", ".", "#"];
 /// classification of its own to query. `kama`/`kweli`/`si_kweli` (comparison/booleans) don't
 /// need listing here — they're already excluded by not being an identifier-or-closer below.
 const KEYWORDS: &[&str] = &[
-    "_", "au_ikiwa", "endelea", "ikiwa", "jenum", "kama", "katika", "kazi", "kutoka", "kwa",
-    "kweli", "lebo", "leta", "linganisha", "milele", "rejesha", "shughuli", "sifa", "si_kweli",
-    "thabiti", "tupa", "umbo", "umma", "vinginevyo", "vunja", "wakati", "weka", "ya", "jaribu",
+    "_",
+    "au_ikiwa",
+    "endelea",
+    "ikiwa",
+    "jenum",
+    "kama",
+    "katika",
+    "kazi",
+    "kutoka",
+    "kwa",
+    "kweli",
+    "lebo",
+    "leta",
+    "linganisha",
+    "milele",
+    "rejesha",
+    "shughuli",
+    "sifa",
+    "si_kweli",
+    "thabiti",
+    "tupa",
+    "umbo",
+    "umma",
+    "vinginevyo",
+    "vunja",
+    "wakati",
+    "weka",
+    "ya",
+    "jaribu",
 ];
 /// Opens a new indented block; the matching close dedents before printing.
 const OPENERS: &[&str] = &["{"];
@@ -126,8 +152,9 @@ impl<'a> Printer<'a> {
         }
 
         let is_generic_bracket = self.generic_brackets.contains(&idx);
-        let hugs_left =
-            NO_SPACE_BEFORE.contains(&lex) || self.is_call_or_index_open(lex, idx) || is_generic_bracket;
+        let hugs_left = NO_SPACE_BEFORE.contains(&lex)
+            || self.is_call_or_index_open(lex, idx)
+            || is_generic_bracket;
         if hugs_left {
             self.trim_trailing_space();
         }
@@ -170,7 +197,9 @@ impl<'a> Printer<'a> {
     /// author's own line breaks between statements rather than collapsing everything onto one
     /// line, since this printer has no statement-level AST to drive layout from.
     fn starts_new_line_after(&self, idx: usize) -> bool {
-        let Some(next) = self.tokens.get(idx + 1) else { return false };
+        let Some(next) = self.tokens.get(idx + 1) else {
+            return false;
+        };
         let cur = &self.tokens[idx];
         if OPENERS.contains(&cur.lexeme.as_str()) || CLOSERS.contains(&next.lexeme.as_str()) {
             return false;
@@ -188,7 +217,8 @@ impl<'a> Printer<'a> {
     fn prev_suppresses_space_after(&self, idx: usize) -> bool {
         idx > 0
             && (NO_SPACE_AFTER.contains(&self.tokens[idx - 1].lexeme.as_str())
-                || (self.tokens[idx - 1].lexeme == "<" && self.generic_brackets.contains(&(idx - 1))))
+                || (self.tokens[idx - 1].lexeme == "<"
+                    && self.generic_brackets.contains(&(idx - 1))))
     }
 
     /// True when `lex` is `(` or `[` immediately following a call/index target — an identifier,
@@ -199,8 +229,12 @@ impl<'a> Printer<'a> {
         if lex != "(" && lex != "[" {
             return false;
         }
-        let Some(prev_idx) = idx.checked_sub(1) else { return false };
-        let Some(prev) = self.tokens.get(prev_idx) else { return false };
+        let Some(prev_idx) = idx.checked_sub(1) else {
+            return false;
+        };
+        let Some(prev) = self.tokens.get(prev_idx) else {
+            return false;
+        };
         let prev_lex = prev.lexeme.as_str();
         if prev_lex == ")" || prev_lex == "]" {
             return true;
@@ -354,8 +388,10 @@ fn find_matching_generic_close(tokens: &[Token], open_idx: usize) -> Option<usiz
             }
             "," => {}
             _ => {
-                let is_identifier_like =
-                    lex.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_');
+                let is_identifier_like = lex
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphabetic() || c == '_');
                 if !is_identifier_like {
                     return None;
                 }
@@ -424,14 +460,20 @@ mod tests {
         let input = r#"weka s = "a, {b} c"
 weka c = 'x'"#;
         let output = canonical_format(input);
-        assert!(output.contains(r#""a, {b} c""#), "string literal must survive verbatim: {output}");
+        assert!(
+            output.contains(r#""a, {b} c""#),
+            "string literal must survive verbatim: {output}"
+        );
     }
 
     #[test]
     fn comments_are_preserved_not_deleted() {
         let input = "weka x = 1 # muhimu\nchapisha(x)\n";
         let output = canonical_format(input);
-        assert!(output.contains("# muhimu"), "comment must be preserved, got: {output}");
+        assert!(
+            output.contains("# muhimu"),
+            "comment must be preserved, got: {output}"
+        );
         assert!(output.contains("chapisha(x)"));
     }
 
@@ -501,8 +543,14 @@ weka c = 'x'"#;
         // verbatim isn't valid syntax and would re-tokenize as three tokens on a second pass.
         let input = "m.ingiza('A', \"Herufi\")\nrejesha m.pata('A')\n";
         let once = canonical_format(input);
-        assert!(once.contains("'A'"), "char literal must render as 'A', got: {once}");
-        assert!(!once.contains("CHAR:"), "internal lexeme must not leak into output: {once}");
+        assert!(
+            once.contains("'A'"),
+            "char literal must render as 'A', got: {once}"
+        );
+        assert!(
+            !once.contains("CHAR:"),
+            "internal lexeme must not leak into output: {once}"
+        );
         let twice = canonical_format(&once);
         assert_eq!(once, twice, "formatting a char literal must be idempotent");
     }
@@ -514,8 +562,14 @@ weka c = 'x'"#;
         // supposedly single-line string and fail to re-tokenize (LEX001 unterminated string).
         let input = r#"chapisha("Habari\nulimwengu\t\"ndani\"\\nje")"#;
         let once = canonical_format(input);
-        assert!(once.contains(r#""Habari\nulimwengu\t\"ndani\"\\nje""#), "got: {once}");
-        assert!(!once.contains('\n') || once.matches('\n').count() == 1, "must stay one line, got: {once:?}");
+        assert!(
+            once.contains(r#""Habari\nulimwengu\t\"ndani\"\\nje""#),
+            "got: {once}"
+        );
+        assert!(
+            !once.contains('\n') || once.matches('\n').count() == 1,
+            "must stay one line, got: {once:?}"
+        );
         let twice = canonical_format(&once);
         assert_eq!(once, twice);
     }
@@ -525,7 +579,10 @@ weka c = 'x'"#;
         for (src, expect) in [(r"'\n'", r"'\n'"), (r"'\''", r"'\''"), (r"'\\'", r"'\\'")] {
             let input = format!("weka c = {src}\n");
             let output = canonical_format(&input);
-            assert!(output.contains(expect), "expected {expect} in output, got: {output}");
+            assert!(
+                output.contains(expect),
+                "expected {expect} in output, got: {output}"
+            );
         }
     }
 
@@ -533,7 +590,10 @@ weka c = 'x'"#;
     fn nested_blocks_indent_by_depth() {
         let input = "kazi foo() -> Tupu {\nkama kweli {\nchapisha(\"x\")\n}\n}\n";
         let output = canonical_format(input);
-        assert!(output.contains("    kama kweli {\n        chapisha(\"x\")\n    }\n"), "got: {output}");
+        assert!(
+            output.contains("    kama kweli {\n        chapisha(\"x\")\n    }\n"),
+            "got: {output}"
+        );
     }
 
     #[test]
@@ -548,7 +608,10 @@ weka c = 'x'"#;
     fn nested_generic_brackets_hug() {
         let input = "weka m: Kamusi<Neno, Orodha<Namba>> = kamusi()\n";
         let output = canonical_format(input);
-        assert!(output.contains("Kamusi<Neno, Orodha<Namba>>"), "got: {output}");
+        assert!(
+            output.contains("Kamusi<Neno, Orodha<Namba>>"),
+            "got: {output}"
+        );
     }
 
     #[test]
@@ -572,7 +635,10 @@ weka c = 'x'"#;
         let input = "kazi kuu(hoja: Orodha<Neno>) -> Tupu {\n  weka a = 1\n  chapisha(a)\n}\n";
         let output = canonical_format(input);
         for line in output.lines() {
-            assert!(!line.ends_with(' '), "trailing whitespace on line: {line:?}");
+            assert!(
+                !line.ends_with(' '),
+                "trailing whitespace on line: {line:?}"
+            );
         }
     }
 
@@ -585,7 +651,10 @@ weka c = 'x'"#;
         assert!(once.contains("Orodha<Neno>"));
         assert!(once.contains("b.weka(42.0)"));
         for line in once.lines() {
-            assert!(!line.ends_with(' '), "trailing whitespace on line: {line:?}");
+            assert!(
+                !line.ends_with(' '),
+                "trailing whitespace on line: {line:?}"
+            );
         }
     }
 
@@ -601,7 +670,10 @@ weka c = 'x'"#;
         let input = "kazi kuu() -> Tupu {\nweka x = 1\n}\n";
         let output = canonical_format_with_indent(input, "  ");
         assert!(output.contains("\n  weka x = 1"), "got: {output:?}");
-        assert!(!output.contains("\n    weka x = 1"), "should not use the default 4-space indent, got: {output:?}");
+        assert!(
+            !output.contains("\n    weka x = 1"),
+            "should not use the default 4-space indent, got: {output:?}"
+        );
     }
 
     #[test]
@@ -615,6 +687,9 @@ weka c = 'x'"#;
     fn custom_indent_nests_correctly_at_depth_two() {
         let input = "kazi kuu() -> Tupu {\nikiwa kweli {\nweka x = 1\n}\n}\n";
         let output = canonical_format_with_indent(input, "  ");
-        assert!(output.contains("\n    weka x = 1"), "depth-2 body should be 2x the 2-space unit, got: {output:?}");
+        assert!(
+            output.contains("\n    weka x = 1"),
+            "depth-2 body should be 2x the 2-space unit, got: {output:?}"
+        );
     }
 }

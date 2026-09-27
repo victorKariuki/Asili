@@ -45,10 +45,13 @@ fn check_unused_locals(func: &Function) -> Vec<Diagnostic> {
         }
         if !referenced.contains(&name) {
             diags.push(
-                Diagnostic::new("LINT301", format!(
-                    "kigezo '{}' hakijatumika popote kwenye kazi '{}'",
-                    name, func.name
-                ))
+                Diagnostic::new(
+                    "LINT301",
+                    format!(
+                        "kigezo '{}' hakijatumika popote kwenye kazi '{}'",
+                        name, func.name
+                    ),
+                )
                 .with_stage("ukaguzi")
                 .with_span(line, 1),
             );
@@ -107,7 +110,12 @@ fn collect_referenced_idents(block: &Block, out: &mut HashSet<String>) {
 /// only needs updating here, not in two diverging copies.
 fn recurse_into_nested_blocks(stmt: &Stmt, f: &mut dyn FnMut(&Block)) {
     match stmt {
-        Stmt::If { then_block, else_if, else_block, .. } => {
+        Stmt::If {
+            then_block,
+            else_if,
+            else_block,
+            ..
+        } => {
             f(then_block);
             for (_, b) in else_if {
                 f(b);
@@ -153,7 +161,10 @@ fn scan_expr(expr: &Expr, out: &mut HashSet<String>) {
         Expr::Ident { name, .. } => {
             out.insert(name.clone());
         }
-        Expr::Group(e) | Expr::Unary { expr: e, .. } | Expr::Cast { expr: e, .. } | Expr::Propagate { expr: e, .. } => {
+        Expr::Group(e)
+        | Expr::Unary { expr: e, .. }
+        | Expr::Cast { expr: e, .. }
+        | Expr::Propagate { expr: e, .. } => {
             scan_expr(e, out);
         }
         Expr::Binary { left, right, .. } => {
@@ -214,7 +225,9 @@ mod tests {
     fn flags_a_never_referenced_binding() {
         let src = "kazi f() -> Tupu {\nweka bila_matumizi = 1\nrejesha Tupu\n}";
         let diags = lint(src);
-        assert!(diags.iter().any(|d| d.code == "LINT301" && d.message.contains("bila_matumizi")));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == "LINT301" && d.message.contains("bila_matumizi")));
     }
 
     #[test]
@@ -242,7 +255,10 @@ mod tests {
     fn accepts_a_binding_used_only_inside_a_nested_if_block() {
         let src = "kazi f() -> Tupu {\nweka x = 1\nikiwa kweli {\nchapisha(x)\n}\nrejesha Tupu\n}";
         let diags = lint(src);
-        assert!(!diags.iter().any(|d| d.code == "LINT301"), "a binding used inside a nested block must not be flagged");
+        assert!(
+            !diags.iter().any(|d| d.code == "LINT301"),
+            "a binding used inside a nested block must not be flagged"
+        );
     }
 
     #[test]
@@ -259,6 +275,8 @@ mod tests {
         // `x` is used on the right-hand side of an assignment to another variable -- a real use.
         let src = "kazi f() -> Tupu {\nweka x = 1\nweka y = 0\ny = x\nchapisha(\"\" + y)\nrejesha Tupu\n}";
         let diags = lint(src);
-        assert!(!diags.iter().any(|d| d.code == "LINT301" && d.message.contains("'x'")));
+        assert!(!diags
+            .iter()
+            .any(|d| d.code == "LINT301" && d.message.contains("'x'")));
     }
 }

@@ -66,12 +66,15 @@ pub fn check_best_practices(module: &Module, source: &str) -> Vec<Diagnostic> {
             .collect::<Vec<_>>()
             .join(", ");
         diags.push(
-            Diagnostic::new("LINT201", format!(
-                "maneno {} yanarudiwa bila kubadilika — fikiria kuyafanya thabiti: {}",
-                repeated.len(),
-                summary
-            ))
-            .with_stage("ukaguzi")
+            Diagnostic::new(
+                "LINT201",
+                format!(
+                    "maneno {} yanarudiwa bila kubadilika — fikiria kuyafanya thabiti: {}",
+                    repeated.len(),
+                    summary
+                ),
+            )
+            .with_stage("ukaguzi"),
         );
     }
 
@@ -98,12 +101,12 @@ pub fn check_best_practices(module: &Module, source: &str) -> Vec<Diagnostic> {
         };
         if !has_doc_comment {
             diags.push(
-                Diagnostic::new("LINT202", format!(
-                    "kazi '{}' haina maelezo (doc comment)",
-                    func.name
-                ))
+                Diagnostic::new(
+                    "LINT202",
+                    format!("kazi '{}' haina maelezo (doc comment)", func.name),
+                )
                 .with_stage("ukaguzi")
-                .with_span(func.line, 1)
+                .with_span(func.line, 1),
             );
         }
     }
@@ -117,12 +120,12 @@ pub fn check_best_practices(module: &Module, source: &str) -> Vec<Diagnostic> {
             for name in names {
                 if !name_used_outside_import_line(source, name, import.line) {
                     diags.push(
-                        Diagnostic::new("LINT203", format!(
-                            "'{}' imeletwa lakini haitumiki popote",
-                            name
-                        ))
+                        Diagnostic::new(
+                            "LINT203",
+                            format!("'{}' imeletwa lakini haitumiki popote", name),
+                        )
                         .with_stage("ukaguzi")
-                        .with_span(import.line, 1)
+                        .with_span(import.line, 1),
                     );
                 }
             }
@@ -189,7 +192,9 @@ mod tests {
     fn lint203_flags_unused_selective_import() {
         let src = "leta msingi::{chapisha}\nkazi kuu() -> Tupu { rejesha Tupu }";
         let diags = lint(src);
-        assert!(diags.iter().any(|d| d.code == "LINT203" && d.message.contains("chapisha")));
+        assert!(diags
+            .iter()
+            .any(|d| d.code == "LINT203" && d.message.contains("chapisha")));
     }
 
     #[test]

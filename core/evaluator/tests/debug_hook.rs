@@ -45,13 +45,21 @@ fn breakpoint_pauses_a_real_running_program_until_resumed() {
 
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while !hook.did_pause() {
-        assert!(std::time::Instant::now() < deadline, "breakpoint never fired within 5s");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "breakpoint never fired within 5s"
+        );
         std::thread::sleep(Duration::from_millis(5));
     }
-    assert!(hook.did_pause(), "should_pause must have actually blocked at line 3");
+    assert!(
+        hook.did_pause(),
+        "should_pause must have actually blocked at line 3"
+    );
 
     hook.resume();
-    let ok = rx.recv_timeout(Duration::from_secs(5)).expect("run thread should finish after resume");
+    let ok = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("run thread should finish after resume");
     assert!(ok, "program should finish successfully after resuming");
     run_thread.join().expect("run thread should not panic");
 }
@@ -81,13 +89,18 @@ fn current_bindings_reflect_real_state_while_paused() {
 
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while !hook.did_pause() {
-        assert!(std::time::Instant::now() < deadline, "breakpoint never fired within 5s");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "breakpoint never fired within 5s"
+        );
         std::thread::sleep(Duration::from_millis(5));
     }
 
     let bindings = hook.current_bindings();
     assert!(
-        bindings.iter().any(|(name, value)| name == "x" && value.contains("42")),
+        bindings
+            .iter()
+            .any(|(name, value)| name == "x" && value.contains("42")),
         "expected x=42 to already be bound while paused at line 3, got: {bindings:?}"
     );
     assert!(
@@ -96,7 +109,9 @@ fn current_bindings_reflect_real_state_while_paused() {
     );
 
     hook.resume();
-    let _ = rx.recv_timeout(Duration::from_secs(5)).expect("run thread should finish after resume");
+    let _ = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("run thread should finish after resume");
     run_thread.join().expect("run thread should not panic");
 }
 
@@ -113,5 +128,8 @@ fn no_configured_breakpoints_runs_to_completion_without_blocking() {
     let hook = Arc::new(RealDebugHook::new(vec![]));
 
     let result = run_main_with_debug_hook(&module, vec![], hook);
-    assert!(result.is_ok(), "a run with no breakpoints must complete normally: {result:?}");
+    assert!(
+        result.is_ok(),
+        "a run with no breakpoints must complete normally: {result:?}"
+    );
 }

@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, semantic_check_with_env, extern_env_from_imports, Module};
+use asili_parser::{extern_env_from_imports, parse_tokens, semantic_check_with_env, Module};
 
 fn compile(src: &str) -> Module {
     let toks = tokenize(src).expect("tokenize");
@@ -80,7 +80,11 @@ fn tls_request_response_round_trips() {
         let _ = run_function(
             &module_clone,
             "anza",
-            vec![Value::Neno(addr_clone), Value::Neno(cert_arg), Value::Neno(key_arg)],
+            vec![
+                Value::Neno(addr_clone),
+                Value::Neno(cert_arg),
+                Value::Neno(key_arg),
+            ],
         );
     });
 
@@ -89,8 +93,8 @@ fn tls_request_response_round_trips() {
         .with_root_certificates(root_store)
         .with_no_client_auth();
     let server_name = rustls_pki_types::ServerName::try_from("localhost").expect("server name");
-    let conn =
-        rustls::ClientConnection::new(Arc::new(client_config), server_name).expect("client connection");
+    let conn = rustls::ClientConnection::new(Arc::new(client_config), server_name)
+        .expect("client connection");
 
     let tcp = connect_with_retry(&addr);
     let mut tls_stream = rustls::StreamOwned::new(conn, tcp);
@@ -104,7 +108,9 @@ fn tls_request_response_round_trips() {
     tls_stream.flush().expect("flush close_notify");
 
     let mut response = String::new();
-    tls_stream.read_to_string(&mut response).expect("read response over tls");
+    tls_stream
+        .read_to_string(&mut response)
+        .expect("read response over tls");
     assert_eq!(response, "salama: habari");
 
     let _ = std::fs::remove_file(&cert_path);
@@ -143,7 +149,11 @@ fn plaintext_connection_to_tls_listener_fails_cleanly_not_by_hanging() {
         let _ = run_function(
             &module_clone,
             "anza",
-            vec![Value::Neno(addr_clone), Value::Neno(cert_arg), Value::Neno(key_arg)],
+            vec![
+                Value::Neno(addr_clone),
+                Value::Neno(cert_arg),
+                Value::Neno(key_arg),
+            ],
         );
     });
 
@@ -154,7 +164,9 @@ fn plaintext_connection_to_tls_listener_fails_cleanly_not_by_hanging() {
     // handshake that will never arrive.
     let mut client = connect_with_retry(&addr);
     client.write_all(b"si tls hata kidogo").ok();
-    client.set_read_timeout(Some(Duration::from_secs(5))).expect("set timeout");
+    client
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("set timeout");
     let mut buf = [0u8; 16];
     // Either a clean EOF (Ok(0)) or a connection-reset error is acceptable — both signal the
     // server closed the connection instead of hanging; only a timeout (this test's own 5s cap)

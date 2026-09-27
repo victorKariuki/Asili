@@ -27,8 +27,9 @@ pub fn run(args: &[String]) -> CliResult {
 
         let paths = pata_package::Paths::new(root);
         let dest = paths.package_path(&lib);
-        let checksum = pata_package::fetch_git(url, branch.as_deref(), &dest)
-            .map_err(|e| CliError::new(format!("imeshindwa kupata '{lib}' kutoka {url}: {e}"), 1))?;
+        let checksum = pata_package::fetch_git(url, branch.as_deref(), &dest).map_err(|e| {
+            CliError::new(format!("imeshindwa kupata '{lib}' kutoka {url}: {e}"), 1)
+        })?;
 
         // The resolver's git-dependency path reads this marker to know which exact version was
         // fetched (there's no registry to list multiple versions of a git source against) —
@@ -40,8 +41,12 @@ pub fn run(args: &[String]) -> CliResult {
         // (`^0.1` -> `0.1.0`) rather than written verbatim and left to fail deep inside the next
         // resolve with a confusing "invalid semver in marker file" error.
         let marker_version = exact_version_for_marker(&version);
-        std::fs::write(dest.join(".pata-version"), &marker_version)
-            .map_err(|e| CliError::new(format!("imeshindwa kuandika alama ya toleo kwa '{lib}': {e}"), 1))?;
+        std::fs::write(dest.join(".pata-version"), &marker_version).map_err(|e| {
+            CliError::new(
+                format!("imeshindwa kuandika alama ya toleo kwa '{lib}': {e}"),
+                1,
+            )
+        })?;
 
         let cfg = load_project_config(root)?;
         write_lockfile(root, &cfg)?;
@@ -71,8 +76,12 @@ fn overwrite_locked_checksum(root: &Path, lib: &str, checksum: &str, source: &st
         locked.checksum = checksum.to_string();
         locked.source = source.to_string();
     }
-    lock.save(&lock_path)
-        .map_err(|e| CliError::new(format!("imeshindwa kuandika {}: {e}", lock_path.display()), 1))
+    lock.save(&lock_path).map_err(|e| {
+        CliError::new(
+            format!("imeshindwa kuandika {}: {e}", lock_path.display()),
+            1,
+        )
+    })
 }
 
 /// Turn a version *constraint* (`^0.1`, `~2.3`, a bare `1.2.3`, etc.) into a concrete
@@ -81,7 +90,9 @@ fn overwrite_locked_checksum(root: &Path, lib: &str, checksum: &str, source: &st
 /// requires all three components — `^0.1` alone is not a valid `Version`, only a valid
 /// `VersionReq`). Strips any leading constraint operator, then pads missing components with `0`.
 fn exact_version_for_marker(constraint: &str) -> String {
-    let bare = constraint.trim_start_matches(['^', '~', '>', '<', '=']).trim();
+    let bare = constraint
+        .trim_start_matches(['^', '~', '>', '<', '='])
+        .trim();
     let mut parts: Vec<&str> = bare.split('.').collect();
     while parts.len() < 3 {
         parts.push("0");
@@ -90,7 +101,9 @@ fn exact_version_for_marker(constraint: &str) -> String {
     parts.join(".")
 }
 
-fn parse_args(args: &[String]) -> Result<(String, String, Option<String>, Option<String>), CliError> {
+fn parse_args(
+    args: &[String],
+) -> Result<(String, String, Option<String>, Option<String>), CliError> {
     let Some(lib) = args.first() else {
         return Err(CliError::new(
             "matumizi: pata ongeza <lib> [--toleo <semver>] [--git <url>] [--tawi <jina>]",
@@ -170,18 +183,24 @@ mod tests {
         // on the old resolver's "accept anything" behavior.
         let published = root.join("published-hisabati");
         fs::create_dir_all(published.join("src")).expect("mkdir published");
-        fs::write(published.join("src/hisabati.as"), "umma kazi jumlisha(a: Namba, b: Namba) -> Namba { rejesha a + b }\n")
-            .expect("write published source");
-        let mut registry = pata_package::LocalRegistry::at(root.join(".asili/registry")).expect("open registry");
-        registry.publish(pata_package::RegistryEntry {
-            name: "hisabati".to_string(),
-            vers: "1.2.0".to_string(),
-            deps: vec![],
-            yanked: None,
-            source: pata_package::RegistrySource::Path {
-                path: published.to_string_lossy().to_string(),
-            },
-        }).expect("publish hisabati 1.2.0");
+        fs::write(
+            published.join("src/hisabati.as"),
+            "umma kazi jumlisha(a: Namba, b: Namba) -> Namba { rejesha a + b }\n",
+        )
+        .expect("write published source");
+        let mut registry =
+            pata_package::LocalRegistry::at(root.join(".asili/registry")).expect("open registry");
+        registry
+            .publish(pata_package::RegistryEntry {
+                name: "hisabati".to_string(),
+                vers: "1.2.0".to_string(),
+                deps: vec![],
+                yanked: None,
+                source: pata_package::RegistrySource::Path {
+                    path: published.to_string_lossy().to_string(),
+                },
+            })
+            .expect("publish hisabati 1.2.0");
 
         run(&["hisabati".into(), "--toleo".into(), "^1.2".into()]).expect("ongeza ok");
         let toml = fs::read_to_string("pata.toml").expect("pata.toml");
@@ -210,7 +229,11 @@ mod tests {
         let original = std::env::current_dir().expect("cwd");
 
         let source_repo = temp_dir_named("ongeza-git-source");
-        fs::write(source_repo.join("mtu.as"), "kazi jina() -> Neno { rejesha \"mtu\" }").expect("write source file");
+        fs::write(
+            source_repo.join("mtu.as"),
+            "kazi jina() -> Neno { rejesha \"mtu\" }",
+        )
+        .expect("write source file");
         run_git(&source_repo, &["init", "-q"]);
         run_git(&source_repo, &["config", "user.email", "test@example.com"]);
         run_git(&source_repo, &["config", "user.name", "Test"]);
@@ -225,10 +248,17 @@ mod tests {
 
         // Real content landed on disk under .asili/packages/mtu/, .git/ metadata stripped.
         let vendored = root.join(".asili/packages/mtu/mtu.as");
-        assert!(vendored.is_file(), "vendored source file should exist at {}", vendored.display());
+        assert!(
+            vendored.is_file(),
+            "vendored source file should exist at {}",
+            vendored.display()
+        );
         let content = fs::read_to_string(&vendored).expect("read vendored file");
         assert!(content.contains("rejesha \"mtu\""));
-        assert!(!root.join(".asili/packages/mtu/.git").exists(), ".git metadata must be stripped from vendored copy");
+        assert!(
+            !root.join(".asili/packages/mtu/.git").exists(),
+            ".git metadata must be stripped from vendored copy"
+        );
 
         // pata.lock's checksum is a real SHA-256 hex digest (64 hex chars) over the fetched
         // tree, not the old 16-hex-char sha256("{name}@{version}") name-string placeholder.
@@ -239,8 +269,15 @@ mod tests {
             .lines()
             .find(|l| l.trim_start().starts_with("checksum"))
             .expect("checksum line present");
-        let checksum = checksum_line.split('"').nth(1).expect("quoted checksum value");
-        assert_eq!(checksum.len(), 64, "expected a full SHA-256 hex digest, got: {checksum}");
+        let checksum = checksum_line
+            .split('"')
+            .nth(1)
+            .expect("quoted checksum value");
+        assert_eq!(
+            checksum.len(),
+            64,
+            "expected a full SHA-256 hex digest, got: {checksum}"
+        );
 
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(&root);
@@ -254,8 +291,15 @@ mod tests {
         let root = temp_project();
         std::env::set_current_dir(&root).expect("chdir");
 
-        let result = run(&["haipo".into(), "--git".into(), "file:///nonexistent/path/at/all".into()]);
-        assert!(result.is_err(), "fetching a nonexistent git source must fail, not silently succeed");
+        let result = run(&[
+            "haipo".into(),
+            "--git".into(),
+            "file:///nonexistent/path/at/all".into(),
+        ]);
+        assert!(
+            result.is_err(),
+            "fetching a nonexistent git source must fail, not silently succeed"
+        );
 
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(&root);
@@ -267,7 +311,12 @@ mod tests {
             .current_dir(dir)
             .status()
             .expect("git command should spawn");
-        assert!(status.success(), "git {:?} failed in {}", args, dir.display());
+        assert!(
+            status.success(),
+            "git {:?} failed in {}",
+            args,
+            dir.display()
+        );
     }
 
     fn temp_dir_named(prefix: &str) -> std::path::PathBuf {
@@ -292,7 +341,11 @@ mod tests {
             "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n",
         )
         .expect("write manifest");
-        fs::write(dir.join("src/kuu.as"), "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }").expect("src");
+        fs::write(
+            dir.join("src/kuu.as"),
+            "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }",
+        )
+        .expect("src");
         dir
     }
 }

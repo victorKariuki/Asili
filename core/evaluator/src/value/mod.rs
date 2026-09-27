@@ -12,8 +12,8 @@ pub use bigdecimal::BigDecimal;
 pub use num_bigint::BigInt;
 
 pub(crate) use numeric::{
-    args_f64_2, arg_f64, assign_f64_op, as_char, as_f64, as_string, as_u64, big_numeric_binary_op,
-    binary_cmp_neno, binary_f64, binary_f64_cmp, handle_loop_out, parse_number,
+    arg_f64, args_f64_2, as_char, as_f64, as_string, as_u64, assign_f64_op, big_numeric_binary_op,
+    binary_cmp_neno, binary_f64, binary_f64_cmp, handle_loop_out, parse_number, to_display_string,
 };
 
 /// Hashable key for Kamusi. Only Neno, Namba, Ukweli, Herufi are allowed as map keys.
@@ -177,7 +177,10 @@ unsafe impl Sync for FungoCell {}
 impl FungoCell {
     pub(crate) fn new(v: SendValue) -> Self {
         use lock_api::RawMutex as _;
-        FungoCell { raw: parking_lot::RawMutex::INIT, data: UnsafeCell::new(v) }
+        FungoCell {
+            raw: parking_lot::RawMutex::INIT,
+            data: UnsafeCell::new(v),
+        }
     }
 
     /// Blocks until the lock is acquired. Must be paired with exactly one later `unlock()` from
@@ -276,10 +279,15 @@ impl Value {
                 Ok(v) => Ok(Box::new(v.try_into_send()?)),
                 Err(v) => Err(Box::new(v.try_into_send()?)),
             }),
-            Value::Orodha(items) => {
-                SendValue::Orodha(items.iter().map(Value::try_into_send).collect::<Option<_>>()?)
+            Value::Orodha(items) => SendValue::Orodha(
+                items
+                    .iter()
+                    .map(Value::try_into_send)
+                    .collect::<Option<_>>()?,
+            ),
+            Value::Jozi(a, b) => {
+                SendValue::Jozi(Box::new(a.try_into_send()?), Box::new(b.try_into_send()?))
             }
-            Value::Jozi(a, b) => SendValue::Jozi(Box::new(a.try_into_send()?), Box::new(b.try_into_send()?)),
             Value::Kamusi(m) => {
                 let mut out = HashMap::with_capacity(m.len());
                 for (k, v) in m {
@@ -315,7 +323,12 @@ impl Value {
             // boundary; revisit if that changes.
             #[cfg(not(target_arch = "wasm32"))]
             Value::TlsUsanidi(_) => return None,
-            Value::KashaGC(_) | Value::KashaGCDhaifu(_) | Value::Faili(_) | Value::Mkondo(_) | Value::MkondoSikilizaji(_) | Value::Kumbukumbu(_) => return None,
+            Value::KashaGC(_)
+            | Value::KashaGCDhaifu(_)
+            | Value::Faili(_)
+            | Value::Mkondo(_)
+            | Value::MkondoSikilizaji(_)
+            | Value::Kumbukumbu(_) => return None,
         })
     }
 }
@@ -338,14 +351,26 @@ impl SendValue {
                 Ok(v) => Ok(Box::new(v.into_value())),
                 Err(v) => Err(Box::new(v.into_value())),
             }),
-            SendValue::Orodha(items) => Value::Orodha(items.into_iter().map(SendValue::into_value).collect()),
-            SendValue::Jozi(a, b) => Value::Jozi(Box::new(a.into_value()), Box::new(b.into_value())),
-            SendValue::Kamusi(m) => Value::Kamusi(m.into_iter().map(|(k, v)| (k, v.into_value())).collect()),
-            SendValue::Seti(s) => Value::Seti(s),
-            SendValue::Struct(name, fields) => {
-                Value::Struct(name, fields.into_iter().map(|(n, v)| (n, v.into_value())).collect())
+            SendValue::Orodha(items) => {
+                Value::Orodha(items.into_iter().map(SendValue::into_value).collect())
             }
-            SendValue::Enum(en, vn, data) => Value::Enum(en, vn, data.map(|v| Box::new(v.into_value()))),
+            SendValue::Jozi(a, b) => {
+                Value::Jozi(Box::new(a.into_value()), Box::new(b.into_value()))
+            }
+            SendValue::Kamusi(m) => {
+                Value::Kamusi(m.into_iter().map(|(k, v)| (k, v.into_value())).collect())
+            }
+            SendValue::Seti(s) => Value::Seti(s),
+            SendValue::Struct(name, fields) => Value::Struct(
+                name,
+                fields
+                    .into_iter()
+                    .map(|(n, v)| (n, v.into_value()))
+                    .collect(),
+            ),
+            SendValue::Enum(en, vn, data) => {
+                Value::Enum(en, vn, data.map(|v| Box::new(v.into_value())))
+            }
             SendValue::NjiaTx(tx) => Value::NjiaTx(tx),
             SendValue::NjiaRx(rx) => Value::NjiaRx(rx),
             SendValue::NjiaTxBounded(tx) => Value::NjiaTxBounded(tx),
@@ -453,8 +478,15 @@ impl std::fmt::Debug for Value {
             Value::Tokeo(Ok(v)) => write!(f, "Tokeo(Sawa({v:?}))"),
             Value::Tokeo(Err(e)) => write!(f, "Tokeo(Kosa({e:?}))"),
             Value::Orodha(items) => f.debug_tuple("Orodha").field(items).finish(),
-            Value::Struct(name, fields) => f.debug_tuple("Struct").field(name).field(fields).finish(),
-            Value::Enum(en, vn, data) => f.debug_tuple("Enum").field(en).field(vn).field(data).finish(),
+            Value::Struct(name, fields) => {
+                f.debug_tuple("Struct").field(name).field(fields).finish()
+            }
+            Value::Enum(en, vn, data) => f
+                .debug_tuple("Enum")
+                .field(en)
+                .field(vn)
+                .field(data)
+                .finish(),
             Value::Herufi(c) => f.debug_tuple("Herufi").field(c).finish(),
             Value::Jozi(a, b) => f.debug_tuple("Jozi").field(a).field(b).finish(),
             Value::Kamusi(m) => f.debug_tuple("Kamusi").field(m).finish(),
@@ -462,7 +494,15 @@ impl std::fmt::Debug for Value {
             Value::Anuani(a) => f.debug_tuple("Anuani").field(a).finish(),
             Value::KashaGC(cell) => f.debug_tuple("KashaGC").field(cell).finish(),
             Value::KashaGCDhaifu(weak) => {
-                write!(f, "KashaGCDhaifu({})", if weak.strong_count() > 0 { "hai" } else { "imekufa" })
+                write!(
+                    f,
+                    "KashaGCDhaifu({})",
+                    if weak.strong_count() > 0 {
+                        "hai"
+                    } else {
+                        "imekufa"
+                    }
+                )
             }
             Value::Faili(cell) => {
                 let open = cell.borrow().0.is_some();
@@ -578,7 +618,10 @@ pub enum EvalError {
     /// (`TypeErr`/`UndefinedVar`/`DivByZero`/`Panic`) are intentionally left as-is rather than
     /// migrated — see `From<&EvalError> for ErrorKind` for the conservative fallback every
     /// pre-existing error site gets for free.
-    Coded { kind: ErrorKind, message: String },
+    Coded {
+        kind: ErrorKind,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for EvalError {
@@ -636,23 +679,41 @@ mod error_kind_tests {
 
     #[test]
     fn coded_error_reports_its_own_kind() {
-        let err = EvalError::Coded { kind: ErrorKind::NotFound, message: "haipo".into() };
+        let err = EvalError::Coded {
+            kind: ErrorKind::NotFound,
+            message: "haipo".into(),
+        };
         assert_eq!(ErrorKind::from(&err), ErrorKind::NotFound);
     }
 
     #[test]
     fn coded_error_display_shows_message_only() {
-        let err = EvalError::Coded { kind: ErrorKind::BadInput, message: "data mbaya".into() };
+        let err = EvalError::Coded {
+            kind: ErrorKind::BadInput,
+            message: "data mbaya".into(),
+        };
         assert_eq!(err.to_string(), "data mbaya");
     }
 
     #[test]
     fn every_pre_existing_variant_falls_back_to_internal() {
-        assert_eq!(ErrorKind::from(&EvalError::Panic("x".into())), ErrorKind::Internal);
-        assert_eq!(ErrorKind::from(&EvalError::UndefinedVar("x".into())), ErrorKind::Internal);
-        assert_eq!(ErrorKind::from(&EvalError::TypeErr("x".into())), ErrorKind::Internal);
+        assert_eq!(
+            ErrorKind::from(&EvalError::Panic("x".into())),
+            ErrorKind::Internal
+        );
+        assert_eq!(
+            ErrorKind::from(&EvalError::UndefinedVar("x".into())),
+            ErrorKind::Internal
+        );
+        assert_eq!(
+            ErrorKind::from(&EvalError::TypeErr("x".into())),
+            ErrorKind::Internal
+        );
         assert_eq!(ErrorKind::from(&EvalError::DivByZero), ErrorKind::Internal);
-        assert_eq!(ErrorKind::from(&EvalError::Unknown("x".into())), ErrorKind::Internal);
+        assert_eq!(
+            ErrorKind::from(&EvalError::Unknown("x".into())),
+            ErrorKind::Internal
+        );
         assert_eq!(
             ErrorKind::from(&EvalError::Propagate(super::Value::Tupu)),
             ErrorKind::Internal

@@ -58,6 +58,16 @@ pub(crate) fn as_string(v: &Value) -> Option<String> {
     }
 }
 
+pub(crate) fn to_display_string(v: &Value) -> Option<String> {
+    match v {
+        Value::Neno(s) => Some(s.clone()),
+        Value::Namba(n) => Some(n.to_string()),
+        Value::Ukweli(b) => Some(if *b { "kweli" } else { "si_kweli" }.to_string()),
+        Value::Herufi(c) => Some(c.to_string()),
+        _ => None,
+    }
+}
+
 pub(crate) fn as_char(v: &Value) -> Option<char> {
     match v {
         Value::Herufi(c) => Some(*c),
@@ -112,8 +122,8 @@ pub(crate) fn big_numeric_binary_op(
     op: &asili_parser::BinaryOp,
     r: &Value,
 ) -> Result<Option<Value>, EvalError> {
-    use asili_parser::BinaryOp;
     use super::{BigDecimal, BigInt};
+    use asili_parser::BinaryOp;
     use num_traits::FromPrimitive;
 
     let is_big = |v: &Value| matches!(v, Value::NambaKuu(_) | Value::NambaSahihi(_));
@@ -205,11 +215,7 @@ pub(crate) fn big_numeric_binary_op(
 }
 
 /// Lexicographic comparison for Neno. Returns Some(Ukweli) when both are strings, else None.
-pub(crate) fn binary_cmp_neno(
-    l: &Value,
-    r: &Value,
-    f: impl Fn(Ordering) -> bool,
-) -> Option<Value> {
+pub(crate) fn binary_cmp_neno(l: &Value, r: &Value, f: impl Fn(Ordering) -> bool) -> Option<Value> {
     let s1 = as_string(l)?;
     let s2 = as_string(r)?;
     Some(Value::Ukweli(f(s1.cmp(&s2))))
@@ -221,7 +227,8 @@ pub(crate) fn assign_f64_op(
     op_name: &str,
     f: impl Fn(f64, f64) -> f64,
 ) -> Result<Value, EvalError> {
-    let a = as_f64(current).ok_or_else(|| EvalError::TypeErr(format!("{op_name} inahitaji Namba")))?;
+    let a =
+        as_f64(current).ok_or_else(|| EvalError::TypeErr(format!("{op_name} inahitaji Namba")))?;
     let b = as_f64(rhs).ok_or_else(|| EvalError::TypeErr(format!("{op_name} inahitaji Namba")))?;
     Ok(Value::Namba(f(a, b)))
 }

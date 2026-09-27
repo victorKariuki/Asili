@@ -4,11 +4,11 @@ use std::collections::{HashMap, HashSet};
 
 mod ast;
 pub mod attrs;
+pub mod builtins;
 mod cursor;
 mod module_merge;
 mod parse;
 mod semantic;
-pub mod builtins;
 pub use ast::*;
 pub use attrs::{item_survives, parse_sharti_predicate, ShartiPredicate, Target};
 pub use module_merge::merge_modules;
@@ -27,24 +27,39 @@ pub fn parse_tokens(tokens: &[Token]) -> Result<Module, Vec<Diagnostic>> {
 }
 
 pub fn discover_tests(module: &Module) -> Vec<Function> {
-    module.functions.iter().filter(|f| f.is_test).cloned().collect()
+    module
+        .functions
+        .iter()
+        .filter(|f| f.is_test)
+        .cloned()
+        .collect()
 }
 
 pub fn semantic_check(module: &Module) -> Result<(), Vec<Diagnostic>> {
     semantic_check_with_options(module, true)
 }
 
-pub fn semantic_check_with_options(module: &Module, require_main: bool) -> Result<(), Vec<Diagnostic>> {
-    semantic_check_with_env(module, require_main, HashMap::new(), HashMap::new())
+pub fn semantic_check_with_options(
+    module: &Module,
+    require_main: bool,
+) -> Result<(), Vec<Diagnostic>> {
+    let (functions, constants) = extern_env_from_imports(module);
+    semantic_check_with_env(module, require_main, functions, constants)
 }
 
 /// Build extern function and constant maps for semantic analysis.
-/// Always seeds with the msingi prelude (jozi, orodha, kamusi, etc. are always in scope),
-/// then adds functions from each explicitly imported module.
-pub fn extern_env_from_imports(module: &Module) -> (HashMap<String, FnContract>, HashMap<String, ValueType>) {
-    let prelude = builtins::msingi_exports();
-    let mut functions = prelude.functions;
-    let mut constants = prelude.constants;
+/// Builtin stdlib modules are ambient; explicit imports remain necessary for user modules.
+pub fn extern_env_from_imports(
+    module: &Module,
+) -> (HashMap<String, FnContract>, HashMap<String, ValueType>) {
+    let mut functions = HashMap::new();
+    let mut constants = HashMap::new();
+    for name in builtins::BUILTIN_MODULE_NAMES {
+        if let Some(table) = builtins::builtin_module_exports(name) {
+            functions.extend(table.functions);
+            constants.extend(table.constants);
+        }
+    }
     for imp in &module.imports {
         let mod_name = match &imp.path {
             ImportPath::Full(s) => s.as_str(),
@@ -64,7 +79,8 @@ pub fn semantic_check_with_env(
     extern_functions: HashMap<String, FnContract>,
     extern_constants: HashMap<String, ValueType>,
 ) -> Result<(), Vec<Diagnostic>> {
-    let errors = semantic::run_semantic_check(module, require_main, extern_functions, extern_constants);
+    let errors =
+        semantic::run_semantic_check(module, require_main, extern_functions, extern_constants);
     if errors.is_empty() {
         Ok(())
     } else {

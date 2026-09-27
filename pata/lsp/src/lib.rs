@@ -64,6 +64,7 @@
 //! limitations (path-based imports plus registry-resolved vendored dependencies via
 //! `pata_core::find_module_file`; still no `pata.lock`-driven version-constraint awareness).
 
+pub mod actions;
 mod diagnostics;
 mod doc_store;
 mod format;
@@ -76,7 +77,6 @@ pub mod signature;
 pub mod symbols;
 pub mod types;
 pub mod workspace;
-pub mod actions;
 
 pub use server::{run_stdio, run_stdio_blocking};
 pub use tower_lsp;
@@ -85,32 +85,21 @@ use diagnostics::{asili_diagnostics_to_lsp_with_source, run_lex_parse};
 use server::Backend;
 use tower_lsp::{
     lsp_types::{
-        CodeActionOrCommand, CodeActionParams,
-        CodeActionProviderCapability, CodeActionResponse,
-        CodeLens, CodeLensOptions, CodeLensParams,
-        CompletionOptions, CompletionParams, CompletionResponse,
-        DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams,
-        DocumentSymbolParams, DocumentSymbolResponse,
-        DidChangeWatchedFilesParams, DidChangeWatchedFilesRegistrationOptions,
-        FileSystemWatcher, GlobPattern, Registration,
-        FoldingRange, FoldingRangeParams, FoldingRangeProviderCapability,
-        GotoDefinitionParams, GotoDefinitionResponse,
-        InlayHintParams,
-        InitializeParams, InitializeResult, InitializedParams,
-        OneOf,
-        PrepareRenameResponse,
-        ReferenceParams,
-        RenameOptions,
-        RenameParams, TextDocumentPositionParams, WorkspaceEdit,
-        SemanticTokenModifier, SemanticTokenType,
-        SemanticTokensFullOptions, SemanticTokensLegend,
-        SemanticTokensOptions, SemanticTokensServerCapabilities,
-        ServerCapabilities, ServerInfo,
-        ParameterInformation, ParameterLabel,
-        SignatureHelp, SignatureHelpOptions, SignatureHelpParams, SignatureInformation,
-        TextDocumentSyncCapability, TextDocumentSyncKind,
+        CodeActionOrCommand, CodeActionParams, CodeActionProviderCapability, CodeActionResponse,
+        CodeLens, CodeLensOptions, CodeLensParams, CompletionOptions, CompletionParams,
+        CompletionResponse, DidChangeWatchedFilesParams, DidChangeWatchedFilesRegistrationOptions,
+        DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, DocumentSymbolParams,
+        DocumentSymbolResponse, FileSystemWatcher, FoldingRange, FoldingRangeParams,
+        FoldingRangeProviderCapability, GlobPattern, GotoDefinitionParams, GotoDefinitionResponse,
+        InitializeParams, InitializeResult, InitializedParams, InlayHintParams, OneOf,
+        ParameterInformation, ParameterLabel, PrepareRenameResponse, ReferenceParams, Registration,
+        RenameOptions, RenameParams, SemanticTokenModifier, SemanticTokenType,
+        SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+        SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, SignatureHelp,
+        SignatureHelpOptions, SignatureHelpParams, SignatureInformation,
+        TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
+        WorkspaceEdit, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
         WorkspaceSymbolParams,
-        WorkspaceServerCapabilities, WorkspaceFoldersServerCapabilities,
     },
     LanguageServer,
 };
@@ -146,19 +135,17 @@ impl LanguageServer for Backend {
                 .collect(),
         };
         let capabilities = ServerCapabilities {
-            text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                TextDocumentSyncKind::FULL,
-            )),
+            text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
             // Existing capabilities
             hover_provider: Some(tower_lsp::lsp_types::HoverProviderCapability::Simple(true)),
-            semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
-                SemanticTokensOptions {
+            semantic_tokens_provider: Some(
+                SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
                     legend,
                     range: None,
                     full: Some(SemanticTokensFullOptions::Bool(true)),
                     ..Default::default()
-                },
-            )),
+                }),
+            ),
             document_formatting_provider: Some(OneOf::Left(true)),
             code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
             folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
@@ -167,7 +154,9 @@ impl LanguageServer for Backend {
                 retrigger_characters: None,
                 work_done_progress_options: Default::default(),
             }),
-            code_lens_provider: Some(CodeLensOptions { resolve_provider: Some(false) }),
+            code_lens_provider: Some(CodeLensOptions {
+                resolve_provider: Some(false),
+            }),
             // New capabilities
             completion_provider: Some(CompletionOptions {
                 trigger_characters: Some(vec![".".to_string(), " ".to_string()]),
@@ -224,7 +213,9 @@ impl LanguageServer for Backend {
                 kind: None,
             })
             .collect();
-        if let Ok(register_options) = serde_json::to_value(DidChangeWatchedFilesRegistrationOptions { watchers }) {
+        if let Ok(register_options) =
+            serde_json::to_value(DidChangeWatchedFilesRegistrationOptions { watchers })
+        {
             let _ = self
                 .client
                 .register_capability(vec![Registration {
@@ -401,7 +392,9 @@ impl LanguageServer for Backend {
             Ok(path) => self.workspace_for(&path).await,
             Err(()) => None,
         };
-        let Some(info) = signature::compute_signature_help(&text, pos.line, pos.character, workspace.as_ref()) else {
+        let Some(info) =
+            signature::compute_signature_help(&text, pos.line, pos.character, workspace.as_ref())
+        else {
             return Ok(None);
         };
         let parameters = info
@@ -434,9 +427,7 @@ impl LanguageServer for Backend {
     async fn semantic_tokens_full(
         &self,
         params: tower_lsp::lsp_types::SemanticTokensParams,
-    ) -> tower_lsp::jsonrpc::Result<
-        Option<tower_lsp::lsp_types::SemanticTokensResult>,
-    > {
+    ) -> tower_lsp::jsonrpc::Result<Option<tower_lsp::lsp_types::SemanticTokensResult>> {
         let uri = params.text_document.uri;
         let text = match self.documents.get(uri.as_str()).await {
             Some(t) => t,
@@ -481,7 +472,11 @@ impl LanguageServer for Backend {
             .map(CodeActionOrCommand::CodeAction)
             .collect();
 
-        Ok(if actions.is_empty() { None } else { Some(actions) })
+        Ok(if actions.is_empty() {
+            None
+        } else {
+            Some(actions)
+        })
     }
 
     // ── Code lens ──────────────────────────────────────────────────────────────
@@ -496,7 +491,11 @@ impl LanguageServer for Backend {
             None => return Ok(None),
         };
         let lenses = symbols::test_code_lenses(&text, &uri);
-        Ok(if lenses.is_empty() { None } else { Some(lenses) })
+        Ok(if lenses.is_empty() {
+            None
+        } else {
+            Some(lenses)
+        })
     }
 
     // ── Completion ─────────────────────────────────────────────────────────────
@@ -520,7 +519,11 @@ impl LanguageServer for Backend {
         &self,
         params: GotoDefinitionParams,
     ) -> tower_lsp::jsonrpc::Result<Option<GotoDefinitionResponse>> {
-        let uri = params.text_document_position_params.text_document.uri.clone();
+        let uri = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .clone();
         let pos = params.text_document_position_params.position;
         let text = match self.documents.get(uri.as_str()).await {
             Some(t) => t,
@@ -565,19 +568,30 @@ impl LanguageServer for Backend {
                         };
                         if let Some(ws) = workspace.as_ref() {
                             for importer_name in ws.transitive_importers(&cur_name) {
-                                let Some(wm) = ws.find(&importer_name) else { continue };
-                                let Ok(other_uri) = tower_lsp::lsp_types::Url::from_file_path(&wm.path) else { continue };
+                                let Some(wm) = ws.find(&importer_name) else {
+                                    continue;
+                                };
+                                let Ok(other_uri) =
+                                    tower_lsp::lsp_types::Url::from_file_path(&wm.path)
+                                else {
+                                    continue;
+                                };
                                 if other_uri == uri {
                                     continue; // already covered by find_references above
                                 }
-                                let other_text = match self.documents.get(other_uri.as_str()).await {
+                                let other_text = match self.documents.get(other_uri.as_str()).await
+                                {
                                     Some(t) => t,
                                     None => match tokio::fs::read_to_string(&wm.path).await {
                                         Ok(t) => t,
                                         Err(_) => continue,
                                     },
                                 };
-                                locs.extend(symbols::find_references_in(&word, &other_uri, &other_text));
+                                locs.extend(symbols::find_references_in(
+                                    &word,
+                                    &other_uri,
+                                    &other_text,
+                                ));
                             }
                         }
                     }
@@ -599,7 +613,11 @@ impl LanguageServer for Backend {
         &self,
         params: DocumentHighlightParams,
     ) -> tower_lsp::jsonrpc::Result<Option<Vec<DocumentHighlight>>> {
-        let uri = params.text_document_position_params.text_document.uri.clone();
+        let uri = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .clone();
         let pos = params.text_document_position_params.position;
         let text = match self.documents.get(uri.as_str()).await {
             Some(t) => t,
@@ -658,15 +676,25 @@ impl LanguageServer for Backend {
         let mut results = symbols::workspace_symbols(all_docs.into_iter(), &params.query);
         let mut seen_roots = std::collections::HashSet::new();
         for path in &open_paths {
-            let Some(root) = crate::workspace::find_project_root(path) else { continue };
+            let Some(root) = crate::workspace::find_project_root(path) else {
+                continue;
+            };
             if !seen_roots.insert(root) {
                 continue;
             }
             if let Some(ws) = self.workspace_for(path).await {
-                results.extend(symbols::workspace_symbols_from_index(&ws, &params.query, &open_paths));
+                results.extend(symbols::workspace_symbols_from_index(
+                    &ws,
+                    &params.query,
+                    &open_paths,
+                ));
             }
         }
-        Ok(if results.is_empty() { None } else { Some(results) })
+        Ok(if results.is_empty() {
+            None
+        } else {
+            Some(results)
+        })
     }
 
     // ── Folding ranges ─────────────────────────────────────────────────────────
@@ -681,7 +709,11 @@ impl LanguageServer for Backend {
             None => return Ok(None),
         };
         let ranges = symbols::folding_ranges(&text);
-        Ok(if ranges.is_empty() { None } else { Some(ranges) })
+        Ok(if ranges.is_empty() {
+            None
+        } else {
+            Some(ranges)
+        })
     }
 
     // ── Rename ─────────────────────────────────────────────────────────────────

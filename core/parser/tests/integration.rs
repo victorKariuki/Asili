@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use asili_lexer::tokenize;
 use asili_parser::{
-    discover_tests, parse_tokens, semantic_check, semantic_check_with_env, semantic_check_with_options,
-    FnContract, BinaryOp, Expr, ImportPath, Pattern, Stmt, ValueType,
+    discover_tests, parse_tokens, semantic_check, semantic_check_with_env,
+    semantic_check_with_options, BinaryOp, Expr, FnContract, ImportPath, Pattern, Stmt, ValueType,
 };
 
 #[test]
@@ -22,6 +22,22 @@ fn parses_main() {
         },
     );
     semantic_check_with_env(&module, true, extern_fns, HashMap::new()).expect("semantics");
+}
+
+#[test]
+fn supports_grouped_weka_declarations() {
+    let src = "kazi kuu(hoja: Orodha<Neno>) -> Tupu { weka x = 1.0, y = x + 1.0 }";
+    let toks = tokenize(src).expect("tokens");
+    let module = parse_tokens(&toks).expect("parse");
+    semantic_check(&module).expect("semantics");
+}
+
+#[test]
+fn builtin_stdlib_is_ambient() {
+    let src = "kazi kuu(hoja: Orodha<Neno>) -> Tupu { chapisha((sakafu(3.7)) kama Neno) }";
+    let toks = tokenize(src).expect("tokens");
+    let module = parse_tokens(&toks).expect("parse");
+    semantic_check(&module).expect("ambient builtin stdlib");
 }
 
 #[test]
@@ -65,10 +81,16 @@ fn parses_lebo_and_labeled_break() {
     let kuu = module.functions.iter().find(|f| f.name == "kuu").unwrap();
     let body = &kuu.body.statements;
     assert_eq!(body.len(), 1);
-    if let Stmt::While { label, body: block, .. } = &body[0] {
+    if let Stmt::While {
+        label, body: block, ..
+    } = &body[0]
+    {
         assert_eq!(label.as_deref(), Some("nje"));
         assert_eq!(block.statements.len(), 1);
-        if let Stmt::Break { label: break_label, .. } = &block.statements[0] {
+        if let Stmt::Break {
+            label: break_label, ..
+        } = &block.statements[0]
+        {
             assert_eq!(break_label.as_deref(), Some("nje"));
         } else {
             panic!("expected Break in loop body");
@@ -85,9 +107,15 @@ fn parses_labeled_break_with_quote() {
     let toks = tokenize(src).expect("tokens");
     let module = parse_tokens(&toks).expect("parse");
     let kuu = module.functions.iter().find(|f| f.name == "kuu").unwrap();
-    if let Stmt::While { label, body: block, .. } = &kuu.body.statements[0] {
+    if let Stmt::While {
+        label, body: block, ..
+    } = &kuu.body.statements[0]
+    {
         assert_eq!(label.as_deref(), Some("nje"));
-        if let Stmt::Break { label: break_label, .. } = &block.statements[0] {
+        if let Stmt::Break {
+            label: break_label, ..
+        } = &block.statements[0]
+        {
             assert_eq!(break_label.as_deref(), Some("nje"));
         }
     }
@@ -145,7 +173,13 @@ fn parses_method_call() {
     let module = parse_tokens(&toks).expect("parse");
     let kuu = module.functions.iter().find(|f| f.name == "kuu").unwrap();
     if let Stmt::Let { value, .. } = &kuu.body.statements[1] {
-        if let Expr::MethodCall { receiver, method_name, args, .. } = value {
+        if let Expr::MethodCall {
+            receiver,
+            method_name,
+            args,
+            ..
+        } = value
+        {
             if let Expr::Ident { name: r, .. } = &**receiver {
                 assert_eq!(r, "x");
             } else {
@@ -164,10 +198,16 @@ fn recursion_depth_limit_parse() {
     let n = 1001;
     let open: String = "(".repeat(n);
     let close: String = ")".repeat(n);
-    let src = format!("kazi kuu(hoja: Orodha<Neno>) -> Tupu {{ weka x = {}1{} }}", open, close);
+    let src = format!(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu {{ weka x = {}1{} }}",
+        open, close
+    );
     let toks = tokenize(&src).expect("tokens");
     let result = parse_tokens(&toks);
-    assert!(result.is_err(), "parse should fail when recursion depth exceeded");
+    assert!(
+        result.is_err(),
+        "parse should fail when recursion depth exceeded"
+    );
     let errs = result.unwrap_err();
     assert!(
         errs.iter().any(|d| d.code == "PAR073"),
@@ -183,7 +223,14 @@ fn parses_bitwise_and_shift() {
     let module = parse_tokens(&toks).expect("parse");
     let kuu = module.functions.iter().find(|f| f.name == "kuu").unwrap();
     let stmt = &kuu.body.statements[0];
-    if let Stmt::Let { value: Expr::Binary { op: BinaryOp::BitAnd, .. }, .. } = stmt {
+    if let Stmt::Let {
+        value: Expr::Binary {
+            op: BinaryOp::BitAnd,
+            ..
+        },
+        ..
+    } = stmt
+    {
     } else {
         panic!("expected Let with na_biti (BitAnd)");
     }
@@ -199,8 +246,14 @@ fn parses_pattern_hamna_kweli() {
     if let Stmt::Match { arms, .. } = stmt {
         assert_eq!(arms.len(), 4);
         assert!(matches!(&arms[0].pattern, Pattern::Literal(Expr::Hamna)));
-        assert!(matches!(&arms[1].pattern, Pattern::Literal(Expr::Bool(true))));
-        assert!(matches!(&arms[2].pattern, Pattern::Literal(Expr::Bool(false))));
+        assert!(matches!(
+            &arms[1].pattern,
+            Pattern::Literal(Expr::Bool(true))
+        ));
+        assert!(matches!(
+            &arms[2].pattern,
+            Pattern::Literal(Expr::Bool(false))
+        ));
         assert!(matches!(&arms[3].pattern, Pattern::Wildcard));
     } else {
         panic!("expected Match");
@@ -218,7 +271,10 @@ fn invalid_number_literal_rejected() {
         }
     }
     let result = parse_tokens(&toks);
-    assert!(result.is_err(), "parse should fail for invalid number 1.2.3");
+    assert!(
+        result.is_err(),
+        "parse should fail for invalid number 1.2.3"
+    );
     let errs = result.unwrap_err();
     assert!(
         errs.iter().any(|d| d.code == "PAR072"),
@@ -243,10 +299,7 @@ fn unconsumed_tokeo_emits_sem048() {
         "gawio".to_string(),
         FnContract {
             params: vec![ValueType::Namba, ValueType::Namba],
-            ret: ValueType::Tokeo(
-                Box::new(ValueType::Namba),
-                Box::new(ValueType::Neno),
-            ),
+            ret: ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno)),
         },
     );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
@@ -272,7 +325,13 @@ fn method_call_type_checking_is_implemented() {
     let kuu = module.functions.iter().find(|f| f.name == "kuu").unwrap();
 
     if let Stmt::Let { value, .. } = &kuu.body.statements[1] {
-        if let Expr::MethodCall { receiver, method_name, args, .. } = value {
+        if let Expr::MethodCall {
+            receiver,
+            method_name,
+            args,
+            ..
+        } = value
+        {
             assert_eq!(method_name, "urefu");
             assert!(args.is_empty());
             assert!(matches!(receiver.as_ref(), Expr::Ident { .. }));

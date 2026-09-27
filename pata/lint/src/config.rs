@@ -155,7 +155,8 @@ mod tests {
 
     #[test]
     fn load_returns_default_when_no_pata_toml() {
-        let dir = std::env::temp_dir().join(format!("pata-lint-test-noconfig-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("pata-lint-test-noconfig-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let cfg = LintConfig::load(&dir).expect("load should not error on missing pata.toml");
         assert_eq!(cfg.severity("LINT101"), "warning");
@@ -164,7 +165,8 @@ mod tests {
 
     #[test]
     fn load_reads_lint_rules_table_from_pata_toml() {
-        let dir = std::env::temp_dir().join(format!("pata-lint-test-withconfig-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("pata-lint-test-withconfig-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("pata.toml"),
@@ -180,13 +182,15 @@ mod tests {
 
     #[test]
     fn find_and_load_walks_up_from_a_nested_file() {
-        let root = std::env::temp_dir().join(format!("pata-lint-test-walkup-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("pata-lint-test-walkup-{}", std::process::id()));
         let nested = root.join("src").join("deep");
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::write(
             root.join("pata.toml"),
             "[lint.rules.LINT101]\nseverity = \"ignore\"\n",
-        ).unwrap();
+        )
+        .unwrap();
         let target_file = nested.join("kuu.as");
         std::fs::write(&target_file, "kazi kuu() -> Tupu { rejesha Tupu }").unwrap();
 
@@ -198,7 +202,8 @@ mod tests {
 
     #[test]
     fn find_and_load_defaults_when_no_ancestor_has_pata_toml() {
-        let dir = std::env::temp_dir().join(format!("pata-lint-test-noancestor-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("pata-lint-test-noancestor-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let cfg = LintConfig::find_and_load(&dir).expect("walk-up load with no pata.toml above");
         assert_eq!(cfg.severity("LINT101"), "warning");

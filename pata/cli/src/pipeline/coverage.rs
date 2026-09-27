@@ -59,7 +59,12 @@ fn collect_statement_lines(block: &Block, out: &mut HashSet<usize>) {
     for stmt in &block.statements {
         out.insert(stmt.line());
         match stmt {
-            Stmt::If { then_block, else_if, else_block, .. } => {
+            Stmt::If {
+                then_block,
+                else_if,
+                else_block,
+                ..
+            } => {
                 collect_statement_lines(then_block, out);
                 for (_, b) in else_if {
                     collect_statement_lines(b, out);
@@ -99,14 +104,20 @@ mod tests {
     /// (see compile.rs), which a single-module constructor can't express.
     fn metrics_for(module: &Module, executed: HashSet<usize>) -> CoverageMetrics {
         let total_lines = total_statement_lines(module);
-        let executed_lines: HashSet<usize> =
-            executed.into_iter().filter(|l| total_lines.contains(l)).collect();
+        let executed_lines: HashSet<usize> = executed
+            .into_iter()
+            .filter(|l| total_lines.contains(l))
+            .collect();
         let coverage_percent = if total_lines.is_empty() {
             0.0
         } else {
             (executed_lines.len() as f64 / total_lines.len() as f64) * 100.0
         };
-        CoverageMetrics { total_lines, executed_lines, coverage_percent }
+        CoverageMetrics {
+            total_lines,
+            executed_lines,
+            coverage_percent,
+        }
     }
 
     #[test]
@@ -148,6 +159,10 @@ mod tests {
         let mut foreign_lines = HashSet::new();
         foreign_lines.insert(9999); // not a real line in this module
         let metrics = metrics_for(&module, foreign_lines);
-        assert_eq!(metrics.executed_lines.len(), 0, "a line from another module's execution must not count here");
+        assert_eq!(
+            metrics.executed_lines.len(),
+            0,
+            "a line from another module's execution must not count here"
+        );
     }
 }

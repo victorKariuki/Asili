@@ -10,8 +10,8 @@
 //! rather than defining its own copy, so both sides of the contract stay in sync by construction.
 
 use crate::env::Env;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::{Arc, Mutex};
 
 /// A running program's debug-control surface — implemented by `RealDebugHook` below (wired into
 /// the evaluator via `Runtime::debug_hook`) and, in `pata-dap`'s own test suite, by a canned test
@@ -78,7 +78,11 @@ impl RealDebugHook {
     /// The line currently paused at, or `None` when execution isn't paused right now.
     pub fn paused_at_line(&self) -> Option<usize> {
         let line = self.paused_at_line.load(Ordering::SeqCst);
-        if line < 0 { None } else { Some(line as usize) }
+        if line < 0 {
+            None
+        } else {
+            Some(line as usize)
+        }
     }
 }
 
@@ -162,7 +166,10 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        assert!(hook.did_pause(), "should_pause should have started blocking by now");
+        assert!(
+            hook.did_pause(),
+            "should_pause should have started blocking by now"
+        );
 
         hook.resume();
         assert!(pause_thread.join().unwrap());
@@ -176,7 +183,9 @@ mod tests {
         hook.record_bindings(snapshot_bindings(&env));
 
         let bindings = hook.current_bindings();
-        assert!(bindings.iter().any(|(name, value)| name == "x" && value.contains("42")));
+        assert!(bindings
+            .iter()
+            .any(|(name, value)| name == "x" && value.contains("42")));
     }
 
     /// Shadowing: an inner scope's binding for a name must win over an outer scope's, matching
@@ -193,8 +202,16 @@ mod tests {
 
         let bindings = hook.current_bindings();
         let x_values: Vec<_> = bindings.iter().filter(|(name, _)| name == "x").collect();
-        assert_eq!(x_values.len(), 1, "shadowed name must appear once, not once per scope");
-        assert!(x_values[0].1.contains('2'), "the inner (shadowing) value must win, got: {:?}", x_values[0]);
+        assert_eq!(
+            x_values.len(),
+            1,
+            "shadowed name must appear once, not once per scope"
+        );
+        assert!(
+            x_values[0].1.contains('2'),
+            "the inner (shadowing) value must win, got: {:?}",
+            x_values[0]
+        );
     }
 
     #[test]
@@ -218,10 +235,18 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        assert_eq!(hook.paused_at_line(), Some(9), "must report the real paused line while blocked");
+        assert_eq!(
+            hook.paused_at_line(),
+            Some(9),
+            "must report the real paused line while blocked"
+        );
 
         hook.resume();
         pause_thread.join().unwrap();
-        assert_eq!(hook.paused_at_line(), None, "must report None again once resumed");
+        assert_eq!(
+            hook.paused_at_line(),
+            None,
+            "must report None again once resumed"
+        );
     }
 }

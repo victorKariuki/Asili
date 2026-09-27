@@ -155,12 +155,18 @@ Researched, decided, not built.
 - [ ] `kiungo` (FFI) is a documented stub: `core/evaluator/src/builtins/kiungo.rs`
       unconditionally returns `Err` from both exported functions, with a `TODO(Phase IV)`
       comment about `libloading`. Correctly scoped to this phase, not a surprise gap.
-- [ ] `.asb` is not real bytecode — `core/evaluator/src/asb.rs` bincode-serializes the parsed
-      AST `Module`; running an `.asb` file re-interprets the AST via the tree-walk evaluator. A
-      separate, genuinely-started-but-incomplete bytecode VM (`core/evaluator/src/bytecode.rs`,
-      `core/evaluator/src/tir.rs`) exists with a real TODO trail (it names exactly which opcodes
-      are missing), but nothing in `pata jenga`'s default pipeline ever emits `format=bytecode`
-      — it's disconnected from the path anyone actually uses.
+- [x] **Real bytecode for the Sudoku subset** — `core/evaluator/src/bytecode.rs` lowers loops,
+      arithmetic, comparisons, lists, indexing, list mutation, casts, builtin calls, and user
+      function calls to a compact stack VM. `pata jenga` emits `format=bytecode` for programs in
+      that subset, and `pata tenda`/`pata-runner` execute it directly. Unsupported AST constructs
+      deliberately retain the serialized-AST artifact and tree-walk fallback, so existing
+      semantics remain available while the remaining language is migrated incrementally. Hot
+      local-list indexing and `.urefu()` operations use specialized VM instructions that avoid
+      cloning whole collections. Numeric locals, integer-safe mask operations, cached builtin
+      dispatch, pooled frames/stacks, and fused counted-loop operations extend the same fast path;
+      the Arto Inkala "world's hardest Sudoku" example remains source-semantic and runs in
+      about 2.24 seconds in repeated release bytecode runs, with 90,665 candidate attempts
+      and 10,041 backtracks.
 
 ---
 

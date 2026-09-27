@@ -57,9 +57,15 @@ mod tests {
         run(&["hisabati".to_string()]).expect("ondoa ok");
 
         let toml = fs::read_to_string("pata.toml").expect("pata.toml");
-        assert!(!toml.contains("hisabati"), "dependency should be removed from pata.toml, got: {toml}");
+        assert!(
+            !toml.contains("hisabati"),
+            "dependency should be removed from pata.toml, got: {toml}"
+        );
         let lock = fs::read_to_string("pata.lock").expect("pata.lock");
-        assert!(!lock.contains("[dependencies.hisabati]"), "dependency should be removed from pata.lock, got: {lock}");
+        assert!(
+            !lock.contains("[dependencies.hisabati]"),
+            "dependency should be removed from pata.lock, got: {lock}"
+        );
 
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(&root);
@@ -72,7 +78,8 @@ mod tests {
         let root = temp_project_with_dependency();
         std::env::set_current_dir(&root).expect("chdir");
 
-        let err = run(&["haipo_kabisa".to_string()]).expect_err("removing a nonexistent dependency should fail");
+        let err = run(&["haipo_kabisa".to_string()])
+            .expect_err("removing a nonexistent dependency should fail");
         assert_eq!(err.exit_code, 1);
 
         std::env::set_current_dir(&original).expect("restore cwd");
@@ -107,13 +114,18 @@ mod tests {
         fs::write(
             dir.join("hisabati_pkg/src/hisabati.as"),
             "umma kazi jumlisha(a: Namba, b: Namba) -> Namba { rejesha a + b }\n",
-        ).expect("write dep source");
+        )
+        .expect("write dep source");
         fs::write(
             dir.join("pata.toml"),
             "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\nhisabati = { path = \"hisabati_pkg\" }\n",
         )
         .expect("write manifest");
-        fs::write(dir.join("src/kuu.as"), "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }").expect("src");
+        fs::write(
+            dir.join("src/kuu.as"),
+            "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }",
+        )
+        .expect("src");
 
         // Write a real pata.lock entry too, matching what `pata ongeza` would have produced --
         // ondoa must clean this up as well, not just pata.toml.

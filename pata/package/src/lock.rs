@@ -2,10 +2,10 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
-use sha2::{Sha256, Digest};
 
 /// Lock file for pinned dependency versions
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,8 +60,7 @@ impl LockFile {
 
     /// Load lock file from pata.lock
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
-        let content = fs::read_to_string(&path)
-            .with_context(|| "imeshindwa kusoma pata.lock")?;
+        let content = fs::read_to_string(&path).with_context(|| "imeshindwa kusoma pata.lock")?;
         Self::from_str(&content)
     }
 
@@ -74,8 +73,7 @@ impl LockFile {
     pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
         let content = toml::to_string_pretty(self)
             .with_context(|| "hitilafu ya kubadili pata.lock kuwa TOML")?;
-        fs::write(&path, content)
-            .with_context(|| "imeshindwa kuandika pata.lock")
+        fs::write(&path, content).with_context(|| "imeshindwa kuandika pata.lock")
     }
 
     /// Add a locked dependency
@@ -132,8 +130,9 @@ impl LockFile {
                 // surface its own "not found" error separately.
                 continue;
             }
-            let actual = crate::fetch::hash_dir(&vendor_dir)
-                .with_context(|| format!("imeshindwa kuhesabu hashi ya {}", vendor_dir.display()))?;
+            let actual = crate::fetch::hash_dir(&vendor_dir).with_context(|| {
+                format!("imeshindwa kuhesabu hashi ya {}", vendor_dir.display())
+            })?;
             if actual != dep.checksum {
                 mismatches.push(IntegrityMismatch {
                     name: name.clone(),

@@ -3,7 +3,7 @@
 
 use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, semantic_check_with_env, extern_env_from_imports, Module};
+use asili_parser::{extern_env_from_imports, parse_tokens, semantic_check_with_env, Module};
 use std::io::Read;
 use std::net::TcpListener;
 use std::thread;
@@ -94,7 +94,10 @@ fn double_funga_is_a_safe_no_op() {
     );
     let module = compile(&src);
     let result = run_function(&module, "jaribu", vec![]);
-    assert!(result.is_ok(), "closing an already-closed Mkondo handle must not panic");
+    assert!(
+        result.is_ok(),
+        "closing an already-closed Mkondo handle must not panic"
+    );
     let _ = server.join();
 }
 
@@ -156,7 +159,11 @@ fn soma_bailisi_on_closed_handle_returns_kosa() {
     let src = src.replacen("127.0.0.1:1", &addr.to_string(), 1);
     let module = compile(&src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Ukweli(true), "soma_bailisi on a closed handle must return Kosa, not panic");
+    assert_eq!(
+        result,
+        Value::Ukweli(true),
+        "soma_bailisi on a closed handle must return Kosa, not panic"
+    );
 }
 
 #[test]
@@ -170,5 +177,8 @@ fn mkondo_requires_leta_mfumo_or_resolved_module() {
     let module = parse_tokens(&toks).expect("parse");
     let (fns, consts) = extern_env_from_imports(&module);
     let result = semantic_check_with_env(&module, true, fns, consts);
-    assert!(result.is_err(), "mkondo_unganisha should be unknown without `leta mfumo`");
+    assert!(
+        result.is_err(),
+        "mkondo_unganisha should be unknown without `leta mfumo`"
+    );
 }

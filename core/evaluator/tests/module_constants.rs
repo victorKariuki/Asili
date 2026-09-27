@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, semantic_check_with_env};
+use std::collections::HashMap;
 
 /// Test 1: Parse module-level constant
 #[test]
@@ -107,7 +107,11 @@ fn test_semantic_check_module_constants() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     let result = semantic_check_with_env(&module, true, HashMap::new(), HashMap::new());
-    assert!(result.is_ok(), "should pass semantic check: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "should pass semantic check: {:?}",
+        result.err()
+    );
 }
 
 /// Test 7: Constants in ExportTable
@@ -179,7 +183,11 @@ fn test_constants_explicit_types() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    assert_eq!(module.constants.len(), 3, "should parse three constants with types");
+    assert_eq!(
+        module.constants.len(),
+        3,
+        "should parse three constants with types"
+    );
 }
 
 /// Test 11: a module-level constant is actually bound at runtime (not just parsed/type-checked).

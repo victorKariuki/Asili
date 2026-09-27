@@ -14,6 +14,15 @@ use crate::env::Env;
 // A proper implementation would separate call-depth from block-nesting-depth.
 pub(crate) const MAX_EVAL_DEPTH: usize = 1000;
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EvalMetrics {
+    pub statements: u64,
+    pub expressions: u64,
+    pub index_reads: u64,
+    pub method_calls: u64,
+    pub function_calls: u64,
+}
+
 pub(crate) struct Runtime<'a> {
     pub env: &'a mut Env,
     pub module: &'a Module,
@@ -33,6 +42,7 @@ pub(crate) struct Runtime<'a> {
     /// each statement, so a configured breakpoint genuinely halts this thread until the debugger
     /// resumes it.
     pub debug_hook: Option<Arc<dyn DebugHook>>,
+    pub metrics: Option<EvalMetrics>,
 }
 
 impl<'a> Runtime<'a> {
@@ -45,10 +55,15 @@ impl<'a> Runtime<'a> {
             peak_depth: 0,
             executed_lines: None,
             debug_hook: None,
+            metrics: None,
         }
     }
 
-    pub fn with_builtins(env: &'a mut Env, module: &'a Module, builtins: HashMap<String, builtins::BuiltinFn>) -> Self {
+    pub fn with_builtins(
+        env: &'a mut Env,
+        module: &'a Module,
+        builtins: HashMap<String, builtins::BuiltinFn>,
+    ) -> Self {
         Self {
             env,
             module,
@@ -57,12 +72,51 @@ impl<'a> Runtime<'a> {
             peak_depth: 0,
             executed_lines: None,
             debug_hook: None,
+            metrics: None,
         }
     }
 
     /// Opt this runtime into line-level coverage tracking.
     pub fn enable_coverage(&mut self) {
         self.executed_lines = Some(HashSet::new());
+    }
+
+    pub fn enable_metrics(&mut self) {
+        self.metrics = Some(EvalMetrics::default());
+    }
+
+    pub fn metrics(&self) -> Option<&EvalMetrics> {
+        self.metrics.as_ref()
+    }
+
+    pub fn count_statement(&mut self) {
+        if let Some(metrics) = &mut self.metrics {
+            metrics.statements += 1;
+        }
+    }
+
+    pub fn count_expression(&mut self) {
+        if let Some(metrics) = &mut self.metrics {
+            metrics.expressions += 1;
+        }
+    }
+
+    pub fn count_index_read(&mut self) {
+        if let Some(metrics) = &mut self.metrics {
+            metrics.index_reads += 1;
+        }
+    }
+
+    pub fn count_method_call(&mut self) {
+        if let Some(metrics) = &mut self.metrics {
+            metrics.method_calls += 1;
+        }
+    }
+
+    pub fn count_function_call(&mut self) {
+        if let Some(metrics) = &mut self.metrics {
+            metrics.function_calls += 1;
+        }
     }
 
     /// Attach a real debugger to this runtime — `eval_stmt_impl` will snapshot bindings into

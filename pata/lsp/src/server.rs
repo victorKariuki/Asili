@@ -1,11 +1,11 @@
 //! LSP server: Backend struct and stdio entry points.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-use tower_lsp::{Client, LspService, Server};
-use tokio::sync::RwLock;
 use crate::doc_store::DocStore;
 use crate::workspace::{ModuleCache, WorkspaceIndex};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use tokio::sync::RwLock;
+use tower_lsp::{Client, LspService, Server};
 
 pub struct Backend {
     pub client: Client,
@@ -46,7 +46,13 @@ impl Backend {
             return Some(index.clone());
         }
         let root_for_blocking = root.clone();
-        let mut module_cache = self.module_caches.read().await.get(&root).cloned().unwrap_or_default();
+        let mut module_cache = self
+            .module_caches
+            .read()
+            .await
+            .get(&root)
+            .cloned()
+            .unwrap_or_default();
         let index = tokio::task::spawn_blocking(move || {
             let idx = crate::workspace::resolve_workspace(&root_for_blocking, &mut module_cache);
             (idx, module_cache)
@@ -54,7 +60,10 @@ impl Backend {
         .await
         .ok()?;
         let (index, updated_cache) = index;
-        self.module_caches.write().await.insert(root.clone(), updated_cache);
+        self.module_caches
+            .write()
+            .await
+            .insert(root.clone(), updated_cache);
         self.workspaces.write().await.insert(root, index.clone());
         Some(index)
     }

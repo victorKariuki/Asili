@@ -141,7 +141,8 @@ mod tests {
     #[test]
     fn load_returns_default_when_no_pata_toml() {
         let dir = tempfile::tempdir().unwrap();
-        let cfg = FormatterConfig::load(dir.path()).expect("load should not error on missing pata.toml");
+        let cfg =
+            FormatterConfig::load(dir.path()).expect("load should not error on missing pata.toml");
         assert_eq!(cfg.indent_width(), 4);
         assert!(!cfg.use_tabs());
     }
@@ -152,7 +153,8 @@ mod tests {
         std::fs::write(
             dir.path().join("pata.toml"),
             "[fmt]\nindent_style = \"tabs\"\nindent_width = 2\nline_width = 80\n",
-        ).unwrap();
+        )
+        .unwrap();
 
         let cfg = FormatterConfig::load(dir.path()).expect("load should parse a real [fmt] table");
         assert!(cfg.use_tabs());
@@ -168,7 +170,8 @@ mod tests {
         std::fs::write(
             root.path().join("pata.toml"),
             "[fmt]\nindent_style = \"tabs\"\n",
-        ).unwrap();
+        )
+        .unwrap();
         let target_file = nested.join("kuu.as");
         std::fs::write(&target_file, "kazi kuu() -> Tupu { rejesha Tupu }").unwrap();
 
@@ -179,7 +182,8 @@ mod tests {
     #[test]
     fn find_and_load_defaults_when_no_ancestor_has_pata_toml() {
         let dir = tempfile::tempdir().unwrap();
-        let cfg = FormatterConfig::find_and_load(dir.path()).expect("walk-up load with no pata.toml above");
+        let cfg = FormatterConfig::find_and_load(dir.path())
+            .expect("walk-up load with no pata.toml above");
         assert_eq!(cfg.indent_width(), 4);
     }
 }

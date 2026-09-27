@@ -8,7 +8,7 @@
 
 use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, semantic_check_with_env, extern_env_from_imports, Module};
+use asili_parser::{extern_env_from_imports, parse_tokens, semantic_check_with_env, Module};
 use std::io::Write;
 
 fn compile(src: &str) -> Module {
@@ -71,7 +71,11 @@ fn explicit_funga_closes_the_handle() {
     );
     let module = compile(&src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Ukweli(true), "writing after .funga() should return Tokeo(Kosa(...))");
+    assert_eq!(
+        result,
+        Value::Ukweli(true),
+        "writing after .funga() should return Tokeo(Kosa(...))"
+    );
     let _ = std::fs::remove_file(&path);
 }
 
@@ -127,7 +131,10 @@ fn faili_requires_leta_faili() {
     let module = parse_tokens(&toks).expect("parse");
     let (fns, consts) = extern_env_from_imports(&module);
     let result = semantic_check_with_env(&module, true, fns, consts);
-    assert!(result.is_err(), "faili_fungua should be unknown without `leta faili`");
+    assert!(
+        result.is_err(),
+        "faili_fungua should be unknown without `leta faili`"
+    );
 }
 
 #[test]
@@ -192,6 +199,9 @@ fn double_funga_is_a_safe_no_op() {
     );
     let module = compile(&src);
     let result = run_function(&module, "jaribu", vec![]);
-    assert!(result.is_ok(), "closing an already-closed Faili handle must not panic");
+    assert!(
+        result.is_ok(),
+        "closing an already-closed Faili handle must not panic"
+    );
     let _ = std::fs::remove_file(&path);
 }

@@ -39,8 +39,14 @@ fn lint202_add_doc_comment(diag: &LspDiagnostic, uri: &Url) -> Option<CodeAction
     let indent = " ".repeat(diag.range.start.character as usize);
     let edit = TextEdit {
         range: Range {
-            start: Position { line: insert_line, character: 0 },
-            end: Position { line: insert_line, character: 0 },
+            start: Position {
+                line: insert_line,
+                character: 0,
+            },
+            end: Position {
+                line: insert_line,
+                character: 0,
+            },
         },
         new_text: format!("{indent}# TODO: eleza {name}.\n"),
     };
@@ -68,8 +74,14 @@ fn lint203_remove_unused_import(diag: &LspDiagnostic, uri: &Url) -> Option<CodeA
     let delete_line = diag.range.start.line;
     let edit = TextEdit {
         range: Range {
-            start: Position { line: delete_line, character: 0 },
-            end: Position { line: delete_line + 1, character: 0 },
+            start: Position {
+                line: delete_line,
+                character: 0,
+            },
+            end: Position {
+                line: delete_line + 1,
+                character: 0,
+            },
         },
         new_text: String::new(),
     };
@@ -97,7 +109,10 @@ mod tests {
         LspDiagnostic {
             range: Range {
                 start: Position { line, character },
-                end: Position { line, character: character + 1 },
+                end: Position {
+                    line,
+                    character: character + 1,
+                },
             },
             severity: Some(DiagnosticSeverity::WARNING),
             code: Some(NumberOrString::String(code.to_string())),
@@ -116,7 +131,12 @@ mod tests {
 
     #[test]
     fn lint202_produces_a_real_insert_edit() {
-        let d = diag("LINT202", "kazi 'jumlisha' haina maelezo (doc comment)", 4, 0);
+        let d = diag(
+            "LINT202",
+            "kazi 'jumlisha' haina maelezo (doc comment)",
+            4,
+            0,
+        );
         let action = action_for_diagnostic(&d, &test_uri()).expect("action");
         assert_eq!(action.title, "Ongeza maelezo kwa 'jumlisha'");
         let edit = action.edit.expect("edit must be Some, not inert");
@@ -133,7 +153,13 @@ mod tests {
     fn lint202_indents_the_inserted_comment_to_match() {
         let d = diag("LINT202", "kazi 'ndani' haina maelezo (doc comment)", 2, 4);
         let action = action_for_diagnostic(&d, &test_uri()).expect("action");
-        let edits = action.edit.unwrap().changes.unwrap().remove(&test_uri()).unwrap();
+        let edits = action
+            .edit
+            .unwrap()
+            .changes
+            .unwrap()
+            .remove(&test_uri())
+            .unwrap();
         assert!(edits[0].new_text.starts_with("    #"));
     }
 
@@ -142,12 +168,30 @@ mod tests {
         let d = diag("LINT203", "'soma' imeletwa lakini haitumiki popote", 0, 0);
         let action = action_for_diagnostic(&d, &test_uri()).expect("action");
         assert_eq!(action.title, "Ondoa leta isiyotumika");
-        let edits = action.edit.unwrap().changes.unwrap().remove(&test_uri()).unwrap();
+        let edits = action
+            .edit
+            .unwrap()
+            .changes
+            .unwrap()
+            .remove(&test_uri())
+            .unwrap();
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].new_text, "");
         // Spans the whole line (start of line 0 through start of line 1).
-        assert_eq!(edits[0].range.start, Position { line: 0, character: 0 });
-        assert_eq!(edits[0].range.end, Position { line: 1, character: 0 });
+        assert_eq!(
+            edits[0].range.start,
+            Position {
+                line: 0,
+                character: 0
+            }
+        );
+        assert_eq!(
+            edits[0].range.end,
+            Position {
+                line: 1,
+                character: 0
+            }
+        );
     }
 
     #[test]

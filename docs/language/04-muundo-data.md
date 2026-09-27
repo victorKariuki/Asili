@@ -11,6 +11,7 @@ weka tupu = orodha()                  # empty list
 weka namba = orodha(10, 20, 30)       # list of three numbers
 weka maneno = orodha("a", "b", "c")   # list of strings
 weka mseto = [1, 2, 3]                # list literal syntax
+weka sifuri = orodha_rudia(0, 9)      # list containing nine zeroes
 ```
 
 ### Njia (Methods)
@@ -108,6 +109,12 @@ weka nested = jozi(jozi(1, 2), "tatu")
 weka ndani = nested.kwanza()
 weka a = ndani.kwanza() kama Namba    # 1
 weka b = ndani.pili() kama Namba      # 2
+```
+
+Destructuring binds both members without repetitive access calls:
+
+```asili
+weka (jina, umri) = p
 ```
 
 ---

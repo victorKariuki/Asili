@@ -3,7 +3,7 @@
 
 use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, semantic_check_with_env, extern_env_from_imports, Module};
+use asili_parser::{extern_env_from_imports, parse_tokens, semantic_check_with_env, Module};
 
 fn compile(src: &str) -> Module {
     let toks = tokenize(src).expect("tokenize");
@@ -24,7 +24,10 @@ fn no_leta_needed_it_is_always_in_scope() {
     let module = parse_tokens(&toks).expect("parse");
     let (fns, consts) = extern_env_from_imports(&module);
     let result = semantic_check_with_env(&module, true, fns, consts);
-    assert!(result.is_ok(), "seti_tupu should be reachable with no `leta` at all");
+    assert!(
+        result.is_ok(),
+        "seti_tupu should be reachable with no `leta` at all"
+    );
 }
 
 #[test]
@@ -40,7 +43,11 @@ fn ongeza_and_urefu() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Namba(2.0), "duplicate insert should not grow the set");
+    assert_eq!(
+        result,
+        Value::Namba(2.0),
+        "duplicate insert should not grow the set"
+    );
 }
 
 #[test]

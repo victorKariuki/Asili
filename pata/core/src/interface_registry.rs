@@ -2,7 +2,9 @@
 
 use crate::builtin_modules;
 use crate::Error;
-use asili_parser::{parse_value_type, FnContract, Param, TraitDecl, TraitMethodSig, TypeExpr, ValueType};
+use asili_parser::{
+    parse_value_type, FnContract, Param, TraitDecl, TraitMethodSig, TypeExpr, ValueType,
+};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::fs;
@@ -46,12 +48,16 @@ impl TraitStub {
                         .enumerate()
                         .map(|(i, ty)| Param {
                             name: format!("_{i}"),
-                            ty: TypeExpr { name: ty.to_string() },
+                            ty: TypeExpr {
+                                name: ty.to_string(),
+                            },
                             line: 0,
                             column: 0,
                         })
                         .collect(),
-                    return_type: TypeExpr { name: m.ret.to_string() },
+                    return_type: TypeExpr {
+                        name: m.ret.to_string(),
+                    },
                     line: 0,
                 })
                 .collect(),
@@ -116,7 +122,11 @@ fn parse_fn_sahihi(line: &str) -> Option<(String, FnContract)> {
     let name = tail[..open].trim().to_string();
     let params_raw = &tail[open + 1..close];
     let mut params = Vec::new();
-    for p in params_raw.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+    for p in params_raw
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
         let ty = if let Some((_, t)) = p.split_once(':') {
             parse_value_type(t.trim())
         } else {
@@ -223,7 +233,8 @@ impl InterfaceRegistry {
             if self.modules.contains_key(*name) {
                 continue;
             }
-            let table = builtin_modules::builtin_module_exports(name).expect("builtin export table");
+            let table =
+                builtin_modules::builtin_module_exports(name).expect("builtin export table");
             let iface = ModuleInterface {
                 name: (*name).to_string(),
                 functions: table.functions,
@@ -248,10 +259,7 @@ impl InterfaceRegistry {
             let entry = entry.map_err(|e| Error::new(format!("hitilafu ya kiingilio: {e}")))?;
             let path = entry.path();
             if path.extension().map(|e| e == "asi").unwrap_or(false) {
-                let name = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("");
+                let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
                 if name.is_empty() || self.modules.contains_key(name) {
                     continue;
                 }
@@ -283,9 +291,8 @@ impl InterfaceRegistry {
         if let Some(iface) = self.get(name) {
             return Ok(iface);
         }
-        let content = fs::read_to_string(path).map_err(|e| {
-            Error::new(format!("imeshindwa kusoma {}: {e}", path.display()))
-        })?;
+        let content = fs::read_to_string(path)
+            .map_err(|e| Error::new(format!("imeshindwa kusoma {}: {e}", path.display())))?;
         let (functions, constants, traits) = parse_asi_content(&content);
         let fp = fingerprint(&content);
         let iface = ModuleInterface {
@@ -316,15 +323,17 @@ impl InterfaceRegistry {
         env
     }
 
-    /// Prelude only (msingi). Use as initial scope for semantic: prelude + imported modules.
+    /// Builtin stdlib environment. User and third-party modules remain explicit imports.
     pub fn prelude_env(&self) -> StdlibEnv {
         let mut env = StdlibEnv::default();
-        if let Some(iface) = self.modules.get("msingi") {
-            for (k, v) in &iface.functions {
-                env.functions.insert(k.clone(), v.clone());
-            }
-            for (k, v) in &iface.constants {
-                env.constants.insert(k.clone(), v.clone());
+        for name in builtin_modules::BUILTIN_MODULE_NAMES {
+            if let Some(iface) = self.modules.get(*name) {
+                for (k, v) in &iface.functions {
+                    env.functions.insert(k.clone(), v.clone());
+                }
+                for (k, v) in &iface.constants {
+                    env.constants.insert(k.clone(), v.clone());
+                }
             }
         }
         env

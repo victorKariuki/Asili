@@ -19,7 +19,11 @@ fn test_multiline_params() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     assert!(module.functions.len() >= 2);
-    let test_fn = module.functions.iter().find(|f| f.name == "test").expect("test function");
+    let test_fn = module
+        .functions
+        .iter()
+        .find(|f| f.name == "test")
+        .expect("test function");
     assert_eq!(test_fn.params.len(), 3);
 }
 
@@ -40,7 +44,11 @@ fn test_multiline_various_indent() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let foo_fn = module.functions.iter().find(|f| f.name == "foo").expect("foo function");
+    let foo_fn = module
+        .functions
+        .iter()
+        .find(|f| f.name == "foo")
+        .expect("foo function");
     assert_eq!(foo_fn.params.len(), 3);
 }
 
@@ -60,7 +68,11 @@ fn test_multiline_trailing_comma() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let bar_fn = module.functions.iter().find(|f| f.name == "bar").expect("bar function");
+    let bar_fn = module
+        .functions
+        .iter()
+        .find(|f| f.name == "bar")
+        .expect("bar function");
     assert_eq!(bar_fn.params.len(), 2);
 }
 
@@ -77,7 +89,11 @@ fn test_multiline_return_type() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let baz_fn = module.functions.iter().find(|f| f.name == "baz").expect("baz function");
+    let baz_fn = module
+        .functions
+        .iter()
+        .find(|f| f.name == "baz")
+        .expect("baz function");
     assert_eq!(baz_fn.return_type.name.replace(" ", ""), "Orodha<Namba>");
 }
 
@@ -98,7 +114,11 @@ fn test_multiline_complex_types() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let complex_fn = module.functions.iter().find(|f| f.name == "complex").expect("complex function");
+    let complex_fn = module
+        .functions
+        .iter()
+        .find(|f| f.name == "complex")
+        .expect("complex function");
     assert_eq!(complex_fn.params.len(), 2);
 }
 
@@ -115,6 +135,10 @@ fn test_single_line_still_works() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let simple_fn = module.functions.iter().find(|f| f.name == "simple").expect("simple function");
+    let simple_fn = module
+        .functions
+        .iter()
+        .find(|f| f.name == "simple")
+        .expect("simple function");
     assert_eq!(simple_fn.params.len(), 3);
 }

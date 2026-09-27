@@ -149,6 +149,12 @@ pub enum Stmt {
         // so declarations/usages can be colored at their real position, not just column 1.
         column: usize,
     },
+    LetPattern {
+        mutable: bool,
+        pattern: Pattern,
+        value: Expr,
+        line: usize,
+    },
     Assign {
         name: String,
         op: AssignOp,
@@ -211,6 +217,7 @@ impl Stmt {
     pub fn line(&self) -> usize {
         match self {
             Stmt::Let { line, .. }
+            | Stmt::LetPattern { line, .. }
             | Stmt::Assign { line, .. }
             | Stmt::If { line, .. }
             | Stmt::While { line, .. }
@@ -293,6 +300,13 @@ pub enum Expr {
     },
     Hamna,
     Group(Box<Expr>),
+    If {
+        cond: Box<Expr>,
+        then_expr: Box<Expr>,
+        else_if: Vec<(Expr, Expr)>,
+        else_expr: Option<Box<Expr>>,
+        line: usize,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<Expr>,

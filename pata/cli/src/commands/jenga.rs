@@ -4,7 +4,7 @@ use crate::pipeline::compile::{
 };
 use crate::pipeline::performance::{PerformanceMetrics, ScopedTimer};
 use crate::pipeline::project::find_workspace_root;
-use asili_evaluator::{load_asb, run_main};
+use asili_evaluator::{load_asb, parse_format, run_main};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -34,29 +34,21 @@ Mifano:
 
 // Contract: ../../commands/jenga.md
 pub fn run(args: &[String]) -> CliResult {
-    if args
-        .iter()
-        .any(|a| a == "--msaada")
-    {
+    if args.iter().any(|a| a == "--msaada") {
         print!("{JENGA_USAGE}");
         return Ok(());
     }
-    if args
-        .iter()
-        .any(|a| a == "--workspace-info")
-    {
+    if args.iter().any(|a| a == "--workspace-info") {
         show_workspace_info()?;
         return Ok(());
     }
-    let (_profile, out, do_run, single_file, program_args, build_target, show_timing) = parse_args(args)?;
+    let (_profile, out, do_run, single_file, program_args, build_target, show_timing) =
+        parse_args(args)?;
     let mut metrics = PerformanceMetrics::new(5000);
     let total_timer = ScopedTimer::new("jumla");
     if let Some(ref path) = single_file {
         if !path.exists() {
-            return Err(CliError::new(
-                format!("faili haipo: {}", path.display()),
-                1,
-            ));
+            return Err(CliError::new(format!("faili haipo: {}", path.display()), 1));
         }
         if !path.is_file() {
             return Err(CliError::new(
@@ -71,16 +63,13 @@ pub fn run(args: &[String]) -> CliResult {
             .parent()
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| PathBuf::from("."));
-        let target = out
-            .clone()
-            .unwrap_or_else(|| root.join("kilele"));
+        let target = out.clone().unwrap_or_else(|| root.join("kilele"));
         let name = path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("script");
-        let source = fs::read_to_string(path).map_err(|e| {
-            CliError::new(format!("imeshindwa kusoma {}: {e}", path.display()), 1)
-        })?;
+        let source = fs::read_to_string(path)
+            .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", path.display()), 1))?;
         let key = cache_key(name, &source, build_target.as_deref().unwrap_or("native"));
         let cache_path = target.join(".asb-cache").join(format!("{key}.asb"));
         if cache_path.exists() {
@@ -88,33 +77,39 @@ pub fn run(args: &[String]) -> CliResult {
                 CliError::new(format!("imeshindwa kuunda {}: {e}", target.display()), 1)
             })?;
             let asb_bytes = fs::read(&cache_path).map_err(|e| {
-                CliError::new(format!("imeshindwa kusoma cache {}: {e}", cache_path.display()), 1)
+                CliError::new(
+                    format!("imeshindwa kusoma cache {}: {e}", cache_path.display()),
+                    1,
+                )
             })?;
-            let module = load_asb(&asb_bytes).map_err(|e| {
-                CliError::new(format!("kuipakia asb: {e}"), 1)
-            })?;
-            let artifact = target.join(format!("{name}.asb"));
-            fs::write(&artifact, &asb_bytes).map_err(|e| {
-                CliError::new(format!("imeshindwa kuandika {}: {e}", artifact.display()), 1)
-            })?;
-            let meta = target.join(format!("{name}.build.manifest"));
-            let manifest = format!(
-                "mradi={name}\nkuingia={}\nkazi={}\nkilele={name}.asb\n",
-                path.display(),
-                module.functions.len()
-            );
-            let _ = fs::write(&meta, manifest);
-            println!("imejengwa (cache): {}", artifact.display());
-            if do_run {
-                run_main(&module, program_args).map_err(|e| {
-                    CliError::new(format!("kuendesha kuu: {e}"), 1)
+            if parse_format(&asb_bytes).as_deref() != Some("bytecode") {
+                let module = load_asb(&asb_bytes)
+                    .map_err(|e| CliError::new(format!("kuipakia asb: {e}"), 1))?;
+                let artifact = target.join(format!("{name}.asb"));
+                fs::write(&artifact, &asb_bytes).map_err(|e| {
+                    CliError::new(
+                        format!("imeshindwa kuandika {}: {e}", artifact.display()),
+                        1,
+                    )
                 })?;
+                let meta = target.join(format!("{name}.build.manifest"));
+                let manifest = format!(
+                    "mradi={name}\nkuingia={}\nkazi={}\nkilele={name}.asb\n",
+                    path.display(),
+                    module.functions.len()
+                );
+                let _ = fs::write(&meta, manifest);
+                println!("imejengwa (cache): {}", artifact.display());
+                if do_run {
+                    run_main(&module, program_args)
+                        .map_err(|e| CliError::new(format!("kuendesha kuu: {e}"), 1))?;
+                }
+                if show_timing {
+                    metrics.set_total(total_timer.elapsed());
+                    println!("{}", metrics.report());
+                }
+                return Ok(());
             }
-            if show_timing {
-                metrics.set_total(total_timer.elapsed());
-                println!("{}", metrics.report());
-            }
-            return Ok(());
         }
         let compile_timer = ScopedTimer::new("kuchanganua");
         let compiled = compile_single_file(path, build_target.as_deref())?;
@@ -130,10 +125,7 @@ pub fn run(args: &[String]) -> CliResult {
 
     let emit_timer = ScopedTimer::new("kutoa");
     let _artifact = if compiled.from_cache {
-        let target = out
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| root.join("kilele"));
+        let target = out.as_ref().cloned().unwrap_or_else(|| root.join("kilele"));
         let a = target.join(format!("{}.asb", compiled.config.name));
         println!("imejengwa (cache): {}", a.display());
         a
@@ -145,9 +137,8 @@ pub fn run(args: &[String]) -> CliResult {
     metrics.record_phase(emit_timer.name(), emit_timer.elapsed());
 
     if do_run {
-        run_main(&compiled.module, program_args).map_err(|e| {
-            CliError::new(format!("kuendesha kuu: {e}"), 1)
-        })?;
+        run_main(&compiled.module, program_args)
+            .map_err(|e| CliError::new(format!("kuendesha kuu: {e}"), 1))?;
     }
 
     if show_timing {
@@ -168,17 +159,28 @@ fn show_workspace_info() -> CliResult {
             }
             Ok(())
         }
-        None => {
-            Err(CliError::new("eneo-kazi haipo (pata.toml haina jedwali [eneo-kazi])", 1))
-        }
+        None => Err(CliError::new(
+            "eneo-kazi haipo (pata.toml haina jedwali [eneo-kazi])",
+            1,
+        )),
     }
 }
 
 #[allow(clippy::type_complexity)]
 pub fn parse_args(
     args: &[String],
-) -> Result<(String, Option<PathBuf>, bool, Option<PathBuf>, Vec<String>, Option<String>, bool), CliError> {
-
+) -> Result<
+    (
+        String,
+        Option<PathBuf>,
+        bool,
+        Option<PathBuf>,
+        Vec<String>,
+        Option<String>,
+        bool,
+    ),
+    CliError,
+> {
     let mut profile = String::from("dev");
     let mut out = None;
     let mut do_run = false;
@@ -228,7 +230,15 @@ pub fn parse_args(
             }
         }
     }
-    Ok((profile, out, do_run, single_file, program_args, target, show_timing))
+    Ok((
+        profile,
+        out,
+        do_run,
+        single_file,
+        program_args,
+        target,
+        show_timing,
+    ))
 }
 
 #[cfg(test)]
@@ -251,12 +261,22 @@ mod tests {
             "asb should have ASB-STUB header"
         );
         let module = asili_evaluator::load_asb(&asb_bytes).expect("load_asb");
-        assert!(!module.functions.is_empty(), "asb should contain merged module");
-        let manifest = fs::read_to_string("kilele/app.build.manifest").expect("per-artifact manifest");
-        assert!(manifest.contains("mradi=app"), "manifest should have mradi=app");
+        assert!(
+            !module.functions.is_empty(),
+            "asb should contain merged module"
+        );
+        let manifest =
+            fs::read_to_string("kilele/app.build.manifest").expect("per-artifact manifest");
+        assert!(
+            manifest.contains("mradi=app"),
+            "manifest should have mradi=app"
+        );
         assert!(manifest.contains("kuingia="));
         assert!(manifest.contains("kazi="));
-        assert!(manifest.contains("kilele=app.asb"), "manifest should point at .asb");
+        assert!(
+            manifest.contains("kilele=app.asb"),
+            "manifest should point at .asb"
+        );
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(&root);
     }
@@ -314,9 +334,12 @@ mod tests {
         .expect("write other.as");
         run(&["other.as".into()]).expect("jenga single file ok");
         let app_manifest = fs::read_to_string("kilele/app.build.manifest").expect("app manifest");
-        let other_manifest = fs::read_to_string("kilele/other.build.manifest").expect("other manifest");
+        let other_manifest =
+            fs::read_to_string("kilele/other.build.manifest").expect("other manifest");
         assert!(app_manifest.contains("mradi=app") && app_manifest.contains("kilele=app.asb"));
-        assert!(other_manifest.contains("mradi=other") && other_manifest.contains("kilele=other.asb"));
+        assert!(
+            other_manifest.contains("mradi=other") && other_manifest.contains("kilele=other.asb")
+        );
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(&root);
     }
@@ -369,7 +392,8 @@ mod tests {
         )
         .expect("write");
         std::env::set_current_dir(&root).expect("chdir");
-        run(&["jenga".into()]).expect("jenga with leta hisabati (builtin, no lib/std/hisabati.asi)");
+        run(&["jenga".into()])
+            .expect("jenga with leta hisabati (builtin, no lib/std/hisabati.asi)");
         std::env::set_current_dir(&original).expect("restore cwd");
         let _ = fs::remove_dir_all(&root);
     }

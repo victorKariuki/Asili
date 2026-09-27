@@ -1,7 +1,7 @@
 //! Performance profiling and latency tracking
 
-use std::time::{Duration, Instant};
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 /// Performance metrics for command execution
 #[derive(Debug, Clone)]
@@ -41,10 +41,7 @@ impl PerformanceMetrics {
 
     /// Format as performance report
     pub fn report(&self) -> String {
-        let mut report = format!(
-            "Uendeshaji: {:.2}s",
-            self.total_duration.as_secs_f64()
-        );
+        let mut report = format!("Uendeshaji: {:.2}s", self.total_duration.as_secs_f64());
 
         if !self.phases.is_empty() {
             report.push_str("\n\nAwamu:\n");

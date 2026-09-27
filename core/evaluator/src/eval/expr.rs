@@ -11,6 +11,60 @@ use crate::value::{
 use std::cmp::Ordering;
 use std::rc::Rc;
 
+fn index_value(base: &Value, index: &Value) -> Result<Value, EvalError> {
+    match base {
+        Value::Kamusi(m) => {
+            let key = MapKey::try_from_value(index)?;
+            Ok(m.get(&key).cloned().unwrap_or(Value::Hamna))
+        }
+
+        Value::Orodha(v) => {
+            let idx = value::as_f64(index)
+                .ok_or_else(|| EvalError::TypeErr("fahirisi inahitaji Namba".into()))?;
+            let idx = (idx as i64).max(0) as usize;
+            if idx >= v.len() {
+                let msg = format!("fahirisi nje ya mipaka: {} (urefu {})", idx, v.len());
+                let kosa = Value::Struct(
+                    "KosaMipaka".to_string(),
+                    vec![("ujumbe".to_string(), Value::Neno(msg))],
+                );
+                Ok(Value::Tokeo(Err(Box::new(kosa))))
+            } else {
+                Ok(Value::Tokeo(Ok(Box::new(v[idx].clone()))))
+            }
+        }
+
+        _ => Err(EvalError::TypeErr(
+            "fahirisi inahitaji Orodha au Kamusi".into(),
+        )),
+    }
+}
+
+fn invoke_named_callback(
+    rt: &mut Runtime<'_>,
+    name: &str,
+    args: &[Value],
+) -> Result<Value, EvalError> {
+    if let Some(f) = rt.builtins.get(name) {
+        return f(args);
+    }
+    let Some(f) = rt.module.functions.iter().find(|x| x.name == name).cloned() else {
+        return Err(EvalError::TypeErr(format!("kazi haijulikani: {name}")));
+    };
+    rt.env.push_scope();
+    for (i, p) in f.params.iter().enumerate() {
+        rt.env
+            .define(&p.name, args.get(i).cloned().unwrap_or(Value::Hamna));
+    }
+    let out = super::eval_block_impl(&f.body, rt);
+    rt.env.pop_scope();
+    match out {
+        Ok(EvalOut::Return(v)) => Ok(v),
+        Ok(_) => Ok(Value::Tupu),
+        Err(e) => Err(e),
+    }
+}
+
 pub(crate) fn match_and_bind_pattern(pat: &Pattern, v: &Value, rt: &mut Runtime<'_>) -> bool {
     match pat {
         Pattern::Wildcard => true,
@@ -113,6 +167,28 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
         Expr::Char(c) => Ok(Value::Herufi(*c)),
         Expr::Hamna => Ok(Value::Hamna),
         Expr::Group(e) => super::eval_expr_impl(e, rt),
+        Expr::If {
+            cond,
+            then_expr,
+            else_if,
+            else_expr,
+            ..
+        } => {
+            let matches = |value: &Value| matches!(value, Value::Ukweli(true));
+            if matches(&super::eval_expr_impl(cond, rt)?) {
+                super::eval_expr_impl(then_expr, rt)
+            } else {
+                for (branch_cond, branch_expr) in else_if {
+                    if matches(&super::eval_expr_impl(branch_cond, rt)?) {
+                        return super::eval_expr_impl(branch_expr, rt);
+                    }
+                }
+                match else_expr {
+                    Some(expr) => super::eval_expr_impl(expr, rt),
+                    None => Ok(Value::Hamna),
+                }
+            }
+        }
         Expr::Ident { name, .. } => rt
             .env
             .get(name)
@@ -173,9 +249,15 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             } else {
                 None
             };
-            Ok(Value::Enum(enum_name.clone(), variant_name.clone(), variant_data))
+            Ok(Value::Enum(
+                enum_name.clone(),
+                variant_name.clone(),
+                variant_data,
+            ))
         }
-        Expr::FieldAccess { receiver, field, .. } => {
+        Expr::FieldAccess {
+            receiver, field, ..
+        } => {
             let recv = super::eval_expr_impl(receiver, rt)?;
             match &recv {
                 Value::Struct(_, flds) => flds
@@ -183,35 +265,21 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     .find(|(n, _)| n == field)
                     .map(|(_, v)| v.clone())
                     .ok_or_else(|| EvalError::TypeErr(format!("uga haijulikani: {}", field))),
-                _ => Err(EvalError::TypeErr("uga unahitaji kitu cha aina ya umbo".into())),
+                _ => Err(EvalError::TypeErr(
+                    "uga unahitaji kitu cha aina ya umbo".into(),
+                )),
             }
         }
         Expr::Index { base, index, .. } => {
-            let b = super::eval_expr_impl(base, rt)?;
+            rt.count_index_read();
             let i_val = super::eval_expr_impl(index, rt)?;
-            match &b {
-                Value::Kamusi(m) => {
-                    let key = MapKey::try_from_value(&i_val)?;
-                    Ok(m.get(&key).cloned().unwrap_or(Value::Hamna))
+            if let Expr::Ident { name, .. } = &**base {
+                if let Some(value) = rt.env.get_ref(name) {
+                    return index_value(value, &i_val);
                 }
-                Value::Orodha(v) => {
-                    let idx = value::as_f64(&i_val)
-                        .ok_or_else(|| EvalError::TypeErr("fahirisi inahitaji Namba".into()))?;
-                    let idx = idx as i64;
-                    let idx = if idx < 0 { 0 } else { idx as usize };
-                    if idx >= v.len() {
-                        let msg = format!("fahirisi nje ya mipaka: {} (urefu {})", idx, v.len());
-                        let kosa = Value::Struct(
-                            "KosaMipaka".to_string(),
-                            vec![("ujumbe".to_string(), Value::Neno(msg))],
-                        );
-                        Ok(Value::Tokeo(Err(Box::new(kosa))))
-                    } else {
-                        Ok(Value::Tokeo(Ok(Box::new(v[idx].clone()))))
-                    }
-                }
-                _ => Err(EvalError::TypeErr("fahirisi inahitaji Orodha au Kamusi".into())),
             }
+            let b = super::eval_expr_impl(base, rt)?;
+            index_value(&b, &i_val)
         }
         Expr::Unary { op, expr, .. } => {
             let v = super::eval_expr_impl(expr, rt)?;
@@ -241,12 +309,12 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     let bits = n as i64;
                     Ok(Value::Namba(!bits as f64))
                 }
-                // TODO(Phase III): BorrowImm/BorrowMut should produce Rejeo/Rejeo_Tenda values
-                // tracked by a borrow checker. Currently they are identity ops — ownership is not enforced.
                 UnaryOp::BorrowImm | UnaryOp::BorrowMut => Ok(v),
             }
         }
-        Expr::Binary { left, op, right, .. } => {
+        Expr::Binary {
+            left, op, right, ..
+        } => {
             let l = super::eval_expr_impl(left, rt)?;
             let r = match op {
                 BinaryOp::And => {
@@ -275,12 +343,10 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 }
             }
             match op {
-                BinaryOp::Add => {
-                    match (value::as_string(&l), value::as_string(&r)) {
-                        (Some(s1), Some(s2)) => Ok(Value::Neno(format!("{s1}{s2}"))),
-                        _ => binary_f64(&l, &r, "+", |a, b| a + b),
-                    }
-                }
+                BinaryOp::Add => match (value::as_string(&l), value::as_string(&r)) {
+                    (Some(s1), Some(s2)) => Ok(Value::Neno(format!("{s1}{s2}"))),
+                    _ => binary_f64(&l, &r, "+", |a, b| a + b),
+                },
                 BinaryOp::Sub => binary_f64(&l, &r, "-", |a, b| a - b),
                 BinaryOp::Mul => binary_f64(&l, &r, "*", |a, b| a * b),
                 BinaryOp::Div => {
@@ -330,41 +396,58 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 }
                 BinaryOp::BitAnd => {
                     let a = value::as_f64(&l)
-                        .ok_or_else(|| EvalError::TypeErr("na_biti inahitaji Namba".into()))? as i64;
+                        .ok_or_else(|| EvalError::TypeErr("na_biti inahitaji Namba".into()))?
+                        as i64;
                     let b = value::as_f64(&r)
-                        .ok_or_else(|| EvalError::TypeErr("na_biti inahitaji Namba".into()))? as i64;
+                        .ok_or_else(|| EvalError::TypeErr("na_biti inahitaji Namba".into()))?
+                        as i64;
                     Ok(Value::Namba((a & b) as f64))
                 }
                 BinaryOp::BitOr => {
                     let a = value::as_f64(&l)
-                        .ok_or_else(|| EvalError::TypeErr("au_biti inahitaji Namba".into()))? as i64;
+                        .ok_or_else(|| EvalError::TypeErr("au_biti inahitaji Namba".into()))?
+                        as i64;
                     let b = value::as_f64(&r)
-                        .ok_or_else(|| EvalError::TypeErr("au_biti inahitaji Namba".into()))? as i64;
+                        .ok_or_else(|| EvalError::TypeErr("au_biti inahitaji Namba".into()))?
+                        as i64;
                     Ok(Value::Namba((a | b) as f64))
                 }
                 BinaryOp::BitXor => {
                     let a = value::as_f64(&l)
-                        .ok_or_else(|| EvalError::TypeErr("xor_biti inahitaji Namba".into()))? as i64;
+                        .ok_or_else(|| EvalError::TypeErr("xor_biti inahitaji Namba".into()))?
+                        as i64;
                     let b = value::as_f64(&r)
-                        .ok_or_else(|| EvalError::TypeErr("xor_biti inahitaji Namba".into()))? as i64;
+                        .ok_or_else(|| EvalError::TypeErr("xor_biti inahitaji Namba".into()))?
+                        as i64;
                     Ok(Value::Namba((a ^ b) as f64))
                 }
                 BinaryOp::Shl => {
-                    let a = value::as_f64(&l)
-                        .ok_or_else(|| EvalError::TypeErr("sogeza_kushoto inahitaji Namba".into()))? as i64;
-                    let b = value::as_f64(&r)
-                        .ok_or_else(|| EvalError::TypeErr("sogeza_kushoto inahitaji Namba".into()))?;
+                    let a = value::as_f64(&l).ok_or_else(|| {
+                        EvalError::TypeErr("sogeza_kushoto inahitaji Namba".into())
+                    })? as i64;
+                    let b = value::as_f64(&r).ok_or_else(|| {
+                        EvalError::TypeErr("sogeza_kushoto inahitaji Namba".into())
+                    })?;
                     let shift = b as i32;
-                    let shift = if !(0..=63).contains(&shift) { 0 } else { shift as u32 };
+                    let shift = if !(0..=63).contains(&shift) {
+                        0
+                    } else {
+                        shift as u32
+                    };
                     Ok(Value::Namba((a.wrapping_shl(shift)) as f64))
                 }
                 BinaryOp::Shr => {
                     let a = value::as_f64(&l)
-                        .ok_or_else(|| EvalError::TypeErr("sogeza_kulia inahitaji Namba".into()))? as i64;
+                        .ok_or_else(|| EvalError::TypeErr("sogeza_kulia inahitaji Namba".into()))?
+                        as i64;
                     let b = value::as_f64(&r)
                         .ok_or_else(|| EvalError::TypeErr("sogeza_kulia inahitaji Namba".into()))?;
                     let shift = b as i32;
-                    let shift = if !(0..=63).contains(&shift) { 0 } else { shift as u32 };
+                    let shift = if !(0..=63).contains(&shift) {
+                        0
+                    } else {
+                        shift as u32
+                    };
                     Ok(Value::Namba((a.wrapping_shr(shift)) as f64))
                 }
             }
@@ -374,10 +457,16 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             let t = ty.name.replace(' ', "");
             if t == "Namba" && !matches!(v, Value::NambaKuu(_) | Value::NambaSahihi(_)) {
                 let n = value::as_f64(&v)
-                    .or_else(|| match &v { Value::Ukweli(b) => Some(if *b { 1.0 } else { 0.0 }), _ => None })
+                    .or_else(|| match &v {
+                        Value::Ukweli(b) => Some(if *b { 1.0 } else { 0.0 }),
+                        _ => None,
+                    })
                     .or_else(|| value::as_string(&v).and_then(|s| s.parse::<f64>().ok()))
                     .or_else(|| value::as_char(&v).map(|c| c as u32 as f64))
-                    .or_else(|| match &v { Value::Chaguo(Some(inner)) => value::as_f64(inner), _ => None });
+                    .or_else(|| match &v {
+                        Value::Chaguo(Some(inner)) => value::as_f64(inner),
+                        _ => None,
+                    });
                 Ok(Value::Namba(n.unwrap_or(0.0)))
             } else if t == "Namba" {
                 // Namba_Kuu/Namba_Sahihi -> Namba is fallible (may not fit in f64's precision or
@@ -402,7 +491,9 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 let big = match &v {
                     Value::NambaKuu(b) => b.clone(),
                     Value::Namba(n) => BigInt::from(*n as i64),
-                    _ => value::as_f64(&v).map(|n| BigInt::from(n as i64)).unwrap_or_default(),
+                    _ => value::as_f64(&v)
+                        .map(|n| BigInt::from(n as i64))
+                        .unwrap_or_default(),
                 };
                 Ok(Value::NambaKuu(big))
             } else if t == "Namba_Sahihi" {
@@ -475,6 +566,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             }
         }
         Expr::Call { callee, args, .. } => {
+            rt.count_function_call();
             let args_val: Vec<Value> = args
                 .iter()
                 .map(|a| super::eval_expr_impl(a, rt))
@@ -502,7 +594,12 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     return f(&args_val);
                 }
                 // Clone so we can mutably borrow rt.env below without conflict.
-                let module_fn = rt.module.functions.iter().find(|x| x.name == *name).cloned();
+                let module_fn = rt
+                    .module
+                    .functions
+                    .iter()
+                    .find(|x| x.name == *name)
+                    .cloned();
                 if let Some(f) = module_fn {
                     rt.env.push_scope();
                     for (i, p) in f.params.iter().enumerate() {
@@ -520,7 +617,9 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 // Not found as builtin or module function.
                 return Err(EvalError::UndefinedVar(name.clone()));
             }
-            Err(EvalError::TypeErr("kitu kinachoweza kuitwa kinahitajika".into()))
+            Err(EvalError::TypeErr(
+                "kitu kinachoweza kuitwa kinahitajika".into(),
+            ))
         }
         Expr::MethodCall {
             receiver,
@@ -528,11 +627,114 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             args,
             ..
         } => {
+            rt.count_method_call();
+            let receiver_name = match &**receiver {
+                Expr::Ident { name, .. } => Some(name.as_str()),
+                _ => None,
+            };
+            let mutating_method = matches!(
+                method_name.as_str(),
+                "ongeza" | "ingiza" | "weka_key" | "ondoa"
+            );
+            if args.is_empty() {
+                if let Some(name) = receiver_name {
+                    if let Some(value) = rt.env.get_ref(name) {
+                        match (value, method_name.as_str()) {
+                            (Value::Orodha(values), "urefu") => {
+                                return Ok(Value::Namba(values.len() as f64));
+                            }
+                            (Value::Kamusi(map), "idadi") => {
+                                return Ok(Value::Namba(map.len() as f64));
+                            }
+                            (Value::Seti(set), "urefu") => {
+                                return Ok(Value::Namba(set.len() as f64));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            if let (Some(name), true) = (receiver_name, mutating_method) {
+                let receiver_kind = rt.env.get_ref(name).map(|value| match value {
+                    Value::Orodha(_) => 1_u8,
+                    Value::Kamusi(_) => 2_u8,
+                    _ => 0_u8,
+                });
+                if let Some(receiver_kind @ 1..=2) = receiver_kind {
+                    let args_val: Vec<Value> = args
+                        .iter()
+                        .map(|a| super::eval_expr_impl(a, rt))
+                        .collect::<Result<_, _>>()?;
+                    match (receiver_kind, method_name.as_str()) {
+                        (1, "ongeza") => {
+                            let elem = args_val.first().cloned().unwrap_or(Value::Hamna);
+                            if let Some(Value::Orodha(values)) = rt.env.get_mut(name) {
+                                values.push(elem);
+                                return Ok(Value::Tupu);
+                            }
+                        }
+                        (1, "ingiza") => {
+                            let idx = args_val
+                                .first()
+                                .and_then(value::as_f64)
+                                .map(|n| n as usize)
+                                .ok_or_else(|| {
+                                    EvalError::TypeErr("ingiza inahitaji index na thamani".into())
+                                })?;
+                            let val = args_val.get(1).cloned().unwrap_or(Value::Hamna);
+                            let len = match rt.env.get_ref(name) {
+                                Some(Value::Orodha(values)) => values.len(),
+                                _ => 0,
+                            };
+                            if idx >= len {
+                                return Err(EvalError::TypeErr(
+                                    "ingiza: index nje ya mipaka".into(),
+                                ));
+                            }
+                            if let Some(Value::Orodha(values)) = rt.env.get_mut(name) {
+                                values[idx] = val;
+                                return Ok(Value::Tupu);
+                            }
+                        }
+                        (1, "ondoa") => {
+                            let idx = args_val
+                                .first()
+                                .and_then(value::as_f64)
+                                .map(|n| n as usize)
+                                .unwrap_or(0);
+                            let len = match rt.env.get_ref(name) {
+                                Some(Value::Orodha(values)) => values.len(),
+                                _ => 0,
+                            };
+                            if idx >= len {
+                                return Ok(Value::Chaguo(None));
+                            }
+                            if let Some(Value::Orodha(values)) = rt.env.get_mut(name) {
+                                let removed = values.remove(idx);
+                                return Ok(Value::Chaguo(Some(Box::new(removed))));
+                            }
+                        }
+                        (2, "ingiza") | (2, "weka_key") => {
+                            let key_val = args_val.first().ok_or_else(|| {
+                                EvalError::TypeErr("ingiza inahitaji ufunguo na thamani".into())
+                            })?;
+                            let val = args_val.get(1).cloned().unwrap_or(Value::Hamna);
+                            let key = MapKey::try_from_value(key_val)?;
+                            if let Some(Value::Kamusi(map)) = rt.env.get_mut(name) {
+                                map.insert(key, val);
+                                return Ok(Value::Tupu);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
             let recv = super::eval_expr_impl(receiver, rt)?;
             let args_val: Vec<Value> = args
                 .iter()
                 .map(|a| super::eval_expr_impl(a, rt))
                 .collect::<Result<_, _>>()?;
+
             match (&recv, method_name.as_str()) {
                 (Value::Neno(s), "clona") => Ok(Value::Neno(s.clone())),
                 (Value::Neno(s), "urefu") => Ok(Value::Namba(s.graphemes(true).count() as f64)),
@@ -540,9 +742,15 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     // Grapheme-indexed, matching .urefu()'s existing counting convention (not
                     // byte or codepoint index) — a tokenizer walking "what's at position N"
                     // wants the same units .urefu() reports N in.
-                    let idx = args_val.first().and_then(value::as_f64).map(|n| n as i64).unwrap_or(-1);
+                    let idx = args_val
+                        .first()
+                        .and_then(value::as_f64)
+                        .map(|n| n as i64)
+                        .unwrap_or(-1);
                     let ch = if idx >= 0 {
-                        s.graphemes(true).nth(idx as usize).and_then(|g| g.chars().next())
+                        s.graphemes(true)
+                            .nth(idx as usize)
+                            .and_then(|g| g.chars().next())
                     } else {
                         None
                     };
@@ -584,6 +792,32 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 }
                 (Value::Neno(s), "kwa_herufi_ndogo") => Ok(Value::Neno(s.to_lowercase())),
                 (Value::Neno(s), "kwa_herufi_kubwa") => Ok(Value::Neno(s.to_uppercase())),
+                (Value::Neno(s), "tupu") => Ok(Value::Ukweli(s.is_empty())),
+                (Value::Neno(s), "ina") => {
+                    let sub = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
+                        .ok_or_else(|| EvalError::TypeErr("ina inahitaji Neno".into()))?;
+                    Ok(Value::Ukweli(s.contains(&sub)))
+                }
+                (Value::Neno(s), "hesabu") => {
+                    let sub = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
+                        .ok_or_else(|| EvalError::TypeErr("hesabu inahitaji Neno".into()))?;
+                    if sub.is_empty() {
+                        return Ok(Value::Namba(0.0));
+                    }
+                    Ok(Value::Namba(s.matches(&sub).count() as f64))
+                }
+                (Value::Neno(s), "rudia") => {
+                    let count = args_val
+                        .first()
+                        .and_then(value::as_f64)
+                        .filter(|n| n.is_finite() && *n >= 0.0 && n.fract() == 0.0)
+                        .ok_or_else(|| {
+                            EvalError::TypeErr(
+                                "rudia inahitaji idadi ya Namba kamili isiyo hasi".into(),
+                            )
+                        })?;
+                    Ok(Value::Neno(s.repeat(count as usize)))
+                }
                 (Value::Neno(s), "anza_na") => {
                     let prefix = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
                         .ok_or_else(|| EvalError::TypeErr("anza_na inahitaji Neno".into()))?;
@@ -597,24 +831,190 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 (Value::Neno(s), "gawanya") => {
                     let sep = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
                         .ok_or_else(|| EvalError::TypeErr("gawanya inahitaji Neno".into()))?;
-                    let parts: Vec<Value> = s.split(&sep).map(|p| Value::Neno(p.to_string())).collect();
+                    let parts: Vec<Value> =
+                        s.split(&sep).map(|p| Value::Neno(p.to_string())).collect();
                     Ok(Value::Orodha(parts))
                 }
                 (Value::Neno(s), "badilisha") => {
                     let from = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
-                        .ok_or_else(|| EvalError::TypeErr("badilisha inahitaji from na to".into()))?;
+                        .ok_or_else(|| {
+                            EvalError::TypeErr("badilisha inahitaji from na to".into())
+                        })?;
                     let to = value::as_string(args_val.get(1).unwrap_or(&Value::Hamna))
                         .ok_or_else(|| EvalError::TypeErr("badilisha inahitaji to".into()))?;
                     Ok(Value::Neno(s.replace(&from, &to)))
                 }
                 (Value::Orodha(l), "clona") => Ok(Value::Orodha(l.clone())),
                 (Value::Orodha(l), "urefu") => Ok(Value::Namba(l.len() as f64)),
+                (Value::Orodha(l), "pata") => {
+                    let idx = args_val
+                        .first()
+                        .and_then(value::as_f64)
+                        .filter(|n| n.is_finite() && *n >= 0.0 && n.fract() == 0.0)
+                        .map(|n| n as usize);
+                    Ok(Value::Chaguo(
+                        idx.and_then(|i| l.get(i).cloned()).map(Box::new),
+                    ))
+                }
+                (Value::Orodha(l), "badilisha") => {
+                    let idx = args_val
+                        .first()
+                        .and_then(value::as_f64)
+                        .filter(|n| n.is_finite() && *n >= 0.0 && n.fract() == 0.0)
+                        .map(|n| n as usize)
+                        .ok_or_else(|| EvalError::TypeErr("badilisha inahitaji fahirisi".into()))?;
+                    let val = args_val.get(1).cloned().unwrap_or(Value::Hamna);
+                    if idx >= l.len() {
+                        return Err(EvalError::TypeErr(
+                            "badilisha: fahirisi nje ya mipaka".into(),
+                        ));
+                    }
+                    if let Expr::Ident { name, .. } = &**receiver {
+                        if let Some(Value::Orodha(values)) = rt.env.get_mut(name) {
+                            values[idx] = val;
+                            return Ok(Value::Tupu);
+                        }
+                    }
+                    let mut values = l.clone();
+                    values[idx] = val;
+                    Ok(Value::Orodha(values))
+                }
+                (Value::Orodha(l), "unganisha") => {
+                    let sep = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
+                        .ok_or_else(|| EvalError::TypeErr("unganisha inahitaji Neno".into()))?;
+                    let mut parts = Vec::with_capacity(l.len());
+                    for item in l {
+                        parts.push(value::as_string(item).ok_or_else(|| {
+                            EvalError::TypeErr("unganisha inahitaji Orodha ya Neno".into())
+                        })?);
+                    }
+                    Ok(Value::Neno(parts.join(&sep)))
+                }
+                (Value::Orodha(l), "jiunge") => {
+                    let sep = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
+                        .ok_or_else(|| EvalError::TypeErr("jiunge inahitaji Neno".into()))?;
+                    let parts: Vec<String> = l
+                        .iter()
+                        .map(|item| {
+                            value::to_display_string(item).ok_or_else(|| {
+                                EvalError::TypeErr(
+                                    "jiunge inahitaji Orodha yenye thamani zinazoweza kuwa Neno"
+                                        .into(),
+                                )
+                            })
+                        })
+                        .collect::<Result<_, _>>()?;
+                    Ok(Value::Neno(parts.join(&sep)))
+                }
+                (Value::Orodha(l), "kwa_neno") => {
+                    let strings: Vec<Value> = l
+                        .iter()
+                        .map(|item| {
+                            value::to_display_string(item)
+                                .map(Value::Neno)
+                                .ok_or_else(|| {
+                                    EvalError::TypeErr(
+                                    "kwa_neno inahitaji Orodha yenye thamani zinazoweza kuwa Neno"
+                                        .into(),
+                                )
+                                })
+                        })
+                        .collect::<Result<_, _>>()?;
+                    Ok(Value::Orodha(strings))
+                }
+                (Value::Orodha(l), "vipande") => {
+                    let size = args_val
+                        .first()
+                        .and_then(value::as_f64)
+                        .filter(|n| n.is_finite() && *n > 0.0 && n.fract() == 0.0)
+                        .map(|n| n as usize)
+                        .ok_or_else(|| {
+                            EvalError::TypeErr(
+                                "vipande inahitaji ukubwa chanya wa Namba kamili".into(),
+                            )
+                        })?;
+                    Ok(Value::Orodha(
+                        l.chunks(size)
+                            .map(|chunk| Value::Orodha(chunk.to_vec()))
+                            .collect(),
+                    ))
+                }
+                (Value::Orodha(l), "ramani" | "chuja" | "hesabu" | "chunguza") => {
+                    let cb_name = args_val
+                        .first()
+                        .and_then(value::as_string)
+                        .ok_or_else(|| EvalError::TypeErr("njia inahitaji jina la kazi".into()))?;
+                    match method_name.as_str() {
+                        "ramani" => {
+                            let mut mapped = Vec::with_capacity(l.len());
+                            for item in l {
+                                mapped.push(invoke_named_callback(rt, &cb_name, &[item.clone()])?);
+                            }
+                            Ok(Value::Orodha(mapped))
+                        }
+                        "chuja" => {
+                            let mut filtered = Vec::new();
+                            for item in l {
+                                if matches!(
+                                    invoke_named_callback(rt, &cb_name, &[item.clone()])?,
+                                    Value::Ukweli(true)
+                                ) {
+                                    filtered.push(item.clone());
+                                }
+                            }
+                            Ok(Value::Orodha(filtered))
+                        }
+                        "hesabu" => {
+                            let mut count = 0.0;
+                            for item in l {
+                                if matches!(
+                                    invoke_named_callback(rt, &cb_name, &[item.clone()])?,
+                                    Value::Ukweli(true)
+                                ) {
+                                    count += 1.0;
+                                }
+                            }
+                            Ok(Value::Namba(count))
+                        }
+                        _ => {
+                            for item in l {
+                                if matches!(
+                                    invoke_named_callback(rt, &cb_name, &[item.clone()])?,
+                                    Value::Ukweli(true)
+                                ) {
+                                    return Ok(Value::Ukweli(true));
+                                }
+                            }
+                            Ok(Value::Ukweli(false))
+                        }
+                    }
+                }
+                (Value::Orodha(l), "kila_na_fahirisi") => {
+                    let cb_name = args_val
+                        .first()
+                        .and_then(value::as_string)
+                        .ok_or_else(|| EvalError::TypeErr("njia inahitaji jina la kazi".into()))?;
+                    for (idx, item) in l.iter().enumerate() {
+                        invoke_named_callback(
+                            rt,
+                            &cb_name,
+                            &[item.clone(), Value::Namba(idx as f64)],
+                        )?;
+                    }
+                    Ok(Value::Tupu)
+                }
 
                 (Value::Orodha(v), "ongeza") => {
                     let elem = args_val.first().cloned().unwrap_or(Value::Hamna);
+                    if let Some(name) = receiver_name {
+                        if let Some(Value::Orodha(values)) = rt.env.get_mut(name) {
+                            values.push(elem);
+                            return Ok(Value::Tupu);
+                        }
+                    }
                     let mut new_v = v.clone();
                     new_v.push(elem);
-                    if let Expr::Ident { name, .. } = &**receiver {
+                    if let Some(name) = receiver_name {
                         rt.env.set(name, Value::Orodha(new_v));
                     }
                     Ok(Value::Tupu)
@@ -624,14 +1024,22 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                         .first()
                         .and_then(value::as_f64)
                         .map(|n| n as usize)
-                        .ok_or_else(|| EvalError::TypeErr("ingiza inahitaji index na thamani".into()))?;
+                        .ok_or_else(|| {
+                            EvalError::TypeErr("ingiza inahitaji index na thamani".into())
+                        })?;
                     let val = args_val.get(1).cloned().unwrap_or(Value::Hamna);
                     if idx >= v.len() {
                         return Err(EvalError::TypeErr("ingiza: index nje ya mipaka".into()));
                     }
+                    if let Some(name) = receiver_name {
+                        if let Some(Value::Orodha(values)) = rt.env.get_mut(name) {
+                            values[idx] = val;
+                            return Ok(Value::Tupu);
+                        }
+                    }
                     let mut new_v = v.clone();
                     new_v[idx] = val;
-                    if let Expr::Ident { name, .. } = &**receiver {
+                    if let Some(name) = receiver_name {
                         rt.env.set(name, Value::Orodha(new_v));
                     }
                     Ok(Value::Tupu)
@@ -645,9 +1053,15 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     if idx >= v.len() {
                         Ok(Value::Chaguo(None))
                     } else {
+                        if let Some(name) = receiver_name {
+                            if let Some(Value::Orodha(values)) = rt.env.get_mut(name) {
+                                let removed = values.remove(idx);
+                                return Ok(Value::Chaguo(Some(Box::new(removed))));
+                            }
+                        }
                         let mut new_v = v.clone();
                         let removed = new_v.remove(idx);
-                        if let Expr::Ident { name, .. } = &**receiver {
+                        if let Some(name) = receiver_name {
                             rt.env.set(name, Value::Orodha(new_v));
                         }
                         Ok(Value::Chaguo(Some(Box::new(removed))))
@@ -660,7 +1074,13 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     for elem in v {
                         if let Some(f) = rt.builtins.get(&cb_name) {
                             f(std::slice::from_ref(elem))?;
-                        } else if let Some(f) = rt.module.functions.iter().find(|x| x.name == cb_name).cloned() {
+                        } else if let Some(f) = rt
+                            .module
+                            .functions
+                            .iter()
+                            .find(|x| x.name == cb_name)
+                            .cloned()
+                        {
                             rt.env.push_scope();
                             if let Some(p) = f.params.first() {
                                 rt.env.define(&p.name, elem.clone());
@@ -674,12 +1094,20 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     Ok(Value::Tupu)
                 }
                 (Value::Kamusi(m), "ingiza") | (Value::Kamusi(m), "weka_key") => {
-                    let key_val = args_val.first().ok_or_else(|| EvalError::TypeErr("ingiza inahitaji ufunguo na thamani".into()))?;
+                    let key_val = args_val.first().ok_or_else(|| {
+                        EvalError::TypeErr("ingiza inahitaji ufunguo na thamani".into())
+                    })?;
                     let val = args_val.get(1).cloned().unwrap_or(Value::Hamna);
                     let key = MapKey::try_from_value(key_val)?;
+                    if let Some(name) = receiver_name {
+                        if let Some(Value::Kamusi(map)) = rt.env.get_mut(name) {
+                            map.insert(key, val);
+                            return Ok(Value::Tupu);
+                        }
+                    }
                     let mut new_m = m.clone();
                     new_m.insert(key, val);
-                    if let Expr::Ident { name, .. } = &**receiver {
+                    if let Some(name) = receiver_name {
                         rt.env.set(name, Value::Kamusi(new_m));
                     }
                     Ok(Value::Tupu)
@@ -687,7 +1115,9 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 (Value::Kamusi(m), "clona") => Ok(Value::Kamusi(m.clone())),
                 (Value::Kamusi(m), "idadi") => Ok(Value::Namba(m.len() as f64)),
                 (Value::Kamusi(m), "pata") => {
-                    let key_val = args_val.first().ok_or_else(|| EvalError::TypeErr("pata inahitaji ufunguo".into()))?;
+                    let key_val = args_val
+                        .first()
+                        .ok_or_else(|| EvalError::TypeErr("pata inahitaji ufunguo".into()))?;
                     let key = MapKey::try_from_value(key_val)?;
                     Ok(Value::Chaguo(m.get(&key).cloned().map(Box::new)))
                 }
@@ -704,12 +1134,16 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     Ok(Value::Orodha(keys))
                 }
                 (Value::Kamusi(m), "vipo") => {
-                    let key_val = args_val.first().ok_or_else(|| EvalError::TypeErr("vipo inahitaji ufunguo".into()))?;
+                    let key_val = args_val
+                        .first()
+                        .ok_or_else(|| EvalError::TypeErr("vipo inahitaji ufunguo".into()))?;
                     let key = MapKey::try_from_value(key_val)?;
                     Ok(Value::Ukweli(m.contains_key(&key)))
                 }
                 (Value::Seti(s), "ongeza") => {
-                    let v = args_val.first().ok_or_else(|| EvalError::TypeErr("ongeza inahitaji thamani".into()))?;
+                    let v = args_val
+                        .first()
+                        .ok_or_else(|| EvalError::TypeErr("ongeza inahitaji thamani".into()))?;
                     let key = MapKey::try_from_value(v)?;
                     let mut new_s = s.clone();
                     new_s.insert(key);
@@ -719,7 +1153,9 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     Ok(Value::Tupu)
                 }
                 (Value::Seti(s), "ondoa") => {
-                    let v = args_val.first().ok_or_else(|| EvalError::TypeErr("ondoa inahitaji thamani".into()))?;
+                    let v = args_val
+                        .first()
+                        .ok_or_else(|| EvalError::TypeErr("ondoa inahitaji thamani".into()))?;
                     let key = MapKey::try_from_value(v)?;
                     let mut new_s = s.clone();
                     let removed = new_s.remove(&key);
@@ -729,7 +1165,9 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     Ok(Value::Ukweli(removed))
                 }
                 (Value::Seti(s), "ina") => {
-                    let v = args_val.first().ok_or_else(|| EvalError::TypeErr("ina inahitaji thamani".into()))?;
+                    let v = args_val
+                        .first()
+                        .ok_or_else(|| EvalError::TypeErr("ina inahitaji thamani".into()))?;
                     let key = MapKey::try_from_value(v)?;
                     Ok(Value::Ukweli(s.contains(&key)))
                 }
@@ -748,7 +1186,8 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 (Value::Chaguo(opt), "ni_tupu") => Ok(Value::Ukweli(opt.is_none())),
                 (Value::Chaguo(opt), "ni_po") => Ok(Value::Ukweli(opt.is_some())),
                 (Value::Chaguo(opt), "hakikisha") => {
-                    let msg = value::as_string(args_val.first().unwrap_or(&Value::Hamna)).unwrap_or_else(|| "Chaguo: Hamna".into());
+                    let msg = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
+                        .unwrap_or_else(|| "Chaguo: Hamna".into());
                     match opt {
                         Some(v) => Ok((**v).clone()),
                         None => Err(EvalError::Panic(msg)),
@@ -873,10 +1312,13 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                         Err(EvalError::Panic(msg))
                     }
                 }
-                (Value::KashaGC(cell), "pata") => cell
-                    .try_borrow()
-                    .map(|v| v.clone())
-                    .map_err(|_| EvalError::Panic("kasha_gc: pata: tayari inatumika (weka ndani ya .weka)".into())),
+                (Value::KashaGC(cell), "pata") => {
+                    cell.try_borrow().map(|v| v.clone()).map_err(|_| {
+                        EvalError::Panic(
+                            "kasha_gc: pata: tayari inatumika (weka ndani ya .weka)".into(),
+                        )
+                    })
+                }
                 (Value::KashaGC(cell), "weka") => {
                     let new_val = args_val.first().cloned().unwrap_or(Value::Hamna);
                     match cell.try_borrow_mut() {
@@ -893,7 +1335,9 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 // evaluating the receiver expression), so strong_count includes one reference
                 // that isn't a real, independent handle — subtract it to report the count a
                 // caller would actually observe (e.g. via other live `weka` bindings).
-                (Value::KashaGC(cell), "idadi") => Ok(Value::Namba((Rc::strong_count(cell) - 1) as f64)),
+                (Value::KashaGC(cell), "idadi") => {
+                    Ok(Value::Namba((Rc::strong_count(cell) - 1) as f64))
+                }
                 (Value::KashaGC(cell), "shirikisha") => Ok(Value::KashaGC(Rc::clone(cell))),
                 // Upgrade: Hamna if the strong count already hit zero (every KashaGC handle
                 // dropped), Kuna(KashaGC) otherwise — a fresh strong handle sharing the same
@@ -909,22 +1353,29 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                             let mut s = String::new();
                             match f.read_to_string(&mut s) {
                                 Ok(_) => Ok(Value::Tokeo(Ok(Box::new(Value::Neno(s))))),
-                                Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+                                Err(e) => {
+                                    Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string())))))
+                                }
                             }
                         }
-                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno("faili: imefungwa tayari".into()))))),
+                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                            "faili: imefungwa tayari".into(),
+                        ))))),
                     }
                 }
                 (Value::Faili(cell), "andika") => {
                     use std::io::Write;
-                    let data = value::as_string(args_val.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
+                    let data = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
+                        .unwrap_or_default();
                     let mut guard = cell.borrow_mut();
                     match guard.0.as_mut() {
                         Some(f) => match f.write_all(data.as_bytes()) {
                             Ok(()) => Ok(Value::Tokeo(Ok(Box::new(Value::Tupu)))),
                             Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
                         },
-                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno("faili: imefungwa tayari".into()))))),
+                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                            "faili: imefungwa tayari".into(),
+                        ))))),
                     }
                 }
                 (Value::Faili(cell), "funga") => {
@@ -939,22 +1390,29 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                             let mut buf = String::new();
                             match s.read_to_string(&mut buf) {
                                 Ok(_) => Ok(Value::Tokeo(Ok(Box::new(Value::Neno(buf))))),
-                                Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+                                Err(e) => {
+                                    Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string())))))
+                                }
                             }
                         }
-                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno("mkondo: imefungwa tayari".into()))))),
+                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                            "mkondo: imefungwa tayari".into(),
+                        ))))),
                     }
                 }
                 (Value::Mkondo(cell), "andika") => {
                     use std::io::Write;
-                    let data = value::as_string(args_val.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
+                    let data = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
+                        .unwrap_or_default();
                     let mut guard = cell.borrow_mut();
                     match guard.0.as_mut() {
                         Some(s) => match s.write_all(data.as_bytes()) {
                             Ok(()) => Ok(Value::Tokeo(Ok(Box::new(Value::Tupu)))),
                             Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
                         },
-                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno("mkondo: imefungwa tayari".into()))))),
+                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                            "mkondo: imefungwa tayari".into(),
+                        ))))),
                     }
                 }
                 (Value::Mkondo(cell), "funga") => {
@@ -990,10 +1448,14 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                                     let text = String::from_utf8_lossy(&buf[..n]).into_owned();
                                     Ok(Value::Tokeo(Ok(Box::new(Value::Neno(text)))))
                                 }
-                                Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+                                Err(e) => {
+                                    Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string())))))
+                                }
                             }
                         }
-                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno("mkondo: imefungwa tayari".into()))))),
+                        None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                            "mkondo: imefungwa tayari".into(),
+                        ))))),
                     }
                 }
                 // Kumbukumbu<T> is a plain owning Box, not a shared/interior-mutable cell like
@@ -1010,7 +1472,9 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                             Ok(Value::Tokeo(if sent {
                                 Ok(Box::new(Value::Tupu))
                             } else {
-                                Err(Box::new(Value::Neno("njia: upande wa pili umefungwa".into())))
+                                Err(Box::new(Value::Neno(
+                                    "njia: upande wa pili umefungwa".into(),
+                                )))
                             }))
                         }
                         None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
@@ -1039,7 +1503,9 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                             Ok(Value::Tokeo(if sent {
                                 Ok(Box::new(Value::Tupu))
                             } else {
-                                Err(Box::new(Value::Neno("njia: upande wa pili umefungwa".into())))
+                                Err(Box::new(Value::Neno(
+                                    "njia: upande wa pili umefungwa".into(),
+                                )))
                             }))
                         }
                         None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
@@ -1098,7 +1564,8 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     let new_val = args_val.first().cloned().unwrap_or(Value::Hamna);
                     let Some(sv) = new_val.try_into_send() else {
                         return Err(EvalError::TypeErr(
-                            "fungo: weka: thamani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)".into(),
+                            "fungo: weka: thamani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)"
+                                .into(),
                         ));
                     };
                     cell.lock();

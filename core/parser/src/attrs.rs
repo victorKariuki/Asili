@@ -24,12 +24,14 @@ pub enum ShartiPredicate {
 /// Grammar: `key = "value" ( '|' "value" )*`. Only `lengo` is a recognized key.
 pub fn parse_sharti_predicate(args: &str) -> Result<ShartiPredicate, String> {
     let args = args.trim();
-    let (key, rest) = args
-        .split_once('=')
-        .ok_or_else(|| format!("sharti predicate haijaeleweka: \"{args}\" (inahitaji key = \"thamani\")"))?;
+    let (key, rest) = args.split_once('=').ok_or_else(|| {
+        format!("sharti predicate haijaeleweka: \"{args}\" (inahitaji key = \"thamani\")")
+    })?;
     let key = key.trim();
     if key != "lengo" {
-        return Err(format!("sharti key isiyojulikana: \"{key}\" (pekee \"lengo\" inatambulika)"));
+        return Err(format!(
+            "sharti key isiyojulikana: \"{key}\" (pekee \"lengo\" inatambulika)"
+        ));
     }
 
     let mut values = Vec::new();
@@ -38,7 +40,9 @@ pub fn parse_sharti_predicate(args: &str) -> Result<ShartiPredicate, String> {
         let quoted = part
             .strip_prefix('"')
             .and_then(|s| s.strip_suffix('"'))
-            .ok_or_else(|| format!("sharti thamani lazima iwe ndani ya alama za nukuu: \"{part}\""))?;
+            .ok_or_else(|| {
+                format!("sharti thamani lazima iwe ndani ya alama za nukuu: \"{part}\"")
+            })?;
         if quoted.is_empty() {
             return Err("sharti thamani haiwezi kuwa tupu".to_string());
         }
@@ -104,7 +108,11 @@ mod tests {
     }
 
     fn attr(name: &str, args: Option<&str>) -> Attribute {
-        Attribute { name: name.to_string(), args: args.map(|s| s.to_string()), line: 1 }
+        Attribute {
+            name: name.to_string(),
+            args: args.map(|s| s.to_string()),
+            line: 1,
+        }
     }
 
     #[test]

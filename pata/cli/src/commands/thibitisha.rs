@@ -33,12 +33,22 @@ pub fn run(args: &[String]) -> CliResult {
     let output = compile_project(Path::new("."), None)?;
 
     let mut checks: Vec<(&'static str, Result<(), String>)> = Vec::new();
-    checks.push(("nyaraka", enforce_docs(Path::new(".")).map_err(|e| e.message)));
-    checks.push(("ukamilifu_wa_sifa", enforce_trait_completeness(&output.module).map_err(|e| e.message)));
-    checks.push(("usalama_wa_ffi", enforce_ffi_signatures(&output.module).map_err(|e| e.message)));
+    checks.push((
+        "nyaraka",
+        enforce_docs(Path::new(".")).map_err(|e| e.message),
+    ));
+    checks.push((
+        "ukamilifu_wa_sifa",
+        enforce_trait_completeness(&output.module).map_err(|e| e.message),
+    ));
+    checks.push((
+        "usalama_wa_ffi",
+        enforce_ffi_signatures(&output.module).map_err(|e| e.message),
+    ));
     checks.push((
         "uthabiti_wa_aina",
-        crate::pipeline::stability::enforce_type_stability(Path::new("."), &output.module).map_err(|e| e.message),
+        crate::pipeline::stability::enforce_type_stability(Path::new("."), &output.module)
+            .map_err(|e| e.message),
     ));
 
     let format_result: Result<(), String> = (|| {
@@ -56,10 +66,14 @@ pub fn run(args: &[String]) -> CliResult {
     checks.push(("umbizo", format_result));
 
     if let Some(threshold) = threshold {
-        checks.push(("kiwango_cha_jaribio", enforce_test_coverage(&output.module, threshold).map_err(|e| e.message)));
+        checks.push((
+            "kiwango_cha_jaribio",
+            enforce_test_coverage(&output.module, threshold).map_err(|e| e.message),
+        ));
     }
 
-    let failed: Vec<&(&'static str, Result<(), String>)> = checks.iter().filter(|(_, r)| r.is_err()).collect();
+    let failed: Vec<&(&'static str, Result<(), String>)> =
+        checks.iter().filter(|(_, r)| r.is_err()).collect();
 
     if json {
         let output_json = serde_json::json!({
@@ -119,7 +133,10 @@ fn enforce_trait_completeness(module: &Module) -> CliResult {
             .any(|i| i.trait_name.as_deref() == Some(t.name.as_str()));
         if !implemented {
             return Err(CliError::new(
-                format!("sifa '{}' haina utekelezaji wowote kwenye mradi huu", t.name),
+                format!(
+                    "sifa '{}' haina utekelezaji wowote kwenye mradi huu",
+                    t.name
+                ),
                 1,
             ));
         }
@@ -140,9 +157,19 @@ fn is_ffi_safe(ty_name: &str) -> bool {
     let base = ty_name.split(['<', ' ']).next().unwrap_or(ty_name);
     matches!(
         base,
-        "Namba" | "Ukweli" | "Herufi" | "Tupu" | "Anuani"
-            | "Biti8" | "Biti16" | "Biti32" | "Biti64"
-            | "uBiti8" | "uBiti16" | "uBiti32" | "uBiti64"
+        "Namba"
+            | "Ukweli"
+            | "Herufi"
+            | "Tupu"
+            | "Anuani"
+            | "Biti8"
+            | "Biti16"
+            | "Biti32"
+            | "Biti64"
+            | "uBiti8"
+            | "uBiti16"
+            | "uBiti32"
+            | "uBiti64"
     )
 }
 
@@ -183,10 +210,16 @@ fn parse_args(args: &[String]) -> Result<(Option<f64>, bool), CliError> {
         match args[i].as_str() {
             "--kiwango-cha-jaribio" => {
                 let Some(v) = args.get(i + 1) else {
-                    return Err(CliError::new("--kiwango-cha-jaribio inahitaji thamani (0-100)", 2));
+                    return Err(CliError::new(
+                        "--kiwango-cha-jaribio inahitaji thamani (0-100)",
+                        2,
+                    ));
                 };
                 let parsed: f64 = v.parse().map_err(|_| {
-                    CliError::new(format!("--kiwango-cha-jaribio inahitaji namba (0-100), si: {v}"), 2)
+                    CliError::new(
+                        format!("--kiwango-cha-jaribio inahitaji namba (0-100), si: {v}"),
+                        2,
+                    )
                 })?;
                 if !(0.0..=100.0).contains(&parsed) {
                     return Err(CliError::new(
@@ -265,7 +298,9 @@ fn enforce_docs(root: &Path) -> CliResult {
             Err(_) => {
                 for i in 0..lines.len() {
                     let ln = lines[i].trim();
-                    if (ln.starts_with("umma kazi") || ln.starts_with("umma umbo")) && (i == 0 || !lines[i - 1].trim().starts_with("///")) {
+                    if (ln.starts_with("umma kazi") || ln.starts_with("umma umbo"))
+                        && (i == 0 || !lines[i - 1].trim().starts_with("///"))
+                    {
                         return Err(CliError::new(
                             format!(
                                 "nyaraka zimekosekana kwa item ya umma kwenye {}:{}",
@@ -401,7 +436,11 @@ mod tests {
 
         let err = run(&[]).expect_err("thibitisha should fail when a sifa has zero impls");
         assert_eq!(err.exit_code, 1);
-        assert!(err.message.contains("haina utekelezaji wowote"), "{}", err.message);
+        assert!(
+            err.message.contains("haina utekelezaji wowote"),
+            "{}",
+            err.message
+        );
 
         std::env::set_current_dir(&original).expect("restore");
         let _ = fs::remove_dir_all(root);
@@ -414,9 +453,14 @@ mod tests {
         let root = temp_project_unsafe_ffi_signature();
         std::env::set_current_dir(&root).expect("chdir");
 
-        let err = run(&[]).expect_err("thibitisha should fail on a non-FFI-safe kiunganishi signature");
+        let err =
+            run(&[]).expect_err("thibitisha should fail on a non-FFI-safe kiunganishi signature");
         assert_eq!(err.exit_code, 1);
-        assert!(err.message.contains("salama kwa ABI ya C"), "{}", err.message);
+        assert!(
+            err.message.contains("salama kwa ABI ya C"),
+            "{}",
+            err.message
+        );
 
         std::env::set_current_dir(&original).expect("restore");
         let _ = fs::remove_dir_all(root);
@@ -435,7 +479,11 @@ mod tests {
 
         let err = run(&[]).expect_err("thibitisha should fail with multiple problems");
         assert!(err.message.contains("usalama_wa_ffi"), "{}", err.message);
-        assert!(err.message.contains("umbizo"), "expected the format check to also be reported, got: {}", err.message);
+        assert!(
+            err.message.contains("umbizo"),
+            "expected the format check to also be reported, got: {}",
+            err.message
+        );
 
         std::env::set_current_dir(&original).expect("restore");
         let _ = fs::remove_dir_all(root);
@@ -451,7 +499,8 @@ mod tests {
         let root = temp_project_unsafe_ffi_signature();
         std::env::set_current_dir(&root).expect("chdir");
 
-        let err = run(&["--json".to_string()]).expect_err("thibitisha should still fail in json mode");
+        let err =
+            run(&["--json".to_string()]).expect_err("thibitisha should still fail in json mode");
         assert_eq!(err.exit_code, 1);
         // The JSON body itself is printed to stdout inside run(), not carried on the CliError —
         // can't easily capture stdout here without restructuring run() to return the value

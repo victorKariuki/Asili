@@ -39,8 +39,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 const STDLIB_MODULES: &[&str] = &[
-    "msingi", "mfumo", "majira", "matumizi", "faili", "hisabati",
-    "runtime", "syscall", "kiungo", "sambamba",
+    "msingi", "mfumo", "majira", "matumizi", "faili", "hisabati", "runtime", "syscall", "kiungo",
+    "sambamba",
 ];
 
 /// One resolved project-local module: its parsed AST plus the file it came from.
@@ -89,7 +89,9 @@ impl WorkspaceIndex {
         let mut seen = HashSet::new();
         let mut queue: Vec<&str> = vec![name];
         while let Some(cur) = queue.pop() {
-            let Some(direct) = self.reverse_deps.get(cur) else { continue };
+            let Some(direct) = self.reverse_deps.get(cur) else {
+                continue;
+            };
             for importer in direct {
                 if seen.insert(importer.clone()) {
                     queue.push(importer.as_str());
@@ -132,7 +134,9 @@ fn read_entrypoint_and_deps(root: &Path) -> (PathBuf, BTreeMap<String, Dependenc
             section = line.trim_matches(|c| c == '[' || c == ']').to_string();
             continue;
         }
-        let Some((key, value)) = line.split_once('=') else { continue };
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
         let key = key.trim();
         let value = value.trim();
         match section.as_str() {
@@ -221,7 +225,9 @@ pub fn resolve_workspace(root: &Path, cache: &mut ModuleCache) -> WorkspaceIndex
         if !visited.insert(canon.clone()) {
             continue;
         }
-        let Ok(source) = std::fs::read_to_string(&path) else { continue };
+        let Ok(source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
         let hash = crate::doc_store::hash_text(&source);
 
         let wm = match cache.entries.get(&canon) {
@@ -229,15 +235,25 @@ pub fn resolve_workspace(root: &Path, cache: &mut ModuleCache) -> WorkspaceIndex
             _ => {
                 #[cfg(test)]
                 REPARSE_COUNT.with(|c| c.set(c.get() + 1));
-                let Ok(tokens) = tokenize(&source) else { continue };
-                let Ok(module) = parse_tokens(&tokens) else { continue };
-                let wm = WorkspaceModule { path: path.clone(), module };
+                let Ok(tokens) = tokenize(&source) else {
+                    continue;
+                };
+                let Ok(module) = parse_tokens(&tokens) else {
+                    continue;
+                };
+                let wm = WorkspaceModule {
+                    path: path.clone(),
+                    module,
+                };
                 cache.entries.insert(canon, (hash, wm.clone()));
                 wm
             }
         };
 
-        let name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let name = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
         for imp in &wm.module.imports {
             let mod_name = match &imp.path {
                 ImportPath::Full(s) => s.as_str(),
@@ -251,14 +267,19 @@ pub fn resolve_workspace(root: &Path, cache: &mut ModuleCache) -> WorkspaceIndex
             // recording it only on first discovery would silently drop every edge except the
             // one that happened to resolve a module first, breaking transitive_importers for
             // any module imported from more than one place.
-            reverse_deps.entry(mod_name.to_string()).or_default().insert(name.clone());
+            reverse_deps
+                .entry(mod_name.to_string())
+                .or_default()
+                .insert(name.clone());
             if !modules.contains_key(mod_name) {
                 // Always resolved from the project root, matching pata_core::resolve_one's own
                 // (and therefore pata-cli's own) behavior exactly — not relative to whichever
                 // file happens to be doing the importing. Covers path deps, version deps
                 // resolved against the vendored `.asili/packages/<name>/` cache, and stdlib
                 // `.asi` interface stubs, none of which the old per-file-relative lookup saw.
-                if let Some((dep_path, _is_asi)) = pata_core::find_module_file(mod_name, root, &path_deps) {
+                if let Some((dep_path, _is_asi)) =
+                    pata_core::find_module_file(mod_name, root, &path_deps)
+                {
                     queue.push(dep_path);
                 }
             }
@@ -267,7 +288,10 @@ pub fn resolve_workspace(root: &Path, cache: &mut ModuleCache) -> WorkspaceIndex
         modules.insert(name, wm);
     }
 
-    WorkspaceIndex { modules, reverse_deps }
+    WorkspaceIndex {
+        modules,
+        reverse_deps,
+    }
 }
 
 // `#[cfg(test)]`-only counter of how many times `resolve_workspace`'s tokenize/parse branch
@@ -317,12 +341,22 @@ mod tests {
         let mut cache = ModuleCache::default();
 
         let first = resolve_workspace(&project, &mut cache);
-        assert!(first.modules.contains_key("kuu"), "kuu.as should resolve on the first (real parse) call");
+        assert!(
+            first.modules.contains_key("kuu"),
+            "kuu.as should resolve on the first (real parse) call"
+        );
         assert_eq!(reparse_count(), 1, "the first call must be a real parse");
 
         let second = resolve_workspace(&project, &mut cache);
-        assert!(second.modules.contains_key("kuu"), "kuu.as must still resolve on the second call");
-        assert_eq!(reparse_count(), 1, "unchanged content on the second call must be a cache hit, not a second real parse");
+        assert!(
+            second.modules.contains_key("kuu"),
+            "kuu.as must still resolve on the second call"
+        );
+        assert_eq!(
+            reparse_count(),
+            1,
+            "unchanged content on the second call must be a cache hit, not a second real parse"
+        );
 
         std::fs::remove_dir_all(&project).ok();
     }
@@ -342,10 +376,21 @@ mod tests {
         let mut cache = ModuleCache::default();
 
         let first = resolve_workspace(&project, &mut cache);
-        assert!(!first.modules.contains_key("msaidizi"), "msaidizi.as isn't imported yet, so it shouldn't be resolved");
-        assert_eq!(reparse_count(), 1, "only kuu.as (the entrypoint) should be parsed on the first call");
+        assert!(
+            !first.modules.contains_key("msaidizi"),
+            "msaidizi.as isn't imported yet, so it shouldn't be resolved"
+        );
+        assert_eq!(
+            reparse_count(),
+            1,
+            "only kuu.as (the entrypoint) should be parsed on the first call"
+        );
 
-        std::fs::write(project.join("src/kuu.as"), "leta msaidizi\nkazi kuu() -> Tupu { }").unwrap();
+        std::fs::write(
+            project.join("src/kuu.as"),
+            "leta msaidizi\nkazi kuu() -> Tupu { }",
+        )
+        .unwrap();
         let second = resolve_workspace(&project, &mut cache);
         assert!(
             second.modules.contains_key("msaidizi"),
@@ -384,7 +429,10 @@ mod tests {
         assert_eq!(roots.len(), 2);
         assert!(roots.contains(&project_a));
         assert!(roots.contains(&project_b));
-        assert!(!roots.contains(&untouched), "a project with no changed files must not appear as affected");
+        assert!(
+            !roots.contains(&untouched),
+            "a project with no changed files must not appear as affected"
+        );
 
         std::fs::remove_dir_all(&project_a).ok();
         std::fs::remove_dir_all(&project_b).ok();
@@ -396,10 +444,18 @@ mod tests {
         let project = temp_project("dedup");
         std::fs::write(project.join("src/other.as"), "kazi f() -> Tupu { }").unwrap();
 
-        let changed = vec![project.join("src/kuu.as"), project.join("src/other.as"), project.join("pata.toml")];
+        let changed = vec![
+            project.join("src/kuu.as"),
+            project.join("src/other.as"),
+            project.join("pata.toml"),
+        ];
         let roots = affected_project_roots(&changed);
 
-        assert_eq!(roots.len(), 1, "three changed files in one project should collapse to one root, got: {roots:?}");
+        assert_eq!(
+            roots.len(),
+            1,
+            "three changed files in one project should collapse to one root, got: {roots:?}"
+        );
         assert!(roots.contains(&project));
 
         std::fs::remove_dir_all(&project).ok();
@@ -407,13 +463,17 @@ mod tests {
 
     #[test]
     fn affected_project_roots_ignores_a_file_outside_any_project() {
-        let outside = std::env::temp_dir().join(format!("pata-lsp-ws-test-outside-{}", std::process::id()));
+        let outside =
+            std::env::temp_dir().join(format!("pata-lsp-ws-test-outside-{}", std::process::id()));
         std::fs::create_dir_all(&outside).unwrap();
         let stray_file = outside.join("stray.as");
         std::fs::write(&stray_file, "kazi f() -> Tupu { }").unwrap();
 
         let roots = affected_project_roots(&[stray_file]);
-        assert!(roots.is_empty(), "a file with no pata.toml anywhere above it must not produce a root");
+        assert!(
+            roots.is_empty(),
+            "a file with no pata.toml anywhere above it must not produce a root"
+        );
 
         std::fs::remove_dir_all(&outside).ok();
     }
