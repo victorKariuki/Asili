@@ -4,6 +4,7 @@ version = "0.2.2"
 edition = "2021"
 
 [dependencies]
+pata-config = { path = "../config" }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 anyhow = "1.0"
