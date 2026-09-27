@@ -558,9 +558,13 @@ impl<'a> Analyzer<'a> {
             self.unconsumed_tokeo.push(HashSet::new());
             self.dropped_vars.push(HashSet::new());
         }
-        for stmt in &block.statements {
-            self.check_stmt(stmt, scopes, return_type);
-        }
+        // Deeply nested blocks recurse once per level; grow the stack on demand like the parser
+        // and evaluator do instead of overflowing it.
+        stacker::maybe_grow(64 * 1024, 1024 * 1024, || {
+            for stmt in &block.statements {
+                self.check_stmt(stmt, scopes, return_type);
+            }
+        });
         if !root {
             if let Some(set) = self.unconsumed_tokeo.last() {
                 for name in set {
@@ -1080,6 +1084,17 @@ impl<'a> Analyzer<'a> {
     }
 
     fn check_expr(
+        &mut self,
+        expr: &Expr,
+        scopes: &mut Vec<HashMap<String, Binding>>,
+        mode: UseMode,
+    ) -> ValueType {
+        stacker::maybe_grow(64 * 1024, 1024 * 1024, || {
+            self.check_expr_inner(expr, scopes, mode)
+        })
+    }
+
+    fn check_expr_inner(
         &mut self,
         expr: &Expr,
         scopes: &mut Vec<HashMap<String, Binding>>,

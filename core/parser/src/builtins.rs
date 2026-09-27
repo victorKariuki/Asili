@@ -3,6 +3,18 @@
 use crate::{FnContract, ValueType};
 use std::collections::HashMap;
 
+/// Builtin modules whose exports are *not* ambient: they must be brought in with `leta` (the
+/// managed-memory wrapper is opt-in by design — see docs/design/kasha-gc-design.md).
+pub const OPT_IN_MODULES: &[&str] = &["kasha_gc"];
+
+/// The builtin modules whose exports are in scope without `leta`.
+pub fn ambient_module_names() -> impl Iterator<Item = &'static str> {
+    BUILTIN_MODULE_NAMES
+        .iter()
+        .copied()
+        .filter(|name| !OPT_IN_MODULES.contains(name))
+}
+
 pub const BUILTIN_MODULE_NAMES: &[&str] = &[
     "msingi", "mfumo", "majira", "matumizi", "faili", "hisabati", "runtime", "syscall", "kiungo",
     "sambamba", "kasha_gc",

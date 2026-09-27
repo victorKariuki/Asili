@@ -109,6 +109,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   call forms `na_biti(..)`/`sogeza_kushoto(..)` are no longer silently accepted.
   `kila_na_fahirisi` callbacks on bytecode receive `(kipengele, fahirisi)` like the evaluator
   (the VM passed the index first).
+- **Ambient stdlib follow-ups**: a project or dependency constant/function may now share a name
+  with an ambient builtin (e.g. a dependency's `PI`) — an explicit import shadows the prelude,
+  and only two explicit imports of the same name clash (`SEM090`/`SEM091`); `kasha_gc` is opt-in
+  again (needs `leta kasha_gc`, as its design specifies). The semantic analyzer grows its stack
+  on deeply nested code instead of overflowing it.
+- **Nested generics closed by `>>`**: `Orodha<Orodha<Namba>>` no longer lets the type swallow
+  the following `= ...` (the lexer reads `>>` as one token; types now count it as two closing
+  brackets), and `pata nadhifu` keeps such types tight (`Kamusi<Neno, Orodha<Namba>>`).
 - `pata-lint`'s unused-binding rule (`LINT301`) no longer flags a variable used only inside an
   `ikiwa` expression, and the LSP now highlights names there too.
 - LSP folding ranges and signature help no longer treat `//` (floor division) as the start of
