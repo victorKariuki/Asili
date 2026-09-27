@@ -523,8 +523,7 @@ pub fn run_asb(
         let program = load_asb_bytecode(bytes).map_err(|e| RunAsbError::Load(e.to_string()))?;
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let aot_enabled = std::env::var("ASILI_AOT").map(|v| v != "0").unwrap_or(true);
-            let library = asb_path.filter(|_| aot_enabled).and_then(|path| {
+            let library = asb_path.filter(|_| aot::enabled()).and_then(|path| {
                 let stem = path.file_stem()?.to_str()?;
                 let lib = path.with_file_name(aot::library_file_name(stem));
                 // A missing or stale library just means running on the VM.
