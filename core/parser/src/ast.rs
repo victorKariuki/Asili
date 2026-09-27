@@ -149,6 +149,12 @@ pub enum Stmt {
         // so declarations/usages can be colored at their real position, not just column 1.
         column: usize,
     },
+    LetPattern {
+        mutable: bool,
+        pattern: Pattern,
+        value: Expr,
+        line: usize,
+    },
     Assign {
         name: String,
         op: AssignOp,
@@ -203,6 +209,27 @@ pub enum Stmt {
         expr: Expr,
         line: usize,
     },
+}
+
+impl Stmt {
+    /// The source line this statement starts at — every variant carries one, used for
+    /// line-level coverage instrumentation (`core/evaluator`'s `Runtime::executed_lines`).
+    pub fn line(&self) -> usize {
+        match self {
+            Stmt::Let { line, .. }
+            | Stmt::LetPattern { line, .. }
+            | Stmt::Assign { line, .. }
+            | Stmt::If { line, .. }
+            | Stmt::While { line, .. }
+            | Stmt::For { line, .. }
+            | Stmt::Match { line, .. }
+            | Stmt::Break { line, .. }
+            | Stmt::Continue { line, .. }
+            | Stmt::Return { line, .. }
+            | Stmt::Drop { line, .. }
+            | Stmt::Expr { line, .. } => *line,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -273,6 +300,13 @@ pub enum Expr {
     },
     Hamna,
     Group(Box<Expr>),
+    If {
+        cond: Box<Expr>,
+        then_expr: Box<Expr>,
+        else_if: Vec<(Expr, Expr)>,
+        else_expr: Option<Box<Expr>>,
+        line: usize,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<Expr>,
@@ -344,6 +378,52 @@ pub enum Expr {
         expr: Box<Expr>,
         line: usize,
     },
+}
+
+impl Expr {
+    /// The direct sub-expressions of `self`, in evaluation order — the one definition of the
+    /// expression tree's shape that analyses walking it (linters, the LSP, the parser's own
+    /// checks) share instead of each re-listing every variant.
+    pub fn children(&self) -> Vec<&Expr> {
+        match self {
+            Expr::Number(_)
+            | Expr::String(_)
+            | Expr::Bool(_)
+            | Expr::Char(_)
+            | Expr::Ident { .. }
+            | Expr::Hamna => vec![],
+            Expr::Group(e)
+            | Expr::Unary { expr: e, .. }
+            | Expr::Cast { expr: e, .. }
+            | Expr::Propagate { expr: e, .. }
+            | Expr::FieldAccess { receiver: e, .. } => vec![e],
+            Expr::If {
+                cond,
+                then_expr,
+                else_if,
+                else_expr,
+                ..
+            } => {
+                let mut out = vec![&**cond, &**then_expr];
+                for (c, e) in else_if {
+                    out.push(c);
+                    out.push(e);
+                }
+                out.extend(else_expr.as_deref());
+                out
+            }
+            Expr::Binary { left, right, .. } => vec![left, right],
+            Expr::Index { base, index, .. } => vec![base, index],
+            Expr::Call { callee, args, .. } => std::iter::once(&**callee).chain(args).collect(),
+            Expr::MethodCall { receiver, args, .. } => {
+                std::iter::once(&**receiver).chain(args).collect()
+            }
+            Expr::List { elements, .. } => elements.iter().collect(),
+            Expr::Map { entries, .. } => entries.iter().flat_map(|(k, v)| [k, v]).collect(),
+            Expr::StructLiteral { fields, .. } => fields.iter().map(|(_, e)| e).collect(),
+            Expr::EnumConstruct { data, .. } => data.as_deref().into_iter().collect(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -447,8 +527,8 @@ pub enum ValueType {
     Anuani,
     /// Reference-counted shared wrapper (opt-in `leta kasha_gc`); see spec's managed-memory module.
     KashaGC(Box<ValueType>),
-    /// Weak reference to a Kasha_GC<T> (kasha_gc_dhaifu, downgrade); the cycle-breaking escape
-    /// hatch, since Kasha_GC<T> itself has no cycle collector.
+    /// Weak reference to a `Kasha_GC<T>` (kasha_gc_dhaifu, downgrade); the cycle-breaking escape
+    /// hatch, since `Kasha_GC<T>` itself has no cycle collector.
     KashaGCDhaifu(Box<ValueType>),
     /// File handle (leta faili); owns an OS file descriptor, closed on drop.
     Faili,

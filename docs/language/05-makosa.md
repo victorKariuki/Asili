@@ -116,7 +116,7 @@ ikiwa gawanya(10, 0).ni_kosa() {
 | Thamani inaweza kukosekana | `Chaguo<T>`, angalia na `Hamna` |
 | Operesheni inaweza kushindwa | `Tokeo<T,E>`, tumia `jaribu` |
 | Unataka kusimamisha mara moja | `rejesha kosa(...)` kutoka kazi inayorudisha `Tokeo` |
-| Index inaweza kuwa nje ya mipaka | `a[i]?` kueneza makosa |
+| Index inaweza kuwa nje ya mipaka | `a[i]?` kueneza kosa, au `a.pata(i)` kupata `Chaguo` (`a[i]` peke yake husimamisha programu) |
 
 ---
 

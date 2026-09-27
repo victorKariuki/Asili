@@ -21,9 +21,14 @@ pub fn merge_modules(entrypoint: &Module, resolved: &HashMap<String, Module>) ->
     for imp in &entrypoint.imports {
         let (module_name, names_to_import) = match &imp.path {
             ImportPath::Full(name) => (name.as_str(), None as Option<Vec<String>>),
-            ImportPath::Selective { module: name, names } => (name.as_str(), Some(names.clone())),
+            ImportPath::Selective {
+                module: name,
+                names,
+            } => (name.as_str(), Some(names.clone())),
         };
-        let Some(module) = resolved.get(module_name) else { continue };
+        let Some(module) = resolved.get(module_name) else {
+            continue;
+        };
         for f in &module.functions {
             let include = match &names_to_import {
                 None => f.is_public,

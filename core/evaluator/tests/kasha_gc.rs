@@ -7,7 +7,7 @@
 
 use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, semantic_check_with_env, extern_env_from_imports, Module};
+use asili_parser::{extern_env_from_imports, parse_tokens, semantic_check_with_env, Module};
 
 fn compile(src: &str) -> Module {
     let toks = tokenize(src).expect("tokenize");
@@ -31,7 +31,11 @@ fn two_handles_share_a_mutation() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "thamani", vec![]).expect("runs");
-    assert_eq!(result, Value::Namba(42.0), "mutation through b should be visible through a");
+    assert_eq!(
+        result,
+        Value::Namba(42.0),
+        "mutation through b should be visible through a"
+    );
 }
 
 #[test]
@@ -48,7 +52,11 @@ fn refcount_increases_on_share_and_decreases_on_drop() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "baada_ya_kutupa", vec![]).expect("runs");
-    assert_eq!(result, Value::Namba(1.0), "refcount should return to 1 after the shared handle is dropped");
+    assert_eq!(
+        result,
+        Value::Namba(1.0),
+        "refcount should return to 1 after the shared handle is dropped"
+    );
 }
 
 #[test]
@@ -65,7 +73,11 @@ fn refcount_reflects_two_live_shares() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "idadi_ya_kushiriki", vec![]).expect("runs");
-    assert_eq!(result, Value::Namba(3.0), "a, b, and c should all count toward the same refcount");
+    assert_eq!(
+        result,
+        Value::Namba(3.0),
+        "a, b, and c should all count toward the same refcount"
+    );
 }
 
 #[test]
@@ -100,7 +112,10 @@ fn kasha_gc_requires_explicit_import() {
     let module = parse_tokens(&toks).expect("parse");
     let (fns, consts) = extern_env_from_imports(&module);
     let result = semantic_check_with_env(&module, true, fns, consts);
-    assert!(result.is_err(), "kasha_gc_unda should be unknown without `leta kasha_gc`");
+    assert!(
+        result.is_err(),
+        "kasha_gc_unda should be unknown without `leta kasha_gc`"
+    );
 }
 
 #[test]
@@ -117,7 +132,11 @@ fn equality_is_by_shared_identity_not_contents() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "sawa_kwa_kumbukumbu", vec![]).expect("runs");
-    assert_eq!(result, Value::Ukweli(true), "== should compare shared identity, not contents");
+    assert_eq!(
+        result,
+        Value::Ukweli(true),
+        "== should compare shared identity, not contents"
+    );
 }
 
 #[test]
@@ -135,7 +154,11 @@ fn weka_mutates_through_any_live_handle() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "hesabu", vec![]).expect("runs");
-    assert_eq!(result, Value::Namba(14.0), "a and b should both see c's mutation");
+    assert_eq!(
+        result,
+        Value::Namba(14.0),
+        "a and b should both see c's mutation"
+    );
 }
 
 #[test]
@@ -160,7 +183,11 @@ fn dhaifu_imarisha_upgrades_while_strong_handle_is_alive() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Ukweli(true), ".imarisha() should upgrade to Kuna(...) while a is still alive");
+    assert_eq!(
+        result,
+        Value::Ukweli(true),
+        ".imarisha() should upgrade to Kuna(...) while a is still alive"
+    );
 }
 
 #[test]
@@ -180,7 +207,11 @@ fn dhaifu_imarisha_fails_once_every_strong_handle_is_dropped() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Ukweli(true), ".imarisha() must return Hamna once the strong count hits zero");
+    assert_eq!(
+        result,
+        Value::Ukweli(true),
+        ".imarisha() must return Hamna once the strong count hits zero"
+    );
 }
 
 #[test]
@@ -205,5 +236,9 @@ fn weak_reference_does_not_count_toward_strong_refcount() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Ukweli(true), "downgrading to Dhaifu must not increment the strong count");
+    assert_eq!(
+        result,
+        Value::Ukweli(true),
+        "downgrading to Dhaifu must not increment the strong count"
+    );
 }

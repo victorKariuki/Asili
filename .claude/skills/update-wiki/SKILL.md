@@ -44,6 +44,7 @@ The right column is the file (or files) to update **in the same pass** — never
 | Formatting-and-Linting | `pata nadhifu`, `pata-lint`'s rule set, `pata thibitisha`'s checks — **update whenever a lint rule or thibitisha check is added/removed** | `docs/howto/03-format-code.md`, `04-validate-docs.md`, `pata/cli/commands/thibitisha.md` |
 | Package-Management | `pata.toml` schema, `pata ongeza`, path/vendored deps, lockfile | `docs/design/package-manager-design.md`, `docs/spec/06-tooling-and-ecosystem.md`, `docs/howto/05-add-dependency.md` |
 | Architecture | Workspace/crate layout, execution pipeline, file/artifact conventions | `docs/spec/02-architecture-and-files.md`, `README.md`'s Layout table |
+| Performance | Execution tiers (tree-walker, register VM, LLVM AOT), range analysis/deopt, Sudoku benchmark numbers, plan status — **update whenever the benchmark figures or an engine changes** | `docs/design/performance.md` |
 | Macros | Kielelezo! (design-stage, not implemented) | `docs/design/kielelezo-macros-design.md`, `docs/spec/06-tooling-and-ecosystem.md` |
 | Data-Shapes-and-Memory | Seti, Namba_Kuu/Sahihi, Kasha_GC, Faili/Mkondo/Kumbukumbu, ownership | `docs/design/data-shapes-design.md`, `kasha-gc-design.md`, `faili-mkondo-design.md` |
 | Wasm-Driver | `driver/wasm` dual-target build | `docs/design/wasm-driver-design.md` |

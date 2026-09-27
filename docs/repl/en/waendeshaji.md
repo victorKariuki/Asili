@@ -11,6 +11,8 @@ Namba(6.0)
 Namba(42.0)
 > 15 / 4
 Namba(3.75)
+> 15 // 4
+Namba(3.0)
 > 17 % 5
 Namba(2.0)
 > 2 ** 10
@@ -67,6 +69,12 @@ Namba(6.0)
 Namba(16.0)
 > 16 sogeza_kulia 2
 Namba(4.0)
+> 3 & 5
+Namba(1.0)
+> 3 | 5
+Namba(7.0)
+> 1 << 4
+Namba(16.0)
 ```
 
 ## Kipaumbele
@@ -78,6 +86,8 @@ Namba(7.0)
 Namba(18.0)
 > (1 + 2) * 3
 Namba(9.0)
+> 6 & 3 == 2
+Ukweli(true)
 ```
 
 ## Maadili Maalum

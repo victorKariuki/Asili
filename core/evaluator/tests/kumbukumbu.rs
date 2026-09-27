@@ -4,7 +4,7 @@
 
 use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, semantic_check_with_env, extern_env_from_imports, Module};
+use asili_parser::{extern_env_from_imports, parse_tokens, semantic_check_with_env, Module};
 
 fn compile(src: &str) -> Module {
     let toks = tokenize(src).expect("tokenize");
@@ -39,7 +39,10 @@ fn no_leta_needed_it_is_always_in_scope() {
     let module = parse_tokens(&toks).expect("parse");
     let (fns, consts) = extern_env_from_imports(&module);
     let result = semantic_check_with_env(&module, true, fns, consts);
-    assert!(result.is_ok(), "kumbukumbu_unda should be reachable with no `leta` at all");
+    assert!(
+        result.is_ok(),
+        "kumbukumbu_unda should be reachable with no `leta` at all"
+    );
 }
 
 #[test]

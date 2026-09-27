@@ -1,0 +1,5 @@
+[
+  { "id": "karibu", "label": "Karibu (Fibonacci)", "file": "karibu.as" },
+  { "id": "sifa", "label": "Sifa na Umbo (Traits & Structs)", "file": "sifa.as" },
+  { "id": "makosa", "label": "Kushughulikia Makosa (Result)", "file": "makosa.as" }
+]

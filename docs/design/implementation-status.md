@@ -42,11 +42,16 @@ Per [spec/07-execution-and-roadmap.md](../spec/07-execution-and-roadmap.md)'s ph
       pass; `pata.toml [jenga] lengo` / `pata jenga --lengo` select the build target. See
       [sharti-design.md](sharti-design.md) for the full architecture (grammar, scope limits,
       where the filter runs, and why `driver/wasm` doesn't run it).
-- [x] Pakiti/Moduli — `pata-package` crate wired into `pata-cli` (real lockfile, SHA-256
-      checksums); path dependencies and locally-vendored version dependencies resolve. Registry/git
-      fetching is **not** implemented (no registry backend exists) — out of scope until one does.
-      See [package-manager-design.md](package-manager-design.md) for the full architecture (the
-      `pata.toml`/`Asili.toml` adapter approach, module layout, what's actually wired vs. dead code).
+- [x] Pakiti/Moduli — `pata-package` crate wired into `pata-cli`: real lockfile with per-dependency
+      SHA-256 content hashes (not a name/version-string placeholder), re-verified against
+      `.asili/packages/` before every build (`pata jenga` hard-fails on a tampered/swapped
+      dependency). Path, git (`pata ongeza --git`, real clone), and registry (a real file-based
+      local index at `.asili/registry/`) dependencies all resolve and fetch for real; registry
+      dependencies resolve **transitively** (a package's own declared deps are fetched/locked too)
+      with real version-conflict detection across the dependency graph. Workspaces (`pata.toml`'s
+      `[eneo-kazi]` table) share the same single manifest file/syntax as an ordinary project — no
+      separate `Asili.toml`. See [package-manager-design.md](package-manager-design.md) for the
+      full current architecture.
 - [x] Wasm — `driver/wasm` builds for both `wasm32-unknown-unknown` (browser, `wasm-browser`
       feature, `console.log`/`console.error` via wasm-bindgen) and `wasm32-wasip1` (WASI,
       `wasm-wasi` feature — uses `std`'s native WASI support directly, no `wasi` crate needed).
@@ -86,7 +91,11 @@ Per [spec/07-execution-and-roadmap.md](../spec/07-execution-and-roadmap.md)'s ph
       `ValueType`s dispatch through hardcoded Rust match arms that never reach the
       `module.impls` lookup the completeness checker walks. See
       [sifa-traits-design.md](sifa-traits-design.md) for the full architecture.
-- [ ] DAP (debugger) — not started; see [dap-later.md](dap-later.md).
+- [x] DAP (debugger) protocol layer — `pata-dap` crate implements the minimum viable DAP surface
+      (`initialize`/`launch`/`setBreakpoints`/`continue`/`stackTrace`/`scopes`/`variables`/
+      `disconnect`) against a real mock hook; genuine step-through debugging is blocked on
+      `core/evaluator` implementing the `DebugHook` trait (out of `pata/`'s scope). See
+      [dap-later.md](dap-later.md).
 
 ### Phase III — Resolution (self-hosting, borrow checker) — decision made, implementation not started
 
@@ -146,12 +155,23 @@ Researched, decided, not built.
 - [ ] `kiungo` (FFI) is a documented stub: `core/evaluator/src/builtins/kiungo.rs`
       unconditionally returns `Err` from both exported functions, with a `TODO(Phase IV)`
       comment about `libloading`. Correctly scoped to this phase, not a surprise gap.
-- [ ] `.asb` is not real bytecode — `core/evaluator/src/asb.rs` bincode-serializes the parsed
-      AST `Module`; running an `.asb` file re-interprets the AST via the tree-walk evaluator. A
-      separate, genuinely-started-but-incomplete bytecode VM (`core/evaluator/src/bytecode.rs`,
-      `core/evaluator/src/tir.rs`) exists with a real TODO trail (it names exactly which opcodes
-      are missing), but nothing in `pata jenga`'s default pipeline ever emits `format=bytecode`
-      — it's disconnected from the path anyone actually uses.
+- [x] **Bytecode VM and ahead-of-time native code (LLVM)** — `core/evaluator/src/bytecode.rs`
+      lowers most of the language (everything except `linganisha`, `tupa`, pattern `weka`, map
+      and struct literals, enum construction and field access) to a typed register VM with
+      separate `f64`, `Vec<f64>` and `Value` register files. `pata jenga` then compiles the
+      bytecode ahead of time to native code through LLVM IR and `clang -O2` (`aot.rs`); without
+      `clang` the bytecode runs on the VM. A flow-sensitive integer
+      range analysis (`native.rs`) keeps provably whole-number `Namba` registers in `i64`,
+      speculating on unbounded counters with a bound check that deoptimizes back into the VM,
+      and drops provably in-range list bounds checks. All engines share one implementation of
+      the language's value semantics (`eval/ops.rs`, `eval/methods.rs`); `tests/engines_agree.rs`
+      and `tests/native_tiers.rs` check that the tree-walker, VM and AOT agree bit-for-bit.
+      The Arto Inkala Sudoku (90,665 attempts, 10,041 backtracks) solves in ~4.8 ms native
+      (gcc `-O2` C: 4.4 ms), ~110 ms VM, vs. 3.4 s on the tree-walker and 0.33 s in
+      CPython. See [performance.md](performance.md). Remaining: programs using the constructs
+      above still fall back to the tree-walker wholesale (per-function fallback would be finer),
+      `kazi` calls from native code go through the interpreter's call path (no inlining yet),
+      and there is no standalone native executable (the library is loaded by `pata tenda`).
 
 ---
 
@@ -167,16 +187,24 @@ Found by directly auditing the code this cycle, not from the spec:
   deliberately triggers and asserts it.** `semantic_check_with_env_and_modules` (the
   cross-module-aware entry point `pata-cli` actually uses) has zero direct test callers. This is
   exactly the class of gap that let three real bugs ship silently this cycle (see below).
-- **`pata-lint`'s rules are thinner than they look.** LINT201 (repeated-string-literal detection)
-  used to just count *all* string literals in a file and call anything over 5 "repeated" — fixed
-  this cycle, but the other rules (LINT001-003 naming, LINT101 length, LINT202 docs, LINT203
-  unused imports) haven't had the same scrutiny.
-- **`pata thibitisha` checks 2 of the 6 things its own TODO comment says it should** (doc coverage
-  + formatting only; missing type-stability, ABI-compatibility, trait-completeness, and a test-
-  coverage threshold check).
-- **`pata nadhifu` (formatter) is a line-level text transform, not an AST-based formatter** — its
-  own source comments admit it can corrupt string literals containing `{`/`}`/`,` via blind
-  brace/comma replacement.
+- **`pata-lint`'s rules now all have adversarial (false-positive/false-negative) test coverage**,
+  not just happy-path assertions: LINT001-003 (naming), LINT101 (length), LINT201 (repeated
+  string literals — the count-*all*-literals bug is fixed), LINT202 (docs), and LINT203, which
+  was rewritten from a near-useless whole-file heuristic (`imports present AND zero functions`)
+  to real per-name unused-selective-import detection. LINT301 (unused local variables, `weka`/
+  `thabiti` bindings never referenced again in the same function) was added as a genuinely new
+  rule, not the placeholder no-op it started as.
+- **`pata thibitisha` now checks doc coverage, formatting, trait completeness, FFI-safety
+  (the real, checkable prerequisite short of a full ABI contract — `kiungo`/FFI has no C-signature
+  declaration syntax yet), type stability against the most recent `v<semver>` git tag, and
+  (opt-in) a test-coverage threshold** — see `pata/cli/commands/thibitisha.md` for the exact
+  behavior of each. Full ABI compatibility against a declared C signature remains genuinely
+  blocked on `kiungo`/FFI's own Phase IV design, not deferred by choice.
+- **`pata nadhifu` is a real token-stream printer** (`pata-fmt`, `pata_fmt::canonical_format_with_indent`),
+  not the line-level text transform this note used to describe — that older transform (which
+  could corrupt string literals containing `{`/`}`/`,` via blind brace/comma replacement) has
+  been replaced everywhere it was still live, including a duplicate copy that was still running
+  inside `pata-cli`'s own `pipeline::format` and inside `pata-lsp`'s format-on-save.
 
 ## Real bugs found and fixed this cycle (worth knowing about, not re-introducing)
 

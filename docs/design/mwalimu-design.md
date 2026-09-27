@@ -24,7 +24,7 @@ Mwalimu is the Asili Language Server, implemented in the [pata/lsp](../../pata/l
 - Diagnostics (lex/parse/semantic/lint), semantic tokens for editor highlighting
 - Hover with type signatures
 - Document formatting
-- Completion (keywords, builtin types/functions, module-level declarations)
+- Completion (keywords, builtin types, every builtin function the type checker knows with its signature, module-level declarations)
 - Goto-definition, find-references, rename (single-document)
 - Document symbols (file outline) and workspace symbols (cross-document search)
 - Signature help

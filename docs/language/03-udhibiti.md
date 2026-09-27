@@ -23,8 +23,11 @@ ikiwa alama >= 90 {
 ### ikiwa kama Usemi (if as an Expression)
 
 ```asili
-# (not supported as an expression — use au_ikiwa chains or linganisha instead)
+weka daraja = ikiwa alama >= 50 { "faulu" } vinginevyo { "feli" }
+weka ujumbe = ikiwa n < 0 { "hasi" } au_ikiwa n == 0 { "sifuri" } vinginevyo { "chanya" }
 ```
+
+Matawi lazima yarudishe aina zinazoendana.
 
 ## Linganisha (Pattern Matching)
 

@@ -3,7 +3,22 @@
 use crate::{FnContract, ValueType};
 use std::collections::HashMap;
 
-pub const BUILTIN_MODULE_NAMES: &[&str] = &["msingi", "mfumo", "majira", "matumizi", "faili", "hisabati", "runtime", "syscall", "kiungo", "sambamba", "kasha_gc"];
+/// Builtin modules whose exports are *not* ambient: they must be brought in with `leta` (the
+/// managed-memory wrapper is opt-in by design — see docs/design/kasha-gc-design.md).
+pub const OPT_IN_MODULES: &[&str] = &["kasha_gc"];
+
+/// The builtin modules whose exports are in scope without `leta`.
+pub fn ambient_module_names() -> impl Iterator<Item = &'static str> {
+    BUILTIN_MODULE_NAMES
+        .iter()
+        .copied()
+        .filter(|name| !OPT_IN_MODULES.contains(name))
+}
+
+pub const BUILTIN_MODULE_NAMES: &[&str] = &[
+    "msingi", "mfumo", "majira", "matumizi", "faili", "hisabati", "runtime", "syscall", "kiungo",
+    "sambamba", "kasha_gc",
+];
 
 /// Export table: functions and constants for a builtin module.
 #[derive(Clone, Debug, Default)]
@@ -79,6 +94,13 @@ pub fn msingi_exports() -> BuiltinExportTable {
         },
     );
     functions.insert(
+        "orodha_rudia".to_string(),
+        FnContract {
+            params: vec![ValueType::Unknown, ValueType::Namba],
+            ret: ValueType::Orodha(Box::new(ValueType::Unknown)),
+        },
+    );
+    functions.insert(
         "kamusi".to_string(),
         FnContract {
             params: vec![],
@@ -96,10 +118,7 @@ pub fn msingi_exports() -> BuiltinExportTable {
         "jozi".to_string(),
         FnContract {
             params: vec![ValueType::Unknown, ValueType::Unknown],
-            ret: ValueType::Jozi(
-                Box::new(ValueType::Unknown),
-                Box::new(ValueType::Unknown),
-            ),
+            ret: ValueType::Jozi(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown)),
         },
     );
     functions.insert(
@@ -148,7 +167,10 @@ pub fn msingi_exports() -> BuiltinExportTable {
     constants.insert("KWELI".to_string(), ValueType::Ukweli);
     constants.insert("SIYO_KWELI".to_string(), ValueType::Ukweli);
     constants.insert("TUPU".to_string(), ValueType::Tupu);
-    BuiltinExportTable { functions, constants }
+    BuiltinExportTable {
+        functions,
+        constants,
+    }
 }
 
 pub fn hisabati_exports() -> BuiltinExportTable {
@@ -237,7 +259,10 @@ pub fn hisabati_exports() -> BuiltinExportTable {
     constants.insert("INF".to_string(), ValueType::Namba);
     constants.insert("NAN".to_string(), ValueType::Namba);
 
-    BuiltinExportTable { functions, constants }
+    BuiltinExportTable {
+        functions,
+        constants,
+    }
 }
 
 /// System: env, args, exit. Requires `leta mfumo`.
@@ -289,7 +314,10 @@ pub fn mfumo_exports() -> BuiltinExportTable {
         "mkondo_sikiliza".to_string(),
         FnContract {
             params: vec![ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::MkondoSikilizaji), Box::new(ValueType::Neno)),
+            ret: ValueType::Tokeo(
+                Box::new(ValueType::MkondoSikilizaji),
+                Box::new(ValueType::Neno),
+            ),
         },
     );
     functions.insert(
@@ -344,7 +372,10 @@ pub fn mfumo_exports() -> BuiltinExportTable {
         FnContract {
             params: vec![ValueType::Neno],
             ret: ValueType::Tokeo(
-                Box::new(ValueType::Kamusi(Box::new(ValueType::Neno), Box::new(ValueType::Unknown))),
+                Box::new(ValueType::Kamusi(
+                    Box::new(ValueType::Neno),
+                    Box::new(ValueType::Unknown),
+                )),
                 Box::new(ValueType::Neno),
             ),
         },
@@ -352,7 +383,10 @@ pub fn mfumo_exports() -> BuiltinExportTable {
     let mut constants = HashMap::new();
     constants.insert("TOLEO".to_string(), ValueType::Neno);
     constants.insert("JINA_OS".to_string(), ValueType::Neno);
-    BuiltinExportTable { functions, constants }
+    BuiltinExportTable {
+        functions,
+        constants,
+    }
 }
 
 /// Time: seconds since epoch, sleep, format. Requires `leta majira`.
@@ -403,7 +437,10 @@ pub fn majira_exports() -> BuiltinExportTable {
     let mut constants = HashMap::new();
     constants.insert("SEKUNDE_KWA_SIKU".to_string(), ValueType::Namba);
     constants.insert("MWANZO_WA_ZAMANI".to_string(), ValueType::Namba);
-    BuiltinExportTable { functions, constants }
+    BuiltinExportTable {
+        functions,
+        constants,
+    }
 }
 
 /// I/O: print, stderr, prompt. Requires `leta matumizi`.
@@ -504,7 +541,10 @@ pub fn faili_exports() -> BuiltinExportTable {
     );
     let mut constants = HashMap::new();
     constants.insert("NJIA_SEPARATOR".to_string(), ValueType::Neno);
-    BuiltinExportTable { functions, constants }
+    BuiltinExportTable {
+        functions,
+        constants,
+    }
 }
 
 /// Sambamba (concurrency): tenda/subiri_tenda (thread spawn/join, 1:1 OS-thread model), njia

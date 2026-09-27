@@ -23,7 +23,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 
     weka id = jaribu (tenda("mfanyakazi", tx, 5))
     weka jibu = jaribu (rx.pokea())
-    chapisha(jibu kama Neno)          // "25"
+    chapisha(jibu kama Neno)          # "25"
     jaribu (subiri_tenda(id))
 }
 ```
@@ -51,7 +51,7 @@ leta sambamba
 kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     weka f = jaribu (fungo(0.0))
     f.weka(42.0)
-    chapisha(f.pata() kama Neno)   // "42"
+    chapisha(f.pata() kama Neno)   # "42"
 }
 ```
 

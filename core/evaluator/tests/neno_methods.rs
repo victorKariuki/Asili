@@ -1,6 +1,6 @@
+use asili_evaluator::run_function;
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, semantic_check_with_env};
-use asili_evaluator::run_function;
 use std::collections::HashMap;
 
 fn parse_and_eval(src: &str) -> asili_evaluator::Value {
@@ -168,7 +168,10 @@ fn test_neno_herufi_kwa_in_range() {
         kazi test() -> Chaguo<Herufi> { weka s = "habari" rejesha s.herufi_kwa(2) }
     "#;
     let v = parse_and_eval(src);
-    assert_eq!(v, asili_evaluator::Value::Chaguo(Some(Box::new(asili_evaluator::Value::Herufi('b')))));
+    assert_eq!(
+        v,
+        asili_evaluator::Value::Chaguo(Some(Box::new(asili_evaluator::Value::Herufi('b'))))
+    );
 }
 
 /// Test 14: herufi_kwa — out of range returns Hamna, not a panic
@@ -202,5 +205,114 @@ fn test_neno_herufi_kwa_is_grapheme_indexed_not_byte_indexed() {
         kazi test() -> Namba { weka s = "café" rejesha s.urefu() }
     "#;
     let v = parse_and_eval(src);
-    assert_eq!(v, asili_evaluator::Value::Namba(4.0), "café is 4 graphemes despite é being 2 bytes");
+    assert_eq!(
+        v,
+        asili_evaluator::Value::Namba(4.0),
+        "café is 4 graphemes despite é being 2 bytes"
+    );
+}
+
+#[test]
+fn test_neno_convenience_helpers() {
+    let src = r#"
+        kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+        kazi test() -> Neno {
+            weka s = "ha ha "
+            ikiwa s.tupu() { rejesha "mbaya" }
+            ikiwa siyo s.ina("ha") { rejesha "mbaya" }
+            ikiwa s.hesabu("ha") != 2 { rejesha "mbaya" }
+            rejesha "x".rudia(3)
+        }
+    "#;
+    let v = parse_and_eval(src);
+    assert_eq!(v, asili_evaluator::Value::Neno("xxx".to_string()));
+}
+
+#[test]
+fn test_orodha_helpers() {
+    let src = r#"
+        kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+        kazi ongeza_moja(x: Namba) -> Namba { rejesha x + 1 }
+        kazi ni_ya_kati(x: Namba) -> Ukweli { rejesha x > 1 }
+        kazi test() -> Neno {
+            weka a: Orodha<Namba> = [1, 2, 3]
+            weka b = a.ramani("ongeza_moja")
+            weka c = a.chuja("ni_ya_kati")
+            ikiwa a.hesabu("ni_ya_kati") != 2 { rejesha "kosa" }
+            ikiwa siyo a.chunguza("ni_ya_kati") { rejesha "kosa" }
+            a.badilisha(0, 9)
+            ikiwa a.pata(0).angu(0) != 9 { rejesha "kosa" }
+            weka maneno: Orodha<Neno> = ["2", "3"]
+            rejesha maneno.unganisha(",")
+        }
+
+    "#;
+    let v = parse_and_eval(src);
+    assert_eq!(v, asili_evaluator::Value::Neno("2,3".to_string()));
+}
+
+#[test]
+fn test_orodha_chunks_and_string_pipeline() {
+    let src = r#"
+        kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+        kazi mstari(row: Orodha<Namba>) -> Neno {
+            rejesha row.kwa_neno().jiunge(" ")
+        }
+        kazi test() -> Neno {
+            weka board: Orodha<Namba> = [1, 2, 3, 4, 5, 6]
+            rejesha board.vipande(3).ramani("mstari").jiunge("\n")
+        }
+    "#;
+    let v = parse_and_eval(src);
+    assert_eq!(v, asili_evaluator::Value::Neno("1 2 3\n4 5 6".to_string()));
+}
+
+#[test]
+fn test_symbolic_bitwise_aliases() {
+    let src = r#"
+        kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+        kazi test() -> Namba {
+            rejesha (12 & 10) + (12 | 3) + (12 ^ 10) + (1 << 3) + (16 >> 2)
+        }
+    "#;
+    let v = parse_and_eval(src);
+    assert_eq!(v, asili_evaluator::Value::Namba(41.0));
+}
+
+#[test]
+fn test_if_expression() {
+    let src = r#"
+        kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+        kazi test() -> Neno {
+            weka n = 3
+            weka ujumbe = ikiwa n > 2 { "kubwa" } vinginevyo { "ndogo" }
+            rejesha ujumbe
+        }
+    "#;
+    let v = parse_and_eval(src);
+    assert_eq!(v, asili_evaluator::Value::Neno("kubwa".to_string()));
+}
+
+#[test]
+fn test_pair_destructuring() {
+    let src = r#"
+        kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
+        kazi test(p: Jozi<Namba, Namba>) -> Namba {
+            weka (a, b) = p
+            rejesha a + b
+        }
+    "#;
+    let toks = tokenize(src).expect("tokenize");
+    let module = parse_tokens(&toks).expect("parse");
+    semantic_check_with_env(&module, true, HashMap::new(), HashMap::new()).expect("semantic");
+    let v = run_function(
+        &module,
+        "test",
+        vec![asili_evaluator::Value::Jozi(
+            Box::new(asili_evaluator::Value::Namba(4.0)),
+            Box::new(asili_evaluator::Value::Namba(5.0)),
+        )],
+    )
+    .expect("run");
+    assert_eq!(v, asili_evaluator::Value::Namba(9.0));
 }

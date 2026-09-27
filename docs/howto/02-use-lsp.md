@@ -46,7 +46,7 @@ Or use the **Asili VS Code extension** from the repo (`extensions/vscode/`):
 - **Hover** — Hover over identifiers for type signatures; hover keywords for documentation.
 - **Semantic tokens** — Token-type classifications (keyword, type, function, variable, parameter, property) for rich editor highlighting.
 - **Document formatting** — Format the active `.as` file (e.g. Shift+Alt+F in VS Code).
-- **Completion** — Keyword list, built-in types, built-in functions, and all module-level declarations (functions, structs, traits, constants).
+- **Completion** — Keyword list, built-in types, every built-in function the type checker knows (with its signature), and all module-level declarations (functions, structs, traits, constants).
 - **Goto definition** — Jump to the declaration of any function, struct, trait, enum, or constant in the file.
 - **Find references** — List all usages of a symbol across the file (with or without the declaration site).
 - **Document symbols** — File outline showing all top-level declarations with their kinds and fields (visible in VS Code's breadcrumb and Outline panel).

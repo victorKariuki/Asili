@@ -29,7 +29,11 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse optional label after vunja/endelea: `'` ident or ident starting with `'`.
-    pub(crate) fn parse_optional_label(&mut self, err_code: &'static str, err_msg: &str) -> Option<String> {
+    pub(crate) fn parse_optional_label(
+        &mut self,
+        err_code: &'static str,
+        err_msg: &str,
+    ) -> Option<String> {
         if self.match_tok("'") {
             self.consume_ident(err_code, err_msg).map(|t| t.lexeme)
         } else if !self.is_eof() && self.peek().lexeme.starts_with('\'') {
@@ -71,7 +75,9 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn check_n(&self, n: usize, tok: &str) -> bool {
-        self.peek_n(n).map(|t| t.lexeme.as_str() == tok).unwrap_or(false)
+        self.peek_n(n)
+            .map(|t| t.lexeme.as_str() == tok)
+            .unwrap_or(false)
     }
 
     pub(crate) fn check_ident(&self) -> bool {
@@ -79,10 +85,12 @@ impl<'a> Parser<'a> {
             return false;
         }
         let l = self.peek().lexeme.as_str();
-        !(
-            ["(", ")", "{", "}", ",", ":", ";", "=", "+", "-", "*", "/", "%", "==", "!=", ">", "<", ">=", "<=", "?", "->", "=>", "::", "**", "#", "[", "]", "&"].contains(&l)
-                || l.starts_with('"')
-        )
+        !([
+            "(", ")", "{", "}", ",", ":", ";", "=", "+", "-", "*", "/", "%", "==", "!=", ">", "<",
+            ">=", "<=", "?", "->", "=>", "::", "**", "<<", ">>", "#", "[", "]", "&", "|", "^",
+        ]
+        .contains(&l)
+            || l.starts_with('"'))
     }
 
     pub(crate) fn err_here(&mut self, code: &'static str, msg: &str) {

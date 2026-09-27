@@ -5,7 +5,7 @@
 
 use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, semantic_check_with_env, extern_env_from_imports, Module};
+use asili_parser::{extern_env_from_imports, parse_tokens, semantic_check_with_env, Module};
 
 fn compile(src: &str) -> Module {
     let toks = tokenize(src).expect("tokenize");
@@ -87,9 +87,9 @@ fn njia_na_kikomo_delivers_every_item_in_order_under_backpressure() {
 
             weka id = jaribu (tenda("mfanyakazi_wa_kutuma", tx))
 
-            // Slow consumer: the producer can send at most one unread item ahead at a time on a
-            // bound-1 channel, so this delay forces the producer to actually block on .tuma()
-            // for its 2nd and 3rd sends rather than buffering all three up front.
+            # Slow consumer: the producer can send at most one unread item ahead at a time on a
+            # bound-1 channel, so this delay forces the producer to actually block on .tuma()
+            # for its 2nd and 3rd sends rather than buffering all three up front.
             weka matokeo = ""
             weka i = 0
             wakati i < 3 {
@@ -104,5 +104,9 @@ fn njia_na_kikomo_delivers_every_item_in_order_under_backpressure() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("123".to_string()), "all 3 items must arrive, in order, exactly once");
+    assert_eq!(
+        result,
+        Value::Neno("123".to_string()),
+        "all 3 items must arrive, in order, exactly once"
+    );
 }

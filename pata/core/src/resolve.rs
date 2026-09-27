@@ -5,8 +5,8 @@
 // structs/traits/impls from imported modules in addition to functions — both were once TODOs
 // here but are already implemented below.
 
-use crate::pipeline::interface_registry::{InterfaceRegistry, StdlibEnv};
-use crate::pipeline::project::Dependency;
+use crate::dependency::Dependency;
+use crate::interface_registry::{InterfaceRegistry, StdlibEnv};
 use asili_diagnostics::Diagnostic;
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, parse_value_type, FnContract, ImportPath, Module, ValueType};
@@ -45,7 +45,11 @@ pub fn build_export_table(module: &Module) -> ExportTable {
     let mut constants = HashMap::new();
     for f in &module.functions {
         if f.is_public {
-            let params = f.params.iter().map(|p| parse_value_type(&p.ty.name)).collect();
+            let params = f
+                .params
+                .iter()
+                .map(|p| parse_value_type(&p.ty.name))
+                .collect();
             let ret = parse_value_type(&f.return_type.name);
             functions.insert(f.name.clone(), FnContract { params, ret });
         }
@@ -54,7 +58,10 @@ pub fn build_export_table(module: &Module) -> ExportTable {
         let ty = parse_value_type(&c.ty.name);
         constants.insert(c.name.clone(), ty);
     }
-    ExportTable { functions, constants }
+    ExportTable {
+        functions,
+        constants,
+    }
 }
 
 /// Search path order: root, root/lib, then root/lib/std (stdlib .asi). Returns (path, true if stdlib .asi).
@@ -77,16 +84,28 @@ pub fn find_module_file(
         }
     }
 
-    // A version dependency resolves against the vendored package cache (.asili/packages/<name>),
-    // populated out-of-band (there is no registry/fetch backend yet — see pata-package's
-    // Resolver). If it isn't vendored there, resolution falls through to the generic candidates
-    // below and ultimately reports RES002 with the full searched-path list.
-    if matches!(dependencies.get(name), Some(Dependency::Version(_))) {
-        let vendored = pata_package::Paths::new(root)
-            .package_src_path(name)
-            .join(format!("{name}.as"));
-        if vendored.is_file() {
-            return Some((vendored, false));
+    // A version or git dependency resolves against the vendored package cache
+    // (.asili/packages/<name>/), populated by `pata ongeza --git` (real fetch) or the registry
+    // resolver (real fetch from a RegistrySource) — see pata_package::Resolver::resolve. Two
+    // vendored layouts are checked: a real project layout (`src/<name>.as`, matching path
+    // dependencies' own convention) and a bare single-file source directly at the vendor root
+    // (`<name>.as`) — a git repo whose only content is the module file itself, with no `src/`
+    // subdirectory, is a legitimate shape for a small dependency and shouldn't require one. If
+    // neither is vendored, resolution falls through to the generic candidates below and
+    // ultimately reports RES002 with the full searched-path list.
+    if matches!(
+        dependencies.get(name),
+        Some(Dependency::Version(_)) | Some(Dependency::Git { .. })
+    ) {
+        let vendor_root = pata_package::Paths::new(root).package_path(name);
+        let candidates = [
+            vendor_root.join("src").join(format!("{name}.as")),
+            vendor_root.join(format!("{name}.as")),
+        ];
+        for candidate in &candidates {
+            if candidate.is_file() {
+                return Some((candidate.clone(), false));
+            }
         }
     }
 
@@ -94,7 +113,10 @@ pub fn find_module_file(
         (root.join(format!("{name}.as")), false),
         (root.join("lib").join(format!("{name}.as")), false),
         (root.join("lib").join(name).join("mod.as"), false),
-        (root.join("lib").join("std").join(format!("{name}.asi")), true),
+        (
+            root.join("lib").join("std").join(format!("{name}.asi")),
+            true,
+        ),
     ];
     for (p, is_asi) in &candidates {
         if p.is_file() {
@@ -126,7 +148,10 @@ fn resolve_one(
     }
     if let Some(iface) = registry.get(name) {
         let (functions, constants) = iface.to_export_table();
-        let exports = ExportTable { functions, constants };
+        let exports = ExportTable {
+            functions,
+            constants,
+        };
         resolved.insert(
             name.to_string(),
             ResolvedModule {
@@ -153,14 +178,20 @@ fn resolve_one(
                 root.join(format!("{name}.as")).display(),
                 root.join("lib").join(format!("{name}.as")).display(),
                 root.join("lib").join(name).join("mod.as").display(),
-                root.join("lib").join("std").join(format!("{name}.asi")).display()
+                root.join("lib")
+                    .join("std")
+                    .join(format!("{name}.asi"))
+                    .display()
             );
             errors.push(
-                Diagnostic::new("RES002", format!("moduli '{name}' haikupatikana: {searched}"))
-                    .with_stage("utatuzi"),
+                Diagnostic::new(
+                    "RES002",
+                    format!("moduli '{name}' haikupatikana: {searched}"),
+                )
+                .with_stage("utatuzi"),
             );
             return;
-        },
+        }
     };
     loading.insert(name.to_string());
 
@@ -169,7 +200,10 @@ fn resolve_one(
         match registry.get_or_load(name, &path) {
             Ok(iface) => {
                 let (functions, constants) = iface.to_export_table();
-                let exports = ExportTable { functions, constants };
+                let exports = ExportTable {
+                    functions,
+                    constants,
+                };
                 let module = Module {
                     imports: vec![],
                     constants: vec![],
@@ -189,9 +223,7 @@ fn resolve_one(
                 );
             }
             Err(e) => {
-                errors.push(
-                    Diagnostic::new("RES003", e.message.clone()).with_stage("utatuzi"),
-                );
+                errors.push(Diagnostic::new("RES003", e.message.clone()).with_stage("utatuzi"));
             }
         }
         return;
@@ -201,12 +233,15 @@ fn resolve_one(
         Ok(s) => s,
         Err(e) => {
             errors.push(
-                Diagnostic::new("RES003", format!("imeshindwa kusoma {}: {e}", path.display()))
-                    .with_stage("utatuzi"),
+                Diagnostic::new(
+                    "RES003",
+                    format!("imeshindwa kusoma {}: {e}", path.display()),
+                )
+                .with_stage("utatuzi"),
             );
             loading.remove(name);
             return;
-        },
+        }
     };
     let tokens = match tokenize(&source) {
         Ok(t) => t,
@@ -216,7 +251,7 @@ fn resolve_one(
             }
             loading.remove(name);
             return;
-        },
+        }
     };
     let module = match parse_tokens(&tokens) {
         Ok(m) => m,
@@ -226,14 +261,22 @@ fn resolve_one(
             }
             loading.remove(name);
             return;
-        },
+        }
     };
     for imp in &module.imports {
         let dep_name = match &imp.path {
             ImportPath::Full(n) => n.as_str(),
             ImportPath::Selective { module: n, .. } => n.as_str(),
         };
-        resolve_one(dep_name, root, dependencies, resolved, loading, errors, registry);
+        resolve_one(
+            dep_name,
+            root,
+            dependencies,
+            resolved,
+            loading,
+            errors,
+            registry,
+        );
     }
     loading.remove(name);
     let exports = build_export_table(&module);
@@ -262,7 +305,15 @@ pub fn resolve_all(
             ImportPath::Full(n) => n.as_str(),
             ImportPath::Selective { module: n, .. } => n.as_str(),
         };
-        resolve_one(name, root, dependencies, &mut resolved, &mut loading, &mut errors, registry);
+        resolve_one(
+            name,
+            root,
+            dependencies,
+            &mut resolved,
+            &mut loading,
+            &mut errors,
+            registry,
+        );
     }
     if !errors.is_empty() {
         return Err(errors);
@@ -297,9 +348,14 @@ pub fn merge_for_semantic(
     for imp in &module.imports {
         let (module_name, names_to_import) = match &imp.path {
             ImportPath::Full(name) => (name.as_str(), None as Option<Vec<String>>),
-            ImportPath::Selective { module: name, names } => (name.as_str(), Some(names.clone())),
+            ImportPath::Selective {
+                module: name,
+                names,
+            } => (name.as_str(), Some(names.clone())),
         };
-        let Some(res) = resolved.get(module_name) else { continue };
+        let Some(res) = resolved.get(module_name) else {
+            continue;
+        };
         for (name, contract) in &res.exports.functions {
             let include = match &names_to_import {
                 None => true,
@@ -347,15 +403,19 @@ pub fn dependency_order(resolved: &HashMap<String, ResolvedModule>) -> Vec<Strin
             }
         }
         // HACK: dependency_order() panics if a cycle slips through (e.g. RES001 was not triggered).
-    // Should return Result<Vec<String>, Diagnostic> so the caller can surface the error cleanly.
-    let name = found.expect("cycle in resolved modules (should be prevented by RES001)");
+        // Should return Result<Vec<String>, Diagnostic> so the caller can surface the error cleanly.
+        let name = found.expect("cycle in resolved modules (should be prevented by RES001)");
         remaining.remove(&name);
         order.push(name);
     }
     order
 }
 
-/// Check for duplicate import names when merging (same name from two imports or prelude).
+/// Marker for names that come from the ambient builtin prelude rather than an explicit `leta`.
+const PRELUDE: &str = "msingi";
+
+/// Check for duplicate import names when merging: the same name brought in by two explicit
+/// imports. Imports may shadow ambient prelude names.
 pub fn check_duplicate_imports(
     entrypoint: &Module,
     resolved: &HashMap<String, ResolvedModule>,
@@ -365,28 +425,36 @@ pub fn check_duplicate_imports(
     let mut seen_functions: HashMap<String, String> = HashMap::new();
     let mut seen_constants: HashMap<String, String> = HashMap::new();
     for name in prelude.functions.keys() {
-        seen_functions.insert(name.clone(), "msingi".to_string());
+        seen_functions.insert(name.clone(), PRELUDE.to_string());
     }
     for name in prelude.constants.keys() {
-        seen_constants.insert(name.clone(), "msingi".to_string());
+        seen_constants.insert(name.clone(), PRELUDE.to_string());
     }
     for imp in &entrypoint.imports {
         let (module_name, names_to_import) = match &imp.path {
             ImportPath::Full(name) => (name.as_str(), None as Option<Vec<String>>),
-            ImportPath::Selective { module: name, names } => (name.as_str(), Some(names.clone())),
+            ImportPath::Selective {
+                module: name,
+                names,
+            } => (name.as_str(), Some(names.clone())),
         };
-        let Some(res) = resolved.get(module_name) else { continue };
+        let Some(res) = resolved.get(module_name) else {
+            continue;
+        };
         for name in res.exports.functions.keys() {
             let include = names_to_import.as_ref().is_none_or(|n| n.contains(name));
             if include {
-                if let Some(from) = seen_functions.get(name) {
-                    if *from != "msingi" || !res.is_stdlib {
-                        errors.push(
-                            Diagnostic::new("SEM090", format!("jina lamerudia: '{name}' limetoka {from} na {module_name}"))
-                                .with_stage("semantiki")
-                                .with_span(imp.line, 1),
-                        );
-                    }
+                // Ambient (prelude) names are shadowable, like Rust's prelude: an import of the
+                // same name simply wins. Only two explicit imports of one name clash.
+                if let Some(from) = seen_functions.get(name).filter(|from| *from != PRELUDE) {
+                    errors.push(
+                        Diagnostic::new(
+                            "SEM090",
+                            format!("jina lamerudia: '{name}' limetoka {from} na {module_name}"),
+                        )
+                        .with_stage("semantiki")
+                        .with_span(imp.line, 1),
+                    );
                 } else {
                     seen_functions.insert(name.clone(), module_name.to_string());
                 }
@@ -395,14 +463,17 @@ pub fn check_duplicate_imports(
         for name in res.exports.constants.keys() {
             let include = names_to_import.as_ref().is_none_or(|n| n.contains(name));
             if include {
-                if let Some(from) = seen_constants.get(name) {
-                    if *from != "msingi" || !res.is_stdlib {
-                        errors.push(
-                            Diagnostic::new("SEM091", format!("jina lamerudia: '{name}' (thabiti) limetoka {from}"))
-                                .with_stage("semantiki")
-                                .with_span(imp.line, 1),
-                        );
-                    }
+                // Ambient (prelude) names are shadowable, like Rust's prelude: an import of the
+                // same name simply wins. Only two explicit imports of one name clash.
+                if let Some(from) = seen_constants.get(name).filter(|from| *from != PRELUDE) {
+                    errors.push(
+                        Diagnostic::new(
+                            "SEM091",
+                            format!("jina lamerudia: '{name}' (thabiti) limetoka {from}"),
+                        )
+                        .with_stage("semantiki")
+                        .with_span(imp.line, 1),
+                    );
                 } else {
                     seen_constants.insert(name.clone(), module_name.to_string());
                 }
@@ -410,4 +481,42 @@ pub fn check_duplicate_imports(
         }
     }
     errors
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn module(src: &str) -> Module {
+        asili_parser::parse_tokens(&asili_lexer::tokenize(src).expect("lex")).expect("parse")
+    }
+
+    fn exporting_constant(name: &str) -> ResolvedModule {
+        let mut exports = ExportTable::default();
+        exports.constants.insert(name.to_string(), ValueType::Namba);
+        ResolvedModule {
+            module: module(""),
+            exports,
+            is_stdlib: false,
+        }
+    }
+
+    #[test]
+    fn an_import_shadows_an_ambient_name_but_two_imports_clash() {
+        let mut prelude = StdlibEnv::default();
+        prelude.constants.insert("PI".to_string(), ValueType::Namba);
+        let resolved: HashMap<String, ResolvedModule> = [
+            ("a".to_string(), exporting_constant("PI")),
+            ("b".to_string(), exporting_constant("PI")),
+        ]
+        .into_iter()
+        .collect();
+
+        let one = module("leta a\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { }");
+        assert!(check_duplicate_imports(&one, &resolved, &prelude).is_empty());
+
+        let two = module("leta a\nleta b\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { }");
+        let errors = check_duplicate_imports(&two, &resolved, &prelude);
+        assert!(errors.iter().any(|d| d.code == "SEM091"), "{errors:?}");
+    }
 }

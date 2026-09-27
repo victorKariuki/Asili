@@ -4,8 +4,12 @@
 
 ```asili
 # Hii ni maoni ya mstari mmoja
-// Hii pia ni maoni
+weka x = 7 // 2   # maoni baada ya msimbo — `//` ni mgawanyo wa sakafu (3), si maoni
 ```
+
+`#` starts a comment and `///` a documentation comment (on the line above a `kazi` or `umbo`,
+checked by `pata thibitisha`). A plain `//` is floor division (see
+[09-waendeshaji.md](09-waendeshaji.md)), and `#[...]` starts an attribute.
 
 ## Kutangaza Vigeuzi (Variable Declaration)
 
@@ -15,6 +19,11 @@ thabiti kasi = 3.0        # immutable constant
 ```
 
 Variables must be declared with `weka` or `thabiti` before use. Reassignment works only on `weka` variables.
+Several bindings may share one declaration keyword when separated by commas:
+
+```asili
+weka safu = 0.0, nguzo = 0.0, kisanduku = 0.0
+```
 
 ```asili
 weka alama = 0
@@ -104,6 +113,13 @@ siyo kweli          # si_kweli
 siyo_biti 0         # -1  (NOT)
 1 sogeza_kushoto 3  # 8   (<<)
 16 sogeza_kulia 2   # 4   (>>)
+
+# Symbolic aliases are also available:
+12 & 10               # 8
+12 | 3                # 15
+12 ^ 10               # 6
+1 << 3                # 8
+16 >> 2               # 4
 ```
 
 ## Maoni ya Kujifunza

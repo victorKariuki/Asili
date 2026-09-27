@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, semantic_check_with_env, FnContract, ValueType};
+use std::collections::HashMap;
 
 /// Test 1: Basic drop removes variable from scope
 #[test]
@@ -20,7 +20,10 @@ fn test_basic_drop() {
     let result = semantic_check_with_env(&module, true, HashMap::new(), HashMap::new());
     assert!(result.is_err(), "should error on use-after-drop");
     if let Err(errs) = result {
-        assert!(errs.iter().any(|d| d.code == "SEM028"), "should emit SEM028 for use-after-drop");
+        assert!(
+            errs.iter().any(|d| d.code == "SEM028"),
+            "should emit SEM028 for use-after-drop"
+        );
     }
 }
 
@@ -35,9 +38,15 @@ fn test_drop_undefined() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     let result = semantic_check_with_env(&module, true, HashMap::new(), HashMap::new());
-    assert!(result.is_err(), "should error on dropping undefined variable");
+    assert!(
+        result.is_err(),
+        "should error on dropping undefined variable"
+    );
     if let Err(errs) = result {
-        assert!(errs.iter().any(|d| d.code == "SEM027"), "should emit SEM027 for undefined variable");
+        assert!(
+            errs.iter().any(|d| d.code == "SEM027"),
+            "should emit SEM027 for undefined variable"
+        );
     }
 }
 
@@ -56,7 +65,10 @@ fn test_drop_then_reassign() {
     let result = semantic_check_with_env(&module, true, HashMap::new(), HashMap::new());
     // This should work - weka is a new binding, not a use of the dropped x
     // So this should pass semantic check
-    assert!(result.is_ok() || result.is_err(), "behavior depends on scoping rules");
+    assert!(
+        result.is_ok() || result.is_err(),
+        "behavior depends on scoping rules"
+    );
 }
 
 /// Test 4: Dropped variable is tracked in scope
@@ -98,10 +110,13 @@ fn test_drop_in_if_scope() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     let mut extern_fns = HashMap::new();
-    extern_fns.insert("chapisha".to_string(), FnContract {
-        params: vec![ValueType::Namba],
-        ret: ValueType::Tupu,
-    });
+    extern_fns.insert(
+        "chapisha".to_string(),
+        FnContract {
+            params: vec![ValueType::Namba],
+            ret: ValueType::Tupu,
+        },
+    );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
     // Behavior depends on whether scopes leak: if x is dropped in if block,
     // using it after should error (or not, depending on design)
@@ -130,7 +145,10 @@ fn test_drop_parameter() {
     let result = semantic_check_with_env(&module, true, HashMap::new(), HashMap::new());
     assert!(result.is_err(), "should error on using dropped parameter");
     if let Err(errs) = result {
-        assert!(errs.iter().any(|d| d.code == "SEM028"), "should emit SEM028");
+        assert!(
+            errs.iter().any(|d| d.code == "SEM028"),
+            "should emit SEM028"
+        );
     }
 }
 
@@ -149,9 +167,15 @@ fn test_drop_blocks_use() {
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
     let result = semantic_check_with_env(&module, true, HashMap::new(), HashMap::new());
-    assert!(result.is_err(), "should error when returning dropped variable");
+    assert!(
+        result.is_err(),
+        "should error when returning dropped variable"
+    );
     if let Err(errs) = result {
-        assert!(errs.iter().any(|d| d.code == "SEM028"), "should emit SEM028");
+        assert!(
+            errs.iter().any(|d| d.code == "SEM028"),
+            "should emit SEM028"
+        );
     }
 }
 
@@ -193,7 +217,10 @@ fn test_multiple_drops() {
     let result = semantic_check_with_env(&module, true, HashMap::new(), HashMap::new());
     assert!(result.is_err(), "should error on using dropped y");
     if let Err(errs) = result {
-        assert!(errs.iter().any(|d| d.code == "SEM028"), "should emit SEM028");
+        assert!(
+            errs.iter().any(|d| d.code == "SEM028"),
+            "should emit SEM028"
+        );
     }
 }
 

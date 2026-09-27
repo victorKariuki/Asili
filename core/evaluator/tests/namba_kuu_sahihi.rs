@@ -4,7 +4,7 @@
 
 use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, semantic_check_with_env, extern_env_from_imports, Module};
+use asili_parser::{extern_env_from_imports, parse_tokens, semantic_check_with_env, Module};
 
 fn compile(src: &str) -> Module {
     let toks = tokenize(src).expect("tokenize");
@@ -26,7 +26,10 @@ fn namba_kuu_kutoka_parses_a_huge_integer() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("123456789012345678901234567890".to_string()));
+    assert_eq!(
+        result,
+        Value::Neno("123456789012345678901234567890".to_string())
+    );
 }
 
 #[test]
@@ -42,7 +45,10 @@ fn namba_kuu_addition_beyond_f64_precision() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("100000000000000000000000000000000".to_string()));
+    assert_eq!(
+        result,
+        Value::Neno("100000000000000000000000000000000".to_string())
+    );
 }
 
 #[test]
@@ -75,7 +81,11 @@ fn namba_kuu_division_is_exact_integer_division() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("33".to_string()), "Namba_Kuu / should truncate, not produce a fraction");
+    assert_eq!(
+        result,
+        Value::Neno("33".to_string()),
+        "Namba_Kuu / should truncate, not produce a fraction"
+    );
 }
 
 #[test]
@@ -152,7 +162,10 @@ fn namba_sahihi_kutoka_preserves_decimal_precision() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("0.123456789012345678901234567890".to_string()));
+    assert_eq!(
+        result,
+        Value::Neno("0.123456789012345678901234567890".to_string())
+    );
 }
 
 #[test]
@@ -205,5 +218,8 @@ fn division_by_zero_namba_kuu_is_evalerror_not_panic() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]);
-    assert!(result.is_err(), "dividing Namba_Kuu by zero should be a clean error, not a panic");
+    assert!(
+        result.is_err(),
+        "dividing Namba_Kuu by zero should be a clean error, not a panic"
+    );
 }

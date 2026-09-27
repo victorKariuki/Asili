@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, semantic_check_with_env, extern_env_from_imports, Module};
+use asili_parser::{extern_env_from_imports, parse_tokens, semantic_check_with_env, Module};
 
 fn compile(src: &str) -> Module {
     let toks = tokenize(src).expect("tokenize");
@@ -53,7 +53,9 @@ fn accept_and_echo_round_trip() {
     // Give the server a moment to bind and start its worker pool before the client connects.
     let mut client = connect_with_retry(&addr);
     client.write_all(b"habari").expect("write");
-    client.shutdown(std::net::Shutdown::Write).expect("shutdown write half");
+    client
+        .shutdown(std::net::Shutdown::Write)
+        .expect("shutdown write half");
 
     let mut response = String::new();
     client.read_to_string(&mut response).expect("read response");
@@ -96,7 +98,9 @@ fn concurrent_connections_within_pool_size_all_succeed() {
                 let mut client = connect_with_retry(&addr);
                 let msg = format!("mteja-{i}");
                 client.write_all(msg.as_bytes()).expect("write");
-                client.shutdown(std::net::Shutdown::Write).expect("shutdown write half");
+                client
+                    .shutdown(std::net::Shutdown::Write)
+                    .expect("shutdown write half");
                 let mut response = String::new();
                 client.read_to_string(&mut response).expect("read response");
                 assert_eq!(response, msg);
@@ -147,7 +151,9 @@ fn accepted_connections_have_read_and_write_timeouts_set() {
     // below (mkondo::tests::connection_timeout_is_set_on_accept), which doesn't need a live
     // socket round trip to check what value was passed to set_read_timeout.
     client.write_all(b"x").expect("write");
-    client.shutdown(std::net::Shutdown::Write).expect("shutdown write half");
+    client
+        .shutdown(std::net::Shutdown::Write)
+        .expect("shutdown write half");
     let mut buf = [0u8; 1];
     let _ = client.read(&mut buf);
 }

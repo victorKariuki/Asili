@@ -12,7 +12,8 @@ The repository follows a Linux-kernel–style modular layout. Each directory is 
 |------|------|------|
 | **/core** | Kiini | Platform-agnostic lexer, parser, AST, evaluator, diagnostics (Mwalimu error reporting). |
 | **/driver** | Mfumo / Dereva | Hardware/OS abstraction. **Dereva** is the internal HAL/FFI layer; **mfumo** is the high-level System API (StdLib) built on it. |
-| **/pata** | Tooling | CLI, package manager, formatter (Nadhifu), LSP (Mwalimu). |
+| **/pata** | Tooling | CLI, package manager, formatter (Nadhifu), linter, LSP (Mwalimu), Debug Adapter Protocol server. |
+| **/extensions/vscode** | Kiendelezi | VS Code extension: syntax highlighting, Mwalimu LSP client. Separate build/package tooling (`npm`/`esbuild`), not part of the Cargo workspace. |
 | **/lib** | Maktaba | Standard library (Msingi) and tests, docs (`.asdoc`). Stdlib has two layers: surface in `lib/std/` (`.as`/`.asi`); implementation as built-in modules (evaluator/CLI) that can resolve without disk. Third-party modules come from `[tegemezi]` in `pata.toml`. |
 | **/target** | Pato | Generated binaries and intermediate `.asb` bytecode. |
 
@@ -40,7 +41,14 @@ The repository follows a Linux-kernel–style modular layout. Each directory is 
 
 - **lexer/** — Tokenizes Swahili input from `.as` and `.asi` files.
 - **parser/** — Generates the AST; split into cursor (token stream), parse (statements/expressions), and semantic (types + analyzer). Integration tests live in `tests/`.
-- **evaluator/** — Tree-walking engine that processes `.asb` (Asili Bytecode). Integration tests live in `tests/`.
+- **evaluator/** — Executes `.asb` artifacts. Programs the bytecode compiler can lower run on a
+  typed register VM (`bytecode.rs`); `pata jenga` additionally compiles that bytecode ahead of
+  time to native code through LLVM IR and `clang` (`aot.rs`, a `<name>.so`/`.dylib`/`.dll` next
+  to the `.asb`), run instead of the interpreter when present; without `clang` the program runs
+  on the VM. `native.rs` holds the runtime ABI, the integer range analysis and deoptimization
+  back into the VM. Programs using constructs the VM does not lower keep the serialized-AST artifact and
+  the tree-walking evaluator. All engines share one implementation of operators, methods, casts
+  and iteration (`eval/ops.rs`, `eval/methods.rs`). Integration tests live in `tests/`.
 - **diagnostics/** — The "Mwalimu" error reporting system (Context Map).
 
 ### /driver (Mfumo)

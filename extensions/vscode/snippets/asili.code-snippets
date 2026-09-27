@@ -64,6 +64,16 @@
     "body": ["weka ${1:name} = ${2:value}"],
     "description": "Let binding"
   },
+  "Grouped Variables": {
+    "prefix": "weka-group",
+    "body": ["weka ${1:first} = ${2:value}, ${3:second} = ${4:value}"],
+    "description": "Declare multiple inferred variables with one weka"
+  },
+  "Grouped Constants": {
+    "prefix": "thabiti-group",
+    "body": ["thabiti ${1:FIRST} = ${2:value}, ${3:SECOND} = ${4:value}"],
+    "description": "Declare multiple constants with one thabiti"
+  },
   "Constant": {
     "prefix": "thabiti",
     "body": ["thabiti ${1:NAME} = ${2:value}"],

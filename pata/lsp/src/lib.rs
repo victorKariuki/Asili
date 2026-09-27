@@ -33,18 +33,45 @@
 //!     you haven't opened as a tab yet is still found
 //!   - prepare_rename / rename: validates the cursor is on a real, renameable symbol before
 //!     the client shows the rename UI, then renames all occurrences in the open document
+//!   - inlay_hint: inferred types on un-annotated `weka`/`thabiti` bindings, via
+//!     `SemanticAnalyzer::inlay_type_hints` (the same scope-resolution walk that drives
+//!     semantic_tokens)
 //!
-//! Not yet implemented: inlay hints, and true incremental re-resolution (every workspace
-//! re-resolve — on open, on save, on a watched external change — re-walks the whole import
-//! graph from scratch; there is no API to cheaply re-resolve just one changed file). See
-//! `crate::workspace`'s module doc for the cross-file model this is all built on and its
-//! known limitations (path-based imports only, no `pata.lock`/registry dependencies).
+//! Incremental re-resolution is deliberately not a full salsa-style query-engine rewrite
+//! (`docs/design/pata-implementation-spec.md` Section 19's own "Decision made": pulling in
+//! `salsa` and restructuring around query-based recomputation is a rewrite, not an incremental
+//! improvement). Three real, scoped wins instead:
+//!   - `did_change_watched_files` invalidates only the specific project root(s) the changed
+//!     files actually belong to (`workspace::affected_project_roots`), not the entire cache — an
+//!     unrelated sibling project under the same VS Code workspace folder stays a cache hit.
+//!   - `DocStore::diagnostics_for` caches each document's last-computed diagnostics keyed by a
+//!     content hash: a `didChange` whose new text hashes identically to what's cached (a real
+//!     case some editors fire — a no-op edit event, e.g. a purely-cursor-movement change) skips
+//!     re-lex/re-parse/re-analyze entirely instead of recomputing on every keystroke regardless
+//!     of whether anything actually changed.
+//!   - `workspace::ModuleCache` (issue #25): per-project-root, keyed by each file's own content
+//!     hash — a re-walk of a project's import graph (triggered whenever `did_change_watched_files`
+//!     evicts that root's `WorkspaceIndex`) reuses every file's already-parsed `WorkspaceModule`
+//!     whose content hasn't changed, only actually tokenizing/parsing files that are new or whose
+//!     hash no longer matches. Held by `Backend` (`server.rs`) alongside the coarser
+//!     `WorkspaceIndex` cache and deliberately *not* cleared by `did_change_watched_files` — a
+//!     changed file's new content simply fails its own hash check on the next walk, so no
+//!     explicit per-file invalidation call is needed.
+//! What remains open: `ModuleCache` still re-walks the whole import graph from the entrypoint on
+//! every cache-refreshing call (cheap per file that's unchanged, but still a full graph traversal,
+//! not a query that starts from "what depends on the one file that changed"). See
+//! `crate::workspace`'s module doc for the cross-file model this is all built on and its known
+//! limitations (path-based imports plus registry-resolved vendored dependencies via
+//! `pata_core::find_module_file`; still no `pata.lock`-driven version-constraint awareness).
 
+pub mod actions;
 mod diagnostics;
 mod doc_store;
 mod format;
 pub mod hover;
 mod hover_format;
+pub mod inlay_hints;
+mod scan;
 pub mod semantic;
 mod server;
 pub mod signature;
@@ -59,32 +86,21 @@ use diagnostics::{asili_diagnostics_to_lsp_with_source, run_lex_parse};
 use server::Backend;
 use tower_lsp::{
     lsp_types::{
-        CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams,
-        CodeActionProviderCapability, CodeActionResponse,
-        CodeLens, CodeLensOptions, CodeLensParams,
-        CompletionOptions, CompletionParams, CompletionResponse,
-        DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams,
-        DocumentSymbolParams, DocumentSymbolResponse,
-        DidChangeWatchedFilesParams, DidChangeWatchedFilesRegistrationOptions,
-        FileSystemWatcher, GlobPattern, Registration,
-        FoldingRange, FoldingRangeParams, FoldingRangeProviderCapability,
-        GotoDefinitionParams, GotoDefinitionResponse,
-        InitializeParams, InitializeResult, InitializedParams,
-        NumberOrString, OneOf, Position,
-        PrepareRenameResponse,
-        Range,
-        ReferenceParams,
-        RenameOptions,
-        RenameParams, TextDocumentPositionParams, TextEdit, WorkspaceEdit,
-        SemanticTokenModifier, SemanticTokenType,
-        SemanticTokensFullOptions, SemanticTokensLegend,
-        SemanticTokensOptions, SemanticTokensServerCapabilities,
-        ServerCapabilities, ServerInfo,
-        ParameterInformation, ParameterLabel,
-        SignatureHelp, SignatureHelpOptions, SignatureHelpParams, SignatureInformation,
-        TextDocumentSyncCapability, TextDocumentSyncKind,
+        CodeActionOrCommand, CodeActionParams, CodeActionProviderCapability, CodeActionResponse,
+        CodeLens, CodeLensOptions, CodeLensParams, CompletionOptions, CompletionParams,
+        CompletionResponse, DidChangeWatchedFilesParams, DidChangeWatchedFilesRegistrationOptions,
+        DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, DocumentSymbolParams,
+        DocumentSymbolResponse, FileSystemWatcher, FoldingRange, FoldingRangeParams,
+        FoldingRangeProviderCapability, GlobPattern, GotoDefinitionParams, GotoDefinitionResponse,
+        InitializeParams, InitializeResult, InitializedParams, InlayHintParams, OneOf,
+        ParameterInformation, ParameterLabel, PrepareRenameResponse, ReferenceParams, Registration,
+        RenameOptions, RenameParams, SemanticTokenModifier, SemanticTokenType,
+        SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+        SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, SignatureHelp,
+        SignatureHelpOptions, SignatureHelpParams, SignatureInformation,
+        TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
+        WorkspaceEdit, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
         WorkspaceSymbolParams,
-        WorkspaceServerCapabilities, WorkspaceFoldersServerCapabilities,
     },
     LanguageServer,
 };
@@ -120,19 +136,17 @@ impl LanguageServer for Backend {
                 .collect(),
         };
         let capabilities = ServerCapabilities {
-            text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                TextDocumentSyncKind::FULL,
-            )),
+            text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
             // Existing capabilities
             hover_provider: Some(tower_lsp::lsp_types::HoverProviderCapability::Simple(true)),
-            semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
-                SemanticTokensOptions {
+            semantic_tokens_provider: Some(
+                SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
                     legend,
                     range: None,
                     full: Some(SemanticTokensFullOptions::Bool(true)),
                     ..Default::default()
-                },
-            )),
+                }),
+            ),
             document_formatting_provider: Some(OneOf::Left(true)),
             code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
             folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
@@ -141,7 +155,9 @@ impl LanguageServer for Backend {
                 retrigger_characters: None,
                 work_done_progress_options: Default::default(),
             }),
-            code_lens_provider: Some(CodeLensOptions { resolve_provider: Some(false) }),
+            code_lens_provider: Some(CodeLensOptions {
+                resolve_provider: Some(false),
+            }),
             // New capabilities
             completion_provider: Some(CompletionOptions {
                 trigger_characters: Some(vec![".".to_string(), " ".to_string()]),
@@ -163,6 +179,7 @@ impl LanguageServer for Backend {
                 }),
                 file_operations: None,
             }),
+            inlay_hint_provider: Some(OneOf::Left(true)),
             ..ServerCapabilities::default()
         };
         Ok(InitializeResult {
@@ -197,7 +214,9 @@ impl LanguageServer for Backend {
                 kind: None,
             })
             .collect();
-        if let Ok(register_options) = serde_json::to_value(DidChangeWatchedFilesRegistrationOptions { watchers }) {
+        if let Ok(register_options) =
+            serde_json::to_value(DidChangeWatchedFilesRegistrationOptions { watchers })
+        {
             let _ = self
                 .client
                 .register_capability(vec![Registration {
@@ -210,32 +229,59 @@ impl LanguageServer for Backend {
     }
 
     /// Fires on a change to any file matching the watchers registered in `initialized` above.
-    /// This crate has no incremental re-resolution (see `crate::workspace`'s module doc), and
-    /// with resolution now keyed per discovered project root rather than one workspace-wide
-    /// index, the simplest correct response to "something changed, somewhere" is to drop every
-    /// cached project and let `workspace_for` re-resolve lazily on next use — cheap relative to
-    /// getting invalidation wrong, and avoids having to work out which of possibly several
-    /// cached roots a given changed file actually belongs to. Then re-publish diagnostics for
-    /// every currently open document (each against its own project, if any), so e.g. a sibling
-    /// file edited outside the editor that broke (or fixed) a cross-file call is reflected
-    /// immediately rather than waiting for the next edit in an open file.
-    async fn did_change_watched_files(&self, _params: DidChangeWatchedFilesParams) {
-        self.workspaces.write().await.clear();
+    /// Incremental: `params.changes` names exactly which files changed, so only the project
+    /// root(s) those files actually belong to (via `find_project_root`) are dropped from the
+    /// cache — every other cached project (an unrelated sibling under the same VS Code
+    /// workspace folder, or a project nobody's editing right now) is left untouched and stays a
+    /// cache hit on the next `workspace_for` call. Previously this cleared the *entire* cache on
+    /// any watched-file event anywhere, forcing a full re-resolution of every open document's
+    /// project regardless of whether that project was actually affected — the real cost the
+    /// production-readiness doc's "no incremental re-resolution" gap named. A changed file with
+    /// no discoverable project root (outside any known `pata.toml`) contributes nothing to
+    /// invalidate, which is correct: nothing cached could depend on it. Then re-publish
+    /// diagnostics for every currently open document (each against its own project, if any), so
+    /// e.g. a sibling file edited outside the editor that broke (or fixed) a cross-file call is
+    /// reflected immediately rather than waiting for the next edit in an open file.
+    async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        let changed_paths: Vec<std::path::PathBuf> = params
+            .changes
+            .iter()
+            .filter_map(|change| change.uri.to_file_path().ok())
+            .collect();
+        let affected_roots = crate::workspace::affected_project_roots(&changed_paths);
+
+        if !affected_roots.is_empty() {
+            let mut workspaces = self.workspaces.write().await;
+            for root in &affected_roots {
+                workspaces.remove(root);
+            }
+        }
 
         for (uri_str, text) in self.documents.all().await {
             if is_interface_stub(&uri_str) {
                 continue;
             }
-            let workspace = uri_str
+            let file_path = uri_str
                 .parse::<tower_lsp::lsp_types::Url>()
                 .ok()
                 .and_then(|u| u.to_file_path().ok());
-            let workspace = match workspace {
-                Some(path) => self.workspace_for(&path).await,
+            let workspace = match &file_path {
+                Some(path) => self.workspace_for(path).await,
                 None => None,
             };
-            let diags = run_lex_parse(&text, workspace.as_ref());
-            let lsp_diags = asili_diagnostics_to_lsp_with_source(&diags, &text);
+            // The document's own text may be unchanged, but an external change to a *different*
+            // file it `leta`s can still stale its diagnostics (a cross-file call that just broke
+            // or got fixed) — drop any cached entry from before this event so diagnostics_for
+            // below genuinely recomputes rather than serving a same-text cache hit that predates
+            // the external change, and so it caches the fresh result for the next did_change.
+            self.documents.invalidate(&uri_str).await;
+            let lsp_diags = self
+                .documents
+                .diagnostics_for(&uri_str, &text, || {
+                    let diags = run_lex_parse(&text, workspace.as_ref(), file_path.as_deref());
+                    asili_diagnostics_to_lsp_with_source(&diags, &text)
+                })
+                .await;
             if let Ok(uri) = uri_str.parse() {
                 let _ = self.client.publish_diagnostics(uri, lsp_diags, None).await;
             }
@@ -252,16 +298,35 @@ impl LanguageServer for Backend {
         let lsp_diags = if is_interface_stub(&uri_str) {
             vec![]
         } else {
-            let workspace = match uri.to_file_path() {
-                Ok(path) => self.workspace_for(&path).await,
-                Err(()) => None,
+            let file_path = uri.to_file_path().ok();
+            let workspace = match &file_path {
+                Some(path) => self.workspace_for(path).await,
+                None => None,
             };
-            let diags = run_lex_parse(&text, workspace.as_ref());
-            asili_diagnostics_to_lsp_with_source(&diags, &text)
+            // Populates the diagnostics cache too (not just computing once and discarding) so
+            // an immediate no-op didChange right after open — some clients fire one — is a real
+            // cache hit rather than a second identical recomputation.
+            self.documents
+                .diagnostics_for(&uri_str, &text, || {
+                    let diags = run_lex_parse(&text, workspace.as_ref(), file_path.as_deref());
+                    asili_diagnostics_to_lsp_with_source(&diags, &text)
+                })
+                .await
         };
         let _ = self.client.publish_diagnostics(uri, lsp_diags, None).await;
     }
 
+    /// Incremental per Section 19 of `pata-implementation-spec.md`: `DocStore::diagnostics_for`
+    /// skips re-lex/re-parse/re-analyze entirely when the incoming text hashes identically to
+    /// what's already cached for this URI — a real case some editors hit (a no-op edit event,
+    /// e.g. purely a cursor move some clients still fire `didChange` for). Cross-file
+    /// invalidation (a change to module A stales cached diagnostics for every B that `leta`s A)
+    /// is handled separately in `did_change_watched_files`/the resolved workspace's
+    /// `reverse_deps`, not here — an in-editor edit to the *currently open* document doesn't by
+    /// itself invalidate any other document's cache entry until that edit is saved to disk and a
+    /// watcher event fires (this mirrors the pre-existing behavior for cross-file diagnostics
+    /// generally: another open document only sees the *saved* state of its imports, not
+    /// keystroke-by-keystroke edits in a different tab).
     async fn did_change(&self, params: tower_lsp::lsp_types::DidChangeTextDocumentParams) {
         let uri = params.text_document.uri.clone();
         let uri_str = uri.to_string();
@@ -273,12 +338,17 @@ impl LanguageServer for Backend {
         let lsp_diags = if is_interface_stub(&uri_str) {
             vec![]
         } else {
-            let workspace = match uri.to_file_path() {
-                Ok(path) => self.workspace_for(&path).await,
-                Err(()) => None,
+            let file_path = uri.to_file_path().ok();
+            let workspace = match &file_path {
+                Some(path) => self.workspace_for(path).await,
+                None => None,
             };
-            let diags = run_lex_parse(&text, workspace.as_ref());
-            asili_diagnostics_to_lsp_with_source(&diags, &text)
+            self.documents
+                .diagnostics_for(&uri_str, &text, || {
+                    let diags = run_lex_parse(&text, workspace.as_ref(), file_path.as_deref());
+                    asili_diagnostics_to_lsp_with_source(&diags, &text)
+                })
+                .await
         };
         let _ = self.client.publish_diagnostics(uri, lsp_diags, None).await;
     }
@@ -323,7 +393,9 @@ impl LanguageServer for Backend {
             Ok(path) => self.workspace_for(&path).await,
             Err(()) => None,
         };
-        let Some(info) = signature::compute_signature_help(&text, pos.line, pos.character, workspace.as_ref()) else {
+        let Some(info) =
+            signature::compute_signature_help(&text, pos.line, pos.character, workspace.as_ref())
+        else {
             return Ok(None);
         };
         let parameters = info
@@ -356,9 +428,7 @@ impl LanguageServer for Backend {
     async fn semantic_tokens_full(
         &self,
         params: tower_lsp::lsp_types::SemanticTokensParams,
-    ) -> tower_lsp::jsonrpc::Result<
-        Option<tower_lsp::lsp_types::SemanticTokensResult>,
-    > {
+    ) -> tower_lsp::jsonrpc::Result<Option<tower_lsp::lsp_types::SemanticTokensResult>> {
         let uri = params.text_document.uri;
         let text = match self.documents.get(uri.as_str()).await {
             Some(t) => t,
@@ -379,62 +449,35 @@ impl LanguageServer for Backend {
             Some(t) => t,
             None => return Ok(None),
         };
-        Ok(format::format_to_edits(&text))
+        let file_path = uri.to_file_path().ok();
+        Ok(format::format_to_edits(&text, file_path.as_deref()))
     }
 
     // ── Code actions ───────────────────────────────────────────────────────────
     // The client sends back whatever diagnostics from our own publish_diagnostics overlap the
     // requested range/selection (`params.context.diagnostics`) — no need to re-run lint
-    // ourselves. Currently offers one quick-fix: LINT202 ("Function 'x' lacks documentation
-    // comment") gets an "Add doc comment" fix that inserts a stub comment line directly above
-    // the function, satisfying the same check `pata/lint/src/rules/best_practices.rs` runs
-    // (a `#` line immediately preceding the `kazi`/attribute block).
+    // ourselves. The actual diagnostic→edit logic lives in `actions::action_for_diagnostic`
+    // (unit-tested there against real lint-rule message text); this handler just fans it out
+    // over the diagnostics the client handed back.
 
     async fn code_action(
         &self,
         params: CodeActionParams,
     ) -> tower_lsp::jsonrpc::Result<Option<CodeActionResponse>> {
         let uri = params.text_document.uri.clone();
-        let mut actions = Vec::new();
+        let actions: Vec<CodeActionOrCommand> = params
+            .context
+            .diagnostics
+            .iter()
+            .filter_map(|diag| actions::action_for_diagnostic(diag, &uri))
+            .map(CodeActionOrCommand::CodeAction)
+            .collect();
 
-        for diag in &params.context.diagnostics {
-            let is_lint202 = matches!(&diag.code, Some(NumberOrString::String(c)) if c == "LINT202");
-            if !is_lint202 {
-                continue;
-            }
-            let Some(name) = diag
-                .message
-                .strip_prefix("Function '")
-                .and_then(|rest| rest.split('\'').next())
-            else {
-                continue;
-            };
-
-            let insert_line = diag.range.start.line;
-            let indent = " ".repeat(diag.range.start.character as usize);
-            let edit = TextEdit {
-                range: Range {
-                    start: Position { line: insert_line, character: 0 },
-                    end: Position { line: insert_line, character: 0 },
-                },
-                new_text: format!("{indent}# TODO: eleza {name}.\n"),
-            };
-            let mut changes = std::collections::HashMap::new();
-            changes.insert(uri.clone(), vec![edit]);
-
-            actions.push(CodeActionOrCommand::CodeAction(CodeAction {
-                title: format!("Ongeza maelezo kwa '{name}'"),
-                kind: Some(CodeActionKind::QUICKFIX),
-                diagnostics: Some(vec![diag.clone()]),
-                edit: Some(WorkspaceEdit {
-                    changes: Some(changes),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }));
-        }
-
-        Ok(if actions.is_empty() { None } else { Some(actions) })
+        Ok(if actions.is_empty() {
+            None
+        } else {
+            Some(actions)
+        })
     }
 
     // ── Code lens ──────────────────────────────────────────────────────────────
@@ -449,7 +492,11 @@ impl LanguageServer for Backend {
             None => return Ok(None),
         };
         let lenses = symbols::test_code_lenses(&text, &uri);
-        Ok(if lenses.is_empty() { None } else { Some(lenses) })
+        Ok(if lenses.is_empty() {
+            None
+        } else {
+            Some(lenses)
+        })
     }
 
     // ── Completion ─────────────────────────────────────────────────────────────
@@ -473,7 +520,11 @@ impl LanguageServer for Backend {
         &self,
         params: GotoDefinitionParams,
     ) -> tower_lsp::jsonrpc::Result<Option<GotoDefinitionResponse>> {
-        let uri = params.text_document_position_params.text_document.uri.clone();
+        let uri = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .clone();
         let pos = params.text_document_position_params.position;
         let text = match self.documents.get(uri.as_str()).await {
             Some(t) => t,
@@ -518,19 +569,30 @@ impl LanguageServer for Backend {
                         };
                         if let Some(ws) = workspace.as_ref() {
                             for importer_name in ws.transitive_importers(&cur_name) {
-                                let Some(wm) = ws.find(&importer_name) else { continue };
-                                let Ok(other_uri) = tower_lsp::lsp_types::Url::from_file_path(&wm.path) else { continue };
+                                let Some(wm) = ws.find(&importer_name) else {
+                                    continue;
+                                };
+                                let Ok(other_uri) =
+                                    tower_lsp::lsp_types::Url::from_file_path(&wm.path)
+                                else {
+                                    continue;
+                                };
                                 if other_uri == uri {
                                     continue; // already covered by find_references above
                                 }
-                                let other_text = match self.documents.get(other_uri.as_str()).await {
+                                let other_text = match self.documents.get(other_uri.as_str()).await
+                                {
                                     Some(t) => t,
                                     None => match tokio::fs::read_to_string(&wm.path).await {
                                         Ok(t) => t,
                                         Err(_) => continue,
                                     },
                                 };
-                                locs.extend(symbols::find_references_in(&word, &other_uri, &other_text));
+                                locs.extend(symbols::find_references_in(
+                                    &word,
+                                    &other_uri,
+                                    &other_text,
+                                ));
                             }
                         }
                     }
@@ -552,7 +614,11 @@ impl LanguageServer for Backend {
         &self,
         params: DocumentHighlightParams,
     ) -> tower_lsp::jsonrpc::Result<Option<Vec<DocumentHighlight>>> {
-        let uri = params.text_document_position_params.text_document.uri.clone();
+        let uri = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .clone();
         let pos = params.text_document_position_params.position;
         let text = match self.documents.get(uri.as_str()).await {
             Some(t) => t,
@@ -611,15 +677,25 @@ impl LanguageServer for Backend {
         let mut results = symbols::workspace_symbols(all_docs.into_iter(), &params.query);
         let mut seen_roots = std::collections::HashSet::new();
         for path in &open_paths {
-            let Some(root) = crate::workspace::find_project_root(path) else { continue };
+            let Some(root) = crate::workspace::find_project_root(path) else {
+                continue;
+            };
             if !seen_roots.insert(root) {
                 continue;
             }
             if let Some(ws) = self.workspace_for(path).await {
-                results.extend(symbols::workspace_symbols_from_index(&ws, &params.query, &open_paths));
+                results.extend(symbols::workspace_symbols_from_index(
+                    &ws,
+                    &params.query,
+                    &open_paths,
+                ));
             }
         }
-        Ok(if results.is_empty() { None } else { Some(results) })
+        Ok(if results.is_empty() {
+            None
+        } else {
+            Some(results)
+        })
     }
 
     // ── Folding ranges ─────────────────────────────────────────────────────────
@@ -634,7 +710,11 @@ impl LanguageServer for Backend {
             None => return Ok(None),
         };
         let ranges = symbols::folding_ranges(&text);
-        Ok(if ranges.is_empty() { None } else { Some(ranges) })
+        Ok(if ranges.is_empty() {
+            None
+        } else {
+            Some(ranges)
+        })
     }
 
     // ── Rename ─────────────────────────────────────────────────────────────────
@@ -699,5 +779,20 @@ impl LanguageServer for Backend {
             changes: Some(changes),
             ..Default::default()
         }))
+    }
+
+    // ── Inlay hints ────────────────────────────────────────────────────────────
+
+    async fn inlay_hint(
+        &self,
+        params: InlayHintParams,
+    ) -> tower_lsp::jsonrpc::Result<Option<Vec<tower_lsp::lsp_types::InlayHint>>> {
+        let uri = params.text_document.uri;
+        let text = match self.documents.get(uri.as_str()).await {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+        let hints = inlay_hints::compute_inlay_hints(&text);
+        Ok(if hints.is_empty() { None } else { Some(hints) })
     }
 }

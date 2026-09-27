@@ -39,7 +39,8 @@ Default-imported. No OS dependency. The Phase I interpreter provides selected st
 
 ### Kasha_GC\<T\> (opt-in managed memory)
 
-Not default-imported — requires `leta kasha_gc`. A minimal, deliberately small reference-counted
+Unlike the other builtin modules, `kasha_gc` is **not** ambient: `leta kasha_gc` is required
+(managed memory is opt-in; `core/parser/src/builtins.rs::OPT_IN_MODULES`). A minimal, deliberately small reference-counted
 wrapper (`Rc<RefCell<Value>>`), the concrete realization of the "managed/GC modules" concept in
 [07-execution-and-roadmap.md](07-execution-and-roadmap.md). Sharing is explicit via
 `.shirikisha()` (like Rust's `Rc::clone`) — a plain `weka b = a` still moves, so wrapping in
@@ -54,7 +55,7 @@ every strong handle has already dropped). Holding the weak reference in one side
 
 ## Moduli ya Mfumo (System)
 
-Requires `leta mfumo`. OS-dependent.
+Builtin exports are ambient; `leta mfumo` remains optional documentation. OS-dependent.
 
 ### Ingizo/Tokeo (I/O)
 
@@ -83,7 +84,7 @@ Requires `leta mfumo`. OS-dependent.
 
 ### Resource handles and traits
 
-System resources are represented by explicit handle types that own their underlying OS or hardware resource and release it on drop. `Faili`/`Mkondo` are available via `leta faili`/`leta mfumo` (no separate opt-in module); `Kumbukumbu<T>` is always in scope via `msingi`, like `Orodha`/`Kamusi`.
+System resources are represented by explicit handle types that own their underlying OS or hardware resource and release it on drop. Builtin `Faili`/`Mkondo` exports are ambient; `leta faili`/`leta mfumo` remain optional documentation. `Kumbukumbu<T>` is also in scope, like `Orodha`/`Kamusi`.
 
 - **`Faili`** — file handle. `faili_fungua(njia, hali) -> Tokeo<Faili, Neno>` opens a file; `hali` is `"soma"`, `"andika"`, or `"ongeza"`. Methods: `.soma() -> Tokeo<Neno, Neno>`, `.andika(data: Neno) -> Tokeo<Tupu, Neno>`, `.funga() -> Tupu` (idempotent — closing an already-closed handle is a safe no-op).
 - **`Mkondo`** — TCP client stream. `mkondo_unganisha(anwani) -> Tokeo<Mkondo, Neno>` connects. Same `.soma()`/`.andika()`/`.funga()` methods as `Faili`, plus `.soma_bailisi(kikomo: Namba) -> Tokeo<Neno, Neno>` — one bounded, non-EOF-seeking read (up to `kikomo` bytes), for protocols like HTTP/1.1 keep-alive that must read one message and then read again on the same connection, which `.soma()`'s read-to-EOF semantics can't do.
@@ -151,7 +152,7 @@ Panic (`paparika`) is reserved for unrecoverable critical conditions (for exampl
 
 ## Concurrency primitives (tenda, njia, fungo)
 
-Available via `leta sambamba`. **1:1 OS-thread model** (one `tenda` spawns one real OS thread via
+Builtin exports are ambient; `leta sambamba` remains optional documentation. **1:1 OS-thread model** (one `tenda` spawns one real OS thread via
 `std::thread`, not a green-thread scheduler — see [Resolved Decisions](08-resolved-decisions.md)
 and [concurrency-design.md](../design/concurrency-design.md) for why).
 

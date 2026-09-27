@@ -11,41 +11,45 @@ use std::net::TcpStream;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::value::{self, MkondoHandle, MkondoStream, Value};
 use super::BuiltinFn;
+use crate::value::{self, MkondoHandle, MkondoStream, Value};
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
-    m.insert("mkondo_unganisha".to_string(), Box::new(|args: &[Value]| {
-        let addr = value::as_string(args.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
-        #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
-        {
-            match TcpStream::connect(&addr) {
-                Ok(s) => {
-                    let handle = MkondoHandle(Some(MkondoStream::Wazi(s)));
-                    Ok(Value::Tokeo(Ok(Box::new(Value::Mkondo(Rc::new(RefCell::new(handle)))))))
+    m.insert(
+        "mkondo_unganisha".to_string(),
+        Box::new(|args: &[Value]| {
+            let addr = super::arg_str(args, 0);
+            #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+            {
+                match TcpStream::connect(&addr) {
+                    Ok(s) => {
+                        let handle = MkondoHandle(Some(MkondoStream::Wazi(s)));
+                        Ok(Value::sawa(Value::Mkondo(Rc::new(RefCell::new(handle)))))
+                    }
+                    Err(e) => Ok(Value::kosa(e.to_string())),
                 }
-                Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
             }
-        }
-        #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
-        Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-            "mkondo_unganisha: haipatikani kwenye kivinjari".into(),
-        )))))
-    }));
-    m.insert("mkondo_sikiliza".to_string(), Box::new(|args: &[Value]| {
-        let addr = value::as_string(args.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
-        #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
-        {
-            match std::net::TcpListener::bind(&addr) {
-                Ok(l) => Ok(Value::Tokeo(Ok(Box::new(Value::MkondoSikilizaji(Arc::new(l)))))),
-                Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+            #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
+            Ok(Value::kosa(
+                "mkondo_unganisha: haipatikani kwenye kivinjari",
+            ))
+        }),
+    );
+    m.insert(
+        "mkondo_sikiliza".to_string(),
+        Box::new(|args: &[Value]| {
+            let addr = super::arg_str(args, 0);
+            #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+            {
+                match std::net::TcpListener::bind(&addr) {
+                    Ok(l) => Ok(Value::sawa(Value::MkondoSikilizaji(Arc::new(l)))),
+                    Err(e) => Ok(Value::kosa(e.to_string())),
+                }
             }
-        }
-        #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
-        Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-            "mkondo_sikiliza: haipatikani kwenye kivinjari".into(),
-        )))))
-    }));
+            #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
+            Ok(Value::kosa("mkondo_sikiliza: haipatikani kwenye kivinjari"))
+        }),
+    );
     #[cfg(not(target_arch = "wasm32"))]
     m.insert("tls_sanidi".to_string(), Box::new(tls_sanidi));
 }
@@ -58,46 +62,46 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
 /// `mkondo_unganisha`, etc.).
 #[cfg(not(target_arch = "wasm32"))]
 fn tls_sanidi(args: &[Value]) -> Result<Value, value::EvalError> {
-    let cheti_njia = value::as_string(args.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
-    let ufunguo_njia = value::as_string(args.get(1).unwrap_or(&Value::Hamna)).unwrap_or_default();
+    let cheti_njia = super::arg_str(args, 0);
+    let ufunguo_njia = super::arg_str(args, 1);
 
     let cheti_bytes = match std::fs::read(&cheti_njia) {
         Ok(b) => b,
-        Err(e) => return Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!("tls_sanidi: {e}")))))),
+        Err(e) => return Ok(Value::kosa(format!("tls_sanidi: {e}"))),
     };
     let ufunguo_bytes = match std::fs::read(&ufunguo_njia) {
         Ok(b) => b,
-        Err(e) => return Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!("tls_sanidi: {e}")))))),
+        Err(e) => return Ok(Value::kosa(format!("tls_sanidi: {e}"))),
     };
 
     let certs: Result<Vec<_>, _> = rustls_pemfile::certs(&mut cheti_bytes.as_slice()).collect();
     let certs = match certs {
         Ok(c) if !c.is_empty() => c,
         Ok(_) => {
-            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+            return Ok(Value::kosa(
                 "tls_sanidi: hakuna cheti kwenye faili".to_string(),
-            )))))
+            ))
         }
-        Err(e) => return Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!("tls_sanidi: cheti batili: {e}")))))),
+        Err(e) => return Ok(Value::kosa(format!("tls_sanidi: cheti batili: {e}"))),
     };
     let key = match rustls_pemfile::private_key(&mut ufunguo_bytes.as_slice()) {
         Ok(Some(k)) => k,
         Ok(None) => {
-            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+            return Ok(Value::kosa(
                 "tls_sanidi: hakuna ufunguo kwenye faili".to_string(),
-            )))))
+            ))
         }
-        Err(e) => return Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!("tls_sanidi: ufunguo batili: {e}")))))),
+        Err(e) => return Ok(Value::kosa(format!("tls_sanidi: ufunguo batili: {e}"))),
     };
 
     let config = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, key);
     match config {
-        Ok(cfg) => Ok(Value::Tokeo(Ok(Box::new(Value::TlsUsanidi(Arc::new(cfg)))))),
-        Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!(
+        Ok(cfg) => Ok(Value::sawa(Value::TlsUsanidi(Arc::new(cfg)))),
+        Err(e) => Ok(Value::kosa(format!(
             "tls_sanidi: cheti na ufunguo havilingani: {e}"
-        )))))),
+        ))),
     }
 }
 
@@ -135,19 +139,37 @@ pub(crate) fn mkondo_tumikia(
     module: &asili_parser::Module,
     args: &[Value],
 ) -> Result<Value, value::EvalError> {
+    serve_pool("mkondo_tumikia", module, args, worker_loop)
+}
+
+/// TLS configuration handed to each server worker (`()` where TLS is unavailable).
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) type ServerTls = Option<Arc<rustls::ServerConfig>>;
+#[cfg(target_arch = "wasm32")]
+pub(super) type ServerTls = ();
+
+/// The worker pool shared by `mkondo_tumikia` and `mkondo_tumikia_http`: validate
+/// `(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls)`, then run `worker` on that many threads, each
+/// accepting connections from the same listener, and wait for them.
+pub(super) fn serve_pool(
+    name: &str,
+    module: &asili_parser::Module,
+    args: &[Value],
+    worker: fn(&std::net::TcpListener, &asili_parser::Module, &str, ServerTls),
+) -> Result<Value, value::EvalError> {
     let listener = match args.first() {
         Some(Value::MkondoSikilizaji(l)) => Arc::clone(l),
         _ => {
-            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                "mkondo_tumikia: hoja ya kwanza lazima iwe MkondoSikilizaji".to_string(),
-            )))))
+            return Ok(Value::kosa(format!(
+                "{name}: hoja ya kwanza lazima iwe MkondoSikilizaji"
+            )))
         }
     };
-    let kazi_name = value::as_string(args.get(1).unwrap_or(&Value::Hamna)).unwrap_or_default();
+    let kazi_name = super::arg_str(args, 1);
     if !module.functions.iter().any(|f| f.name == kazi_name) {
-        return Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!(
-            "mkondo_tumikia: kazi haijulikani: {kazi_name}"
-        ))))));
+        return Ok(Value::kosa(format!(
+            "{name}: kazi haijulikani: {kazi_name}"
+        )));
     }
     let idadi_ya_nyuzi = value::as_f64(args.get(2).unwrap_or(&Value::Hamna))
         .unwrap_or(0.0)
@@ -161,45 +183,46 @@ pub(crate) fn mkondo_tumikia(
     #[cfg(not(target_arch = "wasm32"))]
     let tls_inner: Option<&Value> = match args.get(3) {
         Some(Value::Chaguo(Some(inner))) => Some(inner.as_ref()),
-        Some(Value::Enum(en, vn, Some(inner))) if en == "Chaguo" && vn == "Kuna" => Some(inner.as_ref()),
+        Some(Value::Enum(en, vn, Some(inner))) if en == "Chaguo" && vn == "Kuna" => {
+            Some(inner.as_ref())
+        }
         Some(Value::Chaguo(None)) => None,
         Some(Value::Enum(en, vn, None)) if en == "Chaguo" && vn == "Hamna" => None,
         None | Some(Value::Hamna) => None,
         Some(_) => {
-            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                "mkondo_tumikia: hoja ya nne (tls) lazima iwe Chaguo<TlsUsanidi>".to_string(),
-            )))))
+            return Ok(Value::kosa(format!(
+                "{name}: hoja ya nne (tls) lazima iwe Chaguo<TlsUsanidi>"
+            )))
         }
     };
     #[cfg(not(target_arch = "wasm32"))]
-    let tls_config: Option<Arc<rustls::ServerConfig>> = match tls_inner {
+    let tls_config: ServerTls = match tls_inner {
         Some(Value::TlsUsanidi(cfg)) => Some(Arc::clone(cfg)),
         Some(_) => {
-            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                "mkondo_tumikia: hoja ya nne (tls) lazima iwe Chaguo<TlsUsanidi>".to_string(),
-            )))))
+            return Ok(Value::kosa(format!(
+                "{name}: hoja ya nne (tls) lazima iwe Chaguo<TlsUsanidi>"
+            )))
         }
         None => None,
     };
+
+    #[cfg(target_arch = "wasm32")]
+    let tls_config: ServerTls = ();
 
     let mut handles = Vec::with_capacity(idadi_ya_nyuzi);
     for _ in 0..idadi_ya_nyuzi {
         let listener = Arc::clone(&listener);
         let module_owned = module.clone();
         let kazi_name = kazi_name.clone();
-        #[cfg(not(target_arch = "wasm32"))]
         let tls_config = tls_config.clone();
         handles.push(std::thread::spawn(move || {
-            #[cfg(not(target_arch = "wasm32"))]
-            worker_loop(&listener, &module_owned, &kazi_name, tls_config);
-            #[cfg(target_arch = "wasm32")]
-            worker_loop(&listener, &module_owned, &kazi_name);
+            worker(&listener, &module_owned, &kazi_name, tls_config)
         }));
     }
     for h in handles {
         let _ = h.join();
     }
-    Ok(Value::Tokeo(Ok(Box::new(Value::Tupu))))
+    Ok(Value::sawa(Value::Tupu))
 }
 
 /// `kazi_jina`'s contract: `kazi_jina(mkondo: Mkondo) -> Tupu` — it owns the whole connection
@@ -213,7 +236,7 @@ fn worker_loop(
     listener: &std::net::TcpListener,
     module: &asili_parser::Module,
     kazi_name: &str,
-    #[cfg(not(target_arch = "wasm32"))] tls_config: Option<Arc<rustls::ServerConfig>>,
+    #[cfg_attr(target_arch = "wasm32", allow(unused_variables))] tls_config: ServerTls,
 ) {
     loop {
         let stream = match listener.accept() {
@@ -253,9 +276,14 @@ fn worker_loop(
 /// `pub(crate)`: shared with `http.rs`'s `mkondo_tumikia_http`, which performs the identical
 /// TLS handshake step on an accepted connection — not reimplemented there.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn handshake_tls(config: Arc<rustls::ServerConfig>, stream: TcpStream) -> Option<MkondoStream> {
+pub(crate) fn handshake_tls(
+    config: Arc<rustls::ServerConfig>,
+    stream: TcpStream,
+) -> Option<MkondoStream> {
     let conn = rustls::ServerConnection::new(config).ok()?;
-    Some(MkondoStream::Salama(Box::new(rustls::StreamOwned::new(conn, stream))))
+    Some(MkondoStream::Salama(Box::new(rustls::StreamOwned::new(
+        conn, stream,
+    ))))
 }
 
 /// Extracted so the timeout value actually applied to an accepted socket is independently
@@ -278,7 +306,10 @@ mod tests {
         let server = std::thread::spawn(move || {
             let (stream, _) = listener.accept().expect("accept");
             apply_connection_timeout(&stream);
-            (stream.read_timeout().expect("read_timeout"), stream.write_timeout().expect("write_timeout"))
+            (
+                stream.read_timeout().expect("read_timeout"),
+                stream.write_timeout().expect("write_timeout"),
+            )
         });
         let _client = TcpStream::connect(addr).expect("connect");
         let (read_timeout, write_timeout) = server.join().expect("server thread");
@@ -301,8 +332,14 @@ mod tests {
     #[test]
     fn tls_sanidi_malformed_cert_returns_kosa_not_panic() {
         let dir = std::env::temp_dir();
-        let cert_path = dir.join(format!("asili-bad-cert-{:?}.pem", std::thread::current().id()));
-        let key_path = dir.join(format!("asili-bad-key-{:?}.pem", std::thread::current().id()));
+        let cert_path = dir.join(format!(
+            "asili-bad-cert-{:?}.pem",
+            std::thread::current().id()
+        ));
+        let key_path = dir.join(format!(
+            "asili-bad-key-{:?}.pem",
+            std::thread::current().id()
+        ));
         std::fs::write(&cert_path, "hii sio PEM halali").unwrap();
         std::fs::write(&key_path, "hii sio PEM halali pia").unwrap();
 

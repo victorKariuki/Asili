@@ -1,4 +1,4 @@
-use asili_lexer::{tokenize_with_trivia, Comment, Token};
+use asili_lexer::{tokenize_with_trivia, Comment, Token, KEYWORDS};
 
 /// Canonical source formatting for Asili code.
 /// Provides stable, consistent style for diffs and CI.
@@ -12,7 +12,21 @@ use asili_lexer::{tokenize_with_trivia, Comment, Token};
 /// On a lex error (e.g. an unterminated string), falls back to returning the input unchanged
 /// rather than panicking or producing a mangled partial rewrite — `pata nadhifu` is meant to be
 /// safe to run on in-progress, possibly-invalid source.
+///
+/// Formats with the default 4-space indent. See `canonical_format_with_indent` to apply a
+/// project's `[fmt]` `pata.toml` settings. Note only `indent_style`/`indent_width` are honored
+/// today — `line_width` (wrapping long lines) has no effect: this printer has no line-length
+/// tracking or wrap points at all, token-stream-driven output is emitted at whatever width the
+/// tokens naturally produce. Wiring `line_width` for real needs actual wrap-point logic added to
+/// `Printer`, not just a parameter threaded through — tracked as a real gap, not silently claimed
+/// as done.
 pub fn canonical_format(input: &str) -> String {
+    canonical_format_with_indent(input, "    ")
+}
+
+/// Like `canonical_format`, but with a caller-supplied indent unit (e.g. `"    "` for 4 spaces,
+/// `"\t"` for tabs) instead of the hardcoded 4-space default.
+pub fn canonical_format_with_indent(input: &str, indent_unit: &str) -> String {
     let (tokens, comments) = match tokenize_with_trivia(input) {
         Ok(pair) => pair,
         Err(_) => return input.to_string(),
@@ -20,7 +34,7 @@ pub fn canonical_format(input: &str) -> String {
     if tokens.is_empty() && comments.is_empty() {
         return String::new();
     }
-    Printer::new(&tokens, &comments).print()
+    Printer::new(&tokens, &comments, indent_unit).print()
 }
 
 /// True for delimiters that print with no space before them, and `NO_SPACE_AFTER` for no space
@@ -33,16 +47,6 @@ pub fn canonical_format(input: &str) -> String {
 /// already gets. See `Printer::hugs_previous`.
 const NO_SPACE_BEFORE: &[&str] = &[")", "]", ",", ";", ":", ".", "?"];
 const NO_SPACE_AFTER: &[&str] = &["(", "[", ".", "#"];
-/// Keywords that can precede a grouping `(...)` or an array literal `[...]` without that being
-/// call/index syntax (`rejesha (x)`, not `rejesha(x)` as a call). Sourced from every string
-/// literal `parse.rs`'s `match_tok` checks against, since this lexer has no token-kind
-/// classification of its own to query. `kama`/`kweli`/`si_kweli` (comparison/booleans) don't
-/// need listing here — they're already excluded by not being an identifier-or-closer below.
-const KEYWORDS: &[&str] = &[
-    "_", "au_ikiwa", "endelea", "ikiwa", "jenum", "kama", "katika", "kazi", "kutoka", "kwa",
-    "kweli", "lebo", "leta", "linganisha", "milele", "rejesha", "shughuli", "sifa", "si_kweli",
-    "thabiti", "tupa", "umbo", "umma", "vinginevyo", "vunja", "wakati", "weka", "ya", "jaribu",
-];
 /// Opens a new indented block; the matching close dedents before printing.
 const OPENERS: &[&str] = &["{"];
 const CLOSERS: &[&str] = &["}"];
@@ -59,12 +63,23 @@ struct Printer<'a> {
     /// less-than/greater-than operators — see `classify_generic_brackets`. These print with no
     /// surrounding spaces, unlike the comparison operators sharing the same lexemes.
     generic_brackets: std::collections::HashSet<usize>,
+    /// One level of indentation (e.g. `"    "` or `"\t"`), repeated `depth` times per line —
+    /// see `canonical_format_with_indent`.
+    indent_unit: String,
 }
 
 impl<'a> Printer<'a> {
-    fn new(tokens: &'a [Token], comments: &'a [Comment]) -> Self {
+    fn new(tokens: &'a [Token], comments: &'a [Comment], indent_unit: &str) -> Self {
         let generic_brackets = classify_generic_brackets(tokens);
-        Self { tokens, comments, out: String::new(), depth: 0, next_comment: 0, generic_brackets }
+        Self {
+            tokens,
+            comments,
+            out: String::new(),
+            depth: 0,
+            next_comment: 0,
+            generic_brackets,
+            indent_unit: indent_unit.to_string(),
+        }
     }
 
     fn print(mut self) -> String {
@@ -101,15 +116,21 @@ impl<'a> Printer<'a> {
         }
 
         let is_generic_bracket = self.generic_brackets.contains(&idx);
-        let hugs_left =
-            NO_SPACE_BEFORE.contains(&lex) || self.is_call_or_index_open(lex, idx) || is_generic_bracket;
+        let hugs_left = NO_SPACE_BEFORE.contains(&lex)
+            || self.is_call_or_index_open(lex, idx)
+            || is_generic_bracket;
         if hugs_left {
             self.trim_trailing_space();
         }
 
+        // `ends_with(' ')` alone misses a trailing tab: with a tab indent_unit, output right
+        // after `newline_indent()` ends in '\t', not ' ', so the plain-space check let a bogus
+        // extra leading space slip in before the next token (masked previously only because the
+        // old hardcoded indent was always a run of spaces, which does end in ' ').
+        let just_indented = self.out.ends_with(' ') || self.out.ends_with('\t');
         let needs_space_before = idx > 0
             && !self.out.ends_with('\n')
-            && !self.out.ends_with(' ')
+            && !just_indented
             && !hugs_left
             && !self.prev_suppresses_space_after(idx);
 
@@ -140,7 +161,9 @@ impl<'a> Printer<'a> {
     /// author's own line breaks between statements rather than collapsing everything onto one
     /// line, since this printer has no statement-level AST to drive layout from.
     fn starts_new_line_after(&self, idx: usize) -> bool {
-        let Some(next) = self.tokens.get(idx + 1) else { return false };
+        let Some(next) = self.tokens.get(idx + 1) else {
+            return false;
+        };
         let cur = &self.tokens[idx];
         if OPENERS.contains(&cur.lexeme.as_str()) || CLOSERS.contains(&next.lexeme.as_str()) {
             return false;
@@ -158,7 +181,8 @@ impl<'a> Printer<'a> {
     fn prev_suppresses_space_after(&self, idx: usize) -> bool {
         idx > 0
             && (NO_SPACE_AFTER.contains(&self.tokens[idx - 1].lexeme.as_str())
-                || (self.tokens[idx - 1].lexeme == "<" && self.generic_brackets.contains(&(idx - 1))))
+                || (self.tokens[idx - 1].lexeme == "<"
+                    && self.generic_brackets.contains(&(idx - 1))))
     }
 
     /// True when `lex` is `(` or `[` immediately following a call/index target — an identifier,
@@ -169,8 +193,12 @@ impl<'a> Printer<'a> {
         if lex != "(" && lex != "[" {
             return false;
         }
-        let Some(prev_idx) = idx.checked_sub(1) else { return false };
-        let Some(prev) = self.tokens.get(prev_idx) else { return false };
+        let Some(prev_idx) = idx.checked_sub(1) else {
+            return false;
+        };
+        let Some(prev) = self.tokens.get(prev_idx) else {
+            return false;
+        };
         let prev_lex = prev.lexeme.as_str();
         if prev_lex == ")" || prev_lex == "]" {
             return true;
@@ -188,7 +216,8 @@ impl<'a> Printer<'a> {
             .checked_sub(1)
             .and_then(|i| self.tokens.get(i))
             .is_some_and(|before| before.lexeme == ".");
-        is_method_name || !KEYWORDS.contains(&prev_lex)
+        // A keyword before `(`/`[` is never call/index syntax (`rejesha (x)`, `ikiwa (a)`).
+        is_method_name || !(KEYWORDS.contains(&prev_lex) || prev_lex == "_")
     }
 
     fn trim_trailing_space(&mut self) {
@@ -203,7 +232,7 @@ impl<'a> Printer<'a> {
             self.out.push('\n');
         }
         for _ in 0..self.depth {
-            self.out.push_str("    ");
+            self.out.push_str(&self.indent_unit);
         }
     }
 
@@ -289,7 +318,7 @@ fn classify_generic_brackets(tokens: &[Token]) -> std::collections::HashSet<usiz
                     // by construction — `find_matching_generic_close` only accepts identifiers,
                     // `,`, and balanced `<`/`>` inside the region, so mark the whole span.
                     for (k, t) in tokens.iter().enumerate().take(close + 1).skip(i) {
-                        if t.lexeme == "<" || t.lexeme == ">" {
+                        if matches!(t.lexeme.as_str(), "<" | ">" | ">>") {
                             result.insert(k);
                         }
                     }
@@ -316,16 +345,21 @@ fn find_matching_generic_close(tokens: &[Token], open_idx: usize) -> Option<usiz
         let lex = tokens[j].lexeme.as_str();
         match lex {
             "<" => depth += 1,
-            ">" => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(j);
+            ">" | ">>" => {
+                // `>>` is one token (the shift operator) but closes two nested generics.
+                depth -= if lex == ">>" { 2 } else { 1 };
+                match depth {
+                    0 => return Some(j),
+                    d if d < 0 => return None,
+                    _ => {}
                 }
             }
             "," => {}
             _ => {
-                let is_identifier_like =
-                    lex.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_');
+                let is_identifier_like = lex
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphabetic() || c == '_');
                 if !is_identifier_like {
                     return None;
                 }
@@ -394,14 +428,20 @@ mod tests {
         let input = r#"weka s = "a, {b} c"
 weka c = 'x'"#;
         let output = canonical_format(input);
-        assert!(output.contains(r#""a, {b} c""#), "string literal must survive verbatim: {output}");
+        assert!(
+            output.contains(r#""a, {b} c""#),
+            "string literal must survive verbatim: {output}"
+        );
     }
 
     #[test]
     fn comments_are_preserved_not_deleted() {
         let input = "weka x = 1 # muhimu\nchapisha(x)\n";
         let output = canonical_format(input);
-        assert!(output.contains("# muhimu"), "comment must be preserved, got: {output}");
+        assert!(
+            output.contains("# muhimu"),
+            "comment must be preserved, got: {output}"
+        );
         assert!(output.contains("chapisha(x)"));
     }
 
@@ -471,8 +511,14 @@ weka c = 'x'"#;
         // verbatim isn't valid syntax and would re-tokenize as three tokens on a second pass.
         let input = "m.ingiza('A', \"Herufi\")\nrejesha m.pata('A')\n";
         let once = canonical_format(input);
-        assert!(once.contains("'A'"), "char literal must render as 'A', got: {once}");
-        assert!(!once.contains("CHAR:"), "internal lexeme must not leak into output: {once}");
+        assert!(
+            once.contains("'A'"),
+            "char literal must render as 'A', got: {once}"
+        );
+        assert!(
+            !once.contains("CHAR:"),
+            "internal lexeme must not leak into output: {once}"
+        );
         let twice = canonical_format(&once);
         assert_eq!(once, twice, "formatting a char literal must be idempotent");
     }
@@ -484,8 +530,14 @@ weka c = 'x'"#;
         // supposedly single-line string and fail to re-tokenize (LEX001 unterminated string).
         let input = r#"chapisha("Habari\nulimwengu\t\"ndani\"\\nje")"#;
         let once = canonical_format(input);
-        assert!(once.contains(r#""Habari\nulimwengu\t\"ndani\"\\nje""#), "got: {once}");
-        assert!(!once.contains('\n') || once.matches('\n').count() == 1, "must stay one line, got: {once:?}");
+        assert!(
+            once.contains(r#""Habari\nulimwengu\t\"ndani\"\\nje""#),
+            "got: {once}"
+        );
+        assert!(
+            !once.contains('\n') || once.matches('\n').count() == 1,
+            "must stay one line, got: {once:?}"
+        );
         let twice = canonical_format(&once);
         assert_eq!(once, twice);
     }
@@ -495,7 +547,10 @@ weka c = 'x'"#;
         for (src, expect) in [(r"'\n'", r"'\n'"), (r"'\''", r"'\''"), (r"'\\'", r"'\\'")] {
             let input = format!("weka c = {src}\n");
             let output = canonical_format(&input);
-            assert!(output.contains(expect), "expected {expect} in output, got: {output}");
+            assert!(
+                output.contains(expect),
+                "expected {expect} in output, got: {output}"
+            );
         }
     }
 
@@ -503,7 +558,10 @@ weka c = 'x'"#;
     fn nested_blocks_indent_by_depth() {
         let input = "kazi foo() -> Tupu {\nkama kweli {\nchapisha(\"x\")\n}\n}\n";
         let output = canonical_format(input);
-        assert!(output.contains("    kama kweli {\n        chapisha(\"x\")\n    }\n"), "got: {output}");
+        assert!(
+            output.contains("    kama kweli {\n        chapisha(\"x\")\n    }\n"),
+            "got: {output}"
+        );
     }
 
     #[test]
@@ -518,7 +576,10 @@ weka c = 'x'"#;
     fn nested_generic_brackets_hug() {
         let input = "weka m: Kamusi<Neno, Orodha<Namba>> = kamusi()\n";
         let output = canonical_format(input);
-        assert!(output.contains("Kamusi<Neno, Orodha<Namba>>"), "got: {output}");
+        assert!(
+            output.contains("Kamusi<Neno, Orodha<Namba>>"),
+            "got: {output}"
+        );
     }
 
     #[test]
@@ -542,7 +603,10 @@ weka c = 'x'"#;
         let input = "kazi kuu(hoja: Orodha<Neno>) -> Tupu {\n  weka a = 1\n  chapisha(a)\n}\n";
         let output = canonical_format(input);
         for line in output.lines() {
-            assert!(!line.ends_with(' '), "trailing whitespace on line: {line:?}");
+            assert!(
+                !line.ends_with(' '),
+                "trailing whitespace on line: {line:?}"
+            );
         }
     }
 
@@ -555,7 +619,45 @@ weka c = 'x'"#;
         assert!(once.contains("Orodha<Neno>"));
         assert!(once.contains("b.weka(42.0)"));
         for line in once.lines() {
-            assert!(!line.ends_with(' '), "trailing whitespace on line: {line:?}");
+            assert!(
+                !line.ends_with(' '),
+                "trailing whitespace on line: {line:?}"
+            );
         }
+    }
+
+    #[test]
+    fn default_indent_is_four_spaces() {
+        let input = "kazi kuu() -> Tupu {\nweka x = 1\n}\n";
+        let output = canonical_format(input);
+        assert!(output.contains("\n    weka x = 1"), "got: {output:?}");
+    }
+
+    #[test]
+    fn custom_indent_width_is_applied() {
+        let input = "kazi kuu() -> Tupu {\nweka x = 1\n}\n";
+        let output = canonical_format_with_indent(input, "  ");
+        assert!(output.contains("\n  weka x = 1"), "got: {output:?}");
+        assert!(
+            !output.contains("\n    weka x = 1"),
+            "should not use the default 4-space indent, got: {output:?}"
+        );
+    }
+
+    #[test]
+    fn tab_indent_is_applied() {
+        let input = "kazi kuu() -> Tupu {\nweka x = 1\n}\n";
+        let output = canonical_format_with_indent(input, "\t");
+        assert!(output.contains("\n\tweka x = 1"), "got: {output:?}");
+    }
+
+    #[test]
+    fn custom_indent_nests_correctly_at_depth_two() {
+        let input = "kazi kuu() -> Tupu {\nikiwa kweli {\nweka x = 1\n}\n}\n";
+        let output = canonical_format_with_indent(input, "  ");
+        assert!(
+            output.contains("\n    weka x = 1"),
+            "depth-2 body should be 2x the 2-space unit, got: {output:?}"
+        );
     }
 }

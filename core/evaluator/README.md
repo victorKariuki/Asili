@@ -1,8 +1,9 @@
-# evaluator stub
+# evaluator
 
-Purpose: evaluate/lower AST into execution form (`.asb` / VM input).
+Purpose: evaluate Asili modules and lower the loop/list-heavy Sudoku subset into executable `.asb`
+stack bytecode. Programs using unsupported constructs retain the serialized-AST evaluator
+fallback.
 
-Planned API:
-- `lower(ast: AstProgram) -> BytecodeModule`
-- ownership-aware temporary/value tracking
-- hooks for strict vs standard allocation behavior
+The public `compile_module`/`run_bytecode_function` API covers arithmetic, comparisons, loops,
+lists, indexing, mutation, casts, builtin calls, and user-function calls. `pata jenga` selects
+this VM artifact path while preserving the tree-walk evaluator for the rest of the language.

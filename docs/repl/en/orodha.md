@@ -6,7 +6,9 @@ Orodha ni mkusanyiko unaohesabu kwa index.
 
 - `orodha(...)` — unda orodha kutoka hoja (mf. `orodha(1, 2, 3)`)
 - `a.urefu()` — urefu wa orodha
-- `a[0]` — kipengele kwa index (kwanza = 0)
+- `a[0]` — element at index (first = 0); an out-of-range index stops the program with an error
+- `a[0]?` — the element, or returns the `KosaMipaka` error from the `kazi` when out of range
+- `a.pata(i)` — `Chaguo`: `Kuna(x)`, or `Hamna` when out of range
 - `a.ongeza(x)` — ongeza kipengele mwishoni
 - `a.ondoa(i)` — ondoa kipengele kwa index; rejesha Chaguo
 

@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use asili_evaluator::{run_function, Value};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, semantic_check_with_env, extern_env_from_imports, Module};
+use asili_parser::{extern_env_from_imports, parse_tokens, semantic_check_with_env, Module};
 
 fn compile(src: &str) -> Module {
     let toks = tokenize(src).expect("tokenize");
@@ -73,8 +73,15 @@ fn connect_with_retry(addr: &str) -> TcpStream {
 /// Reads exactly one HTTP response off `stream` (status line + headers + Content-Length body),
 /// leaving the stream open for a possible next response — mirrors what a real keep-alive client
 /// does, and is what makes the keep-alive test below possible.
-fn read_one_response(stream: &mut TcpStream) -> (u16, String) {
-    let mut buf = Vec::new();
+///
+/// `carry` holds bytes already read off the wire but not yet consumed by a parsed response — the
+/// exact same problem `http.rs`'s own `read_request`/pipelining fix solves on the server side:
+/// two responses can arrive in a single `stream.read()` call (e.g. right after this test writes
+/// two pipelined requests at once), and without carrying the leftover bytes forward, a second
+/// `read_one_response` call would start a fresh empty buffer, lose the already-received second
+/// response, and block forever waiting for bytes the server already sent.
+fn read_one_response(stream: &mut TcpStream, carry: &mut Vec<u8>) -> (u16, String) {
+    let mut buf: Vec<u8> = std::mem::take(carry);
     let mut chunk = [0u8; 4096];
     loop {
         // Look for the header/body boundary first.
@@ -103,7 +110,9 @@ fn read_one_response(stream: &mut TcpStream) -> (u16, String) {
                 assert!(n > 0, "connection closed mid-body");
                 buf.extend_from_slice(&chunk[..n]);
             }
-            let body = String::from_utf8_lossy(&buf[body_start..body_start + content_length]).into_owned();
+            let needed = body_start + content_length;
+            let body = String::from_utf8_lossy(&buf[body_start..needed]).into_owned();
+            *carry = buf.split_off(needed);
             return (status, body);
         }
         let n = stream.read(&mut chunk).expect("read");
@@ -127,11 +136,12 @@ fn get_request_response_round_trips() {
     let addr = start_server(kazi, 2.0);
 
     let mut client = connect_with_retry(&addr);
+    let mut carry = Vec::new();
     client
         .write_all(b"GET /habari HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
         .expect("write request");
 
-    let (status, body) = read_one_response(&mut client);
+    let (status, body) = read_one_response(&mut client, &mut carry);
     assert_eq!(status, 200);
     assert_eq!(body, "njia=GET anwani=/habari");
 }
@@ -148,6 +158,7 @@ fn request_headers_and_body_reach_kazi_jina() {
     let addr = start_server(kazi, 2.0);
 
     let mut client = connect_with_retry(&addr);
+    let mut carry = Vec::new();
     let body = "data-ya-ombi";
     let request = format!(
         "POST /tuma HTTP/1.1\r\nHost: localhost\r\nX-Aina: jaribio\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -156,7 +167,7 @@ fn request_headers_and_body_reach_kazi_jina() {
     );
     client.write_all(request.as_bytes()).expect("write request");
 
-    let (status, response_body) = read_one_response(&mut client);
+    let (status, response_body) = read_one_response(&mut client, &mut carry);
     assert_eq!(status, 200);
     assert_eq!(response_body, "jaribio|data-ya-ombi");
 }
@@ -172,25 +183,31 @@ fn keep_alive_serves_two_requests_on_one_connection() {
     let addr = start_server(kazi, 1.0);
 
     let mut client = connect_with_retry(&addr);
+    let mut carry = Vec::new();
     // No `Connection: close` here — HTTP/1.1 defaults to keep-alive, so the same connection
     // must still be usable for a second request afterward.
     client
         .write_all(b"GET /kwanza HTTP/1.1\r\nHost: localhost\r\n\r\n")
         .expect("write first request");
-    let (status1, body1) = read_one_response(&mut client);
+    let (status1, body1) = read_one_response(&mut client, &mut carry);
     assert_eq!(status1, 200);
     assert_eq!(body1, "/kwanza");
 
     client
         .write_all(b"GET /pili HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
         .expect("write second request");
-    let (status2, body2) = read_one_response(&mut client);
+    let (status2, body2) = read_one_response(&mut client, &mut carry);
     assert_eq!(status2, 200);
-    assert_eq!(body2, "/pili", "second request over the same connection must still be answered");
+    assert_eq!(
+        body2, "/pili",
+        "second request over the same connection must still be answered"
+    );
 }
 
+/// Issue #20: a `Transfer-Encoding: chunked` request body is decoded for real (not rejected with
+/// 501) — a single chunk plus the terminating zero-size chunk.
 #[test]
-fn chunked_transfer_encoding_request_is_rejected_with_501() {
+fn chunked_transfer_encoding_request_body_is_decoded() {
     let kazi = r#"
         kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
             weka vichwa = kamusi()
@@ -200,12 +217,135 @@ fn chunked_transfer_encoding_request_is_rejected_with_501() {
     let addr = start_server(kazi, 1.0);
 
     let mut client = connect_with_retry(&addr);
+    let mut carry = Vec::new();
     client
         .write_all(b"POST /pakia HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n4\r\ntest\r\n0\r\n\r\n")
         .expect("write chunked request");
 
-    let (status, _) = read_one_response(&mut client);
-    assert_eq!(status, 501, "chunked Transfer-Encoding is explicitly out of scope for this pass");
+    let (status, body) = read_one_response(&mut client, &mut carry);
+    assert_eq!(status, 200);
+    assert_eq!(
+        body, "test",
+        "the decoded (unchunked) body must reach kazi_jina"
+    );
+}
+
+/// Multiple chunks of different sizes, plus a chunk-size line carrying an extension (`;ext`,
+/// which real clients sometimes send and which must be ignored, not fail hex parsing) — proves
+/// this isn't just a single-chunk special case.
+#[test]
+fn chunked_request_with_multiple_chunks_and_extension_is_decoded() {
+    let kazi = r#"
+        kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
+            weka vichwa = kamusi()
+            rejesha JibuHttp { hali: 200, vichwa: vichwa, mwili: ombi.mwili }
+        }
+    "#;
+    let addr = start_server(kazi, 1.0);
+
+    let mut client = connect_with_retry(&addr);
+    let mut carry = Vec::new();
+    // "hello" (5 bytes) + ";ignored-ext" on the size line + " world" (6 bytes) + terminator,
+    // with a trailer header thrown in to prove trailers are consumed without breaking framing.
+    client
+        .write_all(
+            b"POST /pakia HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n\
+              5;ignored-ext\r\nhello\r\n6\r\n world\r\n0\r\nX-Trailer: baadaye\r\n\r\n",
+        )
+        .expect("write chunked request");
+
+    let (status, body) = read_one_response(&mut client, &mut carry);
+    assert_eq!(status, 200);
+    assert_eq!(body, "hello world");
+}
+
+/// Pipelining (issue #21): two full requests written in a single `write_all` call — no
+/// interleaved read between them, so the second request's bytes necessarily arrive in the same
+/// `stream.read` the server uses to complete the first request. Both must still be answered, in
+/// order, on the one connection.
+#[test]
+fn pipelined_requests_are_both_answered_in_order() {
+    let kazi = r#"
+        kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
+            weka vichwa = kamusi()
+            rejesha JibuHttp { hali: 200, vichwa: vichwa, mwili: ombi.anwani }
+        }
+    "#;
+    let addr = start_server(kazi, 1.0);
+
+    let mut client = connect_with_retry(&addr);
+    let mut carry = Vec::new();
+    let first = b"GET /kwanza HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec();
+    let second = b"GET /pili HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".to_vec();
+    let mut both = first;
+    both.extend_from_slice(&second);
+    client
+        .write_all(&both)
+        .expect("write both pipelined requests at once");
+
+    let (status1, body1) = read_one_response(&mut client, &mut carry);
+    assert_eq!(status1, 200);
+    assert_eq!(
+        body1, "/kwanza",
+        "first pipelined request must be answered first"
+    );
+
+    let (status2, body2) = read_one_response(&mut client, &mut carry);
+    assert_eq!(status2, 200);
+    assert_eq!(
+        body2, "/pili",
+        "second pipelined request must still be answered, in order"
+    );
+}
+
+/// 100-continue (issue #22): a client sending `Expect: 100-continue` must receive a real
+/// intermediate `HTTP/1.1 100 Continue\r\n\r\n` before the final response — proven by reading the
+/// interim status line directly, before the body is even written.
+#[test]
+fn expect_100_continue_gets_an_intermediate_response() {
+    let kazi = r#"
+        kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
+            weka vichwa = kamusi()
+            rejesha JibuHttp { hali: 200, vichwa: vichwa, mwili: ombi.mwili }
+        }
+    "#;
+    let addr = start_server(kazi, 1.0);
+
+    let mut client = connect_with_retry(&addr);
+    let mut carry = Vec::new();
+    let body = "payload";
+    let request = format!(
+        "POST /pakia HTTP/1.1\r\nHost: localhost\r\nExpect: 100-continue\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    client
+        .write_all(request.as_bytes())
+        .expect("write request headers");
+
+    // Read exactly the interim response line before sending the body — a real client waiting
+    // for 100-continue would do the same. Safe to use a plain local buffer here (not `carry`):
+    // the server only ever sends the fixed "100 Continue" line and then blocks reading the
+    // request body, so there's no realistic way extra bytes land in the same read as this one.
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 256];
+    while find_double_crlf(&buf).is_none() {
+        let n = client.read(&mut chunk).expect("read interim response");
+        assert!(n > 0, "connection closed before 100 Continue arrived");
+        buf.extend_from_slice(&chunk[..n]);
+    }
+    let interim = String::from_utf8_lossy(&buf);
+    assert!(
+        interim.starts_with("HTTP/1.1 100"),
+        "expected an interim 100 Continue, got: {interim}"
+    );
+
+    client
+        .write_all(body.as_bytes())
+        .expect("write body after 100 Continue");
+
+    let (status, response_body) = read_one_response(&mut client, &mut carry);
+    assert_eq!(status, 200);
+    assert_eq!(response_body, body);
 }
 
 #[test]
@@ -225,13 +365,21 @@ fn connection_closed_mid_body_is_rejected_with_400_not_a_hang() {
     let addr = start_server(kazi, 1.0);
 
     let mut client = connect_with_retry(&addr);
+    let mut carry = Vec::new();
     client
-        .write_all(b"POST /haujakamilika HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\nfupi")
+        .write_all(
+            b"POST /haujakamilika HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\nfupi",
+        )
         .expect("write incomplete request");
-    client.shutdown(std::net::Shutdown::Write).expect("shutdown write half");
+    client
+        .shutdown(std::net::Shutdown::Write)
+        .expect("shutdown write half");
 
-    let (status, _) = read_one_response(&mut client);
-    assert_eq!(status, 400, "an incomplete body followed by connection close must be rejected immediately");
+    let (status, _) = read_one_response(&mut client, &mut carry);
+    assert_eq!(
+        status, 400,
+        "an incomplete body followed by connection close must be rejected immediately"
+    );
 }
 
 #[test]
@@ -245,8 +393,11 @@ fn malformed_request_line_is_rejected_with_400() {
     let addr = start_server(kazi, 1.0);
 
     let mut client = connect_with_retry(&addr);
-    client.write_all(b"SI_HTTP KABISA\r\n\r\n").expect("write garbage");
+    let mut carry = Vec::new();
+    client
+        .write_all(b"SI_HTTP KABISA\r\n\r\n")
+        .expect("write garbage");
 
-    let (status, _) = read_one_response(&mut client);
+    let (status, _) = read_one_response(&mut client, &mut carry);
     assert_eq!(status, 400);
 }
