@@ -27,42 +27,16 @@ impl Default for FormatterConfig {
 impl FormatterConfig {
     /// Load formatter config from pata.toml if it exists
     pub fn load(project_root: &Path) -> anyhow::Result<Self> {
-        let toml_path = project_root.join("pata.toml");
-        if !toml_path.exists() {
-            return Ok(Self::default());
-        }
-
-        let content = std::fs::read_to_string(&toml_path)?;
-        let parsed: toml::Table = toml::from_str(&content)?;
-
-        let fmt = parsed.get("fmt").and_then(|v| v.as_table());
-        match fmt {
-            Some(fmt_table) => {
-                let config = toml::from_str::<Self>(&toml::to_string(fmt_table)?)?;
-                Ok(config)
-            }
-            None => Ok(Self::default()),
-        }
+        Ok(pata_config::load_section(project_root, &["fmt"])?.unwrap_or_default())
     }
 
-    /// Like `load`, but walks upward from `start` (a file or directory being formatted) to find
-    /// the nearest ancestor containing a `pata.toml`, rather than requiring the exact project
-    /// root — `pata fmt` is usually pointed at a file or subdirectory below the real root.
-    /// Returns `FormatterConfig::default()` (not an error) if no ancestor has a `pata.toml`.
+    /// Like `load`, but for the project containing `start` (a file or directory being
+    /// formatted), found by walking upward to the nearest `pata.toml`. Defaults if none.
     pub fn find_and_load(start: &Path) -> anyhow::Result<Self> {
-        let start_dir = if start.is_dir() {
-            start
-        } else {
-            start.parent().unwrap_or(start)
-        };
-
-        for dir in start_dir.ancestors() {
-            if dir.join("pata.toml").exists() {
-                return Self::load(dir);
-            }
+        match pata_config::find_project_root(start) {
+            Some(root) => Self::load(&root),
+            None => Ok(Self::default()),
         }
-
-        Ok(Self::default())
     }
 
     pub fn line_width(&self) -> usize {

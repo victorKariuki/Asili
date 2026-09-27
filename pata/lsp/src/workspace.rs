@@ -178,17 +178,7 @@ fn read_entrypoint_and_deps(root: &Path) -> (PathBuf, BTreeMap<String, Dependenc
 /// `findProjectRoot` in `extensions/vscode/src/extension.ts` (used there to find where to run
 /// `pata jaribu` from) — keep the two in sync if this logic changes.
 pub fn find_project_root(file_path: &Path) -> Option<PathBuf> {
-    let mut dir = if file_path.is_dir() {
-        file_path.to_path_buf()
-    } else {
-        file_path.parent()?.to_path_buf()
-    };
-    loop {
-        if dir.join("pata.toml").is_file() {
-            return Some(dir);
-        }
-        dir = dir.parent()?.to_path_buf();
-    }
+    pata_config::find_project_root(file_path)
 }
 
 /// The distinct set of project roots that `changed_paths` (a `workspace/didChangeWatchedFiles`

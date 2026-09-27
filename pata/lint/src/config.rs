@@ -31,53 +31,18 @@ impl LintConfig {
     /// with no `pata.toml`, or one with no `[lint]`/`[lint.rules]` table, gets `LintConfig::new()`
     /// (all rules at default "warning" severity, no options), not an error.
     pub fn load(project_root: &Path) -> anyhow::Result<Self> {
-        let toml_path = project_root.join("pata.toml");
-        if !toml_path.exists() {
-            return Ok(Self::new());
-        }
-
-        let content = std::fs::read_to_string(&toml_path)?;
-        let parsed: toml::Table = toml::from_str(&content)?;
-
-        let rules_table = parsed
-            .get("lint")
-            .and_then(|v| v.as_table())
-            .and_then(|lint| lint.get("rules"))
-            .and_then(|v| v.as_table());
-
-        match rules_table {
-            Some(rules_table) => {
-                let rules: BTreeMap<String, RuleConfig> =
-                    toml::from_str(&toml::to_string(rules_table)?)?;
-                Ok(Self { rules: Some(rules) })
-            }
-            None => Ok(Self::new()),
-        }
+        Ok(Self {
+            rules: pata_config::load_section(project_root, &["lint", "rules"])?,
+        })
     }
 
-    /// Like `load`, but walks upward from `start` (a file or directory being linted) to find
-    /// the nearest ancestor containing a `pata.toml`, rather than requiring the exact project
-    /// root. Needed because `pata-lint` lints an arbitrary file/subdirectory
-    /// (`pata-lint src/deep/nested.as`) that usually isn't the project root itself — `pata.toml`
-    /// conventionally lives at the root, one or more directories up from what's being linted.
-    /// This crate can't depend on `pata-cli`'s or `pata-lsp`'s own project-root walks (both
-    /// live in crates that would create a circular dependency back onto `pata-lint`), so it
-    /// gets its own minimal version. Returns `LintConfig::new()` (not an error) if no ancestor
-    /// has a `pata.toml`.
+    /// Like `load`, but for the project containing `start` (a file or directory being linted),
+    /// found by walking upward to the nearest `pata.toml`. `LintConfig::new()` if there is none.
     pub fn find_and_load(start: &Path) -> anyhow::Result<Self> {
-        let start_dir = if start.is_dir() {
-            start
-        } else {
-            start.parent().unwrap_or(start)
-        };
-
-        for dir in start_dir.ancestors() {
-            if dir.join("pata.toml").exists() {
-                return Self::load(dir);
-            }
+        match pata_config::find_project_root(start) {
+            Some(root) => Self::load(&root),
+            None => Ok(Self::new()),
         }
-
-        Ok(Self::new())
     }
 
     /// Get severity for a rule (defaults to "warning")

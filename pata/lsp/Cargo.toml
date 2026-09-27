@@ -4,6 +4,7 @@ version = "0.4.0"
 edition = "2021"
 
 [dependencies]
+pata-config = { path = "../config" }
 asili-diagnostics = { path = "../../core/diagnostics" }
 asili-evaluator = { path = "../../core/evaluator" }
 asili-lexer = { path = "../../core/lexer" }
