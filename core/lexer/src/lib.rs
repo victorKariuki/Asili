@@ -19,6 +19,52 @@ pub struct Comment {
     pub after_token_index: Option<usize>,
 }
 
+/// Every reserved word of the language — statement keywords, word operators and literal
+/// keywords. The one list the parser's grammar, LSP completion/hover/rename and the formatter
+/// all agree on.
+pub const KEYWORDS: &[&str] = &[
+    "au",
+    "au_biti",
+    "au_ikiwa",
+    "azima",
+    "azima_tenda",
+    "endelea",
+    "hadi",
+    "ikiwa",
+    "jaribu",
+    "jenum",
+    "kama",
+    "katika",
+    "kazi",
+    "kutoka",
+    "kwa",
+    "kweli",
+    "lebo",
+    "leta",
+    "linganisha",
+    "milele",
+    "na",
+    "na_biti",
+    "rejesha",
+    "shughuli",
+    "si_kweli",
+    "sifa",
+    "siyo",
+    "siyo_biti",
+    "sogeza_kulia",
+    "sogeza_kushoto",
+    "thabiti",
+    "tupa",
+    "umbo",
+    "umma",
+    "vinginevyo",
+    "vunja",
+    "wakati",
+    "weka",
+    "xor_biti",
+    "ya",
+];
+
 pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
     tokenize_inner(source, None)
 }
@@ -56,21 +102,8 @@ fn tokenize_inner(
                 if i + 1 < chars.len() && chars[i + 1] == '[' {
                     // Attribute start, treat '#' as a token
                 } else {
-                    // Comment, skip until end of line
-                    let start_col = col;
-                    let start = i;
-                    while i < chars.len() && chars[i] != '\n' {
-                        i += 1;
-                        col += 1;
-                    }
-                    if let Some(out) = trivia.as_deref_mut() {
-                        out.push(Comment {
-                            text: chars[start..i].iter().collect(),
-                            line: line_idx + 1,
-                            column: start_col,
-                            after_token_index: tokens.len().checked_sub(1),
-                        });
-                    }
+                    // Comment: the rest of the line.
+                    skip_comment(&chars, &mut i, &mut col, line_idx, &tokens, &mut trivia);
                     continue;
                 }
             }
@@ -78,20 +111,7 @@ fn tokenize_inner(
             // `///` is a documentation comment (read by `pata thibitisha`'s public-API docs
             // check). A plain `//` is the floor-division operator, not a comment.
             if ch == '/' && chars.get(i + 1) == Some(&'/') && chars.get(i + 2) == Some(&'/') {
-                let start_col = col;
-                let start = i;
-                while i < chars.len() {
-                    i += 1;
-                    col += 1;
-                }
-                if let Some(out) = trivia.as_deref_mut() {
-                    out.push(Comment {
-                        text: chars[start..i].iter().collect(),
-                        line: line_idx + 1,
-                        column: start_col,
-                        after_token_index: tokens.len().checked_sub(1),
-                    });
-                }
+                skip_comment(&chars, &mut i, &mut col, line_idx, &tokens, &mut trivia);
                 continue;
             }
 
@@ -267,6 +287,29 @@ fn tokenize_inner(
         Ok(tokens)
     } else {
         Err(errors)
+    }
+}
+
+/// Consume a comment running from `chars[*i]` to the end of the line, recording it as trivia
+/// when the caller asked for it.
+fn skip_comment(
+    chars: &[char],
+    i: &mut usize,
+    col: &mut usize,
+    line_idx: usize,
+    tokens: &[Token],
+    trivia: &mut Option<&mut Vec<Comment>>,
+) {
+    let (start, start_col) = (*i, *col);
+    *col += chars.len() - *i;
+    *i = chars.len();
+    if let Some(out) = trivia.as_deref_mut() {
+        out.push(Comment {
+            text: chars[start..].iter().collect(),
+            line: line_idx + 1,
+            column: start_col,
+            after_token_index: tokens.len().checked_sub(1),
+        });
     }
 }
 

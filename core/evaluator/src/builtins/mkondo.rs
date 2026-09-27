@@ -161,18 +161,36 @@ pub(crate) fn mkondo_tumikia(
     module: &asili_parser::Module,
     args: &[Value],
 ) -> Result<Value, value::EvalError> {
+    serve_pool("mkondo_tumikia", module, args, worker_loop)
+}
+
+/// TLS configuration handed to each server worker (`()` where TLS is unavailable).
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) type ServerTls = Option<Arc<rustls::ServerConfig>>;
+#[cfg(target_arch = "wasm32")]
+pub(super) type ServerTls = ();
+
+/// The worker pool shared by `mkondo_tumikia` and `mkondo_tumikia_http`: validate
+/// `(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls)`, then run `worker` on that many threads, each
+/// accepting connections from the same listener, and wait for them.
+pub(super) fn serve_pool(
+    name: &str,
+    module: &asili_parser::Module,
+    args: &[Value],
+    worker: fn(&std::net::TcpListener, &asili_parser::Module, &str, ServerTls),
+) -> Result<Value, value::EvalError> {
     let listener = match args.first() {
         Some(Value::MkondoSikilizaji(l)) => Arc::clone(l),
         _ => {
-            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                "mkondo_tumikia: hoja ya kwanza lazima iwe MkondoSikilizaji".to_string(),
-            )))))
+            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!(
+                "{name}: hoja ya kwanza lazima iwe MkondoSikilizaji"
+            ))))))
         }
     };
     let kazi_name = value::as_string(args.get(1).unwrap_or(&Value::Hamna)).unwrap_or_default();
     if !module.functions.iter().any(|f| f.name == kazi_name) {
         return Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!(
-            "mkondo_tumikia: kazi haijulikani: {kazi_name}"
+            "{name}: kazi haijulikani: {kazi_name}"
         ))))));
     }
     let idadi_ya_nyuzi = value::as_f64(args.get(2).unwrap_or(&Value::Hamna))
@@ -194,34 +212,33 @@ pub(crate) fn mkondo_tumikia(
         Some(Value::Enum(en, vn, None)) if en == "Chaguo" && vn == "Hamna" => None,
         None | Some(Value::Hamna) => None,
         Some(_) => {
-            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                "mkondo_tumikia: hoja ya nne (tls) lazima iwe Chaguo<TlsUsanidi>".to_string(),
-            )))))
+            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!(
+                "{name}: hoja ya nne (tls) lazima iwe Chaguo<TlsUsanidi>"
+            ))))))
         }
     };
     #[cfg(not(target_arch = "wasm32"))]
-    let tls_config: Option<Arc<rustls::ServerConfig>> = match tls_inner {
+    let tls_config: ServerTls = match tls_inner {
         Some(Value::TlsUsanidi(cfg)) => Some(Arc::clone(cfg)),
         Some(_) => {
-            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                "mkondo_tumikia: hoja ya nne (tls) lazima iwe Chaguo<TlsUsanidi>".to_string(),
-            )))))
+            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!(
+                "{name}: hoja ya nne (tls) lazima iwe Chaguo<TlsUsanidi>"
+            ))))))
         }
         None => None,
     };
+
+    #[cfg(target_arch = "wasm32")]
+    let tls_config: ServerTls = ();
 
     let mut handles = Vec::with_capacity(idadi_ya_nyuzi);
     for _ in 0..idadi_ya_nyuzi {
         let listener = Arc::clone(&listener);
         let module_owned = module.clone();
         let kazi_name = kazi_name.clone();
-        #[cfg(not(target_arch = "wasm32"))]
         let tls_config = tls_config.clone();
         handles.push(std::thread::spawn(move || {
-            #[cfg(not(target_arch = "wasm32"))]
-            worker_loop(&listener, &module_owned, &kazi_name, tls_config);
-            #[cfg(target_arch = "wasm32")]
-            worker_loop(&listener, &module_owned, &kazi_name);
+            worker(&listener, &module_owned, &kazi_name, tls_config)
         }));
     }
     for h in handles {
@@ -241,7 +258,7 @@ fn worker_loop(
     listener: &std::net::TcpListener,
     module: &asili_parser::Module,
     kazi_name: &str,
-    #[cfg(not(target_arch = "wasm32"))] tls_config: Option<Arc<rustls::ServerConfig>>,
+    #[cfg_attr(target_arch = "wasm32", allow(unused_variables))] tls_config: ServerTls,
 ) {
     loop {
         let stream = match listener.accept() {

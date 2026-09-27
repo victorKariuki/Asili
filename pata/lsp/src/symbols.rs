@@ -2,7 +2,7 @@
 
 use crate::semantic::type_expr_to_value_type;
 use crate::types::format_type;
-use asili_lexer::tokenize;
+use asili_lexer::{tokenize, KEYWORDS};
 use asili_parser::{parse_tokens, Module};
 use tower_lsp::lsp_types::{
     CodeLens, Command, CompletionItem, CompletionItemKind, DocumentSymbol, FoldingRange,
@@ -10,42 +10,6 @@ use tower_lsp::lsp_types::{
 };
 
 // ── Keywords always offered in completion ──────────────────────────────────────
-
-const KEYWORDS: &[&str] = &[
-    "leta",
-    "kazi",
-    "umbo",
-    "sifa",
-    "shughuli",
-    "ya",
-    "weka",
-    "thabiti",
-    "rejesha",
-    "ikiwa",
-    "au_ikiwa",
-    "vinginevyo",
-    "kwa",
-    "katika",
-    "kutoka",
-    "hadi",
-    "wakati",
-    "milele",
-    "linganisha",
-    "vunja",
-    "endelea",
-    "lebo",
-    "tupa",
-    "jaribu",
-    "kama",
-    "azima",
-    "azima_tenda",
-    "umma",
-    "siyo",
-    "na",
-    "au",
-    "kweli",
-    "si_kweli",
-];
 
 const BUILTIN_TYPES: &[&str] = &[
     "Namba", "Neno", "Ukweli", "Herufi", "Tupu", "Hamna", "Orodha", "Kamusi", "Jozi", "Chaguo",

@@ -14,12 +14,14 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 
 use crate::value::{self, EvalError, MapKey, MkondoStream, Value};
 
 #[cfg(not(target_arch = "wasm32"))]
 use super::mkondo::{apply_connection_timeout, handshake_tls};
+use super::mkondo::{serve_pool, ServerTls};
 
 /// How many bytes `.soma_bailisi`-equivalent reads pull at a time while accumulating a request.
 /// Not user-configurable in this pass — matches `CONNECTION_TIMEOUT`'s "fixed for now, a natural
@@ -428,76 +430,14 @@ pub(crate) fn mkondo_tumikia_http(
     module: &asili_parser::Module,
     args: &[Value],
 ) -> Result<Value, EvalError> {
-    let listener = match args.first() {
-        Some(Value::MkondoSikilizaji(l)) => Arc::clone(l),
-        _ => {
-            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                "mkondo_tumikia_http: hoja ya kwanza lazima iwe MkondoSikilizaji".to_string(),
-            )))))
-        }
-    };
-    let kazi_name = value::as_string(args.get(1).unwrap_or(&Value::Hamna)).unwrap_or_default();
-    if !module.functions.iter().any(|f| f.name == kazi_name) {
-        return Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!(
-            "mkondo_tumikia_http: kazi haijulikani: {kazi_name}"
-        ))))));
-    }
-    let idadi_ya_nyuzi = value::as_f64(args.get(2).unwrap_or(&Value::Hamna))
-        .unwrap_or(0.0)
-        .max(1.0) as usize;
-    // Same Chaguo<T> dual-representation handling mkondo_tumikia needs — see
-    // docs/design/tls-design.md's "Chaguo<T> dual-representation trap" section.
-    #[cfg(not(target_arch = "wasm32"))]
-    let tls_inner: Option<&Value> = match args.get(3) {
-        Some(Value::Chaguo(Some(inner))) => Some(inner.as_ref()),
-        Some(Value::Enum(en, vn, Some(inner))) if en == "Chaguo" && vn == "Kuna" => {
-            Some(inner.as_ref())
-        }
-        Some(Value::Chaguo(None)) => None,
-        Some(Value::Enum(en, vn, None)) if en == "Chaguo" && vn == "Hamna" => None,
-        None | Some(Value::Hamna) => None,
-        Some(_) => {
-            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                "mkondo_tumikia_http: hoja ya nne (tls) lazima iwe Chaguo<TlsUsanidi>".to_string(),
-            )))))
-        }
-    };
-    #[cfg(not(target_arch = "wasm32"))]
-    let tls_config: Option<Arc<rustls::ServerConfig>> = match tls_inner {
-        Some(Value::TlsUsanidi(cfg)) => Some(Arc::clone(cfg)),
-        Some(_) => {
-            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                "mkondo_tumikia_http: hoja ya nne (tls) lazima iwe Chaguo<TlsUsanidi>".to_string(),
-            )))))
-        }
-        None => None,
-    };
-
-    let mut handles = Vec::with_capacity(idadi_ya_nyuzi);
-    for _ in 0..idadi_ya_nyuzi {
-        let listener = Arc::clone(&listener);
-        let module_owned = module.clone();
-        let kazi_name = kazi_name.clone();
-        #[cfg(not(target_arch = "wasm32"))]
-        let tls_config = tls_config.clone();
-        handles.push(std::thread::spawn(move || {
-            #[cfg(not(target_arch = "wasm32"))]
-            http_worker_loop(&listener, &module_owned, &kazi_name, tls_config);
-            #[cfg(target_arch = "wasm32")]
-            http_worker_loop(&listener, &module_owned, &kazi_name);
-        }));
-    }
-    for h in handles {
-        let _ = h.join();
-    }
-    Ok(Value::Tokeo(Ok(Box::new(Value::Tupu))))
+    serve_pool("mkondo_tumikia_http", module, args, http_worker_loop)
 }
 
 fn http_worker_loop(
     listener: &std::net::TcpListener,
     module: &asili_parser::Module,
     kazi_name: &str,
-    #[cfg(not(target_arch = "wasm32"))] tls_config: Option<Arc<rustls::ServerConfig>>,
+    #[cfg_attr(target_arch = "wasm32", allow(unused_variables))] tls_config: ServerTls,
 ) {
     loop {
         let tcp_stream = match listener.accept() {

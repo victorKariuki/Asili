@@ -1,4 +1,4 @@
-use asili_lexer::{tokenize_with_trivia, Comment, Token};
+use asili_lexer::{tokenize_with_trivia, Comment, Token, KEYWORDS};
 
 /// Canonical source formatting for Asili code.
 /// Provides stable, consistent style for diffs and CI.
@@ -47,42 +47,6 @@ pub fn canonical_format_with_indent(input: &str, indent_unit: &str) -> String {
 /// already gets. See `Printer::hugs_previous`.
 const NO_SPACE_BEFORE: &[&str] = &[")", "]", ",", ";", ":", ".", "?"];
 const NO_SPACE_AFTER: &[&str] = &["(", "[", ".", "#"];
-/// Keywords that can precede a grouping `(...)` or an array literal `[...]` without that being
-/// call/index syntax (`rejesha (x)`, not `rejesha(x)` as a call). Sourced from every string
-/// literal `parse.rs`'s `match_tok` checks against, since this lexer has no token-kind
-/// classification of its own to query. `kama`/`kweli`/`si_kweli` (comparison/booleans) don't
-/// need listing here — they're already excluded by not being an identifier-or-closer below.
-const KEYWORDS: &[&str] = &[
-    "_",
-    "au_ikiwa",
-    "endelea",
-    "ikiwa",
-    "jenum",
-    "kama",
-    "katika",
-    "kazi",
-    "kutoka",
-    "kwa",
-    "kweli",
-    "lebo",
-    "leta",
-    "linganisha",
-    "milele",
-    "rejesha",
-    "shughuli",
-    "sifa",
-    "si_kweli",
-    "thabiti",
-    "tupa",
-    "umbo",
-    "umma",
-    "vinginevyo",
-    "vunja",
-    "wakati",
-    "weka",
-    "ya",
-    "jaribu",
-];
 /// Opens a new indented block; the matching close dedents before printing.
 const OPENERS: &[&str] = &["{"];
 const CLOSERS: &[&str] = &["}"];
@@ -252,7 +216,8 @@ impl<'a> Printer<'a> {
             .checked_sub(1)
             .and_then(|i| self.tokens.get(i))
             .is_some_and(|before| before.lexeme == ".");
-        is_method_name || !KEYWORDS.contains(&prev_lex)
+        // A keyword before `(`/`[` is never call/index syntax (`rejesha (x)`, `ikiwa (a)`).
+        is_method_name || !(KEYWORDS.contains(&prev_lex) || prev_lex == "_")
     }
 
     fn trim_trailing_space(&mut self) {

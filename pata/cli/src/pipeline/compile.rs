@@ -15,7 +15,7 @@ use asili_parser::{
 use pata_core::InterfaceRegistry;
 use pata_core::{
     check_duplicate_imports, dependency_order, find_module_file, merge_for_semantic, resolve_all,
-    ResolvedProgram,
+    ResolvedProgram, StdlibEnv,
 };
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
@@ -133,22 +133,10 @@ pub fn compile_project(root: &Path, cli_target: Option<&str>) -> Result<CompileO
         )
     })?;
 
-    let tokens = tokenize(&source).map_err(|errors| diag_err("leksika", errors))?;
-    let mut entrypoint = parse_tokens(&tokens).map_err(|errors| diag_err("uchanganuzi", errors))?;
-    filter_module_for_target(&mut entrypoint, &target)
-        .map_err(|errors| diag_err("sharti", errors))?;
-    let mut registry = InterfaceRegistry::new(root.to_path_buf());
-    registry.register_builtins();
-    registry.load_stdlib()?;
+    let mut registry = stdlib_registry(root)?;
     let prelude = registry.prelude_env();
-    let mut program = resolve_all(&entrypoint, root, &cfg.dependencies, &mut registry)
-        .map_err(|errors| diag_err("utatuzi", errors))?;
-    for res in program.resolved.values_mut() {
-        filter_module_for_target(&mut res.module, &target)
-            .map_err(|errors| diag_err("sharti", errors))?;
-    }
-    filter_module_for_target(&mut program.merged_for_eval, &target)
-        .map_err(|errors| diag_err("sharti", errors))?;
+    let (entrypoint, program) =
+        parse_and_resolve(&source, root, &cfg.dependencies, &mut registry, &target)?;
 
     let input_hash = project_input_hash(
         root,
@@ -191,39 +179,7 @@ pub fn compile_project(root: &Path, cli_target: Option<&str>) -> Result<CompileO
         }
     }
 
-    let dup_errors = check_duplicate_imports(&entrypoint, &program.resolved, &prelude);
-    if !dup_errors.is_empty() {
-        return Err(diag_err("semantiki", dup_errors));
-    }
-
-    // Modules the resolver already confirmed exist (project-local files, path/vendored
-    // dependencies) are allowed `leta` targets alongside the builtin-module whitelist.
-    let resolved_modules: HashSet<String> = program.resolved.keys().cloned().collect();
-    for name in dependency_order(&program.resolved) {
-        let res = &program.resolved[&name];
-        let (ext_fns, ext_consts) = merge_for_semantic(&res.module, &program.resolved, &prelude);
-        semantic_check_with_env_and_modules(
-            &res.module,
-            false,
-            ext_fns,
-            ext_consts,
-            resolved_modules.clone(),
-        )
-        .map_err(|errors| diag_err("semantiki", errors))?;
-    }
-
-    let (merged_fns, merged_consts) = merge_for_semantic(&entrypoint, &program.resolved, &prelude);
-    // Check against the merged module (not the bare entrypoint): merge_for_eval already folds
-    // imported public structs/traits/impls/functions in, so struct-literal/method-dispatch checks
-    // (which only look at `self.module.*`, not the extern maps) can see cross-module types.
-    semantic_check_with_env_and_modules(
-        &program.merged_for_eval,
-        true,
-        merged_fns,
-        merged_consts,
-        resolved_modules,
-    )
-    .map_err(|errors| diag_err("semantiki", errors))?;
+    check_program(&entrypoint, &program, &prelude, true)?;
     validate_module(&program.merged_for_eval).map_err(|errors| diag_err("kitekelezi", errors))?;
 
     Ok(CompileOutput {
@@ -235,6 +191,79 @@ pub fn compile_project(root: &Path, cli_target: Option<&str>) -> Result<CompileO
         from_cache: false,
         target,
     })
+}
+
+/// A registry with the builtin modules and `lib/std` interfaces loaded.
+fn stdlib_registry(root: &Path) -> Result<InterfaceRegistry, CliError> {
+    let mut registry = InterfaceRegistry::new(root.to_path_buf());
+    registry.register_builtins();
+    registry.load_stdlib()?;
+    Ok(registry)
+}
+
+/// Lex, parse and resolve one entry source, then drop every item not built for `target` —
+/// the front half of every compile, test-discovery and test-listing path.
+fn parse_and_resolve(
+    source: &str,
+    root: &Path,
+    dependencies: &BTreeMap<String, Dependency>,
+    registry: &mut InterfaceRegistry,
+    target: &Target,
+) -> Result<(Module, ResolvedProgram), CliError> {
+    let tokens = tokenize(source).map_err(|errors| diag_err("leksika", errors))?;
+    let mut entrypoint = parse_tokens(&tokens).map_err(|errors| diag_err("uchanganuzi", errors))?;
+    filter_module_for_target(&mut entrypoint, target)
+        .map_err(|errors| diag_err("sharti", errors))?;
+    let mut program = resolve_all(&entrypoint, root, dependencies, registry)
+        .map_err(|errors| diag_err("utatuzi", errors))?;
+    for res in program.resolved.values_mut() {
+        filter_module_for_target(&mut res.module, target)
+            .map_err(|errors| diag_err("sharti", errors))?;
+    }
+    filter_module_for_target(&mut program.merged_for_eval, target)
+        .map_err(|errors| diag_err("sharti", errors))?;
+    Ok((entrypoint, program))
+}
+
+/// Semantic-check a resolved program: duplicate imports, every dependency in dependency order,
+/// then the merged entry module (`require_main` for programs, not for test discovery).
+fn check_program(
+    entrypoint: &Module,
+    program: &ResolvedProgram,
+    prelude: &StdlibEnv,
+    require_main: bool,
+) -> Result<(), CliError> {
+    let dup_errors = check_duplicate_imports(entrypoint, &program.resolved, prelude);
+    if !dup_errors.is_empty() {
+        return Err(diag_err("semantiki", dup_errors));
+    }
+    // Modules the resolver already confirmed exist (project-local files, path/vendored
+    // dependencies) are allowed `leta` targets alongside the builtin-module whitelist.
+    let resolved_modules: HashSet<String> = program.resolved.keys().cloned().collect();
+    for name in dependency_order(&program.resolved) {
+        let res = &program.resolved[&name];
+        let (ext_fns, ext_consts) = merge_for_semantic(&res.module, &program.resolved, prelude);
+        semantic_check_with_env_and_modules(
+            &res.module,
+            false,
+            ext_fns,
+            ext_consts,
+            resolved_modules.clone(),
+        )
+        .map_err(|errors| diag_err("semantiki", errors))?;
+    }
+    let (merged_fns, merged_consts) = merge_for_semantic(entrypoint, &program.resolved, prelude);
+    // Check against the merged module (not the bare entrypoint): merge_for_eval already folds
+    // imported public structs/traits/impls/functions in, so struct-literal/method-dispatch checks
+    // (which only look at `self.module.*`, not the extern maps) can see cross-module types.
+    semantic_check_with_env_and_modules(
+        &program.merged_for_eval,
+        require_main,
+        merged_fns,
+        merged_consts,
+        resolved_modules,
+    )
+    .map_err(|errors| diag_err("semantiki", errors))
 }
 
 /// Compile a single .as file without pata.toml. Root for resolve/stdlib is the file's parent.
@@ -268,54 +297,12 @@ pub fn compile_single_file(
         eneo_kazi: None,
     };
 
-    let tokens = tokenize(&source).map_err(|errors| diag_err("leksika", errors))?;
-    let mut entrypoint = parse_tokens(&tokens).map_err(|errors| diag_err("uchanganuzi", errors))?;
-    filter_module_for_target(&mut entrypoint, &target)
-        .map_err(|errors| diag_err("sharti", errors))?;
-    let mut registry = InterfaceRegistry::new(root.clone());
-    registry.register_builtins();
-    registry.load_stdlib()?;
+    let mut registry = stdlib_registry(&root)?;
     let prelude = registry.prelude_env();
-    let mut program = resolve_all(&entrypoint, &root, &config.dependencies, &mut registry)
-        .map_err(|errors| diag_err("utatuzi", errors))?;
-    for res in program.resolved.values_mut() {
-        filter_module_for_target(&mut res.module, &target)
-            .map_err(|errors| diag_err("sharti", errors))?;
-    }
-    filter_module_for_target(&mut program.merged_for_eval, &target)
-        .map_err(|errors| diag_err("sharti", errors))?;
+    let (entrypoint, program) =
+        parse_and_resolve(&source, &root, &config.dependencies, &mut registry, &target)?;
 
-    let dup_errors = check_duplicate_imports(&entrypoint, &program.resolved, &prelude);
-    if !dup_errors.is_empty() {
-        return Err(diag_err("semantiki", dup_errors));
-    }
-
-    let resolved_modules: HashSet<String> = program.resolved.keys().cloned().collect();
-    for dep_name in dependency_order(&program.resolved) {
-        let res = &program.resolved[&dep_name];
-        let (ext_fns, ext_consts) = merge_for_semantic(&res.module, &program.resolved, &prelude);
-        semantic_check_with_env_and_modules(
-            &res.module,
-            false,
-            ext_fns,
-            ext_consts,
-            resolved_modules.clone(),
-        )
-        .map_err(|errors| diag_err("semantiki", errors))?;
-    }
-
-    let (merged_fns, merged_consts) = merge_for_semantic(&entrypoint, &program.resolved, &prelude);
-    // Check against the merged module (not the bare entrypoint): merge_for_eval already folds
-    // imported public structs/traits/impls/functions in, so struct-literal/method-dispatch checks
-    // (which only look at `self.module.*`, not the extern maps) can see cross-module types.
-    semantic_check_with_env_and_modules(
-        &program.merged_for_eval,
-        true,
-        merged_fns,
-        merged_consts,
-        resolved_modules,
-    )
-    .map_err(|errors| diag_err("semantiki", errors))?;
+    check_program(&entrypoint, &program, &prelude, true)?;
     validate_module(&program.merged_for_eval).map_err(|errors| diag_err("kitekelezi", errors))?;
 
     Ok(CompileOutput {
@@ -418,57 +405,16 @@ fn discover_project_tests(
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| root.join("src"));
-    let mut registry = InterfaceRegistry::new(root.to_path_buf());
-    registry.register_builtins();
-    registry.load_stdlib()?;
+    let mut registry = stdlib_registry(root)?;
     let prelude = registry.prelude_env();
 
     let mut modules_and_tests: Vec<(Module, Function)> = Vec::new();
     for file in collect_as_files(&src_dir)? {
         let source = fs::read_to_string(&file)
             .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", file.display()), 1))?;
-        let tokens = tokenize(&source).map_err(|errors| diag_err("leksika", errors))?;
-        let mut entrypoint =
-            parse_tokens(&tokens).map_err(|errors| diag_err("uchanganuzi", errors))?;
-        filter_module_for_target(&mut entrypoint, &target)
-            .map_err(|errors| diag_err("sharti", errors))?;
-
-        let mut program = resolve_all(&entrypoint, root, &cfg.dependencies, &mut registry)
-            .map_err(|errors| diag_err("utatuzi", errors))?;
-        for res in program.resolved.values_mut() {
-            filter_module_for_target(&mut res.module, &target)
-                .map_err(|errors| diag_err("sharti", errors))?;
-        }
-        filter_module_for_target(&mut program.merged_for_eval, &target)
-            .map_err(|errors| diag_err("sharti", errors))?;
-        let dup_errors = check_duplicate_imports(&entrypoint, &program.resolved, &prelude);
-        if !dup_errors.is_empty() {
-            return Err(diag_err("semantiki", dup_errors));
-        }
-        let resolved_modules: HashSet<String> = program.resolved.keys().cloned().collect();
-        for name in dependency_order(&program.resolved) {
-            let res = &program.resolved[&name];
-            let (ext_fns, ext_consts) =
-                merge_for_semantic(&res.module, &program.resolved, &prelude);
-            semantic_check_with_env_and_modules(
-                &res.module,
-                false,
-                ext_fns,
-                ext_consts,
-                resolved_modules.clone(),
-            )
-            .map_err(|errors| diag_err("semantiki", errors))?;
-        }
-        let (merged_fns, merged_consts) =
-            merge_for_semantic(&entrypoint, &program.resolved, &prelude);
-        semantic_check_with_env_and_modules(
-            &program.merged_for_eval,
-            false,
-            merged_fns,
-            merged_consts,
-            resolved_modules,
-        )
-        .map_err(|errors| diag_err("semantiki", errors))?;
+        let (entrypoint, program) =
+            parse_and_resolve(&source, root, &cfg.dependencies, &mut registry, &target)?;
+        check_program(&entrypoint, &program, &prelude, false)?;
 
         for test_fn in discover_tests(&program.merged_for_eval) {
             modules_and_tests.push((program.merged_for_eval.clone(), test_fn));
@@ -593,70 +539,10 @@ pub fn run_project_tests_parallel(
 
 /// List test names discovered in the project (no execution). For use with `pata jaribu --list`.
 pub fn list_project_tests(root: &Path) -> Result<Vec<String>, CliError> {
-    let cfg = load_project_config(root)?;
-    let target = resolve_target(None, cfg.target.as_deref());
-    let src_dir = cfg
-        .entrypoint
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| root.join("src"));
-    let mut registry = InterfaceRegistry::new(root.to_path_buf());
-    registry.register_builtins();
-    registry.load_stdlib()?;
-    let prelude = registry.prelude_env();
-
-    let mut names = Vec::new();
-    for file in collect_as_files(&src_dir)? {
-        let source = fs::read_to_string(&file)
-            .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", file.display()), 1))?;
-        let tokens = tokenize(&source).map_err(|errors| diag_err("leksika", errors))?;
-        let mut entrypoint =
-            parse_tokens(&tokens).map_err(|errors| diag_err("uchanganuzi", errors))?;
-        filter_module_for_target(&mut entrypoint, &target)
-            .map_err(|errors| diag_err("sharti", errors))?;
-
-        let mut program = resolve_all(&entrypoint, root, &cfg.dependencies, &mut registry)
-            .map_err(|errors| diag_err("utatuzi", errors))?;
-        for res in program.resolved.values_mut() {
-            filter_module_for_target(&mut res.module, &target)
-                .map_err(|errors| diag_err("sharti", errors))?;
-        }
-        filter_module_for_target(&mut program.merged_for_eval, &target)
-            .map_err(|errors| diag_err("sharti", errors))?;
-        let dup_errors = check_duplicate_imports(&entrypoint, &program.resolved, &prelude);
-        if !dup_errors.is_empty() {
-            return Err(diag_err("semantiki", dup_errors));
-        }
-        let resolved_modules: HashSet<String> = program.resolved.keys().cloned().collect();
-        for name in dependency_order(&program.resolved) {
-            let res = &program.resolved[&name];
-            let (ext_fns, ext_consts) =
-                merge_for_semantic(&res.module, &program.resolved, &prelude);
-            semantic_check_with_env_and_modules(
-                &res.module,
-                false,
-                ext_fns,
-                ext_consts,
-                resolved_modules.clone(),
-            )
-            .map_err(|errors| diag_err("semantiki", errors))?;
-        }
-        let (merged_fns, merged_consts) =
-            merge_for_semantic(&entrypoint, &program.resolved, &prelude);
-        semantic_check_with_env_and_modules(
-            &program.merged_for_eval,
-            false,
-            merged_fns,
-            merged_consts,
-            resolved_modules,
-        )
-        .map_err(|errors| diag_err("semantiki", errors))?;
-
-        for test_fn in discover_tests(&program.merged_for_eval) {
-            names.push(test_fn.name);
-        }
-    }
-    Ok(names)
+    Ok(discover_project_tests(root, None)?
+        .into_iter()
+        .map(|(_, test)| test.name)
+        .collect())
 }
 
 fn collect_as_files(root: &Path) -> Result<Vec<PathBuf>, CliError> {
