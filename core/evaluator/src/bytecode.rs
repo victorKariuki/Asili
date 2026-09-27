@@ -18,7 +18,7 @@
 //! Programs containing syntax that is not represented here make [`compile_module`] return
 //! `None`, and the caller keeps emitting the serialized-AST artifact instead.
 
-use crate::builtins::{builtin_names, builtins, BuiltinFn, MODULE_BUILTINS};
+use crate::builtins::{builtin_names, BuiltinFn, MODULE_BUILTINS};
 use crate::eval::{methods, ops};
 use crate::value::{self, EvalError, Value};
 use asili_parser::{AssignOp, BinaryOp, Block, Expr, ForMode, Function, Module, Stmt, UnaryOp};
@@ -2336,21 +2336,11 @@ fn flag(b: bool) -> f64 {
 
 impl<'p> Vm<'p> {
     fn new(program: &'p BytecodeProgram) -> Result<Self, EvalError> {
-        let names = builtin_names();
-        let mut table = builtins();
-        let mut list = Vec::with_capacity(names.len());
-        let mut builtin_index = HashMap::with_capacity(names.len());
-        for (i, name) in names.into_iter().enumerate() {
-            let f = table
-                .remove(&name)
-                .ok_or_else(|| EvalError::Unknown(format!("builtin haipo: {name}")))?;
-            list.push(f);
-            builtin_index.insert(name, i);
-        }
+        let table = crate::builtins::BuiltinTable::new();
         Ok(Vm {
             program,
-            builtins: list,
-            builtin_index,
+            builtins: table.fns,
+            builtin_index: table.index,
             pool: Vec::new(),
             depth: 0,
             #[cfg(not(target_arch = "wasm32"))]

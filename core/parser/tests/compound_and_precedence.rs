@@ -95,7 +95,7 @@ fn compound_assignment_on_index_target() {
     assert_eq!(method_name, "ingiza");
     assert!(
         matches!(&args[1], Expr::Binary { op: BinaryOp::BitOr, left, .. }
-        if matches!(**left, Expr::Propagate { .. }))
+        if matches!(**left, Expr::Index { .. }))
     );
 }
 
