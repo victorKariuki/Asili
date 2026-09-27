@@ -10,6 +10,11 @@ updates:
     schedule:
       interval: "weekly"
     target-branch: "develop"
+    ignore:
+      # bincode 3.0.0 is a tombstone release that is only a compile_error!; the project is
+      # discontinued. .asb serialization stays on bincode 1.x.
+      - dependency-name: "bincode"
+        versions: [">= 2"]
 
   - package-ecosystem: "npm"
     directory: "/extensions/vscode"

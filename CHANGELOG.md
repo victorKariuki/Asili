@@ -105,6 +105,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Build restored after dependency updates**: `bincode` is pinned back to 1.3 (3.0.0 is an
+  empty release that only raises a compile error, and dependabot now ignores `bincode` 2+), and
+  the hosted-index client is ported to `ureq` 3's body API; package tarballs keep having no
+  download size cap.
 - **Sudoku example fixture**: the board literal had 82 cells (an extra `0` in the last row),
   so the example solved an easier, different puzzle — which is where the 0.6.0 "roughly 0.05
   seconds" bytecode figure came from. The fixture is the real 81-cell Arto Inkala puzzle again

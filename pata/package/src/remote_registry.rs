@@ -95,7 +95,8 @@ pub fn fetch_index(index_base: &str, name: &str) -> Result<Vec<RemoteIndexEntry>
     let body = ureq::get(&url)
         .call()
         .with_context(|| format!("imeshindwa kupata faharasa ya rejista kutoka {url}"))?
-        .into_string()
+        .body_mut()
+        .read_to_string()
         .with_context(|| format!("jibu batili kutoka {url}"))?;
     serde_json::from_str(&body).with_context(|| format!("muundo batili wa JSON: {url}"))
 }
@@ -114,7 +115,10 @@ pub fn fetch_and_verify(url: &str, checksum: &str, dest_dir: &Path) -> Result<St
         .call()
         .with_context(|| format!("imeshindwa kupakua {url}"))?;
     let mut bytes = Vec::new();
+    // `into_reader` has no size cap (ureq 3's `read_to_vec` stops at 10 MB), matching ureq 2's
+    // behaviour for package tarballs.
     response
+        .into_body()
         .into_reader()
         .read_to_end(&mut bytes)
         .with_context(|| format!("imeshindwa kusoma jibu kutoka {url}"))?;
