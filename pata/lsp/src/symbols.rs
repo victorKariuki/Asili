@@ -646,58 +646,16 @@ pub fn folding_ranges(source: &str) -> Vec<FoldingRange> {
     let chars: Vec<char> = source.chars().collect();
     let mut ranges = Vec::new();
     let mut open_lines: Vec<u32> = Vec::new();
-    let mut line = 0u32;
-    let mut in_string = false;
-    let mut in_char = false;
-    let mut i = 0usize;
-
-    while i < chars.len() {
-        let c = chars[i];
-        if c == '\n' {
-            line += 1;
-            // An unterminated string/char literal shouldn't be allowed to swallow the rest of
-            // the file's braces — the lexer itself rejects those, so treat newline as a reset.
-            in_string = false;
-            in_char = false;
-            i += 1;
-            continue;
-        }
-        if in_string || in_char {
-            if c == '\\' {
-                i += 2; // skip the escaped character too
-                continue;
-            }
-            if (in_string && c == '"') || (in_char && c == '\'') {
-                in_string = false;
-                in_char = false;
-            }
-            i += 1;
-            continue;
-        }
-        match c {
-            '"' => in_string = true,
-            '\'' => in_char = true,
-            '#' if chars.get(i + 1) != Some(&'[') => {
-                // Line comment (not a `#[attribute]`) — skip to end of line.
-                while i < chars.len() && chars[i] != '\n' {
-                    i += 1;
-                }
-                continue;
-            }
-            '/' if chars.get(i + 1) == Some(&'/') => {
-                while i < chars.len() && chars[i] != '\n' {
-                    i += 1;
-                }
-                continue;
-            }
-            '{' => open_lines.push(line),
+    for c in crate::scan::code_chars(&chars) {
+        match c.ch {
+            '{' => open_lines.push(c.line),
             '}' => {
                 if let Some(start_line) = open_lines.pop() {
-                    if line > start_line {
+                    if c.line > start_line {
                         ranges.push(FoldingRange {
                             start_line,
                             start_character: None,
-                            end_line: line,
+                            end_line: c.line,
                             end_character: None,
                             kind: Some(FoldingRangeKind::Region),
                             collapsed_text: None,
@@ -707,9 +665,7 @@ pub fn folding_ranges(source: &str) -> Vec<FoldingRange> {
             }
             _ => {}
         }
-        i += 1;
     }
-
     ranges
 }
 
