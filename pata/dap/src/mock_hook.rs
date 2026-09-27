@@ -7,38 +7,30 @@
 //! "canned" mode independent of compiling/running a real program — useful for testing the DAP
 //! wire format itself without needing a `.as` source file on disk.
 
-use asili_evaluator::debug_hook::DebugHook;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use asili_evaluator::debug_hook::{DebugHook, RealDebugHook};
+use std::sync::Mutex;
 
-/// A fake debug session: pauses whenever the current line is in `breakpoints`, tracks
-/// paused/resumed state with a real mutex + condvar (so `should_pause` genuinely blocks a
-/// calling thread until `resume()` is called from another one — not a busy-loop or an
-/// immediate no-op), and serves a fixed, canned set of variable bindings.
+/// A fake debug session: pauses exactly like `RealDebugHook` (it wraps one — a real mutex +
+/// condvar, so `should_pause` genuinely blocks until `resume()` is called from another thread),
+/// but serves a fixed, canned set of variable bindings instead of the evaluator's live ones.
 pub struct MockHook {
-    breakpoints: Mutex<Vec<usize>>,
-    paused: Arc<(Mutex<bool>, std::sync::Condvar)>,
+    gate: RealDebugHook,
     bindings: Mutex<Vec<(String, String)>>,
-    /// Set once `should_pause` has actually blocked at least once — lets a test assert a real
-    /// pause happened, not just that the method was called.
-    did_pause: AtomicBool,
 }
 
 impl MockHook {
     pub fn new() -> Self {
         Self {
-            breakpoints: Mutex::new(Vec::new()),
-            paused: Arc::new((Mutex::new(false), std::sync::Condvar::new())),
+            gate: RealDebugHook::default(),
             bindings: Mutex::new(vec![
                 ("x".to_string(), "42".to_string()),
                 ("jina".to_string(), "\"mfano\"".to_string()),
             ]),
-            did_pause: AtomicBool::new(false),
         }
     }
 
     pub fn set_breakpoints(&self, lines: Vec<usize>) {
-        *self.breakpoints.lock().unwrap() = lines;
+        self.gate.set_breakpoints(lines);
     }
 
     pub fn set_bindings(&self, bindings: Vec<(String, String)>) {
@@ -46,7 +38,7 @@ impl MockHook {
     }
 
     pub fn did_pause(&self) -> bool {
-        self.did_pause.load(Ordering::SeqCst)
+        self.gate.did_pause()
     }
 }
 
@@ -58,33 +50,15 @@ impl Default for MockHook {
 
 impl DebugHook for MockHook {
     /// A no-op: `MockHook` serves fixed, canned bindings (set via `set_bindings`) regardless of
-    /// what a real evaluator would have recorded — that's the whole point of a canned test
-    /// double for exercising the DAP protocol layer independent of a real running program.
+    /// what a real evaluator would have recorded.
     fn record_bindings(&self, _bindings: Vec<(String, String)>) {}
 
     fn should_pause(&self, line: usize) -> bool {
-        if !self.breakpoints.lock().unwrap().contains(&line) {
-            return false;
-        }
-
-        self.did_pause.store(true, Ordering::SeqCst);
-        let (lock, cvar) = &*self.paused;
-        let mut is_paused = lock.lock().unwrap();
-        *is_paused = true;
-        // Block the calling thread until resume() flips this back to false and notifies —
-        // real blocking, not a spin loop, matching what a genuine evaluator hook would need to
-        // do (halt the interpreter thread at a breakpoint until the debugger says go).
-        while *is_paused {
-            is_paused = cvar.wait(is_paused).unwrap();
-        }
-        true
+        self.gate.should_pause(line)
     }
 
     fn resume(&self) {
-        let (lock, cvar) = &*self.paused;
-        let mut is_paused = lock.lock().unwrap();
-        *is_paused = false;
-        cvar.notify_all();
+        self.gate.resume()
     }
 
     fn current_bindings(&self) -> Vec<(String, String)> {
@@ -95,6 +69,7 @@ impl DebugHook for MockHook {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn should_pause_returns_false_for_a_line_with_no_breakpoint() {

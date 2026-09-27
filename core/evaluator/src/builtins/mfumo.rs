@@ -22,8 +22,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         Box::new(|args: &[Value]| {
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
             let val = {
-                let name =
-                    value::as_string(args.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
+                let name = super::arg_str(args, 0);
                 std::env::var(&name).ok().map(|s| Box::new(Value::Neno(s)))
             };
             #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
@@ -51,16 +50,15 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             {
                 let sig_id =
                     value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
-                let kazi_name =
-                    value::as_string(args.get(1).unwrap_or(&Value::Hamna)).unwrap_or_default();
+                let kazi_name = super::arg_str(args, 1);
                 signal::register_handler(sig_id, kazi_name);
-                Ok(Value::Tokeo(Ok(Box::new(Value::Tupu))))
+                Ok(Value::sawa(Value::Tupu))
             }
             #[cfg(not(unix))]
             {
-                Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                Ok(Value::kosa(
                     "sikiliza_ishara: sifa haipo kwenye jukwaa hili".to_string(),
-                )))))
+                ))
             }
         }),
     );
@@ -72,13 +70,13 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
                 let sig_id =
                     value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
                 signal::clear_handler(sig_id);
-                Ok(Value::Tokeo(Ok(Box::new(Value::Tupu))))
+                Ok(Value::sawa(Value::Tupu))
             }
             #[cfg(not(unix))]
             {
-                Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                Ok(Value::kosa(
                     "rejesha_ishara: sifa haipo kwenye jukwaa hili".to_string(),
-                )))))
+                ))
             }
         }),
     );

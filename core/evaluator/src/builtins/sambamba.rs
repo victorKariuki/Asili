@@ -51,21 +51,19 @@ fn handles() -> &'static Mutex<HashMap<u64, JoinHandle<Result<(), String>>>> {
 /// function's own return value is discarded (see module doc comment) — communicate results back
 /// via `njia`.
 pub(crate) fn tenda(module: &Module, args: &[Value]) -> Result<Value, EvalError> {
-    let kazi_name = value::as_string(args.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
+    let kazi_name = super::arg_str(args, 0);
     let raw_args = args.get(1..).unwrap_or(&[]);
     let call_args: Vec<value::SendValue> = match raw_args.iter().map(Value::try_into_send).collect()
     {
         Some(v) => v,
         None => {
-            return Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+            return Ok(Value::kosa(
                 "tenda: hoja ina thamani isiyoweza kuvuka nyuzi (Kasha_GC/Faili/Mkondo) — tumia njia/fungo badala yake".to_string(),
-            )))));
+            ));
         }
     };
     if !module.functions.iter().any(|f| f.name == kazi_name) {
-        return Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!(
-            "tenda: kazi haijulikani: {kazi_name}"
-        ))))));
+        return Ok(Value::kosa(format!("tenda: kazi haijulikani: {kazi_name}")));
     }
     let module_owned = module.clone();
     let handle = std::thread::spawn(move || {
@@ -79,7 +77,7 @@ pub(crate) fn tenda(module: &Module, args: &[Value]) -> Result<Value, EvalError>
     });
     let id = NEXT_HANDLE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     handles().lock().unwrap().insert(id, handle);
-    Ok(Value::Tokeo(Ok(Box::new(Value::Namba(id as f64)))))
+    Ok(Value::sawa(Value::Namba(id as f64)))
 }
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
@@ -89,15 +87,15 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             let id = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0) as u64;
             let handle = handles().lock().unwrap().remove(&id);
             match handle {
-                None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!(
+                None => Ok(Value::kosa(format!(
                     "subiri_tenda: uzi haujulikani au tayari umesubiriwa: {id}"
-                )))))),
+                ))),
                 Some(h) => match h.join() {
-                    Ok(Ok(())) => Ok(Value::Tokeo(Ok(Box::new(Value::Tupu)))),
-                    Ok(Err(msg)) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(msg))))),
-                    Err(_) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                    Ok(Ok(())) => Ok(Value::sawa(Value::Tupu)),
+                    Ok(Err(msg)) => Ok(Value::kosa(msg)),
+                    Err(_) => Ok(Value::kosa(
                         "subiri_tenda: uzi ulianguka (panic)".to_string(),
-                    ))))),
+                    )),
                 },
             }
         }),
@@ -130,13 +128,13 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         Box::new(|args: &[Value]| {
             let inner = args.first().cloned().unwrap_or(Value::Hamna);
             match inner.try_into_send() {
-                Some(sv) => Ok(Value::Tokeo(Ok(Box::new(Value::Fungo(Arc::new(
-                    value::FungoCell::new(sv),
-                )))))),
-                None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
+                Some(sv) => Ok(Value::sawa(Value::Fungo(Arc::new(value::FungoCell::new(
+                    sv,
+                ))))),
+                None => Ok(Value::kosa(
                     "fungo: thamani ya ndani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)"
                         .to_string(),
-                ))))),
+                )),
             }
         }),
     );

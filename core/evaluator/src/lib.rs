@@ -22,7 +22,7 @@ pub use asb::{load_asb, load_asb_bytecode, parse_format, AsbLoadError};
 pub use bytecode::run_bytecode_native;
 pub use bytecode::{
     compile_module, compile_module_explained, run_bytecode, run_bytecode_function,
-    run_bytecode_function_on, BinaryCode, BytecodeProgram, Engine, Opcode,
+    run_bytecode_function_on, BytecodeProgram, Engine, Opcode,
 };
 pub use env::Env;
 pub use eval::eval_expr;
@@ -93,6 +93,61 @@ fn seed_module_constants(module: &Module, rt: &mut runtime::Runtime) -> Result<(
     Ok(())
 }
 
+/// Find `func_name` in `module` and check it takes exactly `argc` arguments.
+fn find_function<'m>(
+    module: &'m Module,
+    func_name: &str,
+    argc: usize,
+) -> Result<&'m Function, EvalError> {
+    let f = module
+        .functions
+        .iter()
+        .find(|x| x.name == func_name)
+        .ok_or_else(|| EvalError::UndefinedVar(func_name.to_string()))?;
+    if f.params.len() != argc {
+        return Err(EvalError::TypeErr(format!(
+            "kazi {} inahitaji hoja {}",
+            func_name,
+            f.params.len()
+        )));
+    }
+    Ok(f)
+}
+
+/// The one tree-walker entry path every `run_*` function uses: a fresh `Env` with the global
+/// and module constants, `f`'s parameters bound to `args`, `f`'s body evaluated. `setup`
+/// configures the runtime first (metrics, coverage, a debugger); `report` reads it afterwards,
+/// whether or not the call failed.
+fn run_in_fresh_runtime<T>(
+    module: &Module,
+    f: &Function,
+    args: Vec<Value>,
+    builtins: Option<HashMap<String, BuiltinFn>>,
+    setup: impl FnOnce(&mut runtime::Runtime),
+    report: impl FnOnce(runtime::Runtime) -> T,
+) -> (Result<Value, EvalError>, T) {
+    let mut env = Env::new();
+    env.seed_global_constants();
+    let mut rt = match builtins {
+        Some(b) => runtime::Runtime::with_builtins(&mut env, module, b),
+        None => runtime::Runtime::new(&mut env, module),
+    };
+    setup(&mut rt);
+    let result = seed_module_constants(module, &mut rt).and_then(|()| {
+        rt.env.push_scope();
+        for (p, val) in f.params.iter().zip(args) {
+            rt.env.define(&p.name, val);
+        }
+        let out = eval::eval_block_impl(&f.body, &mut rt);
+        rt.env.pop_scope();
+        match out? {
+            EvalOut::Return(v) => Ok(v),
+            _ => Ok(Value::Tupu),
+        }
+    });
+    (result, report(rt))
+}
+
 /// Run a single function with custom builtins (for testing).
 pub fn run_function_with_builtins(
     module: &Module,
@@ -100,34 +155,8 @@ pub fn run_function_with_builtins(
     args: Vec<Value>,
     builtins: HashMap<String, BuiltinFn>,
 ) -> Result<Value, EvalError> {
-    let f = module
-        .functions
-        .iter()
-        .find(|x| x.name == func_name)
-        .ok_or_else(|| EvalError::UndefinedVar(func_name.to_string()))?;
-    if f.params.len() != args.len() {
-        return Err(EvalError::TypeErr(format!(
-            "kazi {} inahitaji hoja {}",
-            func_name,
-            f.params.len()
-        )));
-    }
-    let mut env = Env::new();
-    env.seed_global_constants();
-    let mut rt = runtime::Runtime::with_builtins(&mut env, module, builtins);
-    seed_module_constants(module, &mut rt)?;
-    rt.env.push_scope();
-    for (i, p) in f.params.iter().enumerate() {
-        let val = args.get(i).cloned().unwrap_or(Value::Hamna);
-        rt.env.define(&p.name, val);
-    }
-    let out = eval::eval_block_impl(&f.body, &mut rt);
-    rt.env.pop_scope();
-    match out {
-        Ok(EvalOut::Return(v)) => Ok(v),
-        Ok(_) => Ok(Value::Tupu),
-        Err(e) => Err(e),
-    }
+    let f = find_function(module, func_name, args.len())?;
+    run_in_fresh_runtime(module, f, args, Some(builtins), |_| {}, |_| ()).0
 }
 
 /// Like `run_function` but returns peak evaluation depth for telemetry (development/validation).
@@ -136,35 +165,9 @@ pub fn run_function_with_telemetry(
     func_name: &str,
     args: Vec<Value>,
 ) -> Result<(Value, usize), EvalError> {
-    let f = module
-        .functions
-        .iter()
-        .find(|x| x.name == func_name)
-        .ok_or_else(|| EvalError::UndefinedVar(func_name.to_string()))?;
-    if f.params.len() != args.len() {
-        return Err(EvalError::TypeErr(format!(
-            "kazi {} inahitaji hoja {}",
-            func_name,
-            f.params.len()
-        )));
-    }
-
-    let mut env = Env::new();
-    env.seed_global_constants();
-    let mut rt = runtime::Runtime::new(&mut env, module);
-    seed_module_constants(module, &mut rt)?;
-    rt.env.push_scope();
-    for (i, p) in f.params.iter().enumerate() {
-        let val = args.get(i).cloned().unwrap_or(Value::Hamna);
-        rt.env.define(&p.name, val);
-    }
-    let out = eval::eval_block_impl(&f.body, &mut rt);
-    rt.env.pop_scope();
-    match out {
-        Ok(EvalOut::Return(v)) => Ok((v, rt.peak_depth())),
-        Ok(_) => Ok((Value::Tupu, rt.peak_depth())),
-        Err(e) => Err(e),
-    }
+    let f = find_function(module, func_name, args.len())?;
+    let (result, depth) = run_in_fresh_runtime(module, f, args, None, |_| {}, |rt| rt.peak_depth());
+    result.map(|v| (v, depth))
 }
 
 pub fn run_function_with_metrics(
@@ -172,36 +175,16 @@ pub fn run_function_with_metrics(
     func_name: &str,
     args: Vec<Value>,
 ) -> Result<(Value, EvalMetrics), EvalError> {
-    let f = module
-        .functions
-        .iter()
-        .find(|x| x.name == func_name)
-        .ok_or_else(|| EvalError::UndefinedVar(func_name.to_string()))?;
-    if f.params.len() != args.len() {
-        return Err(EvalError::TypeErr(format!(
-            "kazi {} inahitaji hoja {}",
-            func_name,
-            f.params.len()
-        )));
-    }
-    let mut env = Env::new();
-    env.seed_global_constants();
-    let mut rt = runtime::Runtime::new(&mut env, module);
-    rt.enable_metrics();
-    seed_module_constants(module, &mut rt)?;
-    rt.env.push_scope();
-    for (i, p) in f.params.iter().enumerate() {
-        let val = args.get(i).cloned().unwrap_or(Value::Hamna);
-        rt.env.define(&p.name, val);
-    }
-    let out = eval::eval_block_impl(&f.body, &mut rt);
-    rt.env.pop_scope();
-    let metrics = rt.metrics().cloned().unwrap_or_default();
-    match out {
-        Ok(EvalOut::Return(v)) => Ok((v, metrics)),
-        Ok(_) => Ok((Value::Tupu, metrics)),
-        Err(e) => Err(e),
-    }
+    let f = find_function(module, func_name, args.len())?;
+    let (result, metrics) = run_in_fresh_runtime(
+        module,
+        f,
+        args,
+        None,
+        |rt| rt.enable_metrics(),
+        |rt| rt.metrics().cloned().unwrap_or_default(),
+    );
+    result.map(|v| (v, metrics))
 }
 
 /// Run `kuu` with CLI args as `hoja: Orodha<Neno>`.
@@ -213,11 +196,7 @@ pub fn run_main(module: &Module, args: Vec<String>) -> Result<(), EvalError> {
 /// Like `run_main`, but with a real debugger (`pata-dap`'s `DapSession`, driving a
 /// `debug_hook::RealDebugHook`) attached: `eval_stmt_impl` will snapshot bindings into `hook`
 /// and call `hook.should_pause(line)` before every statement, genuinely pausing this thread at a
-/// configured breakpoint until the debugger resumes it. `run_main` itself stays a thin `None`-hook
-/// wrapper so every existing caller (dozens of test call sites, `pata-cli`, `pata-runner`) keeps
-/// compiling unchanged — matching this file's existing `run_function` vs.
-/// `run_function_with_telemetry`/`run_function_with_builtins` sibling-function convention rather
-/// than adding a breaking parameter to `run_main` itself.
+/// configured breakpoint until the debugger resumes it.
 pub fn run_main_with_debug_hook(
     module: &Module,
     args: Vec<String>,
@@ -229,39 +208,39 @@ pub fn run_main_with_debug_hook(
         .iter()
         .find(|x| x.name == "kuu")
         .ok_or_else(|| EvalError::UndefinedVar("kuu".to_string()))?;
-    let mut env = Env::new();
-    env.seed_global_constants();
-    let mut rt = runtime::Runtime::new(&mut env, module);
-    rt.enable_debug_hook(hook);
-    seed_module_constants(module, &mut rt)?;
-    rt.env.push_scope();
-    if let Some(p) = f.params.first() {
-        rt.env.define(&p.name, hoja);
+    let args = if f.params.is_empty() {
+        vec![]
+    } else {
+        vec![hoja]
+    };
+    run_in_fresh_runtime(
+        module,
+        f,
+        args,
+        None,
+        |rt| rt.enable_debug_hook(hook),
+        |_| (),
+    )
+    .0
+    .map(|_| ())
+}
+
+fn test_result(function: &Function, result: Result<Value, EvalError>) -> TestResult {
+    let (passed, message) = match result {
+        Ok(_) => (true, "sawa".to_string()),
+        Err(EvalError::Panic(msg)) => (false, msg),
+        Err(e) => (false, e.to_string()),
+    };
+    TestResult {
+        name: function.name.clone(),
+        passed,
+        message,
     }
-    let out = eval::eval_block_impl(&f.body, &mut rt);
-    rt.env.pop_scope();
-    out.map(|_| ())
 }
 
 /// Run a single test function (no args). Returns pass/fail from actual execution.
 pub fn run_test_with_module(module: &Module, function: &Function) -> TestResult {
-    match run_function(module, &function.name, vec![]) {
-        Ok(_) => TestResult {
-            name: function.name.clone(),
-            passed: true,
-            message: "sawa".to_string(),
-        },
-        Err(EvalError::Panic(msg)) => TestResult {
-            name: function.name.clone(),
-            passed: false,
-            message: msg,
-        },
-        Err(e) => TestResult {
-            name: function.name.clone(),
-            passed: false,
-            message: e.to_string(),
-        },
-    }
+    test_result(function, run_function(module, &function.name, vec![]))
 }
 
 /// Like `run_test_with_module`, but also returns the set of source lines actually executed
@@ -273,38 +252,15 @@ pub fn run_test_with_coverage(
     module: &Module,
     function: &Function,
 ) -> (TestResult, std::collections::HashSet<usize>) {
-    let mut env = Env::new();
-    env.seed_global_constants();
-    let mut rt = runtime::Runtime::new(&mut env, module);
-    rt.enable_coverage();
-
-    let result = (|| -> Result<(), EvalError> {
-        seed_module_constants(module, &mut rt)?;
-        rt.env.push_scope();
-        let out = eval::eval_block_impl(&function.body, &mut rt);
-        rt.env.pop_scope();
-        out.map(|_| ())
-    })();
-
-    let lines = rt.executed_lines.unwrap_or_default();
-    let test_result = match result {
-        Ok(()) => TestResult {
-            name: function.name.clone(),
-            passed: true,
-            message: "sawa".to_string(),
-        },
-        Err(EvalError::Panic(msg)) => TestResult {
-            name: function.name.clone(),
-            passed: false,
-            message: msg,
-        },
-        Err(e) => TestResult {
-            name: function.name.clone(),
-            passed: false,
-            message: e.to_string(),
-        },
-    };
-    (test_result, lines)
+    let (result, lines) = run_in_fresh_runtime(
+        module,
+        function,
+        vec![],
+        None,
+        |rt| rt.enable_coverage(),
+        |rt| rt.executed_lines.unwrap_or_default(),
+    );
+    (test_result(function, result), lines)
 }
 
 /// Execute tests by running each function. Each test is tied to its module.

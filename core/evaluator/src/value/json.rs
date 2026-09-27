@@ -293,9 +293,9 @@ mod tests {
 
     #[test]
     fn tokeo_encodes_tagged() {
-        let ok = Value::Tokeo(Ok(Box::new(Value::Namba(1.0))));
+        let ok = Value::sawa(Value::Namba(1.0));
         assert_eq!(ok.to_json().unwrap(), serde_json::json!({"Sawa": 1.0}));
-        let err = Value::Tokeo(Err(Box::new(Value::Neno("kosa".into()))));
+        let err = Value::kosa("kosa");
         assert_eq!(err.to_json().unwrap(), serde_json::json!({"Kosa": "kosa"}));
     }
 

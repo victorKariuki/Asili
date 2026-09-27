@@ -47,14 +47,14 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         "ok".to_string(),
         Box::new(|args: &[Value]| {
             let val = args.first().cloned().unwrap_or(Value::Hamna);
-            Ok(Value::Tokeo(Ok(Box::new(val))))
+            Ok(Value::sawa(val))
         }),
     );
     m.insert(
         "tokeo".to_string(),
         Box::new(|args: &[Value]| {
             let val = args.first().cloned().unwrap_or(Value::Hamna);
-            Ok(Value::Tokeo(Ok(Box::new(val))))
+            Ok(Value::sawa(val))
         }),
     );
     m.insert(
