@@ -26,58 +26,14 @@ pub struct SignatureInfo {
 /// `{ }` instead of `( )`.
 fn active_call_at(source: &str, line_0: u32, char_0: u32) -> Option<(String, usize)> {
     let chars: Vec<char> = source.chars().collect();
-    let mut line = 0u32;
-    let mut col = 0u32;
-    let mut in_string = false;
-    let mut in_char = false;
-    let mut i = 0usize;
-
     // One (paren_char_index, comma_count_seen_at_this_depth) per currently-open '('.
     let mut stack: Vec<(usize, usize)> = Vec::new();
-
-    while i < chars.len() {
-        if line > line_0 || (line == line_0 && col >= char_0) {
+    for c in crate::scan::code_chars(&chars) {
+        if c.line > line_0 || (c.line == line_0 && c.col >= char_0) {
             break;
         }
-        let c = chars[i];
-        if c == '\n' {
-            line += 1;
-            col = 0;
-            in_string = false;
-            in_char = false;
-            i += 1;
-            continue;
-        }
-        if in_string || in_char {
-            if c == '\\' {
-                i += 2;
-                col += 2;
-                continue;
-            }
-            if (in_string && c == '"') || (in_char && c == '\'') {
-                in_string = false;
-                in_char = false;
-            }
-            i += 1;
-            col += 1;
-            continue;
-        }
-        match c {
-            '"' => in_string = true,
-            '\'' => in_char = true,
-            '#' if chars.get(i + 1) != Some(&'[') => {
-                while i < chars.len() && chars[i] != '\n' {
-                    i += 1;
-                }
-                continue;
-            }
-            '/' if chars.get(i + 1) == Some(&'/') => {
-                while i < chars.len() && chars[i] != '\n' {
-                    i += 1;
-                }
-                continue;
-            }
-            '(' => stack.push((i, 0)),
+        match c.ch {
+            '(' => stack.push((c.index, 0)),
             ')' => {
                 stack.pop();
             }
@@ -88,8 +44,6 @@ fn active_call_at(source: &str, line_0: u32, char_0: u32) -> Option<(String, usi
             }
             _ => {}
         }
-        i += 1;
-        col += 1;
     }
 
     let (paren_idx, comma_count) = stack.last().copied()?;

@@ -312,20 +312,8 @@ impl<'a> Analyzer<'a> {
                 ImportPath::Full(s) => s.as_str(),
                 ImportPath::Selective { module, .. } => module.as_str(),
             };
-            let allowed = matches!(
-                mod_name,
-                "msingi"
-                    | "mfumo"
-                    | "majira"
-                    | "matumizi"
-                    | "faili"
-                    | "hisabati"
-                    | "runtime"
-                    | "syscall"
-                    | "kiungo"
-                    | "sambamba"
-                    | "kasha_gc"
-            ) || self.resolved_modules.contains(mod_name);
+            let allowed = crate::builtins::BUILTIN_MODULE_NAMES.contains(&mod_name)
+                || self.resolved_modules.contains(mod_name);
             if !allowed {
                 self.errors.push(
                     Diagnostic::new("SEM007", format!("moduli haijulikani: {}", mod_name))

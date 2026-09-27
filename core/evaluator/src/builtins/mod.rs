@@ -12,13 +12,9 @@ mod matumizi;
 mod mfumo;
 pub(crate) mod mkondo;
 mod msingi;
-mod seti;
-// PHASE II: neno module is reserved for string-specific methods (gawanya, badilisha, anza_na, maliza_na, etc.)
-// Currently, basic string output (chapisha, onyo, makosa, paparika) are in matumizi instead.
-#[allow(dead_code)]
-mod neno;
 mod runtime;
 pub(crate) mod sambamba;
+mod seti;
 mod syscall;
 
 use std::collections::HashMap;

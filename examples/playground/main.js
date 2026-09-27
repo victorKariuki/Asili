@@ -22,7 +22,7 @@ const BUILTIN_TYPES = new Set([
   "Namba_Kuu", "Namba_Sahihi", "Biti8",
 ]);
 
-// Minimal StreamLanguage-based highlighting mode for Asili — comments (#, //), strings, numbers,
+// Minimal StreamLanguage-based highlighting mode for Asili — comments (#, ///), strings, numbers,
 // keywords and built-in type names. Not a real parser (no LSP/diagnostics), just enough to make
 // the editor pleasant to read.
 const asiliMode = {

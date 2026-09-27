@@ -71,6 +71,7 @@ mod format;
 pub mod hover;
 mod hover_format;
 pub mod inlay_hints;
+mod scan;
 pub mod semantic;
 mod server;
 pub mod signature;
