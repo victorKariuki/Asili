@@ -15,10 +15,17 @@ Flags:
 Success:
 - parses `pata.toml` (or builds single file without manifest)
 - compiles from `[chanzo].kuingia`
-- emits a real `.asb` bytecode artifact for the Sudoku-compatible subset (loops, arithmetic,
-  comparisons, lists, indexing, mutation, and calls), with the serialized-AST artifact retained
-  as a fallback for unsupported constructs, plus a `.build.manifest` sidecar under output
+- emits a register-bytecode `.asb` artifact (everything except `linganisha`, `tupa`, pattern
+  `weka`, map/struct literals, enum construction and field access, for which the
+  serialized-AST artifact is emitted instead), plus a `.build.manifest` sidecar under the output
   directory
+- for a bytecode artifact, compiles it ahead of time to native code: LLVM IR (`<name>.ll`) built
+  by `clang -O2` into `<name>.so`/`.dylib`/`.dll` beside the `.asb`, printing
+  `msimbo asilia: <path>`. Without `clang` it prints `msimbo asilia haukujengwa (...); kilele
+  kitaendeshwa na VM` and the artifact runs on the register VM — the build does not fail.
+  `ASILI_AOT=0` skips this step; `ASILI_CLANG=<path>` picks the compiler. `clang` is needed only
+  where `pata jenga` runs.
+- `--tenda` runs the artifact just built exactly as `pata tenda` would (native code when present)
 
 Failures:
 - syntax/type/ownership diagnostics

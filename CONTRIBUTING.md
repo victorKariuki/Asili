@@ -37,7 +37,8 @@ To build it locally:
 ## Project structure
 
 - **core/** — Language core: `diagnostics` (shared error/diagnostic types), `lexer`, `parser`
-  (includes the semantic analyzer), `evaluator` (interpreter + bytecode VM + built-ins). Add or
+  (includes the semantic analyzer), `evaluator` (tree-walking interpreter, register VM and LLVM ahead-of-time native code sharing
+  one implementation of the semantics, plus built-ins). Add or
   extend built-ins under `core/evaluator/src/builtins/`. `core/` never depends on `pata/` — a
   type `core/` needs to expose to `pata/` (e.g. the `DebugHook` trait `pata-dap` drives) is
   defined on the `core/` side and re-exported, not the other way around.
@@ -73,6 +74,12 @@ To build it locally:
   `cargo run -p pata-cli -- jenga --tenda`
   
   to confirm it builds and runs.
+- **Engines agree** (any change to the evaluator, VM, native code or operator/method semantics):  
+  `cargo test -p asili-evaluator --test engines_agree --test native_tiers`  
+  (the native-code checks need `clang`; they skip themselves without it)
+- **Performance** (same scope): `examples/sudoku/bench/run.sh` — Asili's native code should stay
+  within ~1.6× of the C solver and report 90,665 attempts. See
+  [docs/design/performance.md](docs/design/performance.md).
 
 New behavior should be covered by tests where practical (parser, semantic, evaluator, or CLI tests as appropriate).
 

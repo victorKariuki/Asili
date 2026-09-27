@@ -254,14 +254,11 @@ means **any "full" work on `pata-cli`'s resolver, formatter, or interface regist
 not reach the LSP** unless a shared library crate is extracted first — hence item 0 below, ahead
 of the formatter and package-manager work that would otherwise need to be built twice.
 
-**The bytecode VM is a `core/evaluator` subsystem, not a `pata/` one.** `pata tenda` (`pata/
-runner`) already dispatches to `run_bytecode` when given a bytecode-format `.asb` — the consuming
-side is fine. The gap is entirely upstream: `core/evaluator/src/bytecode.rs`'s ISA is an admitted
-skeleton (its own comment: `TODO(Phase II/IV): missing opcodes needed for real programs`), and
-nothing in `pata jenga`'s pipeline ever emits that format. Per this doc's established scope
-(`pata/` toolchain only, `core/` treated as a given), the VM itself is out of scope here; only the
-small `pata jenga` wiring change once the VM is real would be in scope, called out as externally
-blocked rather than silently included in sizing below.
+**The bytecode VM is a `core/evaluator` subsystem, not a `pata/` one.** When this doc was
+written the VM was a skeleton nothing emitted, so it was called out as externally blocked.
+**Update (September 2026): done.** `pata jenga` now emits register bytecode for most programs
+and compiles it ahead of time to native code through LLVM; `pata tenda`, `jenga --tenda` and the
+runner share `asili_evaluator::run_artifact` (see [performance.md](performance.md)).
 
 ### Dependency graph
 
@@ -305,9 +302,8 @@ blocked rather than silently included in sizing below.
       already done (can generate a workflow stub), sequenced after those land
 ```
 
-`core/evaluator` bytecode-VM completion is called out separately at the end as **externally
-blocked, not sequenced** — revisiting the `pata/`-only scope boundary to include it is a decision
-for whoever picks this doc up next, not assumed here.
+`core/evaluator` bytecode-VM completion was called out separately at the end as externally
+blocked; it has since shipped (see the end of this doc).
 
 ### Sizing legend
 
@@ -415,11 +411,11 @@ Template variants (library vs. binary). Workspace scaffolding (multi-package `[w
 layout), meaningful only after item 4. Generate a `.github/workflows/ci.yml` stub alongside new
 projects, dogfooding the CI work already merged to this repo.
 
-### Called out, not sequenced: `core/evaluator` bytecode VM completion
+### Called out, not sequenced: `core/evaluator` bytecode VM completion — done
 
-Out of this doc's `pata/`-toolchain scope. Noted here as the reason `pata jenga` can't emit real
-bytecode today, with a pointer to `core/evaluator/src/bytecode.rs`'s own `TODO(Phase II/IV)`
-comment, so the dependency is documented rather than silently absent from this plan.
+Originally out of this doc's `pata/`-toolchain scope and the reason `pata jenga` couldn't emit real
+bytecode. Shipped since: a typed register VM plus LLVM ahead-of-time native code, with
+`pata jenga` emitting bytecode by default — see [performance.md](performance.md).
 
 ---
 

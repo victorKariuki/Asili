@@ -273,7 +273,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 
     weka id = jaribu (tenda("mfanyakazi", tx, 5))
     weka jibu = jaribu (rx.pokea())
-    chapisha(jibu kama Neno)          // "25"
+    chapisha(jibu kama Neno)          # "25"
     jaribu (subiri_tenda(id))
 }
 ```
@@ -291,7 +291,7 @@ chochote kinachozibeba) hukataliwa na `Kosa` badala ya kuruhusiwa kimya kimya:
 weka g = kasha_gc_unda(1.0)
 linganisha tenda("kazi_yoyote", g) {
     Tokeo::Sawa(_) => { }
-    Tokeo::Kosa(ujumbe) => { chapisha(ujumbe) }   // "tenda: hoja ina thamani isiyoweza kuvuka nyuzi..."
+    Tokeo::Kosa(ujumbe) => { chapisha(ujumbe) }   # "tenda: hoja ina thamani isiyoweza kuvuka nyuzi..."
 }
 ```
 
@@ -308,7 +308,7 @@ linganisha tenda("kazi_yoyote", g) {
 ```asili
 weka f = jaribu (fungo(0.0))
 f.weka(42.0)
-chapisha(f.pata() kama Neno)   // "42"
+chapisha(f.pata() kama Neno)   # "42"
 ```
 
 | Njia          | Maelezo                                          |
