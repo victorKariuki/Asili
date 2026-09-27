@@ -5,40 +5,9 @@ use crate::hover_format::{
     format_trait_hover, format_variable_hover,
 };
 use crate::semantic::SemanticAnalyzer;
-use asili_lexer::tokenize;
+use asili_lexer::{tokenize, KEYWORDS};
 use asili_parser::parse_tokens;
 use tower_lsp::lsp_types::{Hover, HoverContents, MarkedString, Position, Range};
-
-const KEYWORDS: &[&str] = &[
-    "leta",
-    "kazi",
-    "umbo",
-    "sifa",
-    "shughuli",
-    "ya",
-    "weka",
-    "thabiti",
-    "rejesha",
-    "ikiwa",
-    "vinginevyo",
-    "kwa",
-    "wakati",
-    "linganisha",
-    "vunja",
-    "endelea",
-    "lebo",
-    "tupa",
-    "jaribu",
-    "kama",
-    "azima",
-    "azima_tenda",
-    "umma",
-    "katika",
-    "kutoka",
-    "au_ikiwa",
-    "chapisha",
-    "paparika",
-];
 
 /// Compute hover at (line, character) in LSP 0-based coordinates with semantic analysis.
 /// Returns None on parse/lex error or no token.
