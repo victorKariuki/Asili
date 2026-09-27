@@ -525,23 +525,27 @@ pub fn run_asb(
         let program = load_asb_bytecode(bytes).map_err(|e| RunAsbError::Load(e.to_string()))?;
         #[cfg(not(target_arch = "wasm32"))]
         {
-            // `ASILI_NGUVU=1` compiles in memory with the in-house backend instead of loading
-            // the LLVM library (transitional switch while `nguvu` catches up; see
-            // docs/design/performance.md).
+            // Native code beside the artifact: the LLVM library (`<name>.so`) when `pata jenga`
+            // had clang, else the in-house image (`<name>.nguvu`). `ASILI_NGUVU=1` uses only the
+            // in-house backend, compiling in memory when no image was built. Anything missing or
+            // stale just means running on the VM.
             let own = std::env::var("ASILI_NGUVU").is_ok_and(|v| v == "1") && nguvu::supported();
+            let beside = |file: fn(&str) -> String| {
+                let path = asb_path?;
+                let lib = path.with_file_name(file(path.file_stem()?.to_str()?));
+                lib.is_file().then_some(lib)
+            };
+            let image = || {
+                beside(nguvu::image_file_name).and_then(|p| nguvu::load_image(&p, &program).ok())
+            };
             let library = if !aot::enabled() {
                 None
             } else if own {
-                nguvu::compile(&program).ok()
+                image().or_else(|| nguvu::compile(&program).ok())
             } else {
-                asb_path.and_then(|path| {
-                    let stem = path.file_stem()?.to_str()?;
-                    let lib = path.with_file_name(aot::library_file_name(stem));
-                    // A missing or stale library just means running on the VM.
-                    lib.is_file()
-                        .then(|| aot::NativeLibrary::load(&lib, &program).ok())
-                        .flatten()
-                })
+                beside(aot::library_file_name)
+                    .and_then(|p| aot::NativeLibrary::load(&p, &program).ok())
+                    .or_else(image)
             };
             return run_bytecode_native(&program, library.as_ref(), args).map_err(RunAsbError::Run);
         }

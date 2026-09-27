@@ -24,6 +24,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   non-negative integers becomes an integer division, and list accesses whose index is proven
   in range drop their bounds check. The Inkala Sudoku solve runs in about 4.8 ms (gcc `-O2` C:
   4.4 ms; clang `-O2` C: 3.2 ms). `ASILI_AOT=0` disables it, `ASILI_CLANG` picks the compiler.
+- **In-house native backend `nguvu`** (`core/evaluator/src/nguvu/`): compiles register
+  bytecode straight to x86-64 machine code with no external compiler, assembler or linker —
+  lowering to a typed IR (same range analysis, speculation and deoptimization protocol as the
+  LLVM backend), immediate folding, local value reuse, constant hoisting, dead-code
+  elimination, a priority register allocator with copy coalescing and precise live ranges,
+  and division by constants as reciprocal multiplication. `pata jenga` writes the
+  position-independent code to `kilele/<name>.nguvu` (hash-checked like the `.so`), so
+  `--namna release` no longer needs `clang` on x86-64 Unix; `pata tenda` prefers the LLVM
+  library when both exist and falls back to the image, and `ASILI_NGUVU=1` selects `nguvu`
+  (compiling in memory when no image was built). The engine differential tests run every
+  snippet through it. Sudoku today: 14 ms whole process (LLVM 10.5 ms).
 - **Cross-tier differential tests** (`tests/native_tiers.rs`): every snippet must give
   bit-identical results on the VM interpreter and the AOT native code (signed zeros,
   NaN/infinities, values past 2^53, negative remainders, out-of-range shifts, out-of-bounds

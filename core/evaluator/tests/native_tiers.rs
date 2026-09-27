@@ -39,8 +39,11 @@ fn check(name: &str, source: &str, functions: &[&str]) {
         }
         Err(AotError::Failed(why)) => panic!("{name}: AOT build failed: {why}"),
     };
-    let own = asili_evaluator::nguvu::supported()
-        .then(|| asili_evaluator::nguvu::compile(&program).expect("nguvu compile"));
+    // Through the on-disk image, as `pata jenga` + `pata tenda` run it.
+    let own = asili_evaluator::nguvu::supported().then(|| {
+        let path = asili_evaluator::nguvu::write_image(&program, &dir, name).expect("nguvu image");
+        asili_evaluator::nguvu::load_image(&path, &program).expect("load nguvu image")
+    });
     for function in functions {
         let run = |engine| {
             run_bytecode_function_on(engine, &program, function, vec![])
@@ -312,4 +315,35 @@ fn sudoku_example_matches() {
         );
     assert!(source.contains("rejesha [majaribio, marudio]"));
     check("sudoku", &source, &["tatua"]);
+}
+
+#[test]
+fn nguvu_image_rejects_other_programs_and_corruption() {
+    use asili_evaluator::nguvu::{load_image, supported, write_image};
+    if !supported() {
+        return;
+    }
+    let program = |src: &str| {
+        let tokens = tokenize(src).expect("tokenize");
+        compile_module(&parse_tokens(&tokens).expect("parse")).expect("bytecode")
+    };
+    let a = program(
+        "kazi t() -> Namba {\n weka s: Namba = 0\n kwa i kutoka 0 hadi 5 { s += i }\n rejesha s\n}",
+    );
+    let b = program(
+        "kazi t() -> Namba {\n weka s: Namba = 1\n kwa i kutoka 0 hadi 5 { s += i }\n rejesha s\n}",
+    );
+    let dir = std::env::temp_dir().join(format!("asili-nguvu-image-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = write_image(&a, &dir, "a").expect("write");
+    assert!(load_image(&path, &a).is_ok());
+    assert!(
+        load_image(&path, &b).is_err(),
+        "image built from other bytecode"
+    );
+    let mut bytes = std::fs::read(&path).expect("read");
+    bytes.truncate(bytes.len() - 1);
+    std::fs::write(&path, &bytes).expect("write");
+    assert!(load_image(&path, &a).is_err(), "truncated image");
+    let _ = std::fs::remove_dir_all(&dir);
 }

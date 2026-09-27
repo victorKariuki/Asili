@@ -32,8 +32,77 @@ struct Lower<'a> {
     lists: Vec<(VReg, VReg)>,
     labels: HashMap<usize, Block>,
     cur_pc: usize,
+    /// Bounds known for the integer result being stored (set by `arith` for the next
+    /// `set_i`): a side that cannot pass ±2^53 needs no check.
+    result_range: (f64, f64),
     /// Shared deoptimization exit and the register carrying the resume pc into it.
     deopt: Option<(Block, VReg)>,
+    /// Numeric registers live on entry to each instruction (bytecode liveness).
+    live_in: Vec<std::collections::BTreeSet<Reg>>,
+    /// Registers some instruction writes; the others keep their frame value all call long.
+    written: std::collections::BTreeSet<Reg>,
+    /// Never-written registers holding a constant: used as immediates, never kept in registers.
+    consts: HashMap<Reg, f64>,
+}
+
+/// Numeric registers an instruction reads, including control flow and returns.
+fn reads(op: &Opcode) -> Vec<Reg> {
+    let mut r = num_reads(op);
+    match op {
+        Opcode::JumpIfFalse { cond, .. } | Opcode::JumpIfTrue { cond, .. } => r.push(*cond),
+        Opcode::JumpIfNot { a, b, .. } => r.extend([*a, *b]),
+        Opcode::ForStep { ctr, end, .. } => r.extend([*ctr, *end]),
+        Opcode::Return { src } if matches!(src.ty, Ty::Num | Ty::Bool) => r.push(src.reg),
+        _ => {}
+    }
+    r
+}
+
+/// Numeric registers an instruction writes.
+fn writes(op: &Opcode) -> Vec<Reg> {
+    let mut w = num_writes(op);
+    if let Opcode::ForStep { ctr, .. } = op {
+        w.push(*ctr);
+    }
+    w
+}
+
+/// Live-in sets per instruction, by backward dataflow over the bytecode.
+fn liveness(code: &[Opcode]) -> Vec<std::collections::BTreeSet<Reg>> {
+    use std::collections::BTreeSet;
+    let succ = |pc: usize| -> Vec<usize> {
+        match &code[pc] {
+            Opcode::Jump { target } => vec![*target as usize],
+            Opcode::JumpIfFalse { target, .. }
+            | Opcode::JumpIfTrue { target, .. }
+            | Opcode::JumpIfNot { target, .. }
+            | Opcode::ForStep { target, .. } => vec![*target as usize, pc + 1],
+            Opcode::Return { .. } | Opcode::ReturnTupu => vec![],
+            _ => vec![pc + 1],
+        }
+    };
+    let mut live: Vec<BTreeSet<Reg>> = vec![BTreeSet::new(); code.len() + 1];
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for pc in (0..code.len()).rev() {
+            let mut set: BTreeSet<Reg> = BTreeSet::new();
+            for s in succ(pc) {
+                if let Some(l) = live.get(s) {
+                    set.extend(l.iter().copied());
+                }
+            }
+            for w in writes(&code[pc]) {
+                set.remove(&w);
+            }
+            set.extend(reads(&code[pc]));
+            if set != live[pc] {
+                live[pc] = set;
+                changed = true;
+            }
+        }
+    }
+    live
 }
 
 /// Lower one function, or `None` if its jump targets are malformed.
@@ -58,6 +127,13 @@ pub fn lower(index: usize, function: &BytecodeFunc) -> Option<super::ir::Func> {
     let lists = (0..function.list_regs)
         .map(|_| (b.vreg(Class::Int), b.vreg(Class::Int)))
         .collect();
+    let written: std::collections::BTreeSet<Reg> = code.iter().flat_map(writes).collect();
+    let consts: HashMap<Reg, f64> = function
+        .num_consts
+        .iter()
+        .copied()
+        .filter(|(r, _)| !written.contains(r))
+        .collect();
     let mut l = Lower {
         b,
         function,
@@ -70,7 +146,11 @@ pub fn lower(index: usize, function: &BytecodeFunc) -> Option<super::ir::Func> {
         lists,
         labels: HashMap::new(),
         cur_pc: 0,
+        result_range: (f64::NEG_INFINITY, f64::INFINITY),
         deopt: None,
+        live_in: liveness(code),
+        written,
+        consts,
     };
     let entry = l.b.block();
     for &pc in &leaders {
@@ -148,6 +228,12 @@ impl<'a> Lower<'a> {
         }
         for r in 0..f.num_regs {
             let dst = self.regs[r as usize];
+            if self.consts.contains_key(&r) {
+                continue; // materialized at each use
+            }
+            if !self.live_in.first().is_some_and(|l| l.contains(&r)) {
+                continue; // written before any read: no entry value needed
+            }
             if let Some(n) = consts.get(&r) {
                 if self.int(r) {
                     self.push(Inst::IConst {
@@ -179,6 +265,9 @@ impl<'a> Lower<'a> {
     // ----- register access -------------------------------------------------------------
 
     fn get_f(&mut self, r: Reg) -> VReg {
+        if let Some(&n) = self.consts.get(&r) {
+            return self.b.fconst(n);
+        }
         let v = self.regs[r as usize];
         if self.int(r) {
             let t = self.vreg(Class::Float);
@@ -191,6 +280,10 @@ impl<'a> Lower<'a> {
 
     /// Integer value; Rust's saturating `as i64` for float registers.
     fn get_i(&mut self, r: Reg) -> VReg {
+        if let Some(&n) = self.consts.get(&r) {
+            // Saturating `as i64` — what the runtime helper computes for float registers.
+            return self.b.iconst(n as i64);
+        }
         let v = self.regs[r as usize];
         if self.int(r) {
             v
@@ -250,13 +343,13 @@ impl<'a> Lower<'a> {
         let (deopt, dpc) = match self.deopt {
             Some(d) => d,
             None => {
-                let block = self.b.block();
+                let block = self.b.cold_block();
                 let dpc = self.vreg(Class::Int);
                 self.deopt = Some((block, dpc));
                 (block, dpc)
             }
         };
-        let site = self.b.block();
+        let site = self.b.cold_block();
         let cont = self.b.block();
         self.b.terminate(Term::Branch {
             cond: ok,
@@ -264,20 +357,49 @@ impl<'a> Lower<'a> {
             else_: site,
         });
         self.b.switch_to(site);
+        // The interpreter resumes at this instruction and only reads registers live there;
+        // registers native code never writes already hold their value in the frame.
+        let pc = self.cur_pc;
+        let need: Vec<Reg> = self.live_in[pc]
+            .iter()
+            .copied()
+            .filter(|r| self.written.contains(r))
+            .collect();
+        for r in need {
+            self.spill(r);
+        }
         self.push(Inst::IConst {
             dst: dpc,
-            value: self.cur_pc as i64,
+            value: pc as i64,
         });
         self.b.terminate(Term::Jump(deopt));
         self.b.switch_to(cont);
     }
 
-    /// `|v| <= 2^53` for a speculated integer register.
+    /// `|v| <= 2^53` for a speculated integer register, checking only the sides
+    /// `result_range` does not already rule out.
     fn guard_i(&mut self, v: VReg) {
-        let bias = self.b.iconst(1 << 53);
-        let shifted = self.int_op(IntOp::Add, v, bias);
-        let limit = self.b.iconst(1 << 54);
-        let ok = self.icmp(ICond::Ule, shifted, limit);
+        let (lo, hi) =
+            std::mem::replace(&mut self.result_range, (f64::NEG_INFINITY, f64::INFINITY));
+        // Strict: the bounds are summed in f64, which rounds; monotonic rounding keeps a
+        // result below 2^53 only if the exact sum is.
+        let ok = match (lo > -EXACT, hi < EXACT) {
+            (true, true) => return,
+            (true, false) => {
+                let limit = self.b.iconst(1 << 53);
+                self.icmp(ICond::Le, v, limit)
+            }
+            (false, true) => {
+                let limit = self.b.iconst(-(1 << 53));
+                self.icmp(ICond::Ge, v, limit)
+            }
+            (false, false) => {
+                let bias = self.b.iconst(1 << 53);
+                let shifted = self.int_op(IntOp::Add, v, bias);
+                let limit = self.b.iconst(1 << 54);
+                self.icmp(ICond::Ule, shifted, limit)
+            }
+        };
         self.guard(ok);
     }
 
@@ -287,9 +409,6 @@ impl<'a> Lower<'a> {
             return;
         };
         self.b.switch_to(block);
-        for r in 0..self.function.num_regs {
-            self.spill(r);
-        }
         let tag = self.b.iconst((STATUS_DEOPT << 32) as i64);
         let ret = self.int_op(IntOp::Or, dpc, tag);
         self.b.terminate(Term::Return(ret));
@@ -326,6 +445,9 @@ impl<'a> Lower<'a> {
     }
 
     fn spill(&mut self, r: Reg) {
+        if !self.written.contains(&r) {
+            return; // the frame already holds this register's only value
+        }
         let v = self.get_f(r);
         self.push(Inst::Store {
             src: v,
@@ -430,7 +552,7 @@ impl<'a> Lower<'a> {
             .expect("status");
         let z = self.b.iconst(0);
         let c = self.icmp(ICond::Ne, s, z);
-        let done = self.b.block();
+        let done = self.b.cold_block();
         let cont = self.b.block();
         self.b.terminate(Term::Branch {
             cond: c,
@@ -476,7 +598,7 @@ impl<'a> Lower<'a> {
         let (_, len) = self.lists[list as usize];
         let ok = self.icmp(ICond::Ult, i, len);
         let fast = self.b.block();
-        let oob = self.b.block();
+        let oob = self.b.cold_block();
         self.b.terminate(Term::Branch {
             cond: ok,
             then_: fast,
@@ -576,31 +698,87 @@ impl<'a> Lower<'a> {
         }
     }
 
+    /// Where to compute an integer result for `r`: straight into its register when no bound
+    /// check is needed, else a temporary that `finish_i` checks and copies.
+    fn int_dst(&mut self, r: Reg) -> VReg {
+        if self.int(r) && !self.guarded[r as usize] {
+            self.regs[r as usize]
+        } else {
+            self.vreg(Class::Int)
+        }
+    }
+
+    fn finish_i(&mut self, r: Reg, t: VReg) {
+        if t != self.regs[r as usize] {
+            self.set_i(r, t);
+        }
+    }
+
+    fn float_dst(&mut self, r: Reg) -> VReg {
+        if self.int(r) {
+            self.vreg(Class::Float)
+        } else {
+            self.regs[r as usize]
+        }
+    }
+
+    fn finish_f(&mut self, r: Reg, t: VReg) {
+        if t != self.regs[r as usize] {
+            self.set_f(r, t);
+        }
+    }
+
     fn arith(&mut self, dst: Reg, a: Reg, b: Reg, iop: IntOp, fop: FloatOp) {
         if self.int(dst) && self.int(a) && self.int(b) {
             let x = self.get_i(a);
             let y = self.get_i(b);
-            let t = self.int_op(iop, x, y);
-            self.set_i(dst, t);
+            let t = self.int_dst(dst);
+            self.push(Inst::Int {
+                op: iop,
+                dst: t,
+                a: x,
+                b: y,
+            });
+            // Operands are integers within ±2^53, so the sum/difference is bounded by theirs.
+            let (fa, fb) = (self.facts[a as usize], self.facts[b as usize]);
+            self.result_range = match iop {
+                IntOp::Add => (fa.lo + fb.lo, fa.hi + fb.hi),
+                IntOp::Sub => (fa.lo - fb.hi, fa.hi - fb.lo),
+                _ => (f64::NEG_INFINITY, f64::INFINITY),
+            };
+            self.finish_i(dst, t);
+            self.result_range = (f64::NEG_INFINITY, f64::INFINITY);
         } else {
             let x = self.get_f(a);
             let y = self.get_f(b);
-            let t = self.vreg(Class::Float);
+            let t = self.float_dst(dst);
             self.push(Inst::Float {
                 op: fop,
                 dst: t,
                 a: x,
                 b: y,
             });
-            self.set_f(dst, t);
+            self.finish_f(dst, t);
         }
     }
 
     fn ibin(&mut self, dst: Reg, a: Reg, b: Reg, op: IntOp) {
+        let natural = self.facts[a as usize].lo >= 0.0 && self.facts[b as usize].lo > 0.0;
+        let op = match op {
+            IntOp::SDiv if natural => IntOp::UDiv,
+            IntOp::SRem if natural => IntOp::URem,
+            op => op,
+        };
         let x = self.get_i(a);
         let y = self.get_i(b);
-        let t = self.int_op(op, x, y);
-        self.set_i(dst, t);
+        let t = self.int_dst(dst);
+        self.push(Inst::Int {
+            op,
+            dst: t,
+            a: x,
+            b: y,
+        });
+        self.finish_i(dst, t);
     }
 
     fn instruction(&mut self, pc: usize, op: &Opcode) {
@@ -817,13 +995,13 @@ impl<'a> Lower<'a> {
             Opcode::ListGet { dst, list, idx, .. } => {
                 let i = self.element(*list, *idx, pc, op);
                 let (base, _) = self.lists[*list as usize];
-                let v = self.vreg(Class::Float);
+                let v = self.float_dst(*dst);
                 self.push(Inst::LoadIndex {
                     dst: v,
                     base,
                     index: i,
                 });
-                self.set_f(*dst, v);
+                self.finish_f(*dst, v);
             }
             Opcode::ListSet { list, idx, src } => {
                 let i = self.element(*list, *idx, pc, op);

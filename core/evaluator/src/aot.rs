@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Version of the calling convention between generated code and the VM.
-const ABI_VERSION: u32 = 3;
+pub(crate) const ABI_VERSION: u32 = 3;
 
 /// FNV-1a over the serialized program: identifies the exact bytecode a library was built from.
 pub fn program_hash(program: &BytecodeProgram) -> u64 {

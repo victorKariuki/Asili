@@ -238,6 +238,25 @@ impl Asm {
         self.modrm_rr(src as u8, dst as u8);
     }
 
+    /// `op dst, [m]` for add/or/and/sub/xor/cmp/test.
+    pub fn alu_rm(&mut self, op: Alu, dst: Gpr, m: Mem) {
+        self.rex(true, dst as u8, 0, m.base as u8, false);
+        self.byte(match op {
+            Alu::Test => 0x85,
+            op => op as u8 + 2,
+        });
+        self.modrm_mem(dst as u8, m);
+    }
+
+    /// `cmp dst, imm`; `test dst, dst` for 0 (same flags, shorter).
+    pub fn cmp_ri(&mut self, dst: Gpr, imm: i32) {
+        if imm == 0 {
+            self.alu_rr(Alu::Test, dst, dst);
+        } else {
+            self.alu_ri(Alu::Cmp, dst, imm);
+        }
+    }
+
     /// `op dst, imm32` (sign-extended), for add/or/and/sub/xor/cmp.
     pub fn alu_ri(&mut self, op: Alu, dst: Gpr, imm: i32) {
         let ext = match op {
@@ -273,7 +292,20 @@ impl Asm {
         self.modrm_rr(dst as u8, src as u8);
     }
 
-    /// Unary group 3 (`F7 /ext`): `not` = 2, `neg` = 3, `idiv` = 7.
+    /// `dst = src * imm`.
+    pub fn imul_rri(&mut self, dst: Gpr, src: Gpr, imm: i32) {
+        self.rex(true, dst as u8, 0, src as u8, false);
+        self.byte(0x69);
+        self.modrm_rr(dst as u8, src as u8);
+        self.bytes(&imm.to_le_bytes());
+    }
+
+    /// Unsigned `rdx:rax = rax * r`.
+    pub fn mul(&mut self, r: Gpr) {
+        self.group3(4, r);
+    }
+
+    /// Unary group 3 (`F7 /ext`): `mul` = 4, `not` = 2, `neg` = 3, `idiv` = 7.
     fn group3(&mut self, ext: u8, r: Gpr) {
         self.rex(true, 0, 0, r as u8, false);
         self.byte(0xF7);
@@ -289,6 +321,12 @@ impl Asm {
     }
 
     /// `rdx:rax / r` → quotient in `rax`, remainder in `rdx` (after `cqo`).
+    /// `rax, rdx = rdx:rax / r` unsigned, with `rdx` cleared first.
+    pub fn zero_div(&mut self, r: Gpr) {
+        self.alu_rr(Alu::Xor, Gpr::Rdx, Gpr::Rdx);
+        self.group3(6, r);
+    }
+
     pub fn cqo_idiv(&mut self, r: Gpr) {
         self.bytes(&[0x48, 0x99]);
         self.group3(7, r);

@@ -346,8 +346,9 @@ impl BuildProfile {
     }
 }
 
-/// Ahead-of-time compile a bytecode artifact to native code (LLVM, via `clang`) next to it.
-/// In `Dev` a missing compiler only means the artifact runs on the VM; `Release` fails instead.
+/// Ahead-of-time compile a bytecode artifact to native code next to it: the in-house image
+/// (`<name>.nguvu`, no external tools) and, when `clang` is available, the LLVM library. In
+/// `Dev` producing neither only means the artifact runs on the VM; `Release` fails instead.
 fn build_native_library(
     asb: &[u8],
     target: &Path,
@@ -355,21 +356,49 @@ fn build_native_library(
     profile: BuildProfile,
 ) -> Result<(), CliError> {
     use asili_evaluator::aot::{build_library, library_file_name, AotError};
-    let stale = target.join(library_file_name(name));
+    use asili_evaluator::nguvu;
+    let stale_lib = target.join(library_file_name(name));
+    let stale_image = target.join(nguvu::image_file_name(name));
     if parse_format(asb).as_deref() != Some("bytecode") {
-        let _ = fs::remove_file(&stale);
+        let _ = fs::remove_file(&stale_lib);
+        let _ = fs::remove_file(&stale_image);
         return Ok(());
     }
     let program = asili_evaluator::load_asb_bytecode(asb)
         .map_err(|e| CliError::new(format!("kuipakia bytecode: {e}"), 1))?;
-    let failure = match build_library(&program, target, name) {
-        Ok(path) => {
-            println!("msimbo asilia: {}", path.display());
-            return Ok(());
+    let mut built = false;
+    let mut failures = Vec::new();
+    if !asili_evaluator::aot::enabled() {
+        failures.push("ASILI_AOT=0".to_string());
+    } else if nguvu::supported() {
+        match nguvu::write_image(&program, target, name) {
+            Ok(path) => {
+                println!("msimbo asilia: {}", path.display());
+                built = true;
+            }
+            Err(why) => failures.push(why),
         }
-        Err(AotError::Unavailable(why)) | Err(AotError::Failed(why)) => why,
-    };
-    let _ = fs::remove_file(&stale);
+    }
+    if !built {
+        let _ = fs::remove_file(&stale_image);
+    }
+    match build_library(&program, target, name) {
+        Ok(path) => {
+            println!("msimbo asilia (LLVM): {}", path.display());
+            built = true;
+        }
+        Err(AotError::Unavailable(why)) | Err(AotError::Failed(why)) => {
+            let _ = fs::remove_file(&stale_lib);
+            if !built {
+                failures.push(why);
+            }
+        }
+    }
+    if built {
+        return Ok(());
+    }
+    failures.dedup();
+    let failure = failures.join("; ");
     if profile == BuildProfile::Release {
         return Err(CliError::new(
             format!("--namna release inahitaji msimbo asilia, lakini haukujengwa: {failure}"),
