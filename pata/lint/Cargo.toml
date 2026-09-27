@@ -12,6 +12,7 @@ name = "pata-lint"
 path = "src/main.rs"
 
 [dependencies]
+pata-config = { path = "../config" }
 asili-lexer = { path = "../../core/lexer" }
 asili-parser = { path = "../../core/parser" }
 asili-diagnostics = { path = "../../core/diagnostics" }

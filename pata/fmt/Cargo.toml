@@ -12,6 +12,7 @@ name = "pata-fmt"
 path = "src/main.rs"
 
 [dependencies]
+pata-config = { path = "../config" }
 asili-lexer = { path = "../../core/lexer" }
 asili-parser = { path = "../../core/parser" }
 clap = { version = "4.4", features = ["derive"] }
