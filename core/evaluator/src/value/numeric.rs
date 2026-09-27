@@ -58,10 +58,23 @@ pub(crate) fn as_string(v: &Value) -> Option<String> {
     }
 }
 
+/// Text of a `Namba`, as `kama Neno`, `jiunge`, `kwa_neno` and string building show it.
+pub(crate) fn format_namba(n: f64) -> String {
+    if n.is_nan() {
+        "Siyo_Namba".to_string()
+    } else if n.is_infinite() && n > 0.0 {
+        "Ukomo".to_string()
+    } else if n.is_infinite() {
+        "-Ukomo".to_string()
+    } else {
+        n.to_string()
+    }
+}
+
 pub(crate) fn to_display_string(v: &Value) -> Option<String> {
     match v {
         Value::Neno(s) => Some(s.clone()),
-        Value::Namba(n) => Some(n.to_string()),
+        Value::Namba(n) => Some(format_namba(*n)),
         Value::Ukweli(b) => Some(if *b { "kweli" } else { "si_kweli" }.to_string()),
         Value::Herufi(c) => Some(c.to_string()),
         _ => None,

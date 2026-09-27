@@ -18,9 +18,9 @@
 //! Programs containing syntax that is not represented here make [`compile_module`] return
 //! `None`, and the caller keeps emitting the serialized-AST artifact instead.
 
-use crate::builtins::{builtin_names, builtins, BuiltinFn};
-use crate::eval::methods;
-use crate::value::{self, EvalError, MapKey, Value};
+use crate::builtins::{builtin_names, builtins, BuiltinFn, MODULE_BUILTINS};
+use crate::eval::{methods, ops};
+use crate::value::{self, EvalError, Value};
 use asili_parser::{AssignOp, BinaryOp, Block, Expr, ForMode, Function, Module, Stmt, UnaryOp};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -108,19 +108,34 @@ pub enum BinaryCode {
     Shr,
 }
 
+impl BinaryCode {
+    fn to_ast(&self) -> BinaryOp {
+        match self {
+            BinaryCode::Add => BinaryOp::Add,
+            BinaryCode::Sub => BinaryOp::Sub,
+            BinaryCode::Mul => BinaryOp::Mul,
+            BinaryCode::Div => BinaryOp::Div,
+            BinaryCode::Rem => BinaryOp::Rem,
+            BinaryCode::Pow => BinaryOp::Pow,
+            BinaryCode::Eq => BinaryOp::Eq,
+            BinaryCode::Ne => BinaryOp::Ne,
+            BinaryCode::Gt => BinaryOp::Gt,
+            BinaryCode::Lt => BinaryOp::Lt,
+            BinaryCode::Ge => BinaryOp::Ge,
+            BinaryCode::Le => BinaryOp::Le,
+            BinaryCode::BitAnd => BinaryOp::BitAnd,
+            BinaryCode::BitXor => BinaryOp::BitXor,
+            BinaryCode::BitOr => BinaryOp::BitOr,
+            BinaryCode::Shl => BinaryOp::Shl,
+            BinaryCode::Shr => BinaryOp::Shr,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UnaryCode {
     Neg,
     BitNot,
-}
-
-/// In-place methods on a generic local (`Orodha`/`Kamusi` held in the `vals` file).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MutMethod {
-    Push,
-    Insert,
-    Remove,
-    WekaKey,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -146,8 +161,9 @@ pub struct MethodOp {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// An in-place method (`ongeza`, `ingiza`, ...) on a generic local.
 pub struct MutMethodOp {
-    pub method: MutMethod,
+    pub method: String,
     pub recv: Reg,
     pub args: Vec<Reg>,
     pub dst: Reg,
@@ -392,6 +408,14 @@ pub enum Opcode {
         dst: Reg,
         src: Reg,
     },
+    /// Any other mutating method on an `Orodha<Namba>` local (e.g. `badilisha`), through the
+    /// shared implementation; `vals[dst]` receives its result.
+    ListMutate(Box<MutMethodOp>),
+    /// `vals[dst]` = the `Orodha` snapshot `kwa ... katika vals[src]` iterates.
+    IterItems {
+        dst: Reg,
+        src: Reg,
+    },
     /// `jaribu` on `vals[src]`: errors abort execution.
     Jaribu {
         dst: Reg,
@@ -456,15 +480,28 @@ impl BytecodeProgram {
 // Compiler
 // ---------------------------------------------------------------------------------------------
 
-/// Builtins that need the whole `Module` (they spawn named `kazi`), which the VM does not carry.
-const MODULE_BUILTINS: &[&str] = &["tenda", "mkondo_tumikia", "mkondo_tumikia_http"];
-
-/// `Orodha` methods that take the name of a callback `kazi`.
-const CALLBACK_METHODS: &[&str] = &["ramani", "chuja", "hesabu", "chunguza", "kila_na_fahirisi"];
-
 /// Lower the supported subset. `None` means the caller must emit the serialized AST artifact.
 pub fn compile_module(module: &Module) -> Option<BytecodeProgram> {
+    compile_module_explained(module).ok()
+}
+
+/// Like [`compile_module`], but on failure names the first `kazi` and source line the VM does
+/// not support (the program then runs on the tree-walking evaluator).
+pub fn compile_module_explained(module: &Module) -> Result<BytecodeProgram, String> {
+    let mut failed_line = None;
+    let program = compile_module_inner(module, &mut failed_line);
+    program.ok_or_else(|| match failed_line {
+        Some((function, line)) => format!("kazi '{function}', mstari {line}"),
+        None => "thabiti za moduli".to_string(),
+    })
+}
+
+fn compile_module_inner(
+    module: &Module,
+    failed_line: &mut Option<(String, usize)>,
+) -> Option<BytecodeProgram> {
     let mut program = ProgramCompiler {
+        failed_line: None,
         constants: Vec::new(),
         functions: HashMap::new(),
         module_consts: HashMap::new(),
@@ -503,7 +540,15 @@ pub fn compile_module(module: &Module) -> Option<BytecodeProgram> {
     }
     let mut functions = Vec::with_capacity(module.functions.len());
     for function in &module.functions {
-        functions.push(FunctionCompiler::compile(&mut program, function)?);
+        match FunctionCompiler::compile(&mut program, function) {
+            Some(f) => functions.push(f),
+            None => {
+                *failed_line = program
+                    .failed_line
+                    .map(|line| (function.name.clone(), line));
+                return None;
+            }
+        }
     }
     Some(BytecodeProgram {
         constants: program.constants,
@@ -540,6 +585,8 @@ struct FunctionSig {
 }
 
 struct ProgramCompiler {
+    /// Innermost statement line that could not be lowered.
+    failed_line: Option<usize>,
     constants: Vec<StoredConstant>,
     functions: HashMap<String, FunctionSig>,
     /// name -> (type, value, declared type name)
@@ -627,6 +674,10 @@ fn method_result_type(receiver: &str, method: &str) -> Option<&'static str> {
             "jiunge" | "unganisha" => Some("Neno"),
             _ => None,
         }
+    } else if receiver.starts_with("Kamusi") {
+        (method == "funguo").then_some("Orodha")
+    } else if receiver.starts_with("Seti") {
+        (method == "orodha").then_some("Orodha")
     } else if receiver == "Neno" {
         match method {
             "clona" | "kata" | "kwa_herufi_ndogo" | "kwa_herufi_kubwa" | "unganisha" | "rudia"
@@ -639,15 +690,20 @@ fn method_result_type(receiver: &str, method: &str) -> Option<&'static str> {
     }
 }
 
-fn pure_method_supported(receiver: &str, method: &str) -> bool {
-    let probe = if receiver.starts_with("Orodha") {
-        Value::Orodha(Vec::new())
-    } else if receiver == "Neno" {
-        Value::Neno(String::new())
-    } else {
-        return false;
-    };
-    methods::is_pure_method(&probe, method)
+/// A value of the statically known receiver type, to ask `eval::methods` which methods exist.
+fn probe_value(type_name: &str) -> Option<Value> {
+    let base = type_name.split('<').next().unwrap_or(type_name).trim();
+    Some(match base {
+        "Neno" => Value::Neno(String::new()),
+        "Orodha" => Value::Orodha(Vec::new()),
+        "Kamusi" => Value::Kamusi(Default::default()),
+        "Seti" => Value::Seti(Default::default()),
+        "Chaguo" => Value::Chaguo(None),
+        "Tokeo" => Value::Tokeo(Ok(Box::new(Value::Tupu))),
+        "Jozi" => Value::Jozi(Box::new(Value::Tupu), Box::new(Value::Tupu)),
+        "Wakati" => Value::Wakati(0.0),
+        _ => return None,
+    })
 }
 
 /// Whether `stmts` (recursively) assign to `name`.
@@ -905,7 +961,10 @@ impl<'a> FunctionCompiler<'a> {
     fn block(&mut self, block: &Block) -> Option<()> {
         self.scopes.push(HashMap::new());
         for stmt in &block.statements {
-            self.stmt(stmt)?;
+            if self.stmt(stmt).is_none() {
+                self.program.failed_line.get_or_insert(stmt.line());
+                return None;
+            }
         }
         self.scopes.pop();
         Some(())
@@ -954,7 +1013,12 @@ impl<'a> FunctionCompiler<'a> {
                             line: 0,
                             column: 0,
                         };
-                        self.binary(&current, &bin, value, Some(dst))?;
+                        // The result may land in a temporary of another type (e.g. a generic
+                        // `+`); make sure it reaches the variable.
+                        let result = self.binary(&current, &bin, value, Some(dst))?;
+                        if result != dst {
+                            self.convert(result, dst)?;
+                        }
                     }
                 }
             }
@@ -1150,17 +1214,22 @@ impl<'a> FunctionCompiler<'a> {
                     let item = self.declare(var, Ty::Num, Some("Namba".into()));
                     (snapshot, item)
                 } else {
-                    // `Kamusi` iteration (key/value pairs) is left to the evaluator.
-                    let type_name = self.type_name(collection)?;
-                    if !type_name.starts_with("Orodha") {
-                        return None;
-                    }
-                    let elem = type_name
-                        .strip_prefix("Orodha<")
-                        .and_then(|rest| rest.strip_suffix('>'))
-                        .map(str::to_string);
+                    // `Orodha` items, or `Kamusi` entries as `Jozi` pairs.
+                    let type_name = self.type_name(collection);
+                    let elem = match type_name.as_deref() {
+                        Some(t) if t.starts_with("Kamusi") => Some("Jozi".to_string()),
+                        Some(t) => t
+                            .strip_prefix("Orodha<")
+                            .and_then(|rest| rest.strip_suffix('>'))
+                            .map(str::to_string),
+                        None => None,
+                    };
+                    let value = self.expr_as(collection, Ty::Val)?;
                     let snapshot = self.temp(Ty::Val);
-                    self.expr_into(collection, snapshot)?;
+                    self.emit(Opcode::IterItems {
+                        dst: snapshot.reg,
+                        src: value.reg,
+                    });
                     self.emit(Opcode::ValLen {
                         dst: len,
                         src: snapshot.reg,
@@ -1887,50 +1956,50 @@ impl<'a> FunctionCompiler<'a> {
                     });
                     return Some(out);
                 }
-                ("ongeza" | "ingiza" | "ondoa", _, _) => return None,
+                (_, _, Some(list)) if methods::is_mutating(&Value::Orodha(Vec::new()), method) => {
+                    let mut regs = Vec::with_capacity(args.len());
+                    for arg in args {
+                        regs.push(self.expr_as(arg, Ty::Val)?.reg);
+                    }
+                    let out = self.dst_or_temp(dst, Ty::Val);
+                    self.emit(Opcode::ListMutate(Box::new(MutMethodOp {
+                        method: method.to_string(),
+                        recv: list.reg,
+                        args: regs,
+                        dst: out.reg,
+                    })));
+                    return Some(out);
+                }
                 _ => {}
             }
         }
-        let recv_type = self.type_name(receiver)?;
-        // In-place mutation of a generic local.
-        let mutating = match method {
-            "ongeza" => Some(MutMethod::Push),
-            "ingiza" => Some(MutMethod::Insert),
-            "ondoa" => Some(MutMethod::Remove),
-            "weka_key" => Some(MutMethod::WekaKey),
-            _ => None,
+        let Some(probe) = self.type_name(receiver).and_then(|t| probe_value(&t)) else {
+            return self.dynamic_method_call(receiver, method, args, dst);
         };
-        if let Some(kind) = mutating {
-            let Expr::Ident { name, .. } = receiver else {
-                return None;
-            };
-            let local = self.lookup(name)?.op;
-            let supported = match kind {
-                MutMethod::Push | MutMethod::Remove => recv_type.starts_with("Orodha"),
-                MutMethod::Insert => {
-                    recv_type.starts_with("Orodha") || recv_type.starts_with("Kamusi")
+        // In-place mutation of a generic local.
+        if methods::is_mutating(&probe, method) {
+            if let Expr::Ident { name, .. } = receiver {
+                let local = self.lookup(name)?.op;
+                if local.ty != Ty::Val {
+                    return None;
                 }
-                MutMethod::WekaKey => recv_type.starts_with("Kamusi"),
-            };
-            if local.ty != Ty::Val || !supported {
-                return None;
+                let mut regs = Vec::with_capacity(args.len());
+                for arg in args {
+                    regs.push(self.expr_as(arg, Ty::Val)?.reg);
+                }
+                let out = self.dst_or_temp(dst, Ty::Val);
+                self.emit(Opcode::MutMethod(Box::new(MutMethodOp {
+                    method: method.to_string(),
+                    recv: local.reg,
+                    args: regs,
+                    dst: out.reg,
+                })));
+                return Some(out);
             }
-            let mut regs = Vec::with_capacity(args.len());
-            for arg in args {
-                regs.push(self.expr_as(arg, Ty::Val)?.reg);
-            }
-            let out = self.dst_or_temp(dst, Ty::Val);
-            self.emit(Opcode::MutMethod(Box::new(MutMethodOp {
-                method: kind,
-                recv: local.reg,
-                args: regs,
-                dst: out.reg,
-            })));
-            return Some(out);
         }
         if method == "urefu"
             && args.is_empty()
-            && (recv_type == "Neno" || recv_type.starts_with("Orodha"))
+            && matches!(probe, Value::Neno(_) | Value::Orodha(_))
         {
             let src = self.expr_as(receiver, Ty::Val)?.reg;
             let out = self.dst_or_temp(dst, Ty::Num).reg;
@@ -1940,12 +2009,59 @@ impl<'a> FunctionCompiler<'a> {
                 reg: out,
             });
         }
-        let callback = recv_type.starts_with("Orodha") && CALLBACK_METHODS.contains(&method);
-        if !callback && !pure_method_supported(&recv_type, method) {
+        let supported = methods::is_pure_method(&probe, method)
+            || methods::is_mutating(&probe, method)
+            || methods::is_callback_method(&probe, method);
+        if !supported {
             return None;
         }
         let recv = self.expr_as(receiver, Ty::Val)?.reg;
         let mut regs = Vec::with_capacity(args.len());
+        for arg in args {
+            regs.push(self.expr_as(arg, Ty::Val)?.reg);
+        }
+        let out = self.dst_or_temp(dst, Ty::Val);
+        self.emit(Opcode::CallMethod(Box::new(MethodOp {
+            method: method.to_string(),
+            recv,
+            args: regs,
+            dst: out.reg,
+        })));
+        Some(out)
+    }
+
+    /// A method call whose receiver type is not known statically: dispatched at run time
+    /// through the shared method table, like the evaluator does.
+    fn dynamic_method_call(
+        &mut self,
+        receiver: &Expr,
+        method: &str,
+        args: &[Expr],
+        dst: Option<Operand>,
+    ) -> Option<Operand> {
+        if !methods::is_shared_method_name(method) {
+            return None;
+        }
+        let mut regs = Vec::with_capacity(args.len());
+        let local = match receiver {
+            Expr::Ident { name, .. } => self.lookup(name).map(|l| l.op),
+            _ => None,
+        };
+        // A named generic local may be mutated in place.
+        if let Some(local) = local.filter(|l| l.ty == Ty::Val) {
+            for arg in args {
+                regs.push(self.expr_as(arg, Ty::Val)?.reg);
+            }
+            let out = self.dst_or_temp(dst, Ty::Val);
+            self.emit(Opcode::MutMethod(Box::new(MutMethodOp {
+                method: method.to_string(),
+                recv: local.reg,
+                args: regs,
+                dst: out.reg,
+            })));
+            return Some(out);
+        }
+        let recv = self.expr_as(receiver, Ty::Val)?.reg;
         for arg in args {
             regs.push(self.expr_as(arg, Ty::Val)?.reg);
         }
@@ -2354,60 +2470,17 @@ impl<'p> Vm<'p> {
         if methods::is_pure_method(&recv, method) {
             return methods::pure_method(&recv, method, &args);
         }
-        let Value::Orodha(items) = recv else {
-            return Err(EvalError::Unknown(format!(
-                "bytecode method haijaungwa mkono: {method}"
-            )));
-        };
-        let cb = args
-            .first()
-            .and_then(value::as_string)
-            .ok_or_else(|| EvalError::TypeErr("njia inahitaji jina la kazi".into()))?;
-        let truthy = |v: &Value| matches!(v, Value::Ukweli(true));
-        match method {
-            "ramani" => {
-                let mut out = Vec::with_capacity(items.len());
-                for item in items {
-                    out.push(self.callback(&cb, vec![item])?);
-                }
-                Ok(Value::Orodha(out))
-            }
-            "chuja" => {
-                let mut out = Vec::new();
-                for item in items {
-                    if truthy(&self.callback(&cb, vec![item.clone()])?) {
-                        out.push(item);
-                    }
-                }
-                Ok(Value::Orodha(out))
-            }
-            "hesabu" => {
-                let mut count = 0.0;
-                for item in items {
-                    if truthy(&self.callback(&cb, vec![item])?) {
-                        count += 1.0;
-                    }
-                }
-                Ok(Value::Namba(count))
-            }
-            "chunguza" => {
-                for item in items {
-                    if truthy(&self.callback(&cb, vec![item])?) {
-                        return Ok(Value::Ukweli(true));
-                    }
-                }
-                Ok(Value::Ukweli(false))
-            }
-            "kila_na_fahirisi" => {
-                for (i, item) in items.into_iter().enumerate() {
-                    self.callback(&cb, vec![Value::Namba(i as f64), item])?;
-                }
-                Ok(Value::Tupu)
-            }
-            _ => Err(EvalError::Unknown(format!(
-                "bytecode method haijaungwa mkono: {method}"
-            ))),
+        if methods::is_mutating(&recv, method) {
+            return methods::mutate_temporary(recv, method, &args);
         }
+        if methods::is_callback_method(&recv, method) {
+            return methods::callback_method(&recv, method, &args, &mut |name, a| {
+                self.callback(name, a.to_vec())
+            });
+        }
+        Err(EvalError::Unknown(format!(
+            "bytecode method haijaungwa mkono: {method}"
+        )))
     }
 
     fn run(&mut self, index: usize, mut frame: Frame, start: usize) -> Result<Ret, EvalError> {
@@ -2668,27 +2741,27 @@ impl<'p> Vm<'p> {
                 ))),
             },
             Opcode::UnboxBool { dst, src } => {
-                frame.nums[*dst as usize] =
-                    flag(matches!(frame.vals[*src as usize], Value::Ukweli(true)))
+                frame.nums[*dst as usize] = flag(ops::truthy(&frame.vals[*src as usize]))
             }
             Opcode::ValBinary { op, dst, a, b } => {
-                match value_binary(op, &frame.vals[*a as usize], &frame.vals[*b as usize]) {
+                let (l, r) = (
+                    frame.vals[*a as usize].clone(),
+                    frame.vals[*b as usize].clone(),
+                );
+                match ops::binary_value(&op.to_ast(), l, r) {
                     Ok(v) => frame.vals[*dst as usize] = v,
                     Err(e) => fail!(e),
                 }
             }
             Opcode::ValUnary { op, dst, src } => {
-                let x = match value::as_f64(&frame.vals[*src as usize]) {
-                    Some(x) => x,
-                    None => fail!(type_err(match op {
-                        UnaryCode::Neg => "- inahitaji Namba",
-                        UnaryCode::BitNot => "siyo_biti inahitaji Namba",
-                    })),
+                let ast_op = match op {
+                    UnaryCode::Neg => UnaryOp::Neg,
+                    UnaryCode::BitNot => UnaryOp::BitNot,
                 };
-                frame.vals[*dst as usize] = Value::Namba(match op {
-                    UnaryCode::Neg => -x,
-                    UnaryCode::BitNot => !(x as i64) as f64,
-                });
+                match ops::unary_value(&ast_op, frame.vals[*src as usize].clone()) {
+                    Ok(v) => frame.vals[*dst as usize] = v,
+                    Err(e) => fail!(e),
+                }
             }
             Opcode::ValIndex { dst, base, idx } => {
                 match methods::index_value(&frame.vals[*base as usize], &frame.vals[*idx as usize])
@@ -2709,29 +2782,41 @@ impl<'p> Vm<'p> {
                 frame.nums[*dst as usize] = len as f64;
             }
             Opcode::Unwrap { dst, src } => {
-                let out = match &frame.vals[*src as usize] {
-                    Value::Tokeo(Ok(inner)) | Value::Chaguo(Some(inner)) => Ok((**inner).clone()),
-                    err @ Value::Tokeo(Err(_)) => Err(Ok(err.clone())),
-                    Value::Chaguo(None) => Err(Err(EvalError::Unknown("? Chaguo Hamna".into()))),
-                    _ => Err(Err(type_err("? inahitaji Tokeo/Chaguo"))),
-                };
-                match out {
+                match ops::propagate(frame.vals[*src as usize].clone()) {
                     Ok(v) => frame.vals[*dst as usize] = v,
-                    Err(Ok(err)) => finish!(Ret::Val(err)),
-                    Err(Err(e)) => fail!(e),
+                    // `?` on an error returns it from this function, like the evaluator.
+                    Err(EvalError::Propagate(err)) => finish!(Ret::Val(err)),
+                    Err(e) => fail!(e),
                 }
             }
-            Opcode::Jaribu { dst, src } => {
-                let out = match &frame.vals[*src as usize] {
-                    Value::Tokeo(Ok(inner)) | Value::Chaguo(Some(inner)) => (**inner).clone(),
-                    Value::Tokeo(Err(e)) => {
-                        fail!(EvalError::Unknown(format!("KOSA: {e:?}")))
-                    }
-                    Value::Chaguo(None) => fail!(EvalError::Unknown("Chaguo: Hamna".into())),
-                    _ => fail!(type_err("jaribu inahitaji Tokeo/Chaguo")),
-                };
-                frame.vals[*dst as usize] = out;
+            Opcode::ListMutate(call) => {
+                let args: Vec<Value> = call
+                    .args
+                    .iter()
+                    .map(|r| frame.vals[*r as usize].clone())
+                    .collect();
+                let list = std::mem::take(&mut frame.lists[call.recv as usize]);
+                let mut value = Value::Orodha(list.into_iter().map(Value::Namba).collect());
+                let result = methods::mutate(&mut value, &call.method, &args);
+                match list_from_value(&value) {
+                    Ok(list) => frame.lists[call.recv as usize] = list,
+                    Err(e) => fail!(e),
+                }
+                match result {
+                    Ok(v) => frame.vals[call.dst as usize] = v,
+                    Err(e) => fail!(e),
+                }
             }
+            Opcode::IterItems { dst, src } => {
+                match methods::iter_items(frame.vals[*src as usize].clone()) {
+                    Ok(items) => frame.vals[*dst as usize] = Value::Orodha(items),
+                    Err(e) => fail!(e),
+                }
+            }
+            Opcode::Jaribu { dst, src } => match ops::jaribu(&frame.vals[*src as usize]) {
+                Ok(v) => frame.vals[*dst as usize] = v,
+                Err(e) => fail!(e),
+            },
             Opcode::Cast { dst, src, ty } => {
                 let v = frame.vals[*src as usize].clone();
                 match methods::cast_value(v, ty) {
@@ -2813,7 +2898,14 @@ impl<'p> Vm<'p> {
                     .iter()
                     .map(|r| frame.vals[*r as usize].clone())
                     .collect();
-                match mut_method(&mut frame.vals[call.recv as usize], call.method, args) {
+                let target = &mut frame.vals[call.recv as usize];
+                let result = if methods::is_mutating(target, &call.method) {
+                    methods::mutate(target, &call.method, &args)
+                } else {
+                    let recv = target.clone();
+                    self.call_method(recv, &call.method, args)
+                };
+                match result {
                     Ok(v) => frame.vals[call.dst as usize] = v,
                     Err(e) => fail!(e),
                 }
@@ -2881,130 +2973,4 @@ fn store_value(frame: &mut Frame, dst: Operand, v: Value) -> Result<(), EvalErro
         Ty::Val => frame.vals[dst.reg as usize] = v,
     }
     Ok(())
-}
-
-fn mut_method(recv: &mut Value, method: MutMethod, args: Vec<Value>) -> Result<Value, EvalError> {
-    let mut args = args.into_iter();
-    match (recv, method) {
-        (Value::Orodha(items), MutMethod::Push) => {
-            items.push(args.next().unwrap_or(Value::Hamna));
-            Ok(Value::Tupu)
-        }
-        (Value::Orodha(items), MutMethod::Insert) => {
-            let idx = args
-                .next()
-                .as_ref()
-                .and_then(value::as_f64)
-                .map(|n| n as usize)
-                .ok_or_else(|| type_err("ingiza inahitaji index na thamani"))?;
-            let v = args.next().unwrap_or(Value::Hamna);
-            match items.get_mut(idx) {
-                Some(slot) => {
-                    *slot = v;
-                    Ok(Value::Tupu)
-                }
-                None => Err(type_err("ingiza: index nje ya mipaka")),
-            }
-        }
-        (Value::Orodha(items), MutMethod::Remove) => {
-            let idx = args
-                .next()
-                .as_ref()
-                .and_then(value::as_f64)
-                .map(|n| n as usize)
-                .unwrap_or(0);
-            Ok(if idx < items.len() {
-                Value::Chaguo(Some(Box::new(items.remove(idx))))
-            } else {
-                Value::Chaguo(None)
-            })
-        }
-        (Value::Kamusi(map), MutMethod::Insert | MutMethod::WekaKey) => {
-            let key = args
-                .next()
-                .ok_or_else(|| type_err("ingiza inahitaji ufunguo na thamani"))?;
-            let v = args.next().unwrap_or(Value::Hamna);
-            map.insert(MapKey::try_from_value(&key)?, v);
-            Ok(Value::Tupu)
-        }
-        _ => Err(type_err("njia ya kubadilisha haijaungwa mkono")),
-    }
-}
-
-fn value_binary(op: &BinaryCode, left: &Value, right: &Value) -> Result<Value, EvalError> {
-    let numbers = || -> Result<(f64, f64), EvalError> {
-        Ok((
-            value::as_f64(left).ok_or_else(|| type_err("operesheni inahitaji Namba"))?,
-            value::as_f64(right).ok_or_else(|| type_err("operesheni inahitaji Namba"))?,
-        ))
-    };
-    Ok(match op {
-        BinaryCode::Add => match (value::as_string(left), value::as_string(right)) {
-            (Some(a), Some(b)) => Value::Neno(format!("{a}{b}")),
-            _ => {
-                let (a, b) = numbers()?;
-                Value::Namba(a + b)
-            }
-        },
-        BinaryCode::Sub => {
-            let (a, b) = numbers()?;
-            Value::Namba(a - b)
-        }
-        BinaryCode::Mul => {
-            let (a, b) = numbers()?;
-            Value::Namba(a * b)
-        }
-        BinaryCode::Div => {
-            let (a, b) = numbers()?;
-            Value::Namba(a / b)
-        }
-        BinaryCode::Rem => {
-            let (a, b) = numbers()?;
-            Value::Namba(a % b)
-        }
-        BinaryCode::Pow => {
-            let (a, b) = numbers()?;
-            Value::Namba(a.powf(b))
-        }
-        BinaryCode::Eq => Value::Ukweli(left == right),
-        BinaryCode::Ne => Value::Ukweli(left != right),
-        BinaryCode::Gt | BinaryCode::Lt | BinaryCode::Ge | BinaryCode::Le => {
-            if let (Some(a), Some(b)) = (value::as_string(left), value::as_string(right)) {
-                let ord = a.cmp(&b);
-                return Ok(Value::Ukweli(match op {
-                    BinaryCode::Gt => ord.is_gt(),
-                    BinaryCode::Lt => ord.is_lt(),
-                    BinaryCode::Ge => ord.is_ge(),
-                    _ => ord.is_le(),
-                }));
-            }
-            let (a, b) = numbers()?;
-            Value::Ukweli(match op {
-                BinaryCode::Gt => a > b,
-                BinaryCode::Lt => a < b,
-                BinaryCode::Ge => a >= b,
-                _ => a <= b,
-            })
-        }
-        BinaryCode::BitAnd => {
-            let (a, b) = numbers()?;
-            Value::Namba((a as i64 & b as i64) as f64)
-        }
-        BinaryCode::BitXor => {
-            let (a, b) = numbers()?;
-            Value::Namba((a as i64 ^ b as i64) as f64)
-        }
-        BinaryCode::BitOr => {
-            let (a, b) = numbers()?;
-            Value::Namba((a as i64 | b as i64) as f64)
-        }
-        BinaryCode::Shl => {
-            let (a, b) = numbers()?;
-            Value::Namba((a as i64).wrapping_shl(shift_amount(b)) as f64)
-        }
-        BinaryCode::Shr => {
-            let (a, b) = numbers()?;
-            Value::Namba((a as i64).wrapping_shr(shift_amount(b)) as f64)
-        }
-    })
 }

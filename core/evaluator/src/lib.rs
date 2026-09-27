@@ -23,8 +23,8 @@ pub use asb::{load_asb, load_asb_bytecode, parse_format, AsbLoadError};
 #[cfg(not(target_arch = "wasm32"))]
 pub use bytecode::run_bytecode_native;
 pub use bytecode::{
-    compile_module, run_bytecode, run_bytecode_function, run_bytecode_function_on, BinaryCode,
-    BytecodeProgram, Engine, Opcode,
+    compile_module, compile_module_explained, run_bytecode, run_bytecode_function,
+    run_bytecode_function_on, BinaryCode, BytecodeProgram, Engine, Opcode,
 };
 pub use env::Env;
 pub use eval::eval_expr;

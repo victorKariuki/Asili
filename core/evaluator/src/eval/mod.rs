@@ -2,6 +2,7 @@
 
 mod expr;
 pub(crate) mod methods;
+pub(crate) mod ops;
 mod stmt;
 
 use asili_parser::{Block, Expr, Module};

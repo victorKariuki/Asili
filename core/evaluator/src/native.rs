@@ -173,6 +173,7 @@ pub(crate) fn list_writes(op: &Opcode) -> Vec<Reg> {
         Opcode::ListPush { list, .. }
         | Opcode::ListRemove { list, .. }
         | Opcode::ListRemoveVal { list, .. } => vec![*list],
+        Opcode::ListMutate(call) => vec![call.recv],
         Opcode::Call(call) if call.dst.ty == Ty::List => vec![call.dst.reg],
         _ => Vec::new(),
     }
@@ -576,6 +577,7 @@ fn len_transfer(op: &Opcode, state: &[NumFact], nregs: usize) -> Vec<(usize, Num
         }
         Opcode::ListMov { dst, src } => vec![(slot(dst), state[slot(src)])],
         Opcode::ListFromVal { dst, .. } => vec![(slot(dst), unknown)],
+        Opcode::ListMutate(call) => vec![(slot(&call.recv), unknown)],
         Opcode::Call(call) if call.dst.ty == Ty::List => vec![(slot(&call.dst.reg), unknown)],
         _ => Vec::new(),
     }
@@ -678,6 +680,7 @@ fn list_transfer(op: &Opcode, facts: &[NumFact], lists: &[Option<NumFact>]) -> V
             .map(|f| vec![(*dst, f)])
             .unwrap_or_default(),
         Opcode::ListFromVal { dst, .. } => vec![(*dst, NumFact::TOP)],
+        Opcode::ListMutate(call) => vec![(call.recv, NumFact::TOP)],
         Opcode::Call(call) if call.dst.ty == Ty::List => vec![(call.dst.reg, NumFact::TOP)],
         _ => Vec::new(),
     }
