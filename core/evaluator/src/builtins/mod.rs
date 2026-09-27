@@ -32,54 +32,63 @@ pub type BuiltinFn = Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>;
 /// bytecode VM (which carries no `Module`) leaves programs using them to the evaluator.
 pub const MODULE_BUILTINS: &[&str] = &["tenda", "mkondo_tumikia", "mkondo_tumikia_http"];
 
+/// Every builtin module's registrations: the single list of what exists.
+fn register_all(m: &mut HashMap<String, BuiltinFn>) {
+    msingi::register(m);
+    mfumo::register(m);
+    majira::register(m);
+    matumizi::register(m);
+    faili::register(m);
+    hisabati::register(m);
+    kiungo::register(m);
+    runtime::register(m);
+    sambamba::register(m);
+    syscall::register(m);
+    kasha_gc::register(m);
+    mkondo::register(m);
+    kumbukumbu::register(m);
+    seti::register(m);
+    json::register(m);
+}
+
+/// Builtins by name (the tree-walking evaluator's lookup table).
 pub fn builtins() -> HashMap<String, BuiltinFn> {
     let mut m: HashMap<String, BuiltinFn> = HashMap::new();
-    msingi::register(&mut m);
-    mfumo::register(&mut m);
-    majira::register(&mut m);
-    matumizi::register(&mut m);
-    faili::register(&mut m);
-    hisabati::register(&mut m);
-    kiungo::register(&mut m);
-    runtime::register(&mut m);
-    sambamba::register(&mut m);
-    syscall::register(&mut m);
-    kasha_gc::register(&mut m);
-    mkondo::register(&mut m);
-    kumbukumbu::register(&mut m);
-    seti::register(&mut m);
-    json::register(&mut m);
+    register_all(&mut m);
     m
 }
 
+/// Builtin names in their stable index order (`chapisha` first, then alphabetical); bytecode
+/// refers to builtins by position in this list.
 pub fn builtin_names() -> Vec<String> {
-    let mut m = HashMap::new();
-    msingi::register(&mut m);
-    mfumo::register(&mut m);
-    majira::register(&mut m);
-    matumizi::register(&mut m);
-    faili::register(&mut m);
-    hisabati::register(&mut m);
-    kiungo::register(&mut m);
-    runtime::register(&mut m);
-    sambamba::register(&mut m);
-    syscall::register(&mut m);
-    kasha_gc::register(&mut m);
-    mkondo::register(&mut m);
-    kumbukumbu::register(&mut m);
-    seti::register(&mut m);
-    json::register(&mut m);
-
-    let mut names: Vec<String> = m.keys().cloned().collect();
-    // Ensure "chapisha" is index 0 for backward compatibility
-    names.sort_by(|a, b| {
-        if a == "chapisha" {
-            std::cmp::Ordering::Less
-        } else if b == "chapisha" {
-            std::cmp::Ordering::Greater
-        } else {
-            a.cmp(b)
-        }
-    });
+    let mut names: Vec<String> = builtins().into_keys().collect();
+    names.sort_by(|a, b| (a != "chapisha", a).cmp(&(b != "chapisha", b)));
     names
+}
+
+/// Builtins indexed as in [`builtin_names`], plus a by-name index (the bytecode VM's table).
+pub struct BuiltinTable {
+    pub fns: Vec<BuiltinFn>,
+    pub index: HashMap<String, usize>,
+}
+
+impl BuiltinTable {
+    pub fn new() -> Self {
+        let mut all = builtins();
+        let mut fns = Vec::with_capacity(all.len());
+        let mut index = HashMap::with_capacity(all.len());
+        for (i, name) in builtin_names().into_iter().enumerate() {
+            if let Some(f) = all.remove(&name) {
+                fns.push(f);
+                index.insert(name, i);
+            }
+        }
+        BuiltinTable { fns, index }
+    }
+}
+
+impl Default for BuiltinTable {
+    fn default() -> Self {
+        Self::new()
+    }
 }

@@ -475,10 +475,83 @@ fn run_test_with_timeout(
 /// Why an `.asb` artifact could not be run.
 #[derive(Debug)]
 pub enum RunAsbError {
-    /// The artifact (or its format) could not be decoded.
+    /// The path is not an `.asb` or `.build.manifest` (exit code 2).
+    Usage(String),
+    /// The artifact (or its manifest or format) could not be found, read or decoded.
     Load(String),
     /// The program itself failed.
     Run(EvalError),
+}
+
+impl RunAsbError {
+    /// Process exit code for command-line runners.
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            RunAsbError::Usage(_) => 2,
+            RunAsbError::Load(_) | RunAsbError::Run(_) => 1,
+        }
+    }
+}
+
+impl std::fmt::Display for RunAsbError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RunAsbError::Usage(m) => f.write_str(m),
+            RunAsbError::Load(m) => write!(f, "kuipakia asb: {m}"),
+            RunAsbError::Run(e) => write!(f, "kuendesha kuu: {e}"),
+        }
+    }
+}
+
+/// The `.asb` a path refers to: the path itself, or the `kilele=` artifact named by a
+/// `.build.manifest` (relative to the manifest's directory).
+pub fn resolve_artifact(path: &std::path::Path) -> Result<std::path::PathBuf, RunAsbError> {
+    if !path.exists() {
+        return Err(RunAsbError::Load(format!(
+            "faili haipo: {}",
+            path.display()
+        )));
+    }
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if name.ends_with(".asb") {
+        return Ok(path.to_path_buf());
+    }
+    if !name.ends_with(".build.manifest") {
+        return Err(RunAsbError::Usage(format!(
+            "tenda inahitaji .asb au .build.manifest, si: {}",
+            path.display()
+        )));
+    }
+    let content = std::fs::read_to_string(path).map_err(|e| {
+        RunAsbError::Load(format!(
+            "imeshindwa kusoma manifest {}: {e}",
+            path.display()
+        ))
+    })?;
+    let artifact = content
+        .lines()
+        .find_map(|l| l.strip_prefix("kilele=").map(str::trim))
+        .ok_or_else(|| {
+            RunAsbError::Load(format!("manifest {} haina mstari kilele=", path.display()))
+        })?;
+    let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let asb = dir.join(artifact);
+    if !asb.exists() {
+        return Err(RunAsbError::Load(format!(
+            "kilele haipo: {} (kutoka manifest)",
+            asb.display()
+        )));
+    }
+    Ok(asb)
+}
+
+/// Resolve, read and run an artifact path (`.asb` or `.build.manifest`): the whole of
+/// `pata tenda` and the standalone runner.
+pub fn run_artifact(path: &std::path::Path, args: Vec<String>) -> Result<(), RunAsbError> {
+    let asb = resolve_artifact(path)?;
+    let bytes = std::fs::read(&asb)
+        .map_err(|e| RunAsbError::Load(format!("imeshindwa kusoma {}: {e}", asb.display())))?;
+    run_asb(&bytes, Some(&asb), args)
 }
 
 /// Run an `.asb` artifact's `kuu`. Bytecode artifacts use the ahead-of-time native library

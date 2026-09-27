@@ -4,7 +4,7 @@ use crate::pipeline::compile::{
 };
 use crate::pipeline::performance::{PerformanceMetrics, ScopedTimer};
 use crate::pipeline::project::find_workspace_root;
-use asili_evaluator::{load_asb, parse_format, run_asb, run_main, RunAsbError};
+use asili_evaluator::{load_asb, parse_format, run_artifact, run_main};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -139,13 +139,8 @@ pub fn run(args: &[String]) -> CliResult {
     if do_run {
         // Run what was just built (bytecode + native code when available), exactly as
         // `pata tenda` would, rather than re-interpreting the in-memory AST.
-        let bytes = fs::read(&artifact).map_err(|e| {
-            CliError::new(format!("imeshindwa kusoma {}: {e}", artifact.display()), 1)
-        })?;
-        run_asb(&bytes, Some(&artifact), program_args).map_err(|e| match e {
-            RunAsbError::Load(e) => CliError::new(format!("kuipakia asb: {e}"), 1),
-            RunAsbError::Run(e) => CliError::new(format!("kuendesha kuu: {e}"), 1),
-        })?;
+        run_artifact(&artifact, program_args)
+            .map_err(|e| CliError::new(e.to_string(), e.exit_code()))?;
     }
 
     if show_timing {
