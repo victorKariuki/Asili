@@ -95,7 +95,8 @@ impl Resolver {
         // resolving one may discover more registry deps declared in its `RegistryEntry`, which
         // get appended and processed in turn until the graph is exhausted.
         let registry_root = root.join(".asili/registry");
-        let registry = if registry_constraints.is_empty() {
+        let remote_index = crate::remote_registry::configured_index(root);
+        let mut registry = if registry_constraints.is_empty() {
             None
         } else {
             Some(LocalRegistry::load(&registry_root).with_context(|| {
@@ -112,7 +113,7 @@ impl Resolver {
             resolved_names.insert(name.clone());
 
             let registry = registry
-                .as_ref()
+                .as_mut()
                 .expect("registry loaded whenever the queue is non-empty");
             let constraints = registry_constraints.get(&name).cloned().unwrap_or_default();
             let (locked, entry_deps) = resolve_registry_dependency_transitive(
@@ -121,6 +122,7 @@ impl Resolver {
                 &constraints,
                 existing_lock,
                 registry,
+                remote_index.as_deref(),
             )?;
 
             for dep in &entry_deps {
@@ -196,7 +198,8 @@ fn resolve_registry_dependency_transitive(
     name: &str,
     version_reqs: &[String],
     existing_lock: Option<&LockFile>,
-    registry: &LocalRegistry,
+    registry: &mut LocalRegistry,
+    remote_index: Option<&str>,
 ) -> Result<(LockedDependency, Vec<RegistryDep>)> {
     let reqs: Vec<semver::VersionReq> = version_reqs
         .iter()
@@ -207,6 +210,24 @@ fn resolve_registry_dependency_transitive(
         .collect::<Result<_>>()?;
 
     let vendor_path = root.join(".asili/packages").join(name);
+    let satisfies_all = |registry: &LocalRegistry| {
+        registry.entries_for(name).iter().any(|e| {
+            semver::Version::parse(&e.vers).is_ok_and(|v| reqs.iter().all(|r| r.matches(&v)))
+        })
+    };
+    let locked_ok = existing_lock
+        .and_then(|l| l.dependencies.get(name))
+        .and_then(|d| semver::Version::parse(&d.version).ok())
+        .is_some_and(|v| reqs.iter().all(|r| r.matches(&v)) && vendor_path.is_dir());
+    // Only go to the network when the local index (a cache of the hosted one) can't satisfy
+    // these constraints and nothing usable is locked — offline builds stay offline.
+    if let Some(index) = remote_index.filter(|_| !locked_ok && !satisfies_all(registry)) {
+        let remote = crate::remote_registry::fetch_index(index, name)
+            .with_context(|| format!("tegemezi '{name}': imeshindwa kusoma rejista ya mbali"))?;
+        for entry in remote {
+            registry.publish(entry.into_registry_entry(name))?;
+        }
+    }
     let entries = registry.entries_for(name);
 
     if let Some(existing) = existing_lock.and_then(|l| l.dependencies.get(name)) {
@@ -295,12 +316,7 @@ fn fetch_from_registry_source(
             crate::fetch::hash_dir(dest).map_err(|e| anyhow::anyhow!("{e}"))
         }
         RegistrySource::Http { url, checksum } => {
-            let entry = crate::remote_registry::RemoteIndexEntry {
-                version: String::new(), // unused by fetch_and_verify itself
-                checksum: checksum.clone(),
-                url: url.clone(),
-            };
-            crate::remote_registry::fetch_and_verify(&entry, dest)
+            crate::remote_registry::fetch_and_verify(url, checksum, dest)
         }
     }
 }
@@ -358,6 +374,90 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("pata-resolver-test-{name}-{stamp}"));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// Hosted index (issue #23): a registry dependency missing from the local index is looked
+    /// up on the `[rejista] faharasa` index over real HTTP, its transitive registry deps too;
+    /// the chosen tarballs are checksum-verified and vendored, and the rows are cached into
+    /// `.asili/registry/` so a later resolve works offline.
+    #[test]
+    fn registry_dependency_resolves_from_hosted_index() -> Result<()> {
+        use crate::remote_registry::tests::{build_tarball, sha256_hex};
+        let _guard = TEST_ROOT_LOCK.lock().unwrap();
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let server = tiny_http::Server::http(addr).expect("start index server");
+        let base = format!("http://{addr}");
+
+        let app_tar = build_tarball("app.as", b"umma kazi a() -> Namba { rejesha 1 }");
+        let util_tar = build_tarball("util.as", b"umma kazi u() -> Namba { rejesha 2 }");
+        let app_index = format!(
+            r#"[{{"version":"1.0.0","checksum":"{}","url":"{base}/app-1.0.0.tar.gz"}},
+               {{"version":"1.2.0","checksum":"{}","url":"{base}/app-1.2.0.tar.gz",
+                 "deps":[{{"name":"util","req":"^0.3"}}]}},
+               {{"version":"2.0.0","checksum":"x","url":"{base}/never.tar.gz"}}]"#,
+            sha256_hex(&app_tar),
+            sha256_hex(&app_tar),
+        );
+        let util_index = format!(
+            r#"[{{"version":"0.3.1","checksum":"{}","url":"{base}/util-0.3.1.tar.gz"}}]"#,
+            sha256_hex(&util_tar)
+        );
+        let requests = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
+        let seen = std::sync::Arc::clone(&requests);
+        std::thread::spawn(move || {
+            for request in server.incoming_requests() {
+                let url = request.url().to_string();
+                seen.lock().unwrap().push(url.clone());
+                let body = match url.as_str() {
+                    "/index/app/index.json" => app_index.clone().into_bytes(),
+                    "/index/util/index.json" => util_index.clone().into_bytes(),
+                    "/app-1.2.0.tar.gz" => app_tar.clone(),
+                    "/util-0.3.1.tar.gz" => util_tar.clone(),
+                    _ => {
+                        let _ = request.respond(tiny_http::Response::empty(404));
+                        continue;
+                    }
+                };
+                let _ = request.respond(tiny_http::Response::from_data(body));
+            }
+        });
+
+        let root = temp_root("hosted");
+        std::fs::write(
+            root.join("pata.toml"),
+            format!("[rejista]\nfaharasa = \"{base}\"\n"),
+        )?;
+        let mut deps = BTreeMap::new();
+        deps.insert("app".to_string(), Dependency::Version("^1.0".to_string()));
+
+        let lock = Resolver::resolve(&root, &deps, None)?;
+        assert_eq!(lock.dependencies["app"].version, "1.2.0");
+        assert_eq!(
+            lock.dependencies["util"].version, "0.3.1",
+            "transitive dep resolved"
+        );
+        assert!(root.join(".asili/packages/app/app.as").is_file());
+        assert!(root.join(".asili/packages/util/util.as").is_file());
+        assert!(
+            root.join(".asili/registry/app.json").is_file(),
+            "index rows cached"
+        );
+
+        // Offline re-resolve against the same lock: the cache suffices, no new requests.
+        let before = requests.lock().unwrap().len();
+        let again = Resolver::resolve(&root, &deps, Some(&lock))?;
+        assert_eq!(again.dependencies["app"].version, "1.2.0");
+        assert_eq!(
+            requests.lock().unwrap().len(),
+            before,
+            "no network when the cache suffices"
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+        Ok(())
     }
 
     #[test]
