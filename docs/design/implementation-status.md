@@ -155,18 +155,23 @@ Researched, decided, not built.
 - [ ] `kiungo` (FFI) is a documented stub: `core/evaluator/src/builtins/kiungo.rs`
       unconditionally returns `Err` from both exported functions, with a `TODO(Phase IV)`
       comment about `libloading`. Correctly scoped to this phase, not a surprise gap.
-- [x] **Real bytecode for the Sudoku subset** — `core/evaluator/src/bytecode.rs` lowers loops,
-      arithmetic, comparisons, lists, indexing, list mutation, casts, builtin calls, and user
-      function calls to a compact stack VM. `pata jenga` emits `format=bytecode` for programs in
-      that subset, and `pata tenda`/`pata-runner` execute it directly. Unsupported AST constructs
-      deliberately retain the serialized-AST artifact and tree-walk fallback, so existing
-      semantics remain available while the remaining language is migrated incrementally. Hot
-      local-list indexing and `.urefu()` operations use specialized VM instructions that avoid
-      cloning whole collections. Numeric locals, integer-safe mask operations, cached builtin
-      dispatch, pooled frames/stacks, and fused counted-loop operations extend the same fast path;
-      the Arto Inkala "world's hardest Sudoku" example remains source-semantic and runs in
-      about 2.24 seconds in repeated release bytecode runs, with 90,665 candidate attempts
-      and 10,041 backtracks.
+- [x] **Bytecode VM and native code (LLVM AOT + Cranelift JIT)** — `core/evaluator/src/bytecode.rs`
+      lowers most of the language (everything except `linganisha`, `tupa`, pattern `weka`, map
+      and struct literals, enum construction and field access) to a typed register VM with
+      separate `f64`, `Vec<f64>` and `Value` register files. `pata jenga` then compiles the
+      bytecode ahead of time to native code through LLVM IR and `clang -O2` (`aot.rs`); without
+      `clang`, `pata tenda` JIT-compiles it with Cranelift (`jit.rs`). A flow-sensitive integer
+      range analysis (`native.rs`) keeps provably whole-number `Namba` registers in `i64`,
+      speculating on unbounded counters with a bound check that deoptimizes back into the VM,
+      and drops provably in-range list bounds checks. All engines share one implementation of
+      the language's value semantics (`eval/ops.rs`, `eval/methods.rs`); `tests/engines_agree.rs`
+      and `tests/native_tiers.rs` check that the tree-walker, VM, JIT and AOT agree bit-for-bit.
+      The Arto Inkala Sudoku (90,665 attempts, 10,041 backtracks) solves in ~4.8 ms native
+      (gcc `-O2` C: 4.4 ms), ~40 ms JIT, ~110 ms VM, vs. 3.4 s on the tree-walker and 0.33 s in
+      CPython. See [performance.md](performance.md). Remaining: programs using the constructs
+      above still fall back to the tree-walker wholesale (per-function fallback would be finer),
+      `kazi` calls from native code go through the interpreter's call path (no inlining yet),
+      and there is no standalone native executable (the library is loaded by `pata tenda`).
 
 ---
 
