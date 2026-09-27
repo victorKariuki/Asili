@@ -36,6 +36,51 @@ pub struct RemoteIndexEntry {
     pub version: String,
     pub checksum: String,
     pub url: String,
+    /// This version's own registry dependencies (optional in the index; none when absent).
+    #[serde(default)]
+    pub deps: Vec<crate::registry::RegistryDep>,
+    #[serde(default)]
+    pub yanked: Option<bool>,
+}
+
+/// Environment variable naming a hosted index base URL; overrides `pata.toml`'s
+/// `[rejista] faharasa`.
+pub const INDEX_ENV_VAR: &str = "PATA_REJISTA";
+
+#[derive(Deserialize)]
+struct RegistryConfig {
+    faharasa: Option<String>,
+}
+
+/// The hosted index this project resolves against when its local registry can't satisfy a
+/// dependency: `$PATA_REJISTA`, else `pata.toml`'s `[rejista] faharasa = "https://..."`, else
+/// none (fully local resolution, no network).
+pub fn configured_index(root: &Path) -> Option<String> {
+    if let Ok(url) = std::env::var(INDEX_ENV_VAR) {
+        if !url.trim().is_empty() {
+            return Some(url);
+        }
+    }
+    pata_config::load_section::<RegistryConfig>(root, &["rejista"])
+        .ok()
+        .flatten()
+        .and_then(|c| c.faharasa)
+}
+
+impl RemoteIndexEntry {
+    /// This row as a local-registry entry whose source is the checksum-verified download.
+    pub fn into_registry_entry(self, name: &str) -> crate::registry::RegistryEntry {
+        crate::registry::RegistryEntry {
+            name: name.to_string(),
+            vers: self.version,
+            deps: self.deps,
+            yanked: self.yanked,
+            source: crate::registry::RegistrySource::Http {
+                url: self.url,
+                checksum: self.checksum,
+            },
+        }
+    }
 }
 
 /// Fetch and parse `<index_base>/index/<name>/index.json` — the full list of published versions
@@ -64,15 +109,15 @@ pub fn fetch_index(index_base: &str, name: &str) -> Result<Vec<RemoteIndexEntry>
 /// itself — so it drops straight into the same `LockedDependency.checksum` convention every other
 /// source (`fetch_git`/`Path`) already produces, without the caller needing a separate hashing
 /// step.
-pub fn fetch_and_verify(entry: &RemoteIndexEntry, dest_dir: &Path) -> Result<String> {
-    let response = ureq::get(&entry.url)
+pub fn fetch_and_verify(url: &str, checksum: &str, dest_dir: &Path) -> Result<String> {
+    let response = ureq::get(url)
         .call()
-        .with_context(|| format!("imeshindwa kupakua {}", entry.url))?;
+        .with_context(|| format!("imeshindwa kupakua {url}"))?;
     let mut bytes = Vec::new();
     response
         .into_reader()
         .read_to_end(&mut bytes)
-        .with_context(|| format!("imeshindwa kusoma jibu kutoka {}", entry.url))?;
+        .with_context(|| format!("imeshindwa kusoma jibu kutoka {url}"))?;
 
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
@@ -81,11 +126,9 @@ pub fn fetch_and_verify(entry: &RemoteIndexEntry, dest_dir: &Path) -> Result<Str
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
-    if !actual.eq_ignore_ascii_case(&entry.checksum) {
+    if !actual.eq_ignore_ascii_case(checksum) {
         anyhow::bail!(
-            "hundi ya usalama imeshindwa kwa {}: tarajiwa {}, halisi {actual}",
-            entry.url,
-            entry.checksum
+            "hundi ya usalama imeshindwa kwa {url}: tarajiwa {checksum}, halisi {actual}"
         );
     }
 
@@ -106,7 +149,7 @@ pub fn fetch_and_verify(entry: &RemoteIndexEntry, dest_dir: &Path) -> Result<Str
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use flate2::write::GzEncoder;
     use flate2::Compression;
@@ -114,7 +157,7 @@ mod tests {
     use std::net::TcpListener;
 
     /// Build a real `.tar.gz` in memory containing one file, for a fake registry response.
-    fn build_tarball(file_name: &str, content: &[u8]) -> Vec<u8> {
+    pub(crate) fn build_tarball(file_name: &str, content: &[u8]) -> Vec<u8> {
         let mut tar_bytes = Vec::new();
         {
             let mut builder = tar::Builder::new(&mut tar_bytes);
@@ -132,7 +175,7 @@ mod tests {
         gz.finish().expect("finish gzip")
     }
 
-    fn sha256_hex(bytes: &[u8]) -> String {
+    pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(bytes);
         hasher
@@ -185,7 +228,8 @@ mod tests {
 
         let dest =
             std::env::temp_dir().join(format!("pata-remote-registry-test-{}", std::process::id()));
-        let real_checksum = fetch_and_verify(&entries[0], &dest).expect("fetch_and_verify ok");
+        let real_checksum = fetch_and_verify(&entries[0].url, &entries[0].checksum, &dest)
+            .expect("fetch_and_verify ok");
         assert_eq!(
             real_checksum.len(),
             64,
@@ -223,16 +267,12 @@ mod tests {
             request.respond(response).expect("respond tarball");
         });
 
-        let entry = RemoteIndexEntry {
-            version: "1.0.0".to_string(),
-            checksum: "0".repeat(64), // deliberately wrong
-            url: format!("{base_url}/pkg.tar.gz"),
-        };
+        let wrong_checksum = "0".repeat(64); // deliberately wrong
         let dest = std::env::temp_dir().join(format!(
             "pata-remote-registry-mismatch-{}",
             std::process::id()
         ));
-        let result = fetch_and_verify(&entry, &dest);
+        let result = fetch_and_verify(&format!("{base_url}/pkg.tar.gz"), &wrong_checksum, &dest);
         assert!(
             result.is_err(),
             "a checksum mismatch must fail, not silently extract"

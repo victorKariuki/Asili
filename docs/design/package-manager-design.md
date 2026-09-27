@@ -71,7 +71,11 @@ Declared in [`lib.rs`](../../pata/package/src/lib.rs):
     constraint. Not walked transitively either — no manifest format exists yet for a vendored
     git tree to declare its own deps.
   - **Registry** (a bare version string) — resolved against a real `LocalRegistry` index at
-    `<root>/.asili/registry/`; every version's `RegistrySource` (git or path) is fetched for real
+    `<root>/.asili/registry/`, which doubles as the cache of a hosted index: when no local entry
+    satisfies the constraints (and nothing usable is locked), the resolver fetches
+    `<faharasa>/index/<name>/index.json` from the index configured in `[rejista] faharasa`
+    (or `$PATA_REJISTA`) and publishes its rows locally as `RegistrySource::Http` entries; every
+    version's `RegistrySource` (git, path or checksum-verified HTTP tarball) is fetched for real
     into `.asili/packages/<name>/` the first time it's picked, then content-hashed via
     `fetch::hash_dir`. **Transitive**: a resolved `RegistryEntry`'s own declared `deps:
     Vec<RegistryDep>` are queued and resolved in turn (breadth-first), so a registry package's
@@ -176,10 +180,10 @@ lockfile without it.
   `find_workspace_root`, driving `pata jenga --workspace-info` and `pata njozi --workspace`.
 
 **Not implemented — confirmed directly in the code, not inferred:**
-- **No hosted/remote registry** — `LocalRegistry` is file-based (`.asili/registry/` on disk), not
-  a network service; there's no HTTP client anywhere in `pata-package`'s dependencies. This
-  matches the Zig precedent this project's own production-readiness doc cites: content-hash-
-  pinned git/local sources are a legitimate floor without a central hosted index.
+- **No publish command or registry server** — a hosted index is read-only static files
+  (`remote_registry.rs`, resolved through `[rejista] faharasa`); publishing is a commit to
+  whatever host serves them, and there is no project-wide default index yet
+  (`DEFAULT_INDEX_BASE_URL` is a placeholder).
 - **`pata ongeza` is not workspace-aware** — it still resolves against the single project's own
   `pata.toml`, not a workspace root's aggregate view. Adding a member to a workspace still means
   running `pata ongeza` inside that member's own directory.

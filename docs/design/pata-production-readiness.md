@@ -157,8 +157,13 @@ incompatible ranges of the same transitive package. A `remote_registry` module a
 half: `fetch_index`/`fetch_and_verify` fetch a static-file HTTP index (Cargo alternative-registry
 RFC minimum surface — a JSON index + tarball download endpoint, no API server) and verify a
 downloaded tarball's SHA-256 before extracting, wired into `Resolver::resolve` via a new
-`RegistrySource::Http` variant. Confirmed via a real end-to-end resolver test exercising the
-`Http` source end to end, not just the module existing in isolation.
+`RegistrySource::Http` variant. Until September 2026 nothing *consulted* a hosted index, though:
+only entries already published into the local index could point at HTTP tarballs. Now a project
+names its index with `[rejista] faharasa = "<url>"` (or `$PATA_REJISTA`), and `Resolver::resolve`
+fetches `<url>/index/<name>/index.json` whenever the local index can't satisfy a constraint and
+nothing usable is locked, caching the rows (with their `deps`) in `.asili/registry/` so later
+builds stay offline — covered end to end, including a transitive dependency, by
+`registry_dependency_resolves_from_hosted_index` against a real local HTTP server.
 
 ### 7. Wire up multi-package workspace support — DONE, unified onto one manifest
 
@@ -174,7 +179,7 @@ tests referenced them. `pata ongeza` itself is not workspace-aware yet (still re
 single project's `pata.toml`); that's the remaining gap if workspace-scoped dependency addition is
 needed later.
 
-### 8. LSP incremental re-resolution — PARTIALLY DONE (closes most of #25)
+### 8. LSP incremental re-resolution — DONE (file-level; closes #25)
 
 **Update:** Three real, scoped fixes have landed (`pata-implementation-spec.md` Section 19's
 decision — real, targeted caching at three layers, not a full salsa rewrite):
@@ -187,11 +192,13 @@ parsed `WorkspaceModule` keyed by its own content hash, so a re-walk of a projec
 already-parsed module instead of re-tokenizing/re-parsing it — verified directly via a real
 parse-count counter in two tests (`resolve_workspace_reuses_cached_module_without_reparsing_
 unchanged_file`, `resolve_workspace_reparses_a_file_whose_content_actually_changed`). What's still
-missing, genuinely: `ModuleCache` closes the "re-parse every file" gap but a re-walk still
-traverses the *whole* import graph from the entrypoint on every cache-refreshing call — there's no
-query that starts from "what depends on the one file that changed" and works outward, true
-per-file salsa-style recomputation. That remainder is the actual rust-analyzer-reference-
-architecture-sized item, not the caching wins above.
+missing until September 2026 was the dependency direction: a file changing on disk still
+re-checked every open document in every project. Now `did_change_watched_files` leaves documents
+in untouched projects alone and, inside an affected project, re-checks only documents that are, or
+transitively import, a changed file (`WorkspaceIndex::is_affected_by`, over the import graph's
+`reverse_deps`, before and after the change); the re-walk itself costs a content hash per file.
+Recomputation is file-grained — the unit is one file's parse and one document's analysis — not
+salsa's per-query granularity; nothing measured so far needs finer.
 
 **Original gap:** Mwalimu (`pata/lsp`) is the toolchain's most complete piece — diagnostics,
 hover, completion, goto-def, references, rename, workspace symbols. Its own doc named the gap:
@@ -382,7 +389,7 @@ function-count-ratio check); richer assertion helpers beyond bare `paparika`.
 
 ### 7. Mwalimu (LSP) full build-out — **L**
 
-True incremental re-resolution (salsa-style), replacing full-workspace-recheck-on-every-edit.
+Incremental re-resolution: done at file granularity (see item 8 above).
 Inlay hints (inferred types, parameter names at call sites) — explicitly named as missing in the
 crate's own doc comment. Code actions/quick-fixes beyond the one existing doc-stub insertion.
 Workspace-wide rename needs explicit verification (currently only confirmed single-document).

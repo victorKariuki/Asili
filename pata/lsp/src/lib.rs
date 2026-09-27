@@ -249,11 +249,19 @@ impl LanguageServer for Backend {
             .filter_map(|change| change.uri.to_file_path().ok())
             .collect();
         let affected_roots = crate::workspace::affected_project_roots(&changed_paths);
+        if affected_roots.is_empty() {
+            return;
+        }
 
-        if !affected_roots.is_empty() {
+        // Drop only the affected projects' indexes, keeping the old ones to know which open
+        // documents depended on the changed files before the change.
+        let mut previous = std::collections::HashMap::new();
+        {
             let mut workspaces = self.workspaces.write().await;
             for root in &affected_roots {
-                workspaces.remove(root);
+                if let Some(old) = workspaces.remove(root) {
+                    previous.insert(root.clone(), old);
+                }
             }
         }
 
@@ -261,14 +269,29 @@ impl LanguageServer for Backend {
             if is_interface_stub(&uri_str) {
                 continue;
             }
-            let file_path = uri_str
+            let Some(file_path) = uri_str
                 .parse::<tower_lsp::lsp_types::Url>()
                 .ok()
-                .and_then(|u| u.to_file_path().ok());
-            let workspace = match &file_path {
-                Some(path) => self.workspace_for(path).await,
-                None => None,
+                .and_then(|u| u.to_file_path().ok())
+            else {
+                continue;
             };
+            // Documents in untouched projects keep their cached diagnostics.
+            let Some(root) = crate::workspace::find_project_root(&file_path)
+                .filter(|root| affected_roots.contains(root))
+            else {
+                continue;
+            };
+            let workspace = self.workspace_for(&file_path).await;
+            // Within an affected project, only documents that are (or import, transitively,
+            // before or after the change) a changed file need re-checking.
+            let depends_on_change = |index: Option<&crate::workspace::WorkspaceIndex>| {
+                index.is_none_or(|i| i.is_affected_by(&changed_paths, &file_path))
+            };
+            if !depends_on_change(previous.get(&root)) && !depends_on_change(workspace.as_ref()) {
+                continue;
+            }
+            let file_path = Some(file_path);
             // The document's own text may be unchanged, but an external change to a *different*
             // file it `leta`s can still stale its diagnostics (a cross-file call that just broke
             // or got fixed) — drop any cached entry from before this event so diagnostics_for
