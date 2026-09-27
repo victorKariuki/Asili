@@ -18,7 +18,11 @@
 //! Native code therefore never changes behaviour, only speed, and any instruction can fall back
 //! to the interpreter. Set `ASILI_JIT=0` to run the interpreter alone.
 
-use crate::bytecode::{BytecodeFunc, BytecodeProgram, CmpOp, Frame, Opcode, Reg, Ty};
+use crate::bytecode::{BytecodeFunc, BytecodeProgram, CmpOp, Opcode, Reg, Ty};
+use crate::native::{
+    list_len, list_ptr, list_writes, num_reads, num_writes, NativeFn, Runtime, STATUS_FAIL,
+    STATUS_RETURN,
+};
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{types, AbiParam, Block, InstBuilder, MemFlagsData, Signature, Value};
 use cranelift_codegen::settings::{self, Configurable};
@@ -26,40 +30,11 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use std::collections::BTreeSet;
-use std::ffi::c_void;
-
-/// `fn(vm, frame, nums) -> status << 32 | pc`.
-pub(crate) type NativeFn = unsafe extern "C" fn(*mut c_void, *mut Frame, *mut f64) -> u64;
-
-/// Status codes in the upper half of a native function's return value.
-pub(crate) const STATUS_FINISH: u64 = 1;
-pub(crate) const STATUS_FAIL: u64 = 2;
-/// The function reached the `Return`/`ReturnTupu` instruction at `pc` (lower half).
-pub(crate) const STATUS_RETURN: u64 = 3;
-
-/// Callbacks into the VM, provided by `bytecode.rs`.
-pub(crate) struct Callbacks {
-    /// `(vm, frame, function, pc) -> 0 | STATUS_FINISH | STATUS_FAIL`
-    pub exec: extern "C" fn(*mut c_void, *mut Frame, u32, u32) -> u32,
-}
 
 pub(crate) struct Jit {
     // Owns the executable memory the function pointers point into.
     _module: JITModule,
     pub funcs: Vec<Option<NativeFn>>,
-}
-
-extern "C" fn list_ptr(frame: *mut Frame, reg: u32) -> *mut f64 {
-    // SAFETY: called by native code with the frame it was handed; `reg` was checked at compile
-    // time to be below the function's `list_regs`.
-    let frame = unsafe { &mut *frame };
-    frame.lists[reg as usize].as_mut_ptr()
-}
-
-extern "C" fn list_len(frame: *mut Frame, reg: u32) -> i64 {
-    // SAFETY: as in `list_ptr`.
-    let frame = unsafe { &*frame };
-    frame.lists[reg as usize].len() as i64
 }
 
 extern "C" fn fmod(a: f64, b: f64) -> f64 {
@@ -75,7 +50,7 @@ pub(crate) fn enabled() -> bool {
 }
 
 /// Compile every function of `program`. Functions that fail to compile stay interpreted.
-pub(crate) fn compile_program(program: &BytecodeProgram, callbacks: &Callbacks) -> Option<Jit> {
+pub(crate) fn compile_program(program: &BytecodeProgram, runtime: &Runtime) -> Option<Jit> {
     let mut flags = settings::builder();
     flags.set("opt_level", "speed").ok()?;
     let isa = cranelift_native::builder()
@@ -83,7 +58,7 @@ pub(crate) fn compile_program(program: &BytecodeProgram, callbacks: &Callbacks) 
         .finish(settings::Flags::new(flags))
         .ok()?;
     let mut builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
-    builder.symbol("asili_exec", callbacks.exec as *const u8);
+    builder.symbol("asili_exec", runtime.exec as *const u8);
     builder.symbol("asili_list_ptr", list_ptr as *const u8);
     builder.symbol("asili_list_len", list_len as *const u8);
     builder.symbol("asili_fmod", fmod as *const u8);
@@ -135,9 +110,10 @@ pub(crate) fn compile_program(program: &BytecodeProgram, callbacks: &Callbacks) 
 fn native_signature(module: &JITModule) -> Signature {
     let ptr = module.target_config().pointer_type();
     let mut sig = module.make_signature();
-    sig.params.push(AbiParam::new(ptr));
-    sig.params.push(AbiParam::new(ptr));
-    sig.params.push(AbiParam::new(ptr));
+    // (runtime, vm, frame, nums); the JIT links helpers directly and ignores `runtime`.
+    for _ in 0..4 {
+        sig.params.push(AbiParam::new(ptr));
+    }
     sig.returns.push(AbiParam::new(types::I64));
     sig
 }
@@ -185,93 +161,6 @@ impl Helpers {
     }
 }
 
-/// Numeric registers an instruction reads when executed by `exec_slow`.
-fn num_reads(op: &Opcode) -> Vec<Reg> {
-    match op {
-        Opcode::Mov { src, .. }
-        | Opcode::Neg { src, .. }
-        | Opcode::BitNot { src, .. }
-        | Opcode::Not { src, .. }
-        | Opcode::Floor { src, .. }
-        | Opcode::Ceil { src, .. }
-        | Opcode::Trunc { src, .. }
-        | Opcode::BoxNum { src, .. }
-        | Opcode::BoxBool { src, .. } => vec![*src],
-        Opcode::Add { a, b, .. }
-        | Opcode::Sub { a, b, .. }
-        | Opcode::Mul { a, b, .. }
-        | Opcode::Div { a, b, .. }
-        | Opcode::Rem { a, b, .. }
-        | Opcode::Pow { a, b, .. }
-        | Opcode::BitAnd { a, b, .. }
-        | Opcode::BitOr { a, b, .. }
-        | Opcode::BitXor { a, b, .. }
-        | Opcode::Shl { a, b, .. }
-        | Opcode::Shr { a, b, .. }
-        | Opcode::Cmp { a, b, .. } => vec![*a, *b],
-        Opcode::MakeNumList { items, .. } => items.clone(),
-        Opcode::ListGet { idx, .. }
-        | Opcode::ListGetTokeo { idx, .. }
-        | Opcode::ListRemove { idx, .. }
-        | Opcode::ListRemoveVal { idx, .. } => vec![*idx],
-        Opcode::ListSet { idx, src, .. } => vec![*idx, *src],
-        Opcode::ListPush { src, .. } => vec![*src],
-        Opcode::Call(call) => call
-            .args
-            .iter()
-            .filter(|a| matches!(a.ty, Ty::Num | Ty::Bool))
-            .map(|a| a.reg)
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-/// Numeric registers an instruction writes when executed by `exec_slow`.
-fn num_writes(op: &Opcode) -> Vec<Reg> {
-    match op {
-        Opcode::Mov { dst, .. }
-        | Opcode::Add { dst, .. }
-        | Opcode::Sub { dst, .. }
-        | Opcode::Mul { dst, .. }
-        | Opcode::Div { dst, .. }
-        | Opcode::Rem { dst, .. }
-        | Opcode::Pow { dst, .. }
-        | Opcode::BitAnd { dst, .. }
-        | Opcode::BitOr { dst, .. }
-        | Opcode::BitXor { dst, .. }
-        | Opcode::Shl { dst, .. }
-        | Opcode::Shr { dst, .. }
-        | Opcode::Neg { dst, .. }
-        | Opcode::BitNot { dst, .. }
-        | Opcode::Not { dst, .. }
-        | Opcode::Floor { dst, .. }
-        | Opcode::Ceil { dst, .. }
-        | Opcode::Trunc { dst, .. }
-        | Opcode::Cmp { dst, .. }
-        | Opcode::ListGet { dst, .. }
-        | Opcode::ListLen { dst, .. }
-        | Opcode::UnboxNum { dst, .. }
-        | Opcode::UnboxBool { dst, .. }
-        | Opcode::ValLen { dst, .. } => vec![*dst],
-        Opcode::Call(call) if matches!(call.dst.ty, Ty::Num | Ty::Bool) => vec![call.dst.reg],
-        _ => Vec::new(),
-    }
-}
-
-/// List registers whose storage an instruction may reallocate or replace.
-fn list_writes(op: &Opcode) -> Vec<Reg> {
-    match op {
-        Opcode::MakeNumList { dst, .. }
-        | Opcode::ListMov { dst, .. }
-        | Opcode::ListFromVal { dst, .. } => vec![*dst],
-        Opcode::ListPush { list, .. }
-        | Opcode::ListRemove { list, .. }
-        | Opcode::ListRemoveVal { list, .. } => vec![*list],
-        Opcode::Call(call) if call.dst.ty == Ty::List => vec![call.dst.reg],
-        _ => Vec::new(),
-    }
-}
-
 fn float_cc(op: CmpOp) -> FloatCC {
     match op {
         CmpOp::Lt => FloatCC::LessThan,
@@ -308,28 +197,9 @@ fn translate(
     function: &BytecodeFunc,
 ) -> bool {
     let code = &function.code;
-    // Block leaders: entry, jump targets, and fall-through successors of branches.
-    let mut leaders = BTreeSet::new();
-    leaders.insert(0usize);
-    for (pc, op) in code.iter().enumerate() {
-        match op {
-            Opcode::Jump { target }
-            | Opcode::JumpIfFalse { target, .. }
-            | Opcode::JumpIfTrue { target, .. }
-            | Opcode::JumpIfNot { target, .. }
-            | Opcode::ForStep { target, .. } => {
-                if *target as usize >= code.len() {
-                    return false;
-                }
-                leaders.insert(*target as usize);
-                leaders.insert(pc + 1);
-            }
-            Opcode::Return { .. } | Opcode::ReturnTupu => {
-                leaders.insert(pc + 1);
-            }
-            _ => {}
-        }
-    }
+    let Some(leaders) = crate::native::leaders(code) else {
+        return false;
+    };
     let ptr_ty = module.target_config().pointer_type();
     let mut b = FunctionBuilder::new(func, fctx);
     let entry = b.create_block();
@@ -342,7 +212,7 @@ fn translate(
     }
     b.switch_to_block(entry);
     let params = b.block_params(entry).to_vec();
-    let (vm, frame, nums_ptr) = (params[0], params[1], params[2]);
+    let (vm, frame, nums_ptr) = (params[1], params[2], params[3]);
 
     let nums: Vec<Variable> = (0..function.num_regs)
         .map(|_| b.declare_var(types::F64))
@@ -481,11 +351,11 @@ impl Translator<'_, '_> {
         self.b.def_var(self.list_lens[reg as usize], len);
     }
 
-    fn to_int(&mut self, v: Value) -> Value {
+    fn float_to_int(&mut self, v: Value) -> Value {
         self.b.ins().fcvt_to_sint_sat(types::I64, v)
     }
 
-    fn to_float(&mut self, v: Value) -> Value {
+    fn int_to_float(&mut self, v: Value) -> Value {
         self.b.ins().fcvt_from_sint(types::F64, v)
     }
 
@@ -541,7 +411,7 @@ impl Translator<'_, '_> {
     /// Bounds-checked element address; branches to `slow_path` when out of range.
     fn element(&mut self, list: Reg, idx: Reg, pc: usize, op: &Opcode) -> Value {
         let n = self.get(idx);
-        let i = self.to_int(n);
+        let i = self.float_to_int(n);
         let zero = self.b.ins().iconst(types::I64, 0);
         let i = self.b.ins().smax(i, zero);
         let len = self.b.use_var(self.list_lens[list as usize]);
@@ -573,10 +443,10 @@ impl Translator<'_, '_> {
             ($dst:expr, $a:expr, $b:expr, $f:ident) => {{
                 let x = self.get(*$a);
                 let y = self.get(*$b);
-                let xi = self.to_int(x);
-                let yi = self.to_int(y);
+                let xi = self.float_to_int(x);
+                let yi = self.float_to_int(y);
                 let r = self.b.ins().$f(xi, yi);
-                let r = self.to_float(r);
+                let r = self.int_to_float(r);
                 self.set(*$dst, r);
             }};
         }
@@ -607,7 +477,7 @@ impl Translator<'_, '_> {
             Opcode::Shl { dst, a, b } | Opcode::Shr { dst, a, b } => {
                 let x = self.get(*a);
                 let y = self.get(*b);
-                let xi = self.to_int(x);
+                let xi = self.float_to_int(x);
                 // `shift_amount`: saturating i32, anything outside 0..=63 shifts by 0.
                 let s = self.b.ins().fcvt_to_sint_sat(types::I32, y);
                 let too_big = self.b.ins().icmp_imm_u(IntCC::UnsignedGreaterThan, s, 63);
@@ -618,7 +488,7 @@ impl Translator<'_, '_> {
                 } else {
                     self.b.ins().sshr(xi, s)
                 };
-                let r = self.to_float(r);
+                let r = self.int_to_float(r);
                 self.set(*dst, r);
             }
             Opcode::Neg { dst, src } => {
@@ -628,9 +498,9 @@ impl Translator<'_, '_> {
             }
             Opcode::BitNot { dst, src } => {
                 let v = self.get(*src);
-                let i = self.to_int(v);
+                let i = self.float_to_int(v);
                 let r = self.b.ins().bnot(i);
-                let r = self.to_float(r);
+                let r = self.int_to_float(r);
                 self.set(*dst, r);
             }
             Opcode::Not { dst, src } => {
@@ -652,8 +522,8 @@ impl Translator<'_, '_> {
             }
             Opcode::Trunc { dst, src } => {
                 let v = self.get(*src);
-                let i = self.to_int(v);
-                let r = self.to_float(i);
+                let i = self.float_to_int(v);
+                let r = self.int_to_float(i);
                 self.set(*dst, r);
             }
             Opcode::Cmp { op, dst, a, b } => {
@@ -715,7 +585,7 @@ impl Translator<'_, '_> {
             }
             Opcode::ListLen { dst, list } => {
                 let len = self.b.use_var(self.list_lens[*list as usize]);
-                let r = self.to_float(len);
+                let r = self.int_to_float(len);
                 self.set(*dst, r);
             }
             Opcode::Return { src } => {
@@ -737,10 +607,10 @@ impl Translator<'_, '_> {
     /// `a % b` with Rust/`fmod` semantics. Integral operands (the common case: indices,
     /// counters, bit masks) use one integer division; everything else calls `fmod`.
     fn remainder(&mut self, a: Value, b: Value) -> Value {
-        let ai = self.to_int(a);
-        let bi = self.to_int(b);
-        let af = self.to_float(ai);
-        let bf = self.to_float(bi);
+        let ai = self.float_to_int(a);
+        let bi = self.float_to_int(b);
+        let af = self.int_to_float(ai);
+        let bf = self.int_to_float(bi);
         let a_exact = self.b.ins().fcmp(FloatCC::Equal, af, a);
         let b_exact = self.b.ins().fcmp(FloatCC::Equal, bf, b);
         let nonzero = self.b.ins().icmp_imm_s(IntCC::NotEqual, bi, 0);
@@ -755,7 +625,7 @@ impl Translator<'_, '_> {
         self.b.ins().brif(ok, fast, &[], slow, &[]);
         self.b.switch_to_block(fast);
         let r = self.b.ins().srem(ai, bi);
-        let rf = self.to_float(r);
+        let rf = self.int_to_float(r);
         // fmod's result carries the dividend's sign, including -0.0.
         let rf = self.b.ins().fcopysign(rf, a);
         self.b.ins().jump(merge, &[rf.into()]);

@@ -12,9 +12,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   using the exact MRV algorithm from `examples/sudoku/src/kuu.as`, plus `run.sh`, which builds
   everything and reports the best wall time per implementation after checking that every
   solver reports the same attempt count (90,665).
+- **Ahead-of-time native code** (`core/evaluator/src/aot.rs`): `pata jenga` lowers bytecode
+  artifacts to LLVM IR (no C source involved), optimizes and links it with `clang -O2` into
+  `kilele/<name>.so` (`.dylib`/`.dll`), and `pata tenda`, `pata jenga --tenda` and the
+  standalone runner load it when it was built from exactly the same bytecode (hash-checked);
+  without `clang` the build prints a note and the artifact runs on the VM. `Namba` registers
+  that a flow-sensitive integer range analysis proves to hold whole numbers become native
+  `i64`s (bit-identical to `f64` semantics: no NaN, no `-0.0`, within ±2^53); unbounded
+  counters are speculated as `i64` with a bound check on every write that deoptimizes the call
+  back into the interpreter at that instruction if it ever fails. `sakafu(a / b)` on proven
+  non-negative integers becomes an integer division, and list accesses whose index is proven
+  in range drop their bounds check. The Inkala Sudoku solve runs in about 4.8 ms (gcc `-O2` C:
+  4.4 ms; clang `-O2` C: 3.2 ms). `ASILI_AOT=0` disables it, `ASILI_CLANG` picks the compiler.
+- **Cranelift JIT tier** (`core/evaluator/src/jit.rs`): when no AOT library is present, bytecode
+  functions are compiled to machine code at load time (Sudoku: ~40 ms). `ASILI_JIT=0` disables
+  it. Both native tiers call back into the interpreter for anything touching generic values, so
+  they never change behaviour; `tests/native_tiers.rs` checks every snippet bit-for-bit across
+  the interpreter, the JIT and AOT (signed zeros, NaN/infinities, values past 2^53, negative
+  remainders, out-of-range shifts, out-of-bounds errors, labelled loops, recursion, callbacks).
 
 ### Changed
 
+- `pata jenga --tenda` now runs the artifact it just built (bytecode plus native code) exactly
+  like `pata tenda`, instead of re-interpreting the in-memory AST with the tree-walking
+  evaluator. `orodha_rudia(x, n)` assigned to an `Orodha<Namba>` lowers to a typed
+  `ListRepeat` instruction.
 - **Typed register VM for `.asb` bytecode** (`core/evaluator/src/bytecode.rs`): the stack VM,
   which boxed every operand in a `Value`-carrying enum, is replaced by a register machine with
   separate `f64`, `Vec<f64>` (`Orodha<Namba>`) and generic `Value` register files per frame.

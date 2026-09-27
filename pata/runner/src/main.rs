@@ -1,7 +1,7 @@
 //! Standalone runner: load .asb (or artifact from .build.manifest) and run kuu.
 //! No compiler, parser, or project logic — minimal deployment footprint.
 
-use asili_evaluator::{load_asb, load_asb_bytecode, parse_format, run_bytecode, run_main};
+use asili_evaluator::{run_asb, RunAsbError};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -53,22 +53,13 @@ fn main() {
         eprintln!("imeshindwa kusoma {}: {e}", asb_path.display());
         process::exit(1);
     });
-    let format = parse_format(&bytes).unwrap_or_else(|| "serialized".to_string());
-    if format == "bytecode" {
-        let program = load_asb_bytecode(&bytes).unwrap_or_else(|e| {
-            eprintln!("kuipakia asb bytecode: {e}");
-            process::exit(1);
-        });
-        if let Err(e) = run_bytecode(&program, program_args) {
-            eprintln!("kuendesha kuu: {e}");
-            process::exit(1);
-        }
-    } else {
-        let module = load_asb(&bytes).unwrap_or_else(|e| {
+    match run_asb(&bytes, Some(&asb_path), program_args) {
+        Ok(()) => {}
+        Err(RunAsbError::Load(e)) => {
             eprintln!("kuipakia asb: {e}");
             process::exit(1);
-        });
-        if let Err(e) = run_main(&module, program_args) {
+        }
+        Err(RunAsbError::Run(e)) => {
             eprintln!("kuendesha kuu: {e}");
             process::exit(1);
         }
