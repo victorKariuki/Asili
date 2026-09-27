@@ -1337,6 +1337,7 @@ dependencies = [
  "flate2",
  "git2",
  "native-tls",
+ "pata-config",
  "semver",
  "serde",
  "serde_json",

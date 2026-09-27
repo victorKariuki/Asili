@@ -181,6 +181,8 @@ impl LocalRegistry {
         self.index_package(name.clone(), versions.clone());
 
         if let Some(root) = &self.root {
+            std::fs::create_dir_all(root)
+                .with_context(|| format!("imeshindwa kuunda saraka ya rejista {}", root.display()))?;
             let path = root.join(format!("{name}.json"));
             let content = serde_json::to_string_pretty(&versions)
                 .with_context(|| "imeshindwa kubadili rejista kuwa JSON")?;
