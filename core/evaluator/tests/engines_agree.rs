@@ -1,5 +1,5 @@
 //! Differential tests: the tree-walking evaluator and every bytecode tier (the VM interpreter
-//! and the LLVM AOT library when `clang` is available) must agree on each snippet — values
+//! the LLVM AOT library when `clang` is available, and the in-house `nguvu` backend) must agree on each snippet — values
 //! and error messages alike. Operator, cast, method, unwrapping, iteration and display
 //! semantics are shared code (`eval::ops`, `eval::methods`), and these tests keep it that way.
 
@@ -34,6 +34,9 @@ fn agree(name: &str, source: &str, functions: &[&str]) {
         Err(AotError::Unavailable(_)) => None,
         Err(AotError::Failed(why)) => panic!("{name}: AOT build failed: {why}"),
     };
+    // The in-house backend, where the host supports it.
+    let own = asili_evaluator::nguvu::supported()
+        .then(|| asili_evaluator::nguvu::compile(&program).expect("nguvu compile"));
     let show = |r: Result<Value, asili_evaluator::EvalError>| match r {
         Ok(v) => canon(&v),
         Err(e) => format!("ERR {e}"),
@@ -51,6 +54,13 @@ fn agree(name: &str, source: &str, functions: &[&str]) {
                 vm(Engine::Aot(lib)),
                 tree,
                 "{name}::{function}: AOT vs tree-walker"
+            );
+        }
+        if let Some(own) = &own {
+            assert_eq!(
+                vm(Engine::Aot(own)),
+                tree,
+                "{name}::{function}: nguvu vs tree-walker"
             );
         }
     }

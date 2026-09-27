@@ -106,6 +106,7 @@ dependencies = [
  "bincode",
  "getrandom 0.4.2",
  "httparse",
+ "libc",
  "libloading",
  "lock_api",
  "num-bigint",

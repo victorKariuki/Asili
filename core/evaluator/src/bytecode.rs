@@ -2199,6 +2199,12 @@ pub(crate) static NATIVE_RUNTIME: crate::native::Runtime = crate::native::Runtim
     list_len: crate::native::list_len,
     list_push: crate::native::list_push,
     list_remove: crate::native::list_remove,
+    fmod: crate::native::rt_fmod,
+    pow: crate::native::rt_pow,
+    floor: crate::native::rt_floor,
+    ceil: crate::native::rt_ceil,
+    float_to_int_sat: crate::native::rt_float_to_int_sat,
+    shift_amount: crate::native::rt_shift_amount,
 };
 
 /// `exec_slow` entry point for native code: `0` to continue, else a `native::STATUS_*`.

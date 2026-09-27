@@ -116,14 +116,22 @@ pub fn build_library(
     Ok(lib_path)
 }
 
-/// A loaded AOT library whose functions correspond 1:1 to a program's functions.
+/// Native code whose functions correspond 1:1 to a program's functions: a loaded LLVM library,
+/// or machine code generated in memory by [`crate::nguvu`].
 pub struct NativeLibrary {
     // Keeps the code mapped for as long as the function pointers are used.
-    _lib: libloading::Library,
+    _owner: Box<dyn std::any::Any>,
     pub(crate) funcs: Vec<NativeFn>,
 }
 
 impl NativeLibrary {
+    pub(crate) fn from_parts(owner: Box<dyn std::any::Any>, funcs: Vec<NativeFn>) -> Self {
+        NativeLibrary {
+            _owner: owner,
+            funcs,
+        }
+    }
+
     /// Load `path` for `program`; fails if it was built from different bytecode.
     pub fn load(path: &Path, program: &BytecodeProgram) -> Result<Self, String> {
         // SAFETY: loading runs the library's initializers; generated libraries have none
@@ -154,7 +162,7 @@ impl NativeLibrary {
             };
             funcs.push(f);
         }
-        Ok(NativeLibrary { _lib: lib, funcs })
+        Ok(NativeLibrary::from_parts(Box::new(lib), funcs))
     }
 }
 

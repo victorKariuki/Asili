@@ -10,6 +10,8 @@ mod env;
 mod eval;
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod nguvu;
 mod platform;
 pub mod runtime;
 mod signal;
@@ -523,14 +525,24 @@ pub fn run_asb(
         let program = load_asb_bytecode(bytes).map_err(|e| RunAsbError::Load(e.to_string()))?;
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let library = asb_path.filter(|_| aot::enabled()).and_then(|path| {
-                let stem = path.file_stem()?.to_str()?;
-                let lib = path.with_file_name(aot::library_file_name(stem));
-                // A missing or stale library just means running on the VM.
-                lib.is_file()
-                    .then(|| aot::NativeLibrary::load(&lib, &program).ok())
-                    .flatten()
-            });
+            // `ASILI_NGUVU=1` compiles in memory with the in-house backend instead of loading
+            // the LLVM library (transitional switch while `nguvu` catches up; see
+            // docs/design/performance.md).
+            let own = std::env::var("ASILI_NGUVU").is_ok_and(|v| v == "1") && nguvu::supported();
+            let library = if !aot::enabled() {
+                None
+            } else if own {
+                nguvu::compile(&program).ok()
+            } else {
+                asb_path.and_then(|path| {
+                    let stem = path.file_stem()?.to_str()?;
+                    let lib = path.with_file_name(aot::library_file_name(stem));
+                    // A missing or stale library just means running on the VM.
+                    lib.is_file()
+                        .then(|| aot::NativeLibrary::load(&lib, &program).ok())
+                        .flatten()
+                })
+            };
             return run_bytecode_native(&program, library.as_ref(), args).map_err(RunAsbError::Run);
         }
         #[cfg(target_arch = "wasm32")]

@@ -1,5 +1,6 @@
 //! Differential tests: every snippet must produce bit-identical results on the register VM's
-//! interpreter and the LLVM AOT library (when `clang` is available).
+//! interpreter, the LLVM AOT library (when `clang` is available) and the in-house `nguvu`
+//! backend.
 //! The snippets target the places where native code could diverge from `f64` semantics:
 //! -0.0, NaN, infinities, integers beyond 2^53 (speculation/deoptimization), remainders and
 //! floor division of negatives, out-of-range shifts, and out-of-bounds list access.
@@ -38,6 +39,8 @@ fn check(name: &str, source: &str, functions: &[&str]) {
         }
         Err(AotError::Failed(why)) => panic!("{name}: AOT build failed: {why}"),
     };
+    let own = asili_evaluator::nguvu::supported()
+        .then(|| asili_evaluator::nguvu::compile(&program).expect("nguvu compile"));
     for function in functions {
         let run = |engine| {
             run_bytecode_function_on(engine, &program, function, vec![])
@@ -50,6 +53,13 @@ fn check(name: &str, source: &str, functions: &[&str]) {
                 run(Engine::Aot(lib)),
                 interpreted,
                 "{name}::{function}: AOT differs"
+            );
+        }
+        if let Some(own) = &own {
+            assert_eq!(
+                run(Engine::Aot(own)),
+                interpreted,
+                "{name}::{function}: nguvu differs"
             );
         }
     }

@@ -31,6 +31,45 @@ pub(crate) struct Runtime {
     pub list_push: extern "C" fn(*mut Frame, u32, f64) -> *mut f64,
     /// Remove at an in-range index; returns the new length.
     pub list_remove: extern "C" fn(*mut Frame, u32, i64) -> i64,
+    // Math helpers for the in-house backend (`nguvu`), appended so the LLVM backend's field
+    // offsets above are unchanged.
+    pub fmod: extern "C" fn(f64, f64) -> f64,
+    pub pow: extern "C" fn(f64, f64) -> f64,
+    pub floor: extern "C" fn(f64) -> f64,
+    pub ceil: extern "C" fn(f64) -> f64,
+    /// Rust's saturating `f64 as i64` (NaN → 0).
+    pub float_to_int_sat: extern "C" fn(f64) -> i64,
+    /// The interpreter's shift amount (`f64 as i32`, outside `0..=63` → 0).
+    pub shift_amount: extern "C" fn(f64) -> i64,
+}
+
+pub(crate) extern "C" fn rt_fmod(a: f64, b: f64) -> f64 {
+    a % b
+}
+
+pub(crate) extern "C" fn rt_pow(a: f64, b: f64) -> f64 {
+    a.powf(b)
+}
+
+pub(crate) extern "C" fn rt_floor(a: f64) -> f64 {
+    a.floor()
+}
+
+pub(crate) extern "C" fn rt_ceil(a: f64) -> f64 {
+    a.ceil()
+}
+
+pub(crate) extern "C" fn rt_float_to_int_sat(a: f64) -> i64 {
+    a as i64
+}
+
+pub(crate) extern "C" fn rt_shift_amount(a: f64) -> i64 {
+    let shift = a as i32;
+    if (0..=63).contains(&shift) {
+        shift as i64
+    } else {
+        0
+    }
 }
 
 pub(crate) extern "C" fn list_ptr(frame: *mut Frame, reg: u32) -> *mut f64 {
