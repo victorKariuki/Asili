@@ -3,25 +3,28 @@
 ## Utaratibu wa Kipaumbele (Precedence — high to low)
 
 Ground truth: the parser's precedence-climbing chain in `core/parser/src/parse.rs`
-(`parse_or` → `parse_and` → `parse_bitwise_or` → `parse_bitwise_xor` → `parse_bitwise_and` →
-`parse_equality` → `parse_comparison` → `parse_shift` → `parse_term` → `parse_factor` →
+(`parse_or` → `parse_and` → `parse_equality` → `parse_comparison` → `parse_bitwise_or` →
+`parse_bitwise_xor` → `parse_bitwise_and` → `parse_shift` → `parse_term` → `parse_factor` →
 `parse_power` → `parse_cast` → `parse_unary`), read loosest-first.
 
 | Kiwango | Waendeshaji                                          | Ushirikiano |
 |---------|------------------------------------------------------|-------------|
-| 1 (chini) | `au`                                               | Kushoto→Kulia |
-| 2       | `na`                                                 | Kushoto→Kulia |
-| 3       | `au_biti`                                            | Kushoto→Kulia |
-| 4       | `xor_biti`                                           | Kushoto→Kulia |
-| 5       | `na_biti`                                            | Kushoto→Kulia |
-| 6       | `==`, `!=`                                           | Kushoto→Kulia |
-| 7       | `<`, `>`, `<=`, `>=`                                 | Kushoto→Kulia |
-| 8       | `sogeza_kushoto`, `sogeza_kulia`                     | Kushoto→Kulia |
+| 1 (chini) | `au`, `\|\|`                                       | Kushoto→Kulia |
+| 2       | `na`, `&&`                                           | Kushoto→Kulia |
+| 3       | `==`, `!=`                                           | Kushoto→Kulia |
+| 4       | `<`, `>`, `<=`, `>=`                                 | Kushoto→Kulia |
+| 5       | `au_biti`, `\|`                                      | Kushoto→Kulia |
+| 6       | `xor_biti`, `^`                                      | Kushoto→Kulia |
+| 7       | `na_biti`, `&`                                       | Kushoto→Kulia |
+| 8       | `sogeza_kushoto`, `sogeza_kulia`, `<<`, `>>`         | Kushoto→Kulia |
 | 9       | `+`, `-`                                             | Kushoto→Kulia |
 | 10      | `*`, `/`, `%`                                        | Kushoto→Kulia |
 | 11      | `**`                                                 | Kulia→Kushoto |
 | 12      | `kama` (cast)                                        | Kushoto→Kulia |
 | 13 (juu) | `-x`, `siyo x`, `siyo_biti x`, `jaribu x`, `azima x`, `azima_tenda x` | Kulia→Kushoto |
+
+Bitwise operators bind *tighter* than comparisons (as in Rust and Python, unlike C), so a bit
+test needs no parentheses: `mask & bit == 0` means `(mask & bit) == 0`.
 
 `kama` binds *tighter* than every binary operator except unary — `a + b kama Neno` parses as
 `a + (b kama Neno)`, not `(a + b) kama Neno`. Parenthesize explicitly whenever a cast should
@@ -35,6 +38,7 @@ apply to a larger expression.
 -2 * 3            # -6 — unary - kabla ya *
 1 + 2 sogeza_kushoto 2   # 12 — + kabla ya <<
 10 > 5 na 3 < 7   # kweli — > na < kabla ya na
+6 & 3 == 2        # kweli — & kabla ya ==
 (a + b) kama Neno # kama inashika karibu zaidi kuliko + — parenthesize ili kubadilisha kikundi
 ```
 
@@ -119,16 +123,17 @@ s += "Dunia!"
 
 ## Waendeshaji wa Biti (Bitwise Operators)
 
-All bitwise operators work on the integer representation of `Namba`:
+All bitwise operators work on the integer representation of `Namba`. Each keyword has an
+equivalent symbol:
 
-| Waendeshaji      | Maelezo              | Mfano                        |
-|------------------|----------------------|------------------------------|
-| `na_biti`        | AND                  | `3 na_biti 5` → `1`         |
-| `au_biti`        | OR                   | `3 au_biti 5` → `7`         |
-| `xor_biti`       | XOR                  | `3 xor_biti 5` → `6`        |
-| `siyo_biti`      | NOT (bitwise)        | `siyo_biti 0` → `-1`        |
-| `sogeza_kushoto` | Left shift (`<<`)    | `1 sogeza_kushoto 4` → `16` |
-| `sogeza_kulia`   | Right shift (`>>`)   | `16 sogeza_kulia 2` → `4`   |
+| Waendeshaji      | Alama | Maelezo              | Mfano                        |
+|------------------|-------|----------------------|------------------------------|
+| `na_biti`        | `&`   | AND                  | `3 na_biti 5` → `1`         |
+| `au_biti`        | `\|`  | OR                   | `3 \| 5` → `7`              |
+| `xor_biti`       | `^`   | XOR                  | `3 xor_biti 5` → `6`        |
+| `siyo_biti`      |       | NOT (bitwise)        | `siyo_biti 0` → `-1`        |
+| `sogeza_kushoto` | `<<`  | Left shift           | `1 << 4` → `16`             |
+| `sogeza_kulia`   | `>>`  | Right shift          | `16 sogeza_kulia 2` → `4`   |
 
 ### Mipaka ya Mabadiliko (Shift Clamping)
 
@@ -169,10 +174,35 @@ n += 5    # 15
 n -= 3    # 12
 n *= 2    # 24
 n /= 4    # 6
+n %= 4    # 2
 
 weka s = "Hello"
 s += " World"   # "Hello World"  (works on Neno too)
+
+weka bendera = 0
+bendera |= 4    # 4   — sawa na: bendera = bendera | 4
+bendera ^= 1    # 5
+bendera &= 6    # 4
 ```
+
+`%=`, `&=`, `|=` and `^=` are shorthand for `x = x op e`. (There is no `<<=`/`>>=`: `>>=` would
+collide with nested generics such as `Orodha<Orodha<Namba>>= ...`.)
+
+### Kwenye Fahirisi (On an index)
+
+Every compound operator also works on a list element; `a[i] op= v` is shorthand for
+`a[i] = a[i]? op v`:
+
+```asili
+weka safu: Orodha<Namba> = orodha_rudia(0, 9)
+safu[r] |= 1 << (v - 1)
+hesabu[k] += 1
+```
+
+Because the index is evaluated twice (once to read, once to write), it may not call a `kazi` or
+method — `a[f()] += 1` is rejected with `PAR096` (pure numeric builtins such as `sakafu` are
+allowed: `sanduku[sakafu(r / 3) * 3 + sakafu(c / 3)] |= x`). An out-of-range index propagates
+the `KosaMipaka` error through `?`, like reading `a[i]?`.
 
 ---
 

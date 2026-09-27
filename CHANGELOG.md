@@ -31,8 +31,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the interpreter, the JIT and AOT (signed zeros, NaN/infinities, values past 2^53, negative
   remainders, out-of-range shifts, out-of-bounds errors, labelled loops, recursion, callbacks).
 
+- **Shorter bit and counter code**: compound assignment gains `%=`, `&=`, `|=` and `^=`, and every
+  compound operator now works on a list element — `safu[r] |= x` instead of
+  `safu[r] = safu[r]? | x` (`a[i] op= v` means `a[i] = a[i]? op v`; the index may not call a
+  `kazi` or method since it is evaluated twice — new diagnostic `PAR096`). The Sudoku example
+  uses both.
+
 ### Changed
 
+- **Bitwise operators bind tighter than comparisons** (`&`/`na_biti`, `^`/`xor_biti`,
+  `|`/`au_biti`, as in Rust and Python): `mask & bit == 0` now means `(mask & bit) == 0` instead
+  of `mask & (bit == 0)`, which was always a type error, so no valid program changes meaning.
 - `pata jenga --tenda` now runs the artifact it just built (bytecode plus native code) exactly
   like `pata tenda`, instead of re-interpreting the in-memory AST with the tree-walking
   evaluator. `orodha_rudia(x, n)` assigned to an `Orodha<Namba>` lowers to a typed

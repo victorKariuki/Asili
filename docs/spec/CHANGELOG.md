@@ -4,6 +4,14 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Syntax ([03-syntax.md](03-syntax.md), [08-resolved-decisions.md](08-resolved-decisions.md)):
+  compound assignment gains `%=`, `&=`, `|=`, `^=`, and every compound operator also applies to a
+  list element (`a[i] op= v`, index may not contain a call — `PAR096`); bitwise operators now
+  bind tighter than comparisons (`mask & bit == 0` is `(mask & bit) == 0`).
+- Architecture ([02-architecture-and-files.md](02-architecture-and-files.md)): `.asb` bytecode now
+  runs on a typed register VM, with ahead-of-time native code (LLVM via `clang`) and a Cranelift
+  JIT fallback; replaces the stack-VM description below.
+
 - Standard library ([05-standard-library.md](05-standard-library.md)): builtin modules are
   available without explicit `leta`; project and dependency modules remain explicit.
 

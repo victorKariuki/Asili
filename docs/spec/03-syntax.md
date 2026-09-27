@@ -69,7 +69,9 @@ Bitwise operators for integer/fixed-width bit types:
 ### Assignment and compound assignment
 
 - `=` assigns a value (move by default; implicit copy only for `Nakala` types).
-- Compound forms are supported: `+=`, `-=`, `*=`, `/=`.
+- Compound forms are supported: `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=` — on a variable
+  and on a list element (`a[i] op= v` ≡ `a[i] = a[i]? op v`; the index may not contain a call,
+  `PAR096`).
 
 ### Special protocol operations
 
@@ -138,7 +140,7 @@ CLI arguments are always passed as `hoja`; the implementation may ignore them if
 
 ## Precedence note
 
-Operator precedence follows conventional PEMDAS/BODMAS ordering. The cast operator `kama` binds tighter than arithmetic, so `a + b kama Biti32` parses as `a + (b kama Biti32)`.
+Operator precedence follows conventional PEMDAS/BODMAS ordering. The cast operator `kama` binds tighter than arithmetic, so `a + b kama Biti32` parses as `a + (b kama Biti32)`. Bitwise operators (`&`/`na_biti`, `^`/`xor_biti`, `|`/`au_biti`) bind tighter than comparisons and looser than shifts — `mask & bit == 0` is `(mask & bit) == 0` — and logical `na`/`au` bind loosest (full table: `docs/language/09-waendeshaji.md`).
 
 ---
 
