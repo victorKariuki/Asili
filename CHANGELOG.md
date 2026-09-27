@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Cross-language Sudoku benchmark** (`examples/sudoku/bench/`): C, Rust and Python solvers
+  using the exact MRV algorithm from `examples/sudoku/src/kuu.as`, plus `run.sh`, which builds
+  everything and reports the best wall time per implementation after checking that every
+  solver reports the same attempt count (90,665).
+
+### Fixed
+
+- **Sudoku example fixture**: the board literal had 82 cells (an extra `0` in the last row),
+  so the example solved an easier, different puzzle — which is where the 0.6.0 "roughly 0.05
+  seconds" bytecode figure came from. The fixture is the real 81-cell Arto Inkala puzzle again
+  and reports 90,665 attempts / 10,041 backtracks.
+
 ## [0.6.0] - 2026-09-21
 
 ### Added
