@@ -129,6 +129,11 @@ pub enum Inst {
         dst: VReg,
         src: VReg,
     },
+    /// Number of set bits (only generated when the target has `popcnt`).
+    Popcnt {
+        dst: VReg,
+        src: VReg,
+    },
     /// `dst = a * b` and `ovf = 1` if the signed 64-bit product overflowed.
     MulOverflow {
         dst: VReg,
@@ -282,6 +287,7 @@ impl Inst {
             Inst::Mov { src, .. }
             | Inst::Neg { src, .. }
             | Inst::Not { src, .. }
+            | Inst::Popcnt { src, .. }
             | Inst::IntToFloat { src, .. }
             | Inst::FloatToInt { src, .. }
             | Inst::FloatBits { src, .. }
@@ -310,6 +316,7 @@ impl Inst {
             Inst::Mov { src, .. }
             | Inst::Neg { src, .. }
             | Inst::Not { src, .. }
+            | Inst::Popcnt { src, .. }
             | Inst::IntToFloat { src, .. }
             | Inst::FloatToInt { src, .. }
             | Inst::FloatBits { src, .. }
@@ -343,6 +350,7 @@ impl Inst {
             | Inst::TestImm { dst, .. }
             | Inst::Neg { dst, .. }
             | Inst::Not { dst, .. }
+            | Inst::Popcnt { dst, .. }
             | Inst::Float { dst, .. }
             | Inst::ICmp { dst, .. }
             | Inst::FCmp { dst, .. }
@@ -383,6 +391,94 @@ impl Term {
             Term::Branch { then_, else_, .. } => vec![*then_, *else_],
             Term::Return(_) => vec![],
         }
+    }
+}
+
+/// A set of virtual registers.
+#[derive(Clone, PartialEq, Eq)]
+pub struct RegSet(Vec<u64>);
+
+impl RegSet {
+    pub fn new(regs: usize) -> Self {
+        RegSet(vec![0; regs.div_ceil(64)])
+    }
+    pub fn insert(&mut self, v: VReg) {
+        self.0[v.0 as usize / 64] |= 1 << (v.0 % 64);
+    }
+    pub fn remove(&mut self, v: VReg) {
+        self.0[v.0 as usize / 64] &= !(1 << (v.0 % 64));
+    }
+    pub fn contains(&self, v: VReg) -> bool {
+        self.0[v.0 as usize / 64] & (1 << (v.0 % 64)) != 0
+    }
+    pub fn union_with(&mut self, other: &RegSet) {
+        for (a, b) in self.0.iter_mut().zip(&other.0) {
+            *a |= b;
+        }
+    }
+    pub fn iter(&self) -> impl Iterator<Item = VReg> + '_ {
+        self.0.iter().enumerate().flat_map(|(w, &bits)| {
+            (0..64)
+                .filter(move |i| bits & (1 << i) != 0)
+                .map(move |i| VReg((w * 64 + i) as u32))
+        })
+    }
+}
+
+/// Registers live on entry to and exit from each block (backward dataflow).
+pub struct Liveness {
+    pub live_in: Vec<RegSet>,
+    pub live_out: Vec<RegSet>,
+}
+
+impl Func {
+    pub fn liveness(&self) -> Liveness {
+        let n = self.classes.len();
+        let nb = self.blocks.len();
+        let succs: Vec<Vec<usize>> = self
+            .blocks
+            .iter()
+            .map(|b| b.term.successors().iter().map(|s| s.0 as usize).collect())
+            .collect();
+        let mut gen = vec![RegSet::new(n); nb];
+        let mut kill = vec![RegSet::new(n); nb];
+        for (b, block) in self.blocks.iter().enumerate() {
+            for u in block.term.uses() {
+                gen[b].insert(u);
+            }
+            for inst in block.insts.iter().rev() {
+                for d in inst.defs() {
+                    kill[b].insert(d);
+                    gen[b].remove(d);
+                }
+                for u in inst.uses() {
+                    gen[b].insert(u);
+                }
+            }
+        }
+        let mut live_in = vec![RegSet::new(n); nb];
+        let mut live_out = vec![RegSet::new(n); nb];
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for b in (0..nb).rev() {
+                let mut out = RegSet::new(n);
+                for &s in &succs[b] {
+                    out.union_with(&live_in[s]);
+                }
+                let inn = RegSet(
+                    (0..gen[b].0.len())
+                        .map(|w| gen[b].0[w] | (out.0[w] & !kill[b].0[w]))
+                        .collect(),
+                );
+                if inn != live_in[b] {
+                    live_in[b] = inn;
+                    changed = true;
+                }
+                live_out[b] = out;
+            }
+        }
+        Liveness { live_in, live_out }
     }
 }
 

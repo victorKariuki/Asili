@@ -125,8 +125,45 @@ pub fn generate(func: &Func) -> Vec<u8> {
         } else {
             &block.insts[..]
         };
-        for (ii, inst) in body.iter().enumerate() {
-            g.inst(bi, ii, inst);
+        let mut ii = 0;
+        while ii < body.len() {
+            // A comparison read only by the selects right after it: cmp once, then cmovcc.
+            // Conditional moves and plain copies (mov/movapd/loads/stores) leave the flags
+            // intact, so copies may sit in between.
+            let run = match body[ii] {
+                Inst::ICmp { dst, .. } | Inst::ICmpImm { dst, .. } | Inst::TestImm { dst, .. } => {
+                    let run = body[ii + 1..]
+                        .iter()
+                        .take_while(|i| match i {
+                            Inst::Select { cond, dst: d, .. } => *cond == dst && *d != dst,
+                            Inst::Mov { dst: d, src } => *d != dst && *src != dst,
+                            _ => false,
+                        })
+                        .count();
+                    let selects = body[ii + 1..ii + 1 + run]
+                        .iter()
+                        .filter(|i| matches!(i, Inst::Select { .. }))
+                        .count();
+                    (selects > 0 && g.alloc.uses[dst.0 as usize] as usize == selects).then_some(run)
+                }
+                _ => None,
+            };
+            match run {
+                Some(n) => {
+                    let cc = g.flags_for(&body[ii]);
+                    for (k, inst) in body[ii + 1..ii + 1 + n].iter().enumerate() {
+                        match inst {
+                            Inst::Select { dst, a, b, .. } => g.select_on(cc, *dst, *a, *b),
+                            other => g.inst(bi, ii + 1 + k, other),
+                        }
+                    }
+                    ii += 1 + n;
+                }
+                None => {
+                    g.inst(bi, ii, &body[ii]);
+                    ii += 1;
+                }
+            }
         }
         match &block.term {
             Term::Jump(t) => {
@@ -242,6 +279,47 @@ impl<'f> Gen<'f> {
     }
 
     /// The register holding integer-class `v`, loading it into `scratch` if it is spilled.
+    /// Set the flags for an integer comparison and return the condition meaning "true".
+    fn flags_for(&mut self, cmp: &Inst) -> Cond {
+        match cmp {
+            Inst::ICmp { cond, a, b, .. } => {
+                let ra = self.int_in(*a, Gpr::Rax);
+                self.alu_with(Alu::Cmp, ra, *b);
+                icond(*cond)
+            }
+            Inst::ICmpImm { cond, a, imm, .. } => {
+                let ra = self.int_in(*a, Gpr::Rax);
+                self.asm.cmp_ri(ra, *imm);
+                icond(*cond)
+            }
+            Inst::TestImm { zero, a, imm, .. } => {
+                let ra = self.int_in(*a, Gpr::Rax);
+                self.asm.alu_ri(Alu::Test, ra, *imm);
+                if *zero {
+                    Cond::E
+                } else {
+                    Cond::Ne
+                }
+            }
+            _ => unreachable!("flags for a non-comparison"),
+        }
+    }
+
+    /// `dst = cc ? a : b` with the flags already set (only moves in between).
+    fn select_on(&mut self, cc: Cond, dst: VReg, a: VReg, b: VReg) {
+        use Gpr::*;
+        let ra = self.int_in(a, Rcx);
+        match self.loc(dst) {
+            Loc::Gpr(d) if self.loc(b) == Loc::Gpr(d) => self.asm.cmov(cc, d, ra),
+            _ => {
+                let rb = self.int_in(b, Rax);
+                self.asm.mov_rr(Rax, rb);
+                self.asm.cmov(cc, Rax, ra);
+                self.put_int(dst, Rax);
+            }
+        }
+    }
+
     /// `dst op= v`, reading `v` straight from its slot when spilled.
     fn alu_with(&mut self, op: Alu, dst: Gpr, v: VReg) {
         match self.loc(v) {
@@ -539,6 +617,12 @@ impl<'f> Gen<'f> {
                 self.asm.cmp_ri(ra, *imm);
                 let d = self.int_target(*dst, Rax);
                 self.asm.setcc(icond(*cond), d);
+                self.put_int(*dst, d);
+            }
+            Inst::Popcnt { dst, src } => {
+                let r = self.int_in(*src, Rax);
+                let d = self.int_target(*dst, Rax);
+                self.asm.popcnt(d, r);
                 self.put_int(*dst, d);
             }
             Inst::Neg { dst, src } | Inst::Not { dst, src } => {

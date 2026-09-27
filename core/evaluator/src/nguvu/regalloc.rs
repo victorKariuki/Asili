@@ -14,7 +14,7 @@
 
 use super::ir::{Class, Func, Inst, VReg};
 use super::x64::{Gpr, Xmm};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 /// Where a virtual register lives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -104,9 +104,7 @@ pub fn allocate(func: &Func) -> Allocation {
         }
     }
 
-    // Per-block upward-exposed uses and definitions.
-    let mut gen: Vec<BTreeSet<u32>> = vec![BTreeSet::new(); nb];
-    let mut kill: Vec<BTreeSet<u32>> = vec![BTreeSet::new(); nb];
+    // Use counts and spill weights (uses and defs scaled by loop depth).
     let mut weight = vec![0f64; n];
     for (b, block) in func.blocks.iter().enumerate() {
         let w = 10f64.powi(depth[b].min(6) as i32);
@@ -119,40 +117,13 @@ pub fn allocate(func: &Func) -> Allocation {
             for u in us {
                 uses[u.0 as usize] += 1;
                 weight[u.0 as usize] += w;
-                if !kill[b].contains(&u.0) {
-                    gen[b].insert(u.0);
-                }
             }
             for d in ds {
                 weight[d.0 as usize] += w;
-                kill[b].insert(d.0);
             }
         }
     }
-    let succs: Vec<Vec<usize>> = func
-        .blocks
-        .iter()
-        .map(|blk| blk.term.successors().iter().map(|s| s.0 as usize).collect())
-        .collect();
-    let mut live_in: Vec<BTreeSet<u32>> = vec![BTreeSet::new(); nb];
-    let mut live_out: Vec<BTreeSet<u32>> = vec![BTreeSet::new(); nb];
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for &b in order.iter().rev() {
-            let out: BTreeSet<u32> = succs[b]
-                .iter()
-                .flat_map(|s| live_in[*s].iter().copied())
-                .collect();
-            let mut inn = gen[b].clone();
-            inn.extend(out.difference(&kill[b]).copied());
-            if out != live_out[b] || inn != live_in[b] {
-                live_out[b] = out;
-                live_in[b] = inn;
-                changed = true;
-            }
-        }
-    }
+    let live_out = func.liveness().live_out;
 
     // Live ranges over layout positions: instruction i of a block reads at `2i` and writes at
     // `2i + 1`; the terminator reads at the block's last position.
@@ -165,7 +136,7 @@ pub fn allocate(func: &Func) -> Allocation {
         let first = pos;
         let last = first + 2 * block.insts.len() as u32;
         // Registers live (going backwards) and where their current range ends.
-        let mut open: HashMap<u32, u32> = live_out[b].iter().map(|v| (*v, last + 1)).collect();
+        let mut open: HashMap<u32, u32> = live_out[b].iter().map(|v| (v.0, last + 1)).collect();
         for u in block.term.uses() {
             open.entry(u.0).or_insert(last);
         }

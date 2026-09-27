@@ -7,6 +7,7 @@
 //! (executable mapping). Supported on x86-64 Unix today.
 
 pub mod codegen;
+pub mod features;
 pub mod ir;
 pub mod lower;
 pub mod mem;
@@ -28,6 +29,8 @@ pub fn supported() -> bool {
 pub struct Image {
     pub offsets: Vec<usize>,
     pub code: Vec<u8>,
+    /// Instruction-set extensions the code uses ([`features`]).
+    pub features: features::Features,
 }
 
 /// Generate machine code for every function of `program`.
@@ -52,7 +55,11 @@ pub fn generate(program: &BytecodeProgram) -> Result<Image, String> {
         let _ = std::fs::write(&path, &code);
         let _ = std::fs::write(format!("{path}.offsets"), format!("{offsets:?}"));
     }
-    Ok(Image { offsets, code })
+    Ok(Image {
+        offsets,
+        code,
+        features: features::host(),
+    })
 }
 
 impl Image {
@@ -78,14 +85,15 @@ impl Image {
         Ok(crate::aot::NativeLibrary::from_parts(Box::new(mem), funcs))
     }
 
-    /// Serialize for `program`: header (magic, format and ABI versions, architecture, program
-    /// hash), function offsets, then the code.
+    /// Serialize for `program`: header (magic, format and ABI versions, architecture,
+    /// required extensions, program hash), function offsets, then the code.
     pub fn to_bytes(&self, program: &BytecodeProgram) -> Vec<u8> {
         let mut out = Vec::with_capacity(40 + 4 * self.offsets.len() + self.code.len());
         out.extend_from_slice(MAGIC);
         out.extend_from_slice(&IMAGE_VERSION.to_le_bytes());
         out.extend_from_slice(&crate::aot::ABI_VERSION.to_le_bytes());
         out.extend_from_slice(&ARCH.to_le_bytes());
+        out.extend_from_slice(&self.features.to_le_bytes());
         out.extend_from_slice(&crate::aot::program_hash(program).to_le_bytes());
         out.extend_from_slice(&(self.offsets.len() as u32).to_le_bytes());
         for &o in &self.offsets {
@@ -104,11 +112,14 @@ impl Image {
         if r.take(MAGIC.len()).ok_or_else(stale)? != MAGIC {
             return Err(stale());
         }
-        if r.u32()? != IMAGE_VERSION
-            || r.u32()? != crate::aot::ABI_VERSION
-            || r.u32()? != ARCH
-            || r.u64()? != crate::aot::program_hash(program)
-        {
+        if r.u32()? != IMAGE_VERSION || r.u32()? != crate::aot::ABI_VERSION || r.u32()? != ARCH {
+            return Err(stale());
+        }
+        let features = r.u32()?;
+        if features & !features::host() != 0 {
+            return Err("picha ya msimbo asilia inahitaji maagizo ambayo prosesa hii haina".into());
+        }
+        if r.u64()? != crate::aot::program_hash(program) {
             return Err(stale());
         }
         let n = r.u32()? as usize;
@@ -120,14 +131,18 @@ impl Image {
             .collect::<Result<Vec<_>, _>>()?;
         let len = r.u64()? as usize;
         let code = r.take(len).ok_or_else(stale)?.to_vec();
-        Ok(Image { offsets, code })
+        Ok(Image {
+            offsets,
+            code,
+            features,
+        })
     }
 }
 
 const MAGIC: &[u8; 8] = b"NGUVU\0\0\0";
 /// Bumped whenever generated code changes, so images from an older toolchain are rebuilt
 /// rather than run.
-const IMAGE_VERSION: u32 = 1;
+const IMAGE_VERSION: u32 = 2;
 /// Instruction set of the image (1 = x86-64 System V).
 const ARCH: u32 = 1;
 

@@ -367,6 +367,23 @@ fn unrolled_loops_if_conversion_and_bit_tests() {
             kwa m kutoka 0 hadi 40 {
                 r.ongeza(hesabu(m * 37))
             }
+            # the same count on a proven integer: single-bit tests summed (popcount)
+            kwa m kutoka 0 hadi 40 {
+                weka mask = (m * 37) % 1024
+                weka n: Namba = 0
+                weka z: Namba = 0
+                kwa v kutoka 1 hadi 10 {
+                    ikiwa mask & (1 << (v - 1)) == 0 {
+                        n += 1
+                    }
+                }
+                kwa v kutoka 0 hadi 6 {
+                    ikiwa mask & (1 << (v + 2)) != 0 {
+                        z += 1
+                    }
+                }
+                r.ongeza(n * 100 + z)
+            }
             # break and continue inside a fully unrolled loop
             weka s: Namba = 0
             kwa i kutoka 0 hadi 8 {

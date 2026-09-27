@@ -320,6 +320,14 @@ impl Asm {
         self.group3(2, r);
     }
 
+    /// `popcnt dst, src` (requires the POPCNT extension).
+    pub fn popcnt(&mut self, dst: Gpr, src: Gpr) {
+        self.byte(0xF3);
+        self.rex(true, dst as u8, 0, src as u8, false);
+        self.bytes(&[0x0F, 0xB8]);
+        self.modrm_rr(dst as u8, src as u8);
+    }
+
     /// `rdx:rax / r` → quotient in `rax`, remainder in `rdx` (after `cqo`).
     /// `rax, rdx = rdx:rax / r` unsigned, with `rdx` cleared first.
     pub fn zero_div(&mut self, r: Gpr) {

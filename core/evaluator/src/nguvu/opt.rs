@@ -32,6 +32,10 @@ pub fn optimize(func: &mut Func) {
     select_to_arith(func);
     eliminate_dead_code(func); // so an `and` sits right before the test reading it
     fuse_bit_tests(func);
+    eliminate_dead_code(func); // drops the `and`s the tests absorbed
+    if super::features::popcnt() {
+        recognize_popcount(func);
+    }
     reuse_values(func);
     hoist_wide_constants(func);
     eliminate_dead_code(func);
@@ -139,6 +143,7 @@ fn fold_constants(func: &mut Func) -> bool {
                 Inst::ICmpImm { cond, dst, a, imm } => k
                     .get(&a)
                     .map(|x| (dst, eval_cmp(cond, x, imm as i64) as i64)),
+                Inst::Popcnt { dst, src } => k.get(&src).map(|x| (dst, x.count_ones() as i64)),
                 _ => None,
             };
             if let Some((dst, value)) = folded {
@@ -588,21 +593,10 @@ fn select_to_arith(func: &mut Func) {
     }
 }
 
-/// `t = a & k; c = t == 0` becomes one `test a, k` when `t` is dead afterwards: redefined
-/// later in the block before any read (an unrolled copy's temporary), or read nowhere else.
+/// `t = a & k; c = t == 0` becomes one `test a, k` when `t` is dead afterwards.
 fn fuse_bit_tests(func: &mut Func) {
-    let mut reads = vec![0u32; func.classes.len()];
-    for block in &func.blocks {
-        for u in block
-            .insts
-            .iter()
-            .flat_map(|i| i.uses())
-            .chain(block.term.uses())
-        {
-            reads[u.0 as usize] += 1;
-        }
-    }
-    let dead_after = |insts: &[Inst], term: &Term, t: VReg| {
+    let live = func.liveness();
+    let dead_after = |insts: &[Inst], term: &Term, out: &super::ir::RegSet, t: VReg| {
         for inst in insts {
             if inst.uses().contains(&t) {
                 return false;
@@ -611,9 +605,9 @@ fn fuse_bit_tests(func: &mut Func) {
                 return true;
             }
         }
-        !term.uses().contains(&t) && reads[t.0 as usize] == 1
+        !term.uses().contains(&t) && !out.contains(t)
     };
-    for block in &mut func.blocks {
+    for (block, out) in func.blocks.iter_mut().zip(&live.live_out) {
         for i in 1..block.insts.len() {
             let Inst::ICmpImm {
                 cond: cond @ (ICond::Eq | ICond::Ne),
@@ -633,7 +627,7 @@ fn fuse_bit_tests(func: &mut Func) {
             else {
                 continue;
             };
-            if and_dst == t && a != t && dead_after(&block.insts[i + 1..], &block.term, t) {
+            if and_dst == t && a != t && dead_after(&block.insts[i + 1..], &block.term, out, t) {
                 block.insts[i] = Inst::TestImm {
                     zero: cond == ICond::Eq,
                     dst,
@@ -641,6 +635,105 @@ fn fuse_bit_tests(func: &mut Func) {
                     imm,
                 };
             }
+        }
+    }
+}
+
+/// `n += (a & 1) == 0; n += (a & 2) == 0; …` — single-bit tests of one register summed into
+/// one counter (an unrolled "count the free digits" loop) — is `n += popcnt(~a & mask)`.
+fn recognize_popcount(func: &mut Func) {
+    let mut reads = vec![0u32; func.classes.len()];
+    for block in &func.blocks {
+        for u in block
+            .insts
+            .iter()
+            .flat_map(|i| i.uses())
+            .chain(block.term.uses())
+        {
+            reads[u.0 as usize] += 1;
+        }
+    }
+    for b in 0..func.blocks.len() {
+        let mut i = 0;
+        while i + 1 < func.blocks[b].insts.len() {
+            let insts = &func.blocks[b].insts;
+            // (tested register, counter, zero-test?) of the pair at `j`, and its bit.
+            let pair = |j: usize| -> Option<(VReg, VReg, bool, i32)> {
+                let Inst::TestImm {
+                    zero,
+                    dst: f,
+                    a,
+                    imm,
+                } = *insts.get(j)?
+                else {
+                    return None;
+                };
+                let Inst::Int {
+                    op: IntOp::Add,
+                    dst: n,
+                    a: x,
+                    b: y,
+                } = *insts.get(j + 1)?
+                else {
+                    return None;
+                };
+                let single = imm > 0 && (imm as u32).is_power_of_two();
+                let adds_flag = (x == n && y == f) || (y == n && x == f);
+                (single && adds_flag && n != f && n != a && a != f && reads[f.0 as usize] == 1)
+                    .then_some((a, n, zero, imm))
+            };
+            let Some((a, n, zero, first)) = pair(i) else {
+                i += 1;
+                continue;
+            };
+            let mut mask = first;
+            let mut len = 1;
+            while let Some((a2, n2, z2, bit)) = pair(i + 2 * len) {
+                if a2 != a || n2 != n || z2 != zero || mask & bit != 0 {
+                    break;
+                }
+                mask |= bit;
+                len += 1;
+            }
+            if len < 3 {
+                i += 1;
+                continue;
+            }
+            let fresh = |func: &mut Func| {
+                func.classes.push(Class::Int);
+                VReg(func.classes.len() as u32 - 1)
+            };
+            let mut replacement = Vec::new();
+            let source = if zero {
+                let t = fresh(func);
+                replacement.push(Inst::Not { dst: t, src: a });
+                t
+            } else {
+                a
+            };
+            let masked = fresh(func);
+            let count = fresh(func);
+            replacement.extend([
+                Inst::IntImm {
+                    op: IntOp::And,
+                    dst: masked,
+                    a: source,
+                    imm: mask,
+                },
+                Inst::Popcnt {
+                    dst: count,
+                    src: masked,
+                },
+                Inst::Int {
+                    op: IntOp::Add,
+                    dst: n,
+                    a: n,
+                    b: count,
+                },
+            ]);
+            let added = replacement.len();
+            func.blocks[b].insts.splice(i..i + 2 * len, replacement);
+            i += added;
         }
     }
 }
@@ -656,6 +749,7 @@ fn rename_def(inst: &mut Inst, from: VReg, to: VReg) {
         | Inst::ICmpImm { dst, .. }
         | Inst::Neg { dst, .. }
         | Inst::Not { dst, .. }
+        | Inst::Popcnt { dst, .. }
         | Inst::Float { dst, .. }
         | Inst::ICmp { dst, .. }
         | Inst::FCmp { dst, .. }
@@ -714,81 +808,29 @@ fn drop_unobserved(func: &mut Func) {
 /// Remove pure instructions whose results are dead where they are computed (a register
 /// reused by an unrolled copy is overwritten before anything reads this value).
 fn drop_dead_at_definition(func: &mut Func) {
-    // Liveness per block (bitsets over virtual registers), then a backward sweep dropping
-    // pure instructions whose results are dead at that point. Repeat: removals free operands.
-    let n = func.classes.len();
-    let words = n.div_ceil(64);
-    let nb = func.blocks.len();
-    let set = |bits: &mut [u64], v: VReg| bits[v.0 as usize / 64] |= 1 << (v.0 % 64);
-    let clear = |bits: &mut [u64], v: VReg| bits[v.0 as usize / 64] &= !(1 << (v.0 % 64));
-    let has = |bits: &[u64], v: VReg| bits[v.0 as usize / 64] & (1 << (v.0 % 64)) != 0;
+    // Backward sweep from each block's live-out set, dropping pure instructions whose results
+    // are dead at that point. Repeat: removals free operands.
     loop {
-        let succs: Vec<Vec<usize>> = func
-            .blocks
-            .iter()
-            .map(|b| b.term.successors().iter().map(|s| s.0 as usize).collect())
-            .collect();
-        // gen/kill per block.
-        let mut gen = vec![vec![0u64; words]; nb];
-        let mut kill = vec![vec![0u64; words]; nb];
-        for (b, block) in func.blocks.iter().enumerate() {
-            for u in block.term.uses() {
-                set(&mut gen[b], u);
-            }
-            for inst in block.insts.iter().rev() {
-                for d in inst.defs() {
-                    set(&mut kill[b], d);
-                    clear(&mut gen[b], d);
-                }
-                for u in inst.uses() {
-                    set(&mut gen[b], u);
-                }
-            }
-        }
-        let mut live_in = vec![vec![0u64; words]; nb];
-        let mut changed = true;
-        while changed {
-            changed = false;
-            for b in (0..nb).rev() {
-                let mut out = vec![0u64; words];
-                for &s in &succs[b] {
-                    for (o, i) in out.iter_mut().zip(&live_in[s]) {
-                        *o |= i;
-                    }
-                }
-                let inn: Vec<u64> = (0..words)
-                    .map(|w| gen[b][w] | (out[w] & !kill[b][w]))
-                    .collect();
-                if inn != live_in[b] {
-                    live_in[b] = inn;
-                    changed = true;
-                }
-            }
-        }
+        let live = func.liveness();
         let mut removed = false;
-        for (b, succ) in succs.iter().enumerate() {
-            let mut live = vec![0u64; words];
-            for &s in succ {
-                for (o, i) in live.iter_mut().zip(&live_in[s]) {
-                    *o |= i;
-                }
-            }
+        for (b, out) in live.live_out.into_iter().enumerate() {
+            let mut live = out;
             for u in func.blocks[b].term.uses() {
-                set(&mut live, u);
+                live.insert(u);
             }
             let insts = std::mem::take(&mut func.blocks[b].insts);
             let mut kept = Vec::with_capacity(insts.len());
             for inst in insts.into_iter().rev() {
                 let defs = inst.defs();
-                if inst.is_pure() && !defs.iter().any(|d| has(&live, *d)) {
+                if inst.is_pure() && !defs.iter().any(|d| live.contains(*d)) {
                     removed = true;
                     continue;
                 }
                 for d in &defs {
-                    clear(&mut live, *d);
+                    live.remove(*d);
                 }
                 for u in inst.uses() {
-                    set(&mut live, u);
+                    live.insert(u);
                 }
                 kept.push(inst);
             }

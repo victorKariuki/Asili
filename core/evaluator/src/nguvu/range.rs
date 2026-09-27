@@ -144,7 +144,10 @@ impl Ctx<'_> {
             Inst::Neg { src, .. } => self
                 .get(s, src)
                 .and_then(|(l, h)| fit(-(h as i128), -(l as i128))),
-            Inst::ICmp { .. } | Inst::ICmpImm { .. } | Inst::FCmp { .. } => Some((0, 1)),
+            Inst::ICmp { .. } | Inst::ICmpImm { .. } | Inst::TestImm { .. } | Inst::FCmp { .. } => {
+                Some((0, 1))
+            }
+            Inst::Popcnt { .. } => Some((0, 64)),
             Inst::Select { a, b, .. } => match (self.get(s, a), self.get(s, b)) {
                 (Some(x), Some(y)) => Some(hull(x, y)),
                 _ => None,
