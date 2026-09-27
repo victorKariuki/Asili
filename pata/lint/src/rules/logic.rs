@@ -188,7 +188,8 @@ mod tests {
 
     #[test]
     fn accepts_a_binding_used_only_inside_an_if_expression() {
-        let src = "kazi f(c: Ukweli) -> Namba {\nweka x = 1\nrejesha ikiwa c { x } vinginevyo { 0 }\n}";
+        let src =
+            "kazi f(c: Ukweli) -> Namba {\nweka x = 1\nrejesha ikiwa c { x } vinginevyo { 0 }\n}";
         let diags = lint(src);
         assert!(!diags.iter().any(|d| d.code == "LINT301"), "{diags:?}");
     }
