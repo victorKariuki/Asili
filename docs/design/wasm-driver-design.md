@@ -52,9 +52,9 @@ per-crate. So the gating has to be a feature on `core/evaluator` itself (`wasm-b
    someone builds `asili-evaluator` for wasm32 without picking either feature.
 
 Other builtins gate the same three ways on the same `cfg` conditions: `core/evaluator/src/
-builtins/majira.rs` (time), `builtins/mfumo.rs` and `builtins/runtime.rs` (system/env info), and
-`builtins/neno.rs` gate on bare `target_arch = "wasm32"` without the wasi carve-out (confirmed by
-grep across `core/evaluator/src/`).
+builtins/majira.rs` (time), `builtins/mfumo.rs` and `builtins/runtime.rs` (system/env info) gate on bare
+`target_arch = "wasm32"` without the wasi carve-out (confirmed by grep across
+`core/evaluator/src/`; the dead `builtins/neno.rs` copy that also did this has been removed).
 
 ## File I/O on wasm32: explicit errors, not silent no-ops
 

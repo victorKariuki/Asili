@@ -46,7 +46,8 @@ To build it locally:
   module resolver, used by both `cli` and `lsp` so they don't reimplement it separately), `fmt`
   (`pata nadhifu`), `lint` (`pata-lint`), `package` (dependency resolution/lockfile/registry),
   `runner` (`.asb` bytecode execution), `lsp` (Mwalimu language server), `dap` (Debug Adapter
-  Protocol server).
+  Protocol server), `config` (finding `pata.toml` and reading a tool's section of it, shared by
+  `fmt`, `lint` and `lsp`).
 - **extensions/vscode/** — the VS Code extension (`asili` on the Marketplace once published).
   `src/extension.ts` is the entry point; bundled with `esbuild` (see `esbuild.js`) rather than
   shipping `node_modules` in the packaged `.vsix`. `make install-ext` from the repo root builds,
