@@ -210,7 +210,7 @@ pub fn allocate(func: &Func) -> Allocation {
         rs.iter().any(|&(s, e)| {
             let i = calls.partition_point(|&c| c < s);
             // Live across call `c` means live at both its read and write positions.
-            calls.get(i).is_some_and(|&c| c + 1 <= e)
+            calls.get(i).is_some_and(|&c| c < e)
         })
     };
     let overlaps = |a: &[(u32, u32)], b: &[(u32, u32)]| {
@@ -356,6 +356,7 @@ fn brief(i: &Inst) -> String {
         Inst::IntImm { op, imm, .. } => format!("{op:?}Imm {imm}"),
         Inst::ICmp { cond, .. } => format!("ICmp.{cond:?}"),
         Inst::ICmpImm { cond, imm, .. } => format!("ICmp.{cond:?}Imm {imm}"),
+        Inst::TestImm { zero, imm, .. } => format!("Test{} {imm}", if *zero { "Z" } else { "NZ" }),
         Inst::FCmp { cond, .. } => format!("FCmp.{cond:?}"),
         Inst::Float { op, .. } => format!("F{op:?}"),
         Inst::Call { target, .. } => format!("Call {target:?}"),

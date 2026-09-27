@@ -155,6 +155,13 @@ pub enum Inst {
         a: VReg,
         imm: i32,
     },
+    /// `dst = ((a & imm) == 0) == zero ? 1 : 0` — a bit test.
+    TestImm {
+        zero: bool,
+        dst: VReg,
+        a: VReg,
+        imm: i32,
+    },
     FCmp {
         cond: FCond,
         dst: VReg,
@@ -279,7 +286,9 @@ impl Inst {
             | Inst::FloatToInt { src, .. }
             | Inst::FloatBits { src, .. }
             | Inst::BitsFloat { src, .. } => vec![*src],
-            Inst::IntImm { a, .. } | Inst::ICmpImm { a, .. } => vec![*a],
+            Inst::IntImm { a, .. } | Inst::ICmpImm { a, .. } | Inst::TestImm { a, .. } => {
+                vec![*a]
+            }
             Inst::Int { a, b, .. }
             | Inst::MulOverflow { a, b, .. }
             | Inst::Float { a, b, .. }
@@ -305,7 +314,9 @@ impl Inst {
             | Inst::FloatToInt { src, .. }
             | Inst::FloatBits { src, .. }
             | Inst::BitsFloat { src, .. } => vec![src],
-            Inst::IntImm { a, .. } | Inst::ICmpImm { a, .. } => vec![a],
+            Inst::IntImm { a, .. } | Inst::ICmpImm { a, .. } | Inst::TestImm { a, .. } => {
+                vec![a]
+            }
             Inst::Int { a, b, .. }
             | Inst::MulOverflow { a, b, .. }
             | Inst::Float { a, b, .. }
@@ -329,6 +340,7 @@ impl Inst {
             | Inst::Int { dst, .. }
             | Inst::IntImm { dst, .. }
             | Inst::ICmpImm { dst, .. }
+            | Inst::TestImm { dst, .. }
             | Inst::Neg { dst, .. }
             | Inst::Not { dst, .. }
             | Inst::Float { dst, .. }

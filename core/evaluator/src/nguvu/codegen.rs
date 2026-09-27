@@ -108,13 +108,18 @@ pub fn generate(func: &Func) -> Vec<u8> {
         g.asm.bind(labels[bi]);
         let next = order.get(k + 1).map(|&b| labels[b]);
         // A comparison whose only reader is this block's branch compiles to cmp + jcc.
-        let fused = match (&block.term, block.insts.last()) {
+        let fused = matches!(
+            (&block.term, block.insts.last()),
             (
                 Term::Branch { cond, .. },
-                Some(Inst::ICmp { dst, .. } | Inst::ICmpImm { dst, .. } | Inst::FCmp { dst, .. }),
-            ) if dst == cond && g.alloc.uses[cond.0 as usize] == 1 => true,
-            _ => false,
-        };
+                Some(
+                    Inst::ICmp { dst, .. }
+                    | Inst::ICmpImm { dst, .. }
+                    | Inst::TestImm { dst, .. }
+                    | Inst::FCmp { dst, .. },
+                ),
+            ) if dst == cond && g.alloc.uses[cond.0 as usize] == 1
+        );
         let body = if fused {
             &block.insts[..block.insts.len() - 1]
         } else {
@@ -193,6 +198,11 @@ impl<'f> Gen<'f> {
                 let ra = self.int_in(*a, Gpr::Rax);
                 self.asm.cmp_ri(ra, *imm);
                 self.branch_on(icond(*cond), t, e, next);
+            }
+            Inst::TestImm { zero, a, imm, .. } => {
+                let ra = self.int_in(*a, Gpr::Rax);
+                self.asm.alu_ri(Alu::Test, ra, *imm);
+                self.branch_on(if *zero { Cond::E } else { Cond::Ne }, t, e, next);
             }
             Inst::FCmp { cond, a, b, .. } => {
                 let xa = self.float_in(*a, X0);
@@ -517,11 +527,19 @@ impl<'f> Gen<'f> {
                 }
             }
             Inst::IntImm { op, dst, a, imm } => self.int_imm(*op, *dst, *a, *imm),
+            Inst::TestImm { zero, dst, a, imm } => {
+                let ra = self.int_in(*a, Rax);
+                self.asm.alu_ri(Alu::Test, ra, *imm);
+                let d = self.int_target(*dst, Rax);
+                self.asm.setcc(if *zero { Cond::E } else { Cond::Ne }, d);
+                self.put_int(*dst, d);
+            }
             Inst::ICmpImm { cond, dst, a, imm } => {
                 let ra = self.int_in(*a, Rax);
                 self.asm.cmp_ri(ra, *imm);
-                self.asm.setcc(icond(*cond), Rax);
-                self.put_int(*dst, Rax);
+                let d = self.int_target(*dst, Rax);
+                self.asm.setcc(icond(*cond), d);
+                self.put_int(*dst, d);
             }
             Inst::Neg { dst, src } | Inst::Not { dst, src } => {
                 let d = self.int_target(*dst, Rax);
@@ -564,8 +582,9 @@ impl<'f> Gen<'f> {
             Inst::ICmp { cond, dst, a, b } => {
                 let ra = self.int_in(*a, Rax);
                 self.alu_with(Alu::Cmp, ra, *b);
-                self.asm.setcc(icond(*cond), Rax);
-                self.put_int(*dst, Rax);
+                let d = self.int_target(*dst, Rax);
+                self.asm.setcc(icond(*cond), d);
+                self.put_int(*dst, d);
             }
             Inst::FCmp { cond, dst, a, b } => {
                 let xa = self.float_in(*a, X0);
@@ -602,6 +621,18 @@ impl<'f> Gen<'f> {
                     }
                 }
                 self.put_int(*dst, Rax);
+            }
+            Inst::Select { dst, cond, a, b }
+                if self.loc(*dst) == self.loc(*b) && matches!(self.loc(*b), Loc::Gpr(_)) =>
+            {
+                // dst already holds the fallback: only a conditional move.
+                let Loc::Gpr(d) = self.loc(*dst) else {
+                    unreachable!()
+                };
+                let ra = self.int_in(*a, Rcx);
+                let rc = self.int_in(*cond, Rdx);
+                self.asm.alu_rr(Alu::Test, rc, rc);
+                self.asm.cmov(Cond::Ne, d, ra);
             }
             Inst::Select { dst, cond, a, b } => {
                 let rb = self.int_in(*b, Rax);

@@ -27,14 +27,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **In-house native backend `nguvu`** (`core/evaluator/src/nguvu/`): compiles register
   bytecode straight to x86-64 machine code with no external compiler, assembler or linker —
   lowering to a typed IR (same range analysis, speculation and deoptimization protocol as the
-  LLVM backend), immediate folding, local value reuse, constant hoisting, dead-code
-  elimination, a priority register allocator with copy coalescing and precise live ranges,
-  and division by constants as reciprocal multiplication. `pata jenga` writes the
-  position-independent code to `kilele/<name>.nguvu` (hash-checked like the `.so`), so
-  `--namna release` no longer needs `clang` on x86-64 Unix; `pata tenda` prefers the LLVM
-  library when both exist and falls back to the image, and `ASILI_NGUVU=1` selects `nguvu`
-  (compiling in memory when no image was built). The engine differential tests run every
-  snippet through it. Sudoku today: 14 ms whole process (LLVM 10.5 ms).
+  LLVM backend) with full unrolling of small constant-bound `kwa` loops; then constant
+  folding, an IR interval analysis that deletes guards and comparisons it proves (a count
+  bumped at most once per unrolled copy never needs its ±2^53 check), if-conversion of small
+  branches to `cmov`/flag arithmetic, bit-test fusion, local value reuse, constant hoisting,
+  liveness-based dead-code elimination, a priority register allocator with copy coalescing
+  and precise live ranges, and division by constants as reciprocal multiplication.
+  `pata jenga` writes the position-independent code to `kilele/<name>.nguvu` (hash-checked
+  like the `.so`), so `--namna release` no longer needs `clang` on x86-64 Unix; `pata tenda`
+  prefers the LLVM library when both exist and falls back to the image, and `ASILI_NGUVU=1`
+  selects `nguvu` (compiling in memory when no image was built). `ASILI_NATIVE_TRACE=1`
+  prints every deoptimization. Sudoku: 10.2 ms whole process, 43M instructions (LLVM:
+  10.5 ms, 55M); `examples/sudoku/bench/run.sh` reports both tiers.
 - **Cross-tier differential tests** (`tests/native_tiers.rs`): every snippet must give
   bit-identical results on the VM interpreter and the AOT native code (signed zeros,
   NaN/infinities, values past 2^53, negative remainders, out-of-range shifts, out-of-bounds

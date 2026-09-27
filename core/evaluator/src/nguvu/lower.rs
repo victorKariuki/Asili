@@ -9,8 +9,8 @@ use super::ir::{
 };
 use crate::bytecode::{BytecodeFunc, CmpOp, Opcode, Reg, Ty};
 use crate::native::{
-    analyze_numbers, leaders, list_writes, num_reads, num_writes, NumFact, STATUS_DEOPT,
-    STATUS_FAIL, STATUS_RETURN,
+    analyze_numbers, jump_target, leaders, list_writes, num_reads, num_writes, NumFact,
+    STATUS_DEOPT, STATUS_FAIL, STATUS_RETURN,
 };
 use std::collections::HashMap;
 
@@ -31,6 +31,7 @@ struct Lower<'a> {
     /// List register → (data pointer, length) virtual registers.
     lists: Vec<(VReg, VReg)>,
     labels: HashMap<usize, Block>,
+    leaders: std::collections::BTreeSet<usize>,
     cur_pc: usize,
     /// Bounds known for the integer result being stored (set by `arith` for the next
     /// `set_i`): a side that cannot pass ±2^53 needs no check.
@@ -73,12 +74,8 @@ fn liveness(code: &[Opcode]) -> Vec<std::collections::BTreeSet<Reg>> {
     let succ = |pc: usize| -> Vec<usize> {
         match &code[pc] {
             Opcode::Jump { target } => vec![*target as usize],
-            Opcode::JumpIfFalse { target, .. }
-            | Opcode::JumpIfTrue { target, .. }
-            | Opcode::JumpIfNot { target, .. }
-            | Opcode::ForStep { target, .. } => vec![*target as usize, pc + 1],
             Opcode::Return { .. } | Opcode::ReturnTupu => vec![],
-            _ => vec![pc + 1],
+            op => jump_target(op).into_iter().chain([pc + 1]).collect(),
         }
     };
     let mut live: Vec<BTreeSet<Reg>> = vec![BTreeSet::new(); code.len() + 1];
@@ -145,6 +142,7 @@ pub fn lower(index: usize, function: &BytecodeFunc) -> Option<super::ir::Func> {
         regs,
         lists,
         labels: HashMap::new(),
+        leaders: leaders.clone(),
         cur_pc: 0,
         result_range: (f64::NEG_INFINITY, f64::INFINITY),
         deopt: None,
@@ -161,19 +159,7 @@ pub fn lower(index: usize, function: &BytecodeFunc) -> Option<super::ir::Func> {
     l.prologue();
     let first = l.label(0);
     l.b.terminate(Term::Jump(first));
-    for (pc, op) in code.iter().enumerate() {
-        if leaders.contains(&pc) {
-            let block = l.label(pc);
-            if l.b.is_open() {
-                l.b.terminate(Term::Jump(block));
-            }
-            l.b.switch_to(block);
-        } else if !l.b.is_open() {
-            continue; // unreachable
-        }
-        l.cur_pc = pc;
-        l.instruction(pc, op);
-    }
+    l.lower_range(0, code.len());
     if l.b.is_open() {
         let pc = code.len().saturating_sub(1);
         l.ret_status(STATUS_RETURN, pc);
@@ -193,7 +179,116 @@ pub fn lower(index: usize, function: &BytecodeFunc) -> Option<super::ir::Func> {
     Some(l.b.finish())
 }
 
+/// Most iterations a counted loop is fully unrolled for, and most instructions it may grow to.
+const UNROLL_TRIPS: i64 = 16;
+const UNROLL_BUDGET: usize = 256;
+
 impl<'a> Lower<'a> {
+    /// Lower instructions `from..to`, starting a new block at every jump target.
+    fn lower_range(&mut self, from: usize, to: usize) {
+        let code = &self.function.code;
+        let mut pc = from;
+        while pc < to {
+            if self.leaders.contains(&pc) {
+                let block = self.label(pc);
+                if self.b.is_open() {
+                    self.b.terminate(Term::Jump(block));
+                }
+                self.b.switch_to(block);
+            } else if !self.b.is_open() {
+                pc += 1;
+                continue; // unreachable
+            }
+            if let Some(next) = self.unroll(pc) {
+                pc = next;
+                continue;
+            }
+            self.cur_pc = pc;
+            self.instruction(pc, &code[pc]);
+            pc += 1;
+        }
+    }
+
+    /// Fully unroll the counted loop whose entry test is at `pc` when its bounds are constants
+    /// and it is small: each copy of the body sees the counter as a constant, so everything
+    /// derived from it folds (`1 << (v - 1)` becomes an immediate mask). Returns the pc to
+    /// continue at, or `None` to lower the loop normally.
+    ///
+    /// A copy that deoptimizes spills the counter as that iteration's constant, so the
+    /// interpreter resumes with exactly its frame state.
+    fn unroll(&mut self, pc: usize) -> Option<usize> {
+        let code = &self.function.code;
+        let Opcode::JumpIfNot {
+            op: CmpOp::Lt,
+            a: ctr,
+            b: end,
+            target,
+        } = code[pc]
+        else {
+            return None;
+        };
+        let exit = target as usize;
+        let step = exit.checked_sub(1)?;
+        match code.get(step)? {
+            Opcode::ForStep {
+                ctr: c,
+                end: e,
+                target: t,
+            } if *c == ctr && *e == end && *t as usize == pc + 1 => {}
+            _ => return None,
+        }
+        // Constant bounds, set right before the entry test.
+        let bound = |at: usize, reg: Reg| match code.get(at)? {
+            Opcode::Trunc { dst, src } if *dst == reg => self.consts.get(src).map(|v| v.trunc()),
+            _ => None,
+        };
+        let (lo, hi) = (bound(pc.checked_sub(2)?, ctr)?, bound(pc - 1, end)?);
+        if !(lo.abs() < 1e15 && hi.abs() < 1e15) {
+            return None;
+        }
+        let trips = (hi - lo).max(0.0) as i64;
+        let body = pc + 1..step;
+        if trips > UNROLL_TRIPS || trips as usize * (body.len() + 1) > UNROLL_BUDGET {
+            return None;
+        }
+        // A `vunja` leaves the copies without the counter's register being updated, so the
+        // counter must be dead after the loop (it is a fresh temporary in practice).
+        if self.live_in.get(exit).is_some_and(|l| l.contains(&ctr)) {
+            return None;
+        }
+        // Single entry (only the loop itself jumps into the body) and the bounds untouched.
+        let inside = |t: usize| t > pc && t <= step;
+        for (at, op) in code.iter().enumerate() {
+            let from_inside = at > pc && at <= step;
+            if !from_inside && jump_target(op).is_some_and(inside) {
+                return None;
+            }
+            if body.contains(&at) && (writes(op).contains(&ctr) || writes(op).contains(&end)) {
+                return None;
+            }
+        }
+        let mut region: Vec<usize> = self.leaders.range(pc + 1..step).copied().collect();
+        region.push(step); // where each copy ends (and `endelea` jumps)
+        for i in 0..trips {
+            // Fresh blocks for this copy's jump targets; `continue` (the step) ends the copy.
+            for &l in &region {
+                let block = self.b.block();
+                self.labels.insert(l, block);
+            }
+            self.consts.insert(ctr, lo + i as f64);
+            self.lower_range(pc + 1, step);
+            let next = self.label(step);
+            if self.b.is_open() {
+                self.b.terminate(Term::Jump(next));
+            }
+            self.b.switch_to(next);
+            self.consts.remove(&ctr);
+        }
+        let after = self.label(exit);
+        self.b.terminate(Term::Jump(after));
+        Some(exit)
+    }
+
     fn label(&self, pc: usize) -> Block {
         self.labels[&pc]
     }

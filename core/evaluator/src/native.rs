@@ -103,26 +103,38 @@ pub(crate) extern "C" fn list_remove(frame: *mut Frame, reg: u32, idx: i64) -> i
 
 /// Block leaders of a function: entry, jump targets, and successors of branches/returns.
 /// `None` if a jump target is out of range.
+/// Record native code handing a call back to the interpreter. `ASILI_NATIVE_TRACE=1` prints
+/// each one (function index and bytecode pc), for finding guards that fail unexpectedly.
+pub(crate) fn note_deopt(function: usize, pc: usize) {
+    if std::env::var_os("ASILI_NATIVE_TRACE").is_some_and(|v| v == "1") {
+        eprintln!("deopt: kazi #{function} pc {pc}");
+    }
+}
+
+/// Where a jump instruction can transfer control besides falling through.
+pub(crate) fn jump_target(op: &Opcode) -> Option<usize> {
+    match op {
+        Opcode::Jump { target }
+        | Opcode::JumpIfFalse { target, .. }
+        | Opcode::JumpIfTrue { target, .. }
+        | Opcode::JumpIfNot { target, .. }
+        | Opcode::ForStep { target, .. } => Some(*target as usize),
+        _ => None,
+    }
+}
+
 pub(crate) fn leaders(code: &[Opcode]) -> Option<std::collections::BTreeSet<usize>> {
     let mut leaders = std::collections::BTreeSet::new();
     leaders.insert(0usize);
     for (pc, op) in code.iter().enumerate() {
-        match op {
-            Opcode::Jump { target }
-            | Opcode::JumpIfFalse { target, .. }
-            | Opcode::JumpIfTrue { target, .. }
-            | Opcode::JumpIfNot { target, .. }
-            | Opcode::ForStep { target, .. } => {
-                if *target as usize >= code.len() {
-                    return None;
-                }
-                leaders.insert(*target as usize);
-                leaders.insert(pc + 1);
+        if let Some(target) = jump_target(op) {
+            if target >= code.len() {
+                return None;
             }
-            Opcode::Return { .. } | Opcode::ReturnTupu => {
-                leaders.insert(pc + 1);
-            }
-            _ => {}
+            leaders.insert(target);
+            leaders.insert(pc + 1);
+        } else if matches!(op, Opcode::Return { .. } | Opcode::ReturnTupu) {
+            leaders.insert(pc + 1);
         }
     }
     Some(leaders)

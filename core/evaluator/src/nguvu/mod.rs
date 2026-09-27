@@ -11,6 +11,7 @@ pub mod ir;
 pub mod lower;
 pub mod mem;
 pub mod opt;
+pub mod range;
 pub mod regalloc;
 pub mod x64;
 
@@ -61,6 +62,10 @@ impl Image {
             return Err("nguvu: picha ya msimbo imeharibika".into());
         }
         let mem = mem::ExecMem::new(&self.code)?;
+        if let Ok(path) = std::env::var("ASILI_NGUVU_DUMP") {
+            // Where the code was mapped, to match profiler addresses against the dump.
+            let _ = std::fs::write(format!("{path}.base"), format!("{}", mem.at(0) as usize));
+        }
         let funcs = self
             .offsets
             .iter()

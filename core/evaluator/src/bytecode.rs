@@ -2372,6 +2372,7 @@ impl<'p> Vm<'p> {
         let status = unsafe { native(&NATIVE_RUNTIME, vm, &mut frame, nums) };
         let pc = (status & 0xffff_ffff) as usize;
         if status >> 32 == crate::native::STATUS_DEOPT {
+            crate::native::note_deopt(index, pc);
             return self.run(index, frame, pc);
         }
         let result = match status >> 32 {

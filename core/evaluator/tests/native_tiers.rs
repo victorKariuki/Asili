@@ -347,3 +347,68 @@ fn nguvu_image_rejects_other_programs_and_corruption() {
     assert!(load_image(&path, &a).is_err(), "truncated image");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn unrolled_loops_if_conversion_and_bit_tests() {
+    check(
+        "unroll",
+        r#"
+        kazi hesabu(mask: Namba) -> Namba {
+            weka n: Namba = 0
+            kwa v kutoka 1 hadi 10 {
+                ikiwa mask & (1 << (v - 1)) == 0 {
+                    n += 1
+                }
+            }
+            rejesha n
+        }
+        kazi t() -> Orodha<Namba> {
+            weka r: Orodha<Namba> = []
+            kwa m kutoka 0 hadi 40 {
+                r.ongeza(hesabu(m * 37))
+            }
+            # break and continue inside a fully unrolled loop
+            weka s: Namba = 0
+            kwa i kutoka 0 hadi 8 {
+                ikiwa i == 2 { endelea }
+                ikiwa i == 6 { vunja }
+                s += i * 10
+            }
+            r.ongeza(s)
+            # nested constant loops, both unrolled
+            weka p: Namba = 0
+            kwa i kutoka 0 hadi 3 {
+                kwa j kutoka 0 hadi 4 {
+                    p = p * 3 + i - j
+                }
+            }
+            r.ongeza(p)
+            # a counter that leaves the exact-integer range inside an unrolled copy (deopt)
+            weka x: Namba = 9007199254740985
+            kwa i kutoka 0 hadi 12 {
+                x += 1
+            }
+            r.ongeza(x)
+            # empty and negative trip counts
+            weka e: Namba = 5
+            kwa i kutoka 3 hadi 3 { e += 1 }
+            kwa i kutoka 4 hadi 1 { e += 1 }
+            r.ongeza(e)
+            # conditional minimum tracking (if-converted select)
+            weka bora: Namba = -1
+            weka idadi: Namba = 100
+            kwa k kutoka 0 hadi 9 {
+                weka c = (k * 7) % 5
+                ikiwa c < idadi {
+                    bora = k
+                    idadi = c
+                }
+            }
+            r.ongeza(bora)
+            r.ongeza(idadi)
+            rejesha r
+        }
+        "#,
+        &["t"],
+    );
+}
