@@ -29,7 +29,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   NaN/infinities, values past 2^53, negative remainders, out-of-range shifts, out-of-bounds
   errors, labelled loops, recursion, callbacks). Without `clang`, `.asb` bytecode runs on the
   register VM (a Cranelift JIT prototype was removed in favour of one native backend).
-  remainders, out-of-range shifts, out-of-bounds errors, labelled loops, recursion, callbacks).
 
 - **Shorter bit and counter code**: compound assignment gains `%=`, `&=`, `|=` and `^=`, and every
   compound operator now works on a list element — `safu[r] |= x` instead of
@@ -85,6 +84,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `badilisha` and other mutating methods on `Orodha<Namba>` locals. `tests/engines_agree.rs`
   runs each snippet on the evaluator, the VM interpreter and AOT and requires
   identical values and error messages.
+- LSP completion offers every builtin function the type checker knows, with its signature
+  (it offered a hand-kept list of twelve names).
+- Internal: one implementation each of the compile front end, `pata.toml` discovery (new
+  `pata-config` crate shared by `pata-fmt`, `pata-lint` and `pata-lsp`), the keyword list, the
+  server worker pool, the tree-walker entry path and the expression-tree walk; no behaviour
+  change beyond the fixes below.
 - `Orodha.jiunge`/`kwa_neno` (and string building) now print NaN and infinities the same way as
   `kama Neno` does (`Siyo_Namba`, `Ukomo`, `-Ukomo`) instead of Rust's `NaN`/`inf`.
 
@@ -104,6 +109,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   call forms `na_biti(..)`/`sogeza_kushoto(..)` are no longer silently accepted.
   `kila_na_fahirisi` callbacks on bytecode receive `(kipengele, fahirisi)` like the evaluator
   (the VM passed the index first).
+- `pata-lint`'s unused-binding rule (`LINT301`) no longer flags a variable used only inside an
+  `ikiwa` expression, and the LSP now highlights names there too.
+- LSP folding ranges and signature help no longer treat `//` (floor division) as the start of
+  a comment.
 
 ## [0.6.0] - 2026-09-21
 
