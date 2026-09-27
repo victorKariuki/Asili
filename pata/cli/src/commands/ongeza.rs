@@ -155,7 +155,6 @@ mod tests {
     use super::{exact_version_for_marker, run};
     use crate::commands::TEST_CWD_LOCK;
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn exact_version_for_marker_pads_short_constraints() {
@@ -320,32 +319,10 @@ mod tests {
     }
 
     fn temp_dir_named(prefix: &str) -> std::path::PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("pata-{prefix}-{stamp}"));
-        fs::create_dir_all(&dir).expect("mkdir");
-        dir
+        crate::test_support::temp_dir(&format!("{prefix}"))
     }
 
     fn temp_project() -> std::path::PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("pata-ongeza-{stamp}"));
-        fs::create_dir_all(dir.join("src")).expect("mkdir");
-        fs::write(
-            dir.join("pata.toml"),
-            "[jumla]\njina = \"app\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n",
-        )
-        .expect("write manifest");
-        fs::write(
-            dir.join("src/kuu.as"),
-            "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }",
-        )
-        .expect("src");
-        dir
+        crate::test_support::temp_project("ongeza", "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }")
     }
 }

@@ -414,7 +414,6 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn lockfile_is_deterministic() {
@@ -444,13 +443,7 @@ mod tests {
     }
 
     fn temp_dir() -> std::path::PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("pata-lock-{stamp}"));
-        fs::create_dir_all(&dir).expect("mkdir");
-        dir
+        crate::test_support::temp_dir("lock")
     }
 }
 

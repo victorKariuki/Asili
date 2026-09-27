@@ -591,16 +591,9 @@ fn diag_err(stage: &str, diags: Vec<Diagnostic>) -> CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir(label: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("pata-compile-{label}-{stamp}"));
-        fs::create_dir_all(&dir).expect("mkdir");
-        dir
+        crate::test_support::temp_dir(&format!("compile-{label}"))
     }
 
     /// Cross-package `leta`: entrypoint imports a struct and a public constant from a path
