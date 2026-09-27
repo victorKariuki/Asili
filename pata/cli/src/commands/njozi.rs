@@ -71,6 +71,7 @@ fn validate_project_name(name: &str) -> Result<(), CliError> {
 
 fn create_scaffold(project_name: &str, destination: &Path, template: Template) -> CliResult {
     ensure_destination_ready(destination)?;
+    let asili = asili_parser::LANGUAGE_VERSION;
 
     fs::create_dir_all(destination.join("kilele"))
         .map_err(|err| CliError::new(format!("imeshindwa kuunda kilele/: {err}"), 1))?;
@@ -87,7 +88,7 @@ fn create_scaffold(project_name: &str, destination: &Path, template: Template) -
             write_file(
                 &destination.join("pata.toml"),
                 &format!(
-                    "[jumla]\njina = \"{project_name}\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[eneo-kazi]\nwanachama = [\"core\", \"lib\"]\n"
+                    "[jumla]\njina = \"{project_name}\"\ntoleo = \"0.1.0\"\nasili = \"{asili}\"\n\n[eneo-kazi]\nwanachama = [\"core\", \"lib\"]\n"
                 ),
             )?;
             fs::create_dir_all(destination.join("core/src"))
@@ -96,11 +97,11 @@ fn create_scaffold(project_name: &str, destination: &Path, template: Template) -
                 .map_err(|e| CliError::new(format!("imeshindwa kuunda lib/src/: {e}"), 1))?;
             write_file(
                 &destination.join("core/pata.toml"),
-                &format!("[jumla]\njina = \"{}-core\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n", project_name),
+                &format!("[jumla]\njina = \"{}-core\"\ntoleo = \"0.1.0\"\nasili = \"{asili}\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n", project_name),
             )?;
             write_file(
                 &destination.join("lib/pata.toml"),
-                &format!("[jumla]\njina = \"{}-lib\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n", project_name),
+                &format!("[jumla]\njina = \"{}-lib\"\ntoleo = \"0.1.0\"\nasili = \"{asili}\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n", project_name),
             )?;
             write_file(
                 &destination.join("core/src/kuu.as"),
@@ -115,7 +116,7 @@ fn create_scaffold(project_name: &str, destination: &Path, template: Template) -
             write_file(
                 &destination.join("pata.toml"),
                 &format!(
-                    "[jumla]\njina = \"{project_name}\"\ntoleo = \"0.1.0\"\nasili = \"1.1\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n"
+                    "[jumla]\njina = \"{project_name}\"\ntoleo = \"0.1.0\"\nasili = \"{asili}\"\n\n[chanzo]\nkuingia = \"src/kuu.as\"\n\n[tegemezi]\n"
                 ),
             )?;
             fs::create_dir_all(destination.join("src"))

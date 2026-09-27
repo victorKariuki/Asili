@@ -50,6 +50,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   re-publishes diagnostics only for open documents that are, or transitively import, that file,
   and leaves other projects' documents alone (previously every open document was re-analyzed).
 
+- **`pata.toml`'s `asili` version is checked**: `pata` refuses to build a project whose
+  `[jumla] asili = "X.Y"` needs a newer language minor version, or a different major version,
+  than the toolchain implements (currently 1.1), with a Swahili error saying which; a malformed
+  value is reported too. `pata njozi` writes the toolchain's own version instead of a hardcoded
+  string.
+
 ### Changed
 
 - **Indexing an `Orodha` returns the element**: `a[i]` is now the element itself and an

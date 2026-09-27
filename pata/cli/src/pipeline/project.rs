@@ -12,10 +12,10 @@ pub use pata_core::Dependency;
 #[derive(Clone, Debug)]
 pub struct ProjectConfig {
     pub name: String,
-    // Parsed from pata.toml but not yet consumed anywhere: `asili_version` isn't checked against
-    // the running toolchain (see the TODO on load_project_config below), and `version` stopped
-    // feeding the lockfile once write_lockfile moved to pata_package::LockFile, whose schema
-    // tracks dependency locks only (like Cargo.lock, not the root project's own version).
+    // Parsed from pata.toml but not consumed: `version` stopped feeding the lockfile once
+    // write_lockfile moved to pata_package::LockFile, whose schema tracks dependency locks only
+    // (like Cargo.lock, not the root project's own version). `asili_version` is checked by
+    // `check_language_version` when the manifest is loaded.
     #[allow(dead_code)]
     pub version: String,
     #[allow(dead_code)]
@@ -128,9 +128,7 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
         return Err(CliError::new("pata.toml haina [jumla].asili", 2));
     }
 
-    // TODO: asili_version is read from pata.toml but never validated or used for compatibility
-    // checking. A project declaring `asili = "1.1"` runs fine on any interpreter version with no
-    // warning when features from a newer spec are used. Should compare against TOLEO at build time.
+    check_language_version(&asili_version, asili_parser::LANGUAGE_VERSION)?;
     Ok(ProjectConfig {
         name,
         version,
@@ -140,6 +138,47 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, CliError> {
         target,
         eneo_kazi,
     })
+}
+
+/// `[jumla] asili = "X.Y"` against the toolchain's language version `supported`: minor versions
+/// are backward-compatible and a major bump is breaking (docs/spec/00-maintenance.md), so the
+/// project builds when the majors match and its minor is not newer than the toolchain's.
+fn check_language_version(required: &str, supported: &str) -> Result<(), CliError> {
+    fn major_minor(v: &str) -> Option<(u64, u64)> {
+        let mut parts = v.trim().split('.');
+        let major = parts.next()?.parse().ok()?;
+        let minor = parts.next().map_or(Some(0), |m| m.parse().ok())?;
+        // An optional patch component (wording-only spec changes) never affects compatibility.
+        match parts.next() {
+            Some(p) if p.parse::<u64>().is_err() => return None,
+            _ => {}
+        }
+        parts.next().is_none().then_some((major, minor))
+    }
+    let (req_major, req_minor) = major_minor(required).ok_or_else(|| {
+        CliError::new(
+            format!("[jumla].asili = \"{required}\" si toleo sahihi (mfano: \"{supported}\")"),
+            2,
+        )
+    })?;
+    let (major, minor) = major_minor(supported).expect("LANGUAGE_VERSION is X.Y");
+    if req_major != major {
+        return Err(CliError::new(
+            format!(
+                "mradi umeandikwa kwa Asili {required}, ambayo haiendani na Asili {supported} ya pata hii"
+            ),
+            2,
+        ));
+    }
+    if req_minor > minor {
+        return Err(CliError::new(
+            format!(
+                "mradi unahitaji Asili {required}, lakini pata hii inaunga mkono hadi Asili {supported} tu; sasisha pata"
+            ),
+            2,
+        ));
+    }
+    Ok(())
 }
 
 pub fn validate_dep_name(name: &str) -> Result<(), CliError> {
@@ -410,10 +449,22 @@ pub fn write_lockfile(root: &Path, cfg: &ProjectConfig) -> Result<(), CliError> 
 
 #[cfg(test)]
 mod tests {
-    use super::{write_lockfile, Dependency, ProjectConfig};
+    use super::{check_language_version, write_lockfile, Dependency, ProjectConfig};
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::PathBuf;
+
+    #[test]
+    fn language_version_check_follows_spec_compatibility() {
+        let ok = |req: &str| check_language_version(req, "1.1").is_ok();
+        let msg = |req: &str| check_language_version(req, "1.1").unwrap_err().message;
+        assert!(ok("1.1") && ok("1.0") && ok("1") && ok("1.1.3"));
+        assert!(msg("1.2").contains("inaunga mkono hadi Asili 1.1"));
+        assert!(msg("2.0").contains("haiendani"));
+        assert!(msg("0.9").contains("haiendani"));
+        assert!(msg("moja").contains("si toleo sahihi"));
+        assert!(msg("1.x").contains("si toleo sahihi"));
+    }
 
     #[test]
     fn lockfile_is_deterministic() {

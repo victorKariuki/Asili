@@ -4,6 +4,10 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Tooling ([06-tooling-and-ecosystem.md](06-tooling-and-ecosystem.md)): `[jumla] asili = "X.Y"` is
+  now enforced — a project needing a newer minor version, or a different major version, than the
+  toolchain implements fails with a clear error.
+
 - Standard library ([05-standard-library.md](05-standard-library.md)): `kasha_gc` is excluded
   from the ambient builtin exports and again requires `leta kasha_gc`; an explicit import may
   shadow an ambient name, and only two explicit imports of one name clash (`SEM090`/`SEM091`).

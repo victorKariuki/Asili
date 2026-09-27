@@ -10,7 +10,10 @@ Previous: [Standard Library](05-standard-library.md) | [Overview](../SPECIFICATI
 
 - **File:** `pata.toml` (TOML).
 - **Minimal schema:**
-  - `[jumla]` — `jina`, `toleo`, `asili` (language version).
+  - `[jumla]` — `jina`, `toleo`, `asili` (language version). `asili = "X.Y"` is the spec version
+    the project needs: Pata refuses to build it when X differs from the toolchain's major version
+    or Y is newer than its minor version (minor versions are backward-compatible, see
+    [00-maintenance.md](00-maintenance.md)).
   - `[chanzo]` — `kuingia` (entrypoint, e.g. `src/kuu.as`).
   - `[tegemezi]` — third-party (or external) dependencies (Swahili-named, semver); added with `pata ongeza <lib>`.
 

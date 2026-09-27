@@ -14,6 +14,11 @@ pub use attrs::{item_survives, parse_sharti_predicate, ShartiPredicate, Target};
 pub use module_merge::merge_modules;
 pub use semantic::{format_value_type, parse_value_type};
 
+/// The newest Asili language (spec) version this toolchain implements — what `pata.toml`'s
+/// `[jumla] asili = "X.Y"` is checked against and what `pata njozi` writes. Bump it with the
+/// spec version in docs/SPECIFICATION.md (see docs/spec/00-maintenance.md).
+pub const LANGUAGE_VERSION: &str = "1.1";
+
 use cursor::Parser;
 
 pub fn parse_tokens(tokens: &[Token]) -> Result<Module, Vec<Diagnostic>> {
