@@ -8,7 +8,7 @@ pub struct Token {
 }
 
 /// A comment captured as trivia rather than a token — see [`tokenize_with_trivia`]. `text`
-/// excludes the leading `#`/`//` marker; `after_token_index` is the index into the returned
+/// includes the leading `#` marker; `after_token_index` is the index into the returned
 /// token vec of the last token before this comment (`None` if the comment precedes every token),
 /// letting a consumer re-attach each comment to "immediately after token N" during re-emission.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,7 +23,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
     tokenize_inner(source, None)
 }
 
-/// Same tokenization as [`tokenize`], but comments (`# ...` / `// ...`) are captured as
+/// Same tokenization as [`tokenize`], but comments (`# ...` and `/// ...` doc comments) are captured as
 /// [`Comment`] trivia instead of being silently discarded — for `pata nadhifu`, which needs to
 /// re-emit them rather than delete them. Every other consumer (the parser, LSP, lint, tests)
 /// keeps using [`tokenize`] unchanged; this is purely additive.
@@ -75,11 +75,12 @@ fn tokenize_inner(
                 }
             }
 
-            if ch == '/' && i + 1 < chars.len() && chars[i + 1] == '/' {
-                // Comment, skip until end of line
+            // `///` is a documentation comment (read by `pata thibitisha`'s public-API docs
+            // check). A plain `//` is the floor-division operator, not a comment.
+            if ch == '/' && chars.get(i + 1) == Some(&'/') && chars.get(i + 2) == Some(&'/') {
                 let start_col = col;
                 let start = i;
-                while i < chars.len() && chars[i] != '\n' {
+                while i < chars.len() {
                     i += 1;
                     col += 1;
                 }
@@ -191,11 +192,22 @@ fn tokenize_inner(
             if "(){}:,.;+-*/%<>!=[]?#&|^".contains(ch) {
                 let start_col = col;
                 let mut lexeme = ch.to_string();
+                // `//=` (floor-division assignment) is the one three-character operator.
+                if ch == '/' && chars.get(i + 1) == Some(&'/') && chars.get(i + 2) == Some(&'=') {
+                    tokens.push(Token {
+                        lexeme: "//=".to_string(),
+                        line: line_idx + 1,
+                        column: start_col,
+                    });
+                    i += 3;
+                    col += 3;
+                    continue;
+                }
                 if i + 1 < chars.len() {
                     let pair = format!("{}{}", ch, chars[i + 1]);
                     if [
                         "==", "!=", ">=", "<=", "->", "+=", "-=", "*=", "/=", "%=", "&=", "|=",
-                        "^=", "=>", "::", "**", "&&", "||", "<<", ">>",
+                        "^=", "//", "=>", "::", "**", "&&", "||", "<<", ">>",
                     ]
                     .contains(&pair.as_str())
                     {
@@ -305,7 +317,7 @@ mod tests {
 
     #[test]
     fn tokenize_unaffected_by_trivia_capture() {
-        let src = "weka x = 1 # maoni\nweka y = 2 // maoni mengine\n";
+        let src = "weka x = 1 # maoni\nweka y = 2 # maoni mengine\n";
         let plain = tokenize(src).expect("tokenize");
         let (with_trivia, _) = tokenize_with_trivia(src).expect("tokenize_with_trivia");
         assert_eq!(
@@ -315,19 +327,29 @@ mod tests {
     }
 
     #[test]
-    fn tokenize_with_trivia_captures_hash_and_slash_comments() {
-        let src = "weka x = 1 # ya kwanza\n// mstari mzima\nweka y = 2";
+    fn tokenize_with_trivia_captures_hash_comments() {
+        let src = "weka x = 1 # ya kwanza\n# mstari mzima\nweka y = 2";
         let (tokens, comments) = tokenize_with_trivia(src).expect("tokenize_with_trivia");
         assert_eq!(comments.len(), 2);
         assert_eq!(comments[0].text, "# ya kwanza");
         assert_eq!(comments[0].line, 1);
-        assert_eq!(comments[1].text, "// mstari mzima");
+        assert_eq!(comments[1].text, "# mstari mzima");
         assert_eq!(comments[1].line, 2);
         // First comment follows the last token on line 1 ("1"); second comment precedes any
         // token on its own line, so it should attach to that same prior token, not None.
         let tok_1_idx = tokens.iter().position(|t| t.lexeme == "1").unwrap();
         assert_eq!(comments[0].after_token_index, Some(tok_1_idx));
         assert_eq!(comments[1].after_token_index, Some(tok_1_idx));
+    }
+
+    #[test]
+    fn double_slash_is_floor_division_not_a_comment() {
+        let lexemes: Vec<String> = tokenize("a // b //= c /// doc comment")
+            .expect("tokenize")
+            .into_iter()
+            .map(|t| t.lexeme)
+            .collect();
+        assert_eq!(lexemes, ["a", "//", "b", "//=", "c"]);
     }
 
     #[test]

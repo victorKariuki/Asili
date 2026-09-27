@@ -39,7 +39,7 @@ Exit 0. On failure, exits 1 with a message naming the first problem found.
 
    ```asili
    sifa Inayoonyeshwa { kazi onyesha(self: Self) -> Neno }
-   // no `shughuli ya ... kwa Inayoonyeshwa` anywhere in the project
+   # no `shughuli ya ... kwa Inayoonyeshwa` anywhere in the project
    ```
 
    Fails with `sifa '<name>' haina utekelezaji wowote kwenye mradi huu`. Built-in seeded traits
@@ -75,7 +75,7 @@ Exit 0. On failure, exits 1 with a message naming the first problem found.
 
    ```asili
    /// Adds two numbers.
-   umma kazi jumla(a: Namba) -> Namba {  // arity changed since v1.0.0
+   umma kazi jumla(a: Namba) -> Namba {  # arity changed since v1.0.0
      rejesha a
    }
    ```

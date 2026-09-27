@@ -661,8 +661,8 @@ impl<'a> Parser<'a> {
             }
             let after = self.tokens.get(j + 1).map(|t| t.lexeme.as_str());
             if let (0, Some(op_tok)) = (depth, after.filter(|t| compound_op(t).is_some())) {
-                // `name[i] op= v`  →  `name.ingiza(i, name[i]? op v)`.
-                let op = compound_op(op_tok).expect("checked above");
+                // `name[i] op= v`  →  `name.ingiza(i, name[i] op v)`.
+                let (op_base, op) = compound_op(op_tok).expect("checked above");
                 let name = self.advance().lexeme.clone();
                 let line = self.prev().line;
                 let column = self.prev().column;
@@ -690,27 +690,16 @@ impl<'a> Parser<'a> {
                     line,
                     column,
                 };
-                let current = Expr::Propagate {
-                    expr: Box::new(Expr::Index {
-                        base: Box::new(target()),
-                        index: Box::new(idx.clone()),
-                        line,
-                    }),
+                let current = Expr::Index {
+                    base: Box::new(target()),
+                    index: Box::new(idx.clone()),
                     line,
                 };
                 return Some(Stmt::Expr {
                     expr: Expr::MethodCall {
                         receiver: Box::new(target()),
                         method_name: "ingiza".to_string(),
-                        args: vec![
-                            idx,
-                            Expr::Binary {
-                                left: Box::new(current),
-                                op,
-                                right: Box::new(val),
-                                line,
-                            },
-                        ],
+                        args: vec![idx, build_binary(op_base, op, current, val, line)],
                         line,
                     },
                     line,
@@ -752,25 +741,25 @@ impl<'a> Parser<'a> {
             });
         }
 
-        // `x %= e`, `x &= e`, `x |= e`, `x ^= e`  →  `x = x op e`.
+        // `x %= e`, `x //= e`, `x &= e`, `x |= e`, `x ^= e`  →  `x = x op e`.
         if self.check_ident()
-            && ["%=", "&=", "|=", "^="]
+            && ["%=", "//=", "&=", "|=", "^="]
                 .contains(&self.peek_n(1).map(|t| t.lexeme.as_str()).unwrap_or(""))
         {
             let name = self.advance().lexeme.clone();
             let line = self.prev().line;
             let column = self.prev().column;
-            let op = compound_op(&self.advance().lexeme.clone()).expect("listed above");
+            let (op_base, op) = compound_op(&self.advance().lexeme.clone()).expect("listed above");
             let rhs = self.parse_expression()?;
-            return Some(Stmt::Assign {
+            let current = Expr::Ident {
                 name: name.clone(),
+                line,
+                column,
+            };
+            return Some(Stmt::Assign {
+                name,
                 op: AssignOp::Assign,
-                value: Expr::Binary {
-                    left: Box::new(Expr::Ident { name, line, column }),
-                    op,
-                    right: Box::new(rhs),
-                    line,
-                },
+                value: build_binary(op_base, op, current, rhs, line),
                 line,
                 column,
             });
@@ -1061,12 +1050,7 @@ impl<'a> Parser<'a> {
                     matched = true;
                     let line = self.prev().line;
                     let right = next(self)?;
-                    left = Expr::Binary {
-                        left: Box::new(left),
-                        op: op.clone(),
-                        right: Box::new(right),
-                        line,
-                    };
+                    left = build_binary(tok, op.clone(), left, right, line);
                     break;
                 }
             }
@@ -1170,6 +1154,7 @@ impl<'a> Parser<'a> {
                 ("*", BinaryOp::Mul),
                 ("/", BinaryOp::Div),
                 ("%", BinaryOp::Rem),
+                ("//", BinaryOp::Div),
             ],
             |p| p.parse_power(),
         )
@@ -1700,19 +1685,44 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// The binary operator of a compound-assignment token (`+=` → `+`, ...).
-fn compound_op(token: &str) -> Option<BinaryOp> {
+/// The operator token and binary operator of a compound-assignment token (`+=` → `+`, ...).
+fn compound_op(token: &str) -> Option<(&'static str, BinaryOp)> {
     Some(match token {
-        "+=" => BinaryOp::Add,
-        "-=" => BinaryOp::Sub,
-        "*=" => BinaryOp::Mul,
-        "/=" => BinaryOp::Div,
-        "%=" => BinaryOp::Rem,
-        "&=" => BinaryOp::BitAnd,
-        "|=" => BinaryOp::BitOr,
-        "^=" => BinaryOp::BitXor,
+        "+=" => ("+", BinaryOp::Add),
+        "-=" => ("-", BinaryOp::Sub),
+        "*=" => ("*", BinaryOp::Mul),
+        "/=" => ("/", BinaryOp::Div),
+        "//=" => ("//", BinaryOp::Div),
+        "%=" => ("%", BinaryOp::Rem),
+        "&=" => ("&", BinaryOp::BitAnd),
+        "|=" => ("|", BinaryOp::BitOr),
+        "^=" => ("^", BinaryOp::BitXor),
         _ => return None,
     })
+}
+
+/// `left <tok> right`. Every binary expression, including compound assignments, is built here:
+/// floor division `a // b` is `sakafu(a / b)`, so it shares `sakafu`'s semantics (and the native
+/// backend's integer-division lowering) instead of being a second implementation.
+fn build_binary(tok: &str, op: BinaryOp, left: Expr, right: Expr, line: usize) -> Expr {
+    let quotient = Expr::Binary {
+        left: Box::new(left),
+        op,
+        right: Box::new(right),
+        line,
+    };
+    if tok != "//" {
+        return quotient;
+    }
+    Expr::Call {
+        callee: Box::new(Expr::Ident {
+            name: "sakafu".to_string(),
+            line,
+            column: 0,
+        }),
+        args: vec![quotient],
+        line,
+    }
 }
 
 /// Whether evaluating `expr` could call a `kazi`, builtin or method.

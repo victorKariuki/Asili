@@ -16,7 +16,6 @@ Solve time on one core, best of several runs:
 | C, gcc -O2 | 4.4 ms | 8 ms |
 | Rust -O | — | 7 ms |
 | **Asili AOT (LLVM)** | **4.8 ms** | **11 ms** |
-| Asili JIT (Cranelift) | ~40 ms | 40 ms |
 | Asili register VM | ~110 ms | 110 ms |
 | Python 3.11 | — | 305 ms |
 | Asili tree-walker (before) | 3.4 s | — |
@@ -69,9 +68,10 @@ snippet on every engine and require identical values and error text.
   never loaded. Generic-value instructions call back into the interpreter's single-step function
   (`exec_slow`) through a small runtime table, spilling and reloading only the registers that
   instruction touches, so native code never changes behaviour.
-- *JIT through Cranelift*: the same translation at load time when no AOT library exists
-  (no system toolchain needed). Cranelift optimizes less than LLVM (~40 ms vs ~5 ms here) but
-  starts instantly.
+- Without `clang` (it is needed only where `pata jenga` runs, not to build `pata` or to run a
+  built program), the bytecode runs on the register VM. A Cranelift JIT prototype (~40 ms here)
+  was removed so there is exactly one native backend to keep correct (recoverable from commit
+  `d77a8c4`).
 
 **Integer range analysis.** `Namba` is an `f64`; C and Rust use integers. Converting every bit
 mask float → int → float, and serializing `n += 1` through 4-cycle `addsd` chains, cost 5× on
@@ -98,8 +98,8 @@ PyPy) use; `tests/native_tiers.rs` includes values crossing 2^53 to exercise it.
 
 ## Correctness guardrails
 
-- `tests/engines_agree.rs`: tree-walker vs VM vs JIT vs AOT, values and error messages.
-- `tests/native_tiers.rs`: interpreter vs JIT vs AOT bit-for-bit on the numeric edge cases
+- `tests/engines_agree.rs`: tree-walker vs VM vs AOT, values and error messages.
+- `tests/native_tiers.rs`: interpreter vs AOT bit-for-bit on the numeric edge cases
   (`-0.0`, NaN, ±∞, 2^53, negative `%` and floor division, shifts outside `0..=63`,
   out-of-bounds reads and writes, recursion, labelled loops, callbacks, the full Sudoku).
 - NaN *bit patterns* are the one thing not compared: Asili cannot observe them, and Rust and
@@ -110,7 +110,6 @@ PyPy) use; `tests/native_tiers.rs` includes values crossing 2^53 to exercise it.
 
 - `ASILI_AOT=0` — don't build (at `pata jenga`) or load (at run time) the native library.
 - `ASILI_CLANG=/path/to/clang` — compiler used for AOT.
-- `ASILI_JIT=0` — no Cranelift JIT; with `ASILI_AOT=0` too, runs the VM interpreter.
 
 ## Remaining gaps
 

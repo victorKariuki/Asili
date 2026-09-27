@@ -927,16 +927,20 @@ fn orodha_index() {
 }
 
 #[test]
-fn orodha_index_returns_tokeo() {
+fn orodha_index_returns_element_and_question_mark_returns_tokeo() {
     let module = parse_only(
         "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
-         kazi in_bounds() -> Namba { weka a = orodha(10, 20) weka r = a[0] rejesha r? }
-         kazi out_of_bounds() -> Namba { weka a = orodha(10, 20) weka r = a[10] rejesha r? }",
+         kazi in_bounds() -> Namba { weka a = orodha(10, 20) rejesha a[0] }
+         kazi out_of_bounds() -> Namba { weka a = orodha(10, 20) rejesha a[10] }
+         kazi propagated() -> Namba { weka a = orodha(10, 20) rejesha a[10]? }",
     );
     let v = run_function(&module, "in_bounds", vec![]).expect("run");
     assert_eq!(v, Value::Namba(10.0));
-    // r? on Tokeo(Err) propagates, so the function returns that Err value
-    let v = run_function(&module, "out_of_bounds", vec![]).expect("run");
+    // A plain out-of-range index is a runtime error...
+    let err = run_function(&module, "out_of_bounds", vec![]).expect_err("out of range");
+    assert!(err.to_string().contains("fahirisi nje ya mipaka"), "{err}");
+    // ...while `a[i]?` returns the KosaMipaka Tokeo error from the function.
+    let v = run_function(&module, "propagated", vec![]).expect("run");
     assert!(matches!(v, Value::Tokeo(Err(_))));
     if let Value::Tokeo(Err(inner)) = v {
         assert!(matches!(*inner, Value::Struct(ref n, _) if n == "KosaMipaka"));

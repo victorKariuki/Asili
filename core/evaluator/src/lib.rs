@@ -9,8 +9,6 @@ pub mod debug_hook;
 mod env;
 mod eval;
 #[cfg(not(target_arch = "wasm32"))]
-mod jit;
-#[cfg(not(target_arch = "wasm32"))]
 mod native;
 mod platform;
 pub mod runtime;

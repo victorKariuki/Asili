@@ -24,11 +24,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   non-negative integers becomes an integer division, and list accesses whose index is proven
   in range drop their bounds check. The Inkala Sudoku solve runs in about 4.8 ms (gcc `-O2` C:
   4.4 ms; clang `-O2` C: 3.2 ms). `ASILI_AOT=0` disables it, `ASILI_CLANG` picks the compiler.
-- **Cranelift JIT tier** (`core/evaluator/src/jit.rs`): when no AOT library is present, bytecode
-  functions are compiled to machine code at load time (Sudoku: ~40 ms). `ASILI_JIT=0` disables
-  it. Both native tiers call back into the interpreter for anything touching generic values, so
-  they never change behaviour; `tests/native_tiers.rs` checks every snippet bit-for-bit across
-  the interpreter, the JIT and AOT (signed zeros, NaN/infinities, values past 2^53, negative
+- **Cross-tier differential tests** (`tests/native_tiers.rs`): every snippet must give
+  bit-identical results on the VM interpreter and the AOT native code (signed zeros,
+  NaN/infinities, values past 2^53, negative remainders, out-of-range shifts, out-of-bounds
+  errors, labelled loops, recursion, callbacks). Without `clang`, `.asb` bytecode runs on the
+  register VM (a Cranelift JIT prototype was removed in favour of one native backend).
   remainders, out-of-range shifts, out-of-bounds errors, labelled loops, recursion, callbacks).
 
 - **Shorter bit and counter code**: compound assignment gains `%=`, `&=`, `|=` and `^=`, and every
@@ -37,8 +37,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `kazi` or method since it is evaluated twice — new diagnostic `PAR096`). The Sudoku example
   uses both.
 
+- **Floor division `//`** (and `//=`): `a // b` is `sakafu(a / b)`, so `sakafu(i / N)` becomes
+  `i // N`. It is lowered to the same code as `sakafu(a / b)`, including the native integer
+  division.
+
 ### Changed
 
+- **Indexing an `Orodha` returns the element**: `a[i]` is now the element itself and an
+  out-of-range index stops the program with `paparika: fahirisi nje ya mipaka: i (urefu n)`,
+  instead of yielding a `Tokeo` that every read had to unwrap with `?`. `a[i]?` and `jaribu a[i]`
+  keep returning/raising the `KosaMipaka` error, and `a.pata(i)` stays the `Chaguo`-returning
+  lookup. The type checker gives `a[i]` type `T` (was `Tokeo<T, KosaMipaka>`); code that stored a
+  bare `a[i]` and inspected it as a `Tokeo` must use `a[i]?`/`a.pata(i)`. `a[i] op= v` now reads
+  `a[i]` rather than `a[i]?`.
+- **Comments are `#` only** (and `///` for documentation comments): `//` is now the
+  floor-division operator. Existing `// ...` comments in the examples and docs were converted;
+  the VS Code grammar and playground highlighter follow.
 - **Bitwise operators bind tighter than comparisons** (`&`/`na_biti`, `^`/`xor_biti`,
   `|`/`au_biti`, as in Rust and Python): `mask & bit == 0` now means `(mask & bit) == 0` instead
   of `mask & (bit == 0)`, which was always a type error, so no valid program changes meaning.
@@ -69,7 +83,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   now dispatches methods at run time when a receiver's type is not known statically (e.g.
   `weka k = kamusi()`) instead of falling back to the evaluator, iterates `Kamusi`, and runs
   `badilisha` and other mutating methods on `Orodha<Namba>` locals. `tests/engines_agree.rs`
-  runs each snippet on the evaluator, the VM interpreter, the JIT and AOT and requires
+  runs each snippet on the evaluator, the VM interpreter and AOT and requires
   identical values and error messages.
 - `Orodha.jiunge`/`kwa_neno` (and string building) now print NaN and infinities the same way as
   `kama Neno` does (`Siyo_Namba`, `Ukomo`, `-Ukomo`) instead of Rust's `NaN`/`inf`.

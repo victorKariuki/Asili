@@ -150,8 +150,8 @@ hufasiri HTTP/1.1 halisi — `kazi_jina(ombi: OmbiHttp) -> JibuHttp` badala ya
 ```asili
 leta mfumo
 
-weka jsoni = jaribu (kwa_json(orodha(1.0, 2.0, 3.0)))   // Tokeo<Neno, Neno>
-weka thamani = jaribu (kutoka_json(jsoni))                // Tokeo<Kamusi<Neno, Unknown>, Neno>
+weka jsoni = jaribu (kwa_json(orodha(1.0, 2.0, 3.0)))  # Tokeo<Neno, Neno>
+weka thamani = jaribu (kutoka_json(jsoni))  # Tokeo<Kamusi<Neno, Unknown>, Neno>
 ```
 
 Vishikizo vya rasilimali (`Kasha_GC<T>`, `Faili`, `Mkondo`) na miundo ya sambamba (`NjiaTx`/

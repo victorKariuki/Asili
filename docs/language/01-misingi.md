@@ -4,8 +4,12 @@
 
 ```asili
 # Hii ni maoni ya mstari mmoja
-// Hii pia ni maoni
+weka x = 7 // 2   # maoni baada ya msimbo — `//` ni mgawanyo wa sakafu (3), si maoni
 ```
+
+`#` starts a comment and `///` a documentation comment (on the line above a `kazi` or `umbo`,
+checked by `pata thibitisha`). A plain `//` is floor division (see
+[09-waendeshaji.md](09-waendeshaji.md)), and `#[...]` starts an attribute.
 
 ## Kutangaza Vigeuzi (Variable Declaration)
 

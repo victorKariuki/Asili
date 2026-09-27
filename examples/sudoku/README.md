@@ -10,7 +10,8 @@ It demonstrates the concise syntax used by the solver:
   (`safu[r] |= x`)
 - symbolic bitwise operators (`|`, `&`, `^`, `<<`), which bind tighter than comparisons
   (`tumika & x == 0`)
-- grouped declarations (`weka r = sakafu(i / N), c = i % N`)
+- grouped declarations and floor division (`weka r = i // N, c = i % N`)
+- plain indexing without `?` (`b[p] == 0`)
 
 Run it from this directory:
 
@@ -32,8 +33,8 @@ reports 90,665 attempts:
 ```
 
 `pata jenga` compiles the bytecode ahead of time to native code through LLVM when `clang` is
-installed (`asili-aot`); otherwise `pata tenda` JIT-compiles it with Cranelift (`asili-jit`,
-or `ASILI_AOT=0`), and `ASILI_JIT=0` as well runs the register-VM interpreter (`asili-vm`).
+installed (`asili-aot`); otherwise, or with `ASILI_AOT=0`, it runs on the register-VM
+interpreter (`asili-vm`). `clang` is needed only where `pata jenga` runs.
 Typical results on one core (whole process, including startup):
 
 | Implementation | Time |
@@ -41,6 +42,5 @@ Typical results on one core (whole process, including startup):
 | C (gcc -O2) | 8 ms |
 | Rust (-O) | 7 ms |
 | Asili, AOT (LLVM) | 11 ms |
-| Asili, JIT (Cranelift) | 40 ms |
 | Asili, VM interpreter | 110 ms |
 | Python 3.11 | 305 ms |

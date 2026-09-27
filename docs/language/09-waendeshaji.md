@@ -18,7 +18,7 @@ Ground truth: the parser's precedence-climbing chain in `core/parser/src/parse.r
 | 7       | `na_biti`, `&`                                       | Kushoto→Kulia |
 | 8       | `sogeza_kushoto`, `sogeza_kulia`, `<<`, `>>`         | Kushoto→Kulia |
 | 9       | `+`, `-`                                             | Kushoto→Kulia |
-| 10      | `*`, `/`, `%`                                        | Kushoto→Kulia |
+| 10      | `*`, `/`, `//`, `%`                                  | Kushoto→Kulia |
 | 11      | `**`                                                 | Kulia→Kushoto |
 | 12      | `kama` (cast)                                        | Kushoto→Kulia |
 | 13 (juu) | `-x`, `siyo x`, `siyo_biti x`, `jaribu x`, `azima x`, `azima_tenda x` | Kulia→Kushoto |
@@ -41,6 +41,21 @@ apply to a larger expression.
 6 & 3 == 2        # kweli — & kabla ya ==
 (a + b) kama Neno # kama inashika karibu zaidi kuliko + — parenthesize ili kubadilisha kikundi
 ```
+
+---
+
+## Mgawanyo wa Sakafu (Floor Division)
+
+`a // b` is `sakafu(a / b)`: division rounded down to a whole number, as in Python.
+
+```asili
+17 // 5      # 3
+-7 // 2      # -4   (rounds down, not toward zero)
+7.5 // 2     # 3
+weka safu = i // 9, nguzo = i % 9
+```
+
+`//` is an operator, not a comment — comments use `#` (and `///` for documentation comments).
 
 ---
 
@@ -175,6 +190,8 @@ n -= 3    # 12
 n *= 2    # 24
 n /= 4    # 6
 n %= 4    # 2
+n = 17
+n //= 5   # 3  — sawa na: n = n // 5
 
 weka s = "Hello"
 s += " World"   # "Hello World"  (works on Neno too)
@@ -185,13 +202,13 @@ bendera ^= 1    # 5
 bendera &= 6    # 4
 ```
 
-`%=`, `&=`, `|=` and `^=` are shorthand for `x = x op e`. (There is no `<<=`/`>>=`: `>>=` would
+`%=`, `//=`, `&=`, `|=` and `^=` are shorthand for `x = x op e`. (There is no `<<=`/`>>=`: `>>=` would
 collide with nested generics such as `Orodha<Orodha<Namba>>= ...`.)
 
 ### Kwenye Fahirisi (On an index)
 
 Every compound operator also works on a list element; `a[i] op= v` is shorthand for
-`a[i] = a[i]? op v`:
+`a[i] = a[i] op v`:
 
 ```asili
 weka safu: Orodha<Namba> = orodha_rudia(0, 9)
@@ -201,8 +218,8 @@ hesabu[k] += 1
 
 Because the index is evaluated twice (once to read, once to write), it may not call a `kazi` or
 method — `a[f()] += 1` is rejected with `PAR096` (pure numeric builtins such as `sakafu` are
-allowed: `sanduku[sakafu(r / 3) * 3 + sakafu(c / 3)] |= x`). An out-of-range index propagates
-the `KosaMipaka` error through `?`, like reading `a[i]?`.
+allowed: `sanduku[r // 3 * 3 + c // 3] |= x`). An out-of-range index is a runtime error, like
+reading `a[i]`.
 
 ---
 
@@ -211,8 +228,8 @@ the `KosaMipaka` error through `?`, like reading `a[i]?`.
 | Waendeshaji | Maelezo                                  | Mfano           |
 |-------------|------------------------------------------|-----------------|
 | `.`         | Field or method access                   | `mtu.jina`      |
-| `[]`        | Index access                             | `a[0]`          |
-| `[]?`       | Index with error propagation             | `a[0]?`         |
+| `[]`        | Index access (out of range: runtime error) | `a[0]`        |
+| `[]?`       | Index; out of range returns the error from the `kazi` | `a[0]?` |
 | `::`        | Enum variant or namespace path           | `Rangi::Nyekundu` |
 | `?`         | Error propagation (postfix `?`)          | `a[i]?`         |
 | `->`        | Return type annotation (not an operator) | `kazi f() -> Namba` |

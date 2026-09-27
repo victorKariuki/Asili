@@ -1,11 +1,30 @@
 //! Expression evaluation and pattern matching.
 
-use asili_parser::{BinaryOp, Expr, Pattern};
+use asili_parser::{BinaryOp, Expr, Pattern, UnaryOp};
 
 use crate::runtime::Runtime;
 use crate::value::{parse_number, EvalError, EvalOut, MapKey, Value};
 
-use super::methods::index_value;
+use super::methods::{index_element, index_value};
+
+/// `base[index]`; `as_tokeo` for the `b[i]?` / `jaribu b[i]` forms.
+fn eval_index(
+    base: &Expr,
+    index: &Expr,
+    rt: &mut Runtime<'_>,
+    as_tokeo: bool,
+) -> Result<Value, EvalError> {
+    rt.count_index_read();
+    let i_val = super::eval_expr_impl(index, rt)?;
+    let read = if as_tokeo { index_value } else { index_element };
+    if let Expr::Ident { name, .. } = base {
+        if let Some(value) = rt.env.get_ref(name) {
+            return read(value, &i_val);
+        }
+    }
+    let b = super::eval_expr_impl(base, rt)?;
+    read(&b, &i_val)
+}
 
 fn invoke_named_callback(
     rt: &mut Runtime<'_>,
@@ -237,19 +256,15 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 )),
             }
         }
-        Expr::Index { base, index, .. } => {
-            rt.count_index_read();
-            let i_val = super::eval_expr_impl(index, rt)?;
-            if let Expr::Ident { name, .. } = &**base {
-                if let Some(value) = rt.env.get_ref(name) {
-                    return index_value(value, &i_val);
-                }
-            }
-            let b = super::eval_expr_impl(base, rt)?;
-            index_value(&b, &i_val)
-        }
+        Expr::Index { base, index, .. } => eval_index(base, index, rt, false),
         Expr::Unary { op, expr, .. } => {
-            let v = super::eval_expr_impl(expr, rt)?;
+            let v = match (op, &**expr) {
+                // `jaribu b[i]`: unwrap the index's `Tokeo`, not a plain element.
+                (UnaryOp::Jaribu, Expr::Index { base, index, .. }) => {
+                    eval_index(base, index, rt, true)?
+                }
+                _ => super::eval_expr_impl(expr, rt)?,
+            };
             super::ops::unary_value(op, v)
         }
         Expr::Binary {
@@ -513,7 +528,11 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             }
         }
         Expr::Propagate { expr, .. } => {
-            let v = super::eval_expr_impl(expr, rt)?;
+            let v = match &**expr {
+                // `b[i]?`: an out-of-range index becomes the propagated `Tokeo` error.
+                Expr::Index { base, index, .. } => eval_index(base, index, rt, true)?,
+                _ => super::eval_expr_impl(expr, rt)?,
+            };
             super::ops::propagate(v)
         }
     }

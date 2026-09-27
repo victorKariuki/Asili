@@ -1,11 +1,11 @@
-// Static file server for the Asili Playground, written in Asili itself — serves
-// index.html/style.css/main.js/pkg/samples using this repo's own HTTP framing layer
-// (mkondo_tumikia_http, see examples/http_server). Run with `pata jenga --tenda` from
-// this directory (examples/playground), then open http://127.0.0.1:8080/.
-//
-// Asili's soma_faili reads text (UTF-8) files only — no raw-bytes file API yet — so the wasm
-// binary is served pre-encoded as base64 text (see build.sh's `base64` step, producing
-// pkg/asili_wasm_bg.wasm.b64) and decoded back to bytes by main.js before instantiating it.
+# Static file server for the Asili Playground, written in Asili itself — serves
+# index.html/style.css/main.js/pkg/samples using this repo's own HTTP framing layer
+# (mkondo_tumikia_http, see examples/http_server). Run with `pata jenga --tenda` from
+# this directory (examples/playground), then open http://127.0.0.1:8080/.
+#
+# Asili's soma_faili reads text (UTF-8) files only — no raw-bytes file API yet — so the wasm
+# binary is served pre-encoded as base64 text (see build.sh's `base64` step, producing
+# pkg/asili_wasm_bg.wasm.b64) and decoded back to bytes by main.js before instantiating it.
 leta mfumo
 leta matumizi
 leta faili
@@ -26,7 +26,7 @@ kazi jibu_faili(njia: Neno, aina: Neno) -> JibuHttp {
     }
 }
 
-// kazi_jina for mkondo_tumikia_http: routes each request path to the matching static asset.
+# kazi_jina for mkondo_tumikia_http: routes each request path to the matching static asset.
 kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
     linganisha ombi.anwani {
         "/" => { rejesha jibu_faili("index.html", "text/html; charset=utf-8") }

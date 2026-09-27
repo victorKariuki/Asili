@@ -87,9 +87,9 @@ fn njia_na_kikomo_delivers_every_item_in_order_under_backpressure() {
 
             weka id = jaribu (tenda("mfanyakazi_wa_kutuma", tx))
 
-            // Slow consumer: the producer can send at most one unread item ahead at a time on a
-            // bound-1 channel, so this delay forces the producer to actually block on .tuma()
-            // for its 2nd and 3rd sends rather than buffering all three up front.
+            # Slow consumer: the producer can send at most one unread item ahead at a time on a
+            # bound-1 channel, so this delay forces the producer to actually block on .tuma()
+            # for its 2nd and 3rd sends rather than buffering all three up front.
             weka matokeo = ""
             weka i = 0
             wakati i < 3 {

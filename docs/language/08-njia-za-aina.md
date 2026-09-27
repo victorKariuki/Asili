@@ -84,7 +84,8 @@ s.herufi_kwa(99)   # Chaguo(Hamna) — out of range, not a panic
 | `a.vipande(size)`  | `Orodha<Orodha<T>>` | Split the list into chunks of at most `size` elements |
 | `a.kila_na_fahirisi(f)` | `Tupu`   | Call a named function with each element and its index    |
 | `a.ingiza(i, v)`  | `Tupu`         | Replace the element at index `i` with `v` (mutates in place); panics if `i` is out of bounds — does **not** grow the list. `a[i] = v` desugars to this call. |
-| `a[i]?`           | `T`            | Index with error propagation (not a method — see below) |
+| `a[i]`            | `T`            | Element; out of range is a runtime error (not a method — see below) |
+| `a[i]?`           | `T`            | Element; out of range returns the `KosaMipaka` error from the `kazi` |
 
 ### Mifano
 
@@ -114,8 +115,11 @@ weka mistari = a.vipande(2).ramani("kwa_mstari").jiunge("\n")
 
 ```asili
 weka a = orodha(5, 10, 15)
-weka x = a[0]?    # 5   — propagates if out of bounds
-weka y = a[2]?    # 15
+weka x = a[0]     # 5
+weka y = a[2]     # 15
+weka z = a[7]     # kosa: fahirisi nje ya mipaka: 7 (urefu 3)
+weka w = a[7]?    # returns Tokeo(Kosa(KosaMipaka)) from the enclosing kazi instead
+weka v = a.pata(7).angu(0)   # 0 — Chaguo-based, never fails
 
 # Index assign
 a[1] = 99         # a is now [5, 99, 15]

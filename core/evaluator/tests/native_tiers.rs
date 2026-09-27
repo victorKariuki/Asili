@@ -1,5 +1,5 @@
 //! Differential tests: every snippet must produce bit-identical results on the register VM's
-//! interpreter, the Cranelift JIT, and the LLVM AOT library (when `clang` is available).
+//! interpreter and the LLVM AOT library (when `clang` is available).
 //! The snippets target the places where native code could diverge from `f64` semantics:
 //! -0.0, NaN, infinities, integers beyond 2^53 (speculation/deoptimization), remainders and
 //! floor division of negatives, out-of-range shifts, and out-of-bounds list access.
@@ -45,11 +45,6 @@ fn check(name: &str, source: &str, functions: &[&str]) {
                 .unwrap_or_else(|e| format!("ERR {e}"))
         };
         let interpreted = run(Engine::Interpreter);
-        assert_eq!(
-            run(Engine::Jit),
-            interpreted,
-            "{name}::{function}: JIT differs"
-        );
         if let Some(lib) = &lib {
             assert_eq!(
                 run(Engine::Aot(lib)),
