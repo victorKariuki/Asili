@@ -1,6 +1,7 @@
 //! Expression and statement evaluation.
 
 mod expr;
+pub(crate) mod methods;
 mod stmt;
 
 use asili_parser::{Block, Expr, Module};

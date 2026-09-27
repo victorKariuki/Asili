@@ -13,12 +13,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   everything and reports the best wall time per implementation after checking that every
   solver reports the same attempt count (90,665).
 
+### Changed
+
+- **Typed register VM for `.asb` bytecode** (`core/evaluator/src/bytecode.rs`): the stack VM,
+  which boxed every operand in a `Value`-carrying enum, is replaced by a register machine with
+  separate `f64`, `Vec<f64>` (`Orodha<Namba>`) and generic `Value` register files per frame.
+  Numeric code never touches `Value`: arithmetic and bitwise operators are single instructions
+  on unboxed registers, comparisons feeding `ikiwa`/`wakati` fuse into one compare-and-branch,
+  `kwa ... kutoka ... hadi` uses a fused increment-and-branch back edge, `b[i]?` on an
+  `Orodha<Namba>` is one bounds-checked load, and numeric literals are preloaded registers. The
+  real Inkala Sudoku (90,665 attempts) drops from 1.50 s to about 0.12 s in release builds (the
+  tree-walking evaluator takes 3.4 s; the same algorithm in CPython 3.11 takes 0.33 s, in C
+  0.006 s). The `.asb` bytecode payload format changed; rebuild artifacts with `pata jenga`.
+- Receiver methods that need no interpreter state (`Neno` methods, `Orodha` `clona`/`urefu`/
+  `pata`/`unganisha`/`jiunge`/`kwa_neno`/`vipande`), indexing and `kama` casts now live in one
+  shared module used by both the evaluator and the VM, so the two execution paths cannot drift.
+
 ### Fixed
 
 - **Sudoku example fixture**: the board literal had 82 cells (an extra `0` in the last row),
   so the example solved an easier, different puzzle — which is where the 0.6.0 "roughly 0.05
   seconds" bytecode figure came from. The fixture is the real 81-cell Arto Inkala puzzle again
   and reports 90,665 attempts / 10,041 backtracks.
+- **Bytecode VM correctness**: `.asb` programs no longer crash with `bytecode method haijaungwa
+  mkono` on `vipande`, `ramani`, `kwa_neno`, `jiunge` and the other `Neno`/`Orodha` methods (the
+  Sudoku example itself failed at the final board print); methods the VM does not implement now
+  make `pata jenga` fall back to the AST artifact instead of failing at run time. `na`/`au` now
+  short-circuit, labelled `vunja`/`endelea` target the right loop, block-scoped `weka` bindings no
+  longer share one slot per name, builtins win over same-named `kazi` (matching the evaluator),
+  out-of-bounds `Orodha` reads return the evaluator's `KosaMipaka` error, and the nonexistent
+  call forms `na_biti(..)`/`sogeza_kushoto(..)` are no longer silently accepted.
 
 ## [0.6.0] - 2026-09-21
 
