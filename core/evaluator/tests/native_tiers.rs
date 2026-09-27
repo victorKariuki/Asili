@@ -302,8 +302,9 @@ fn sudoku_example_matches() {
             "kazi tatua() -> Orodha<Namba> {",
         )
         .replace(
-            "    ikiwa done {\n        onyesha(b)",
-            "    rejesha [tries, backs]\n    ikiwa done {\n        onyesha(b)",
+            "    ikiwa imekamilika {\n        onyesha(b)",
+            "    rejesha [majaribio, marudio]\n    ikiwa imekamilika {\n        onyesha(b)",
         );
+    assert!(source.contains("rejesha [majaribio, marudio]"));
     check("sudoku", &source, &["tatua"]);
 }

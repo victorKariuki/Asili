@@ -659,7 +659,64 @@ impl<'a> Parser<'a> {
                     j += 1;
                 }
             }
-            if depth == 0 && self.tokens.get(j + 1).map(|t| t.lexeme.as_str()) == Some("=") {
+            let after = self.tokens.get(j + 1).map(|t| t.lexeme.as_str());
+            if let (0, Some(op_tok)) = (depth, after.filter(|t| compound_op(t).is_some())) {
+                // `name[i] op= v`  →  `name.ingiza(i, name[i]? op v)`.
+                let op = compound_op(op_tok).expect("checked above");
+                let name = self.advance().lexeme.clone();
+                let line = self.prev().line;
+                let column = self.prev().column;
+                self.advance(); // consume [
+                let idx = self.parse_expression()?;
+                self.consume("]", "PAR091", "fahirisi inahitaji ']'")?;
+                let op_line = self.peek().line;
+                let op_column = self.peek().column;
+                let op_lexeme = self.advance().lexeme.clone();
+                // The index is evaluated twice (read and write), so it must not call anything.
+                if expr_has_call(&idx) {
+                    self.errors.push(
+                        Diagnostic::new(
+                            "PAR096",
+                            format!("fahirisi ya '{op_lexeme}' haiwezi kuwa na mwito wa kazi"),
+                        )
+                        .with_stage("uchanganuzi")
+                        .with_span(op_line, op_column),
+                    );
+                    return None;
+                }
+                let val = self.parse_expression()?;
+                let target = || Expr::Ident {
+                    name: name.clone(),
+                    line,
+                    column,
+                };
+                let current = Expr::Propagate {
+                    expr: Box::new(Expr::Index {
+                        base: Box::new(target()),
+                        index: Box::new(idx.clone()),
+                        line,
+                    }),
+                    line,
+                };
+                return Some(Stmt::Expr {
+                    expr: Expr::MethodCall {
+                        receiver: Box::new(target()),
+                        method_name: "ingiza".to_string(),
+                        args: vec![
+                            idx,
+                            Expr::Binary {
+                                left: Box::new(current),
+                                op,
+                                right: Box::new(val),
+                                line,
+                            },
+                        ],
+                        line,
+                    },
+                    line,
+                });
+            }
+            if depth == 0 && after == Some("=") {
                 let name = self.advance().lexeme.clone();
                 let line = self.prev().line;
                 let column = self.prev().column;
@@ -690,6 +747,30 @@ impl<'a> Parser<'a> {
                 name,
                 op: AssignOp::Assign,
                 value: expr,
+                line,
+                column,
+            });
+        }
+
+        // `x %= e`, `x &= e`, `x |= e`, `x ^= e`  →  `x = x op e`.
+        if self.check_ident()
+            && ["%=", "&=", "|=", "^="]
+                .contains(&self.peek_n(1).map(|t| t.lexeme.as_str()).unwrap_or(""))
+        {
+            let name = self.advance().lexeme.clone();
+            let line = self.prev().line;
+            let column = self.prev().column;
+            let op = compound_op(&self.advance().lexeme.clone()).expect("listed above");
+            let rhs = self.parse_expression()?;
+            return Some(Stmt::Assign {
+                name: name.clone(),
+                op: AssignOp::Assign,
+                value: Expr::Binary {
+                    left: Box::new(Expr::Ident { name, line, column }),
+                    op,
+                    right: Box::new(rhs),
+                    line,
+                },
                 line,
                 column,
             });
@@ -1004,9 +1085,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_and(&mut self) -> Option<Expr> {
-        let left = self.parse_bitwise_or()?;
+        let left = self.parse_equality()?;
         self.parse_binary_left(left, &[("na", BinaryOp::And), ("&&", BinaryOp::And)], |p| {
-            p.parse_bitwise_or()
+            p.parse_equality()
         })
     }
 
@@ -1028,12 +1109,14 @@ impl<'a> Parser<'a> {
         )
     }
 
+    // Bitwise operators bind tighter than comparisons (as in Rust and Python), so
+    // `mask & bit == 0` means `(mask & bit) == 0`.
     fn parse_bitwise_and(&mut self) -> Option<Expr> {
-        let left = self.parse_equality()?;
+        let left = self.parse_shift()?;
         self.parse_binary_left(
             left,
             &[("na_biti", BinaryOp::BitAnd), ("&", BinaryOp::BitAnd)],
-            |p| p.parse_equality(),
+            |p| p.parse_shift(),
         )
     }
 
@@ -1045,7 +1128,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_comparison(&mut self) -> Option<Expr> {
-        let left = self.parse_shift()?;
+        let left = self.parse_bitwise_or()?;
         self.parse_binary_left(
             left,
             &[
@@ -1054,7 +1137,7 @@ impl<'a> Parser<'a> {
                 (">", BinaryOp::Gt),
                 ("<", BinaryOp::Lt),
             ],
-            |p| p.parse_shift(),
+            |p| p.parse_bitwise_or(),
         )
     }
 
@@ -1614,5 +1697,53 @@ impl<'a> Parser<'a> {
                 attrs: Vec::new(),
             },
         ]
+    }
+}
+
+/// The binary operator of a compound-assignment token (`+=` → `+`, ...).
+fn compound_op(token: &str) -> Option<BinaryOp> {
+    Some(match token {
+        "+=" => BinaryOp::Add,
+        "-=" => BinaryOp::Sub,
+        "*=" => BinaryOp::Mul,
+        "/=" => BinaryOp::Div,
+        "%=" => BinaryOp::Rem,
+        "&=" => BinaryOp::BitAnd,
+        "|=" => BinaryOp::BitOr,
+        "^=" => BinaryOp::BitXor,
+        _ => return None,
+    })
+}
+
+/// Whether evaluating `expr` could call a `kazi`, builtin or method.
+fn expr_has_call(expr: &Expr) -> bool {
+    match expr {
+        // Pure numeric builtins may be evaluated twice without any observable difference
+        // (builtins take precedence over a same-named `kazi`).
+        Expr::Call { callee, args, .. }
+            if matches!(&**callee, Expr::Ident { name, .. }
+                if matches!(name.as_str(), "sakafu" | "dari" | "abs" | "mzizi")) =>
+        {
+            args.iter().any(expr_has_call)
+        }
+        Expr::Call { .. } | Expr::MethodCall { .. } => true,
+        Expr::Group(e) | Expr::Propagate { expr: e, .. } | Expr::Cast { expr: e, .. } => {
+            expr_has_call(e)
+        }
+        Expr::Unary { expr, .. } => expr_has_call(expr),
+        Expr::Binary { left, right, .. } => expr_has_call(left) || expr_has_call(right),
+        Expr::Index { base, index, .. } => expr_has_call(base) || expr_has_call(index),
+        Expr::FieldAccess { receiver, .. } => expr_has_call(receiver),
+        Expr::List { elements, .. } => elements.iter().any(expr_has_call),
+        Expr::If { .. }
+        | Expr::Map { .. }
+        | Expr::StructLiteral { .. }
+        | Expr::EnumConstruct { .. } => true,
+        Expr::Number(_)
+        | Expr::String(_)
+        | Expr::Bool(_)
+        | Expr::Char(_)
+        | Expr::Ident { .. }
+        | Expr::Hamna => false,
     }
 }
