@@ -1855,10 +1855,7 @@ impl<'a> FunctionCompiler<'a> {
                     reg: out,
                 });
             }
-            let mut regs = Vec::with_capacity(args.len());
-            for arg in args {
-                regs.push(self.expr_as(arg, Ty::Val)?.reg);
-            }
+            let regs = self.val_args(args)?;
             let out = self.dst_or_temp(dst, Ty::Val);
             self.emit(Opcode::CallBuiltin(Box::new(BuiltinOp {
                 builtin,
@@ -1943,10 +1940,7 @@ impl<'a> FunctionCompiler<'a> {
                     return Some(out);
                 }
                 (_, _, Some(list)) if methods::is_mutating(&Value::Orodha(Vec::new()), method) => {
-                    let mut regs = Vec::with_capacity(args.len());
-                    for arg in args {
-                        regs.push(self.expr_as(arg, Ty::Val)?.reg);
-                    }
+                    let regs = self.val_args(args)?;
                     let out = self.dst_or_temp(dst, Ty::Val);
                     self.emit(Opcode::ListMutate(Box::new(MutMethodOp {
                         method: method.to_string(),
@@ -1969,18 +1963,7 @@ impl<'a> FunctionCompiler<'a> {
                 if local.ty != Ty::Val {
                     return None;
                 }
-                let mut regs = Vec::with_capacity(args.len());
-                for arg in args {
-                    regs.push(self.expr_as(arg, Ty::Val)?.reg);
-                }
-                let out = self.dst_or_temp(dst, Ty::Val);
-                self.emit(Opcode::MutMethod(Box::new(MutMethodOp {
-                    method: method.to_string(),
-                    recv: local.reg,
-                    args: regs,
-                    dst: out.reg,
-                })));
-                return Some(out);
+                return self.emit_mut_method(method, local.reg, args, dst);
             }
         }
         if method == "urefu"
@@ -2001,19 +1984,7 @@ impl<'a> FunctionCompiler<'a> {
         if !supported {
             return None;
         }
-        let recv = self.expr_as(receiver, Ty::Val)?.reg;
-        let mut regs = Vec::with_capacity(args.len());
-        for arg in args {
-            regs.push(self.expr_as(arg, Ty::Val)?.reg);
-        }
-        let out = self.dst_or_temp(dst, Ty::Val);
-        self.emit(Opcode::CallMethod(Box::new(MethodOp {
-            method: method.to_string(),
-            recv,
-            args: regs,
-            dst: out.reg,
-        })));
-        Some(out)
+        self.emit_call_method(receiver, method, args, dst)
     }
 
     /// A method call whose receiver type is not known statically: dispatched at run time
@@ -2028,34 +1999,58 @@ impl<'a> FunctionCompiler<'a> {
         if !methods::is_shared_method_name(method) {
             return None;
         }
-        let mut regs = Vec::with_capacity(args.len());
         let local = match receiver {
             Expr::Ident { name, .. } => self.lookup(name).map(|l| l.op),
             _ => None,
         };
         // A named generic local may be mutated in place.
         if let Some(local) = local.filter(|l| l.ty == Ty::Val) {
-            for arg in args {
-                regs.push(self.expr_as(arg, Ty::Val)?.reg);
-            }
-            let out = self.dst_or_temp(dst, Ty::Val);
-            self.emit(Opcode::MutMethod(Box::new(MutMethodOp {
-                method: method.to_string(),
-                recv: local.reg,
-                args: regs,
-                dst: out.reg,
-            })));
-            return Some(out);
+            return self.emit_mut_method(method, local.reg, args, dst);
         }
+        self.emit_call_method(receiver, method, args, dst)
+    }
+
+    /// Compile `args` into generic registers, in order.
+    fn val_args(&mut self, args: &[Expr]) -> Option<Vec<Reg>> {
+        args.iter()
+            .map(|arg| self.expr_as(arg, Ty::Val).map(|op| op.reg))
+            .collect()
+    }
+
+    /// `recv.method(args)` mutating the generic local `recv` in place.
+    fn emit_mut_method(
+        &mut self,
+        method: &str,
+        recv: Reg,
+        args: &[Expr],
+        dst: Option<Operand>,
+    ) -> Option<Operand> {
+        let args = self.val_args(args)?;
+        let out = self.dst_or_temp(dst, Ty::Val);
+        self.emit(Opcode::MutMethod(Box::new(MutMethodOp {
+            method: method.to_string(),
+            recv,
+            args,
+            dst: out.reg,
+        })));
+        Some(out)
+    }
+
+    /// `receiver.method(args)` through the shared method table (receiver evaluated first).
+    fn emit_call_method(
+        &mut self,
+        receiver: &Expr,
+        method: &str,
+        args: &[Expr],
+        dst: Option<Operand>,
+    ) -> Option<Operand> {
         let recv = self.expr_as(receiver, Ty::Val)?.reg;
-        for arg in args {
-            regs.push(self.expr_as(arg, Ty::Val)?.reg);
-        }
+        let args = self.val_args(args)?;
         let out = self.dst_or_temp(dst, Ty::Val);
         self.emit(Opcode::CallMethod(Box::new(MethodOp {
             method: method.to_string(),
             recv,
-            args: regs,
+            args,
             dst: out.reg,
         })));
         Some(out)
