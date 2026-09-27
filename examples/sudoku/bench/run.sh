@@ -12,7 +12,8 @@ out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 
 cargo build --release -q -p pata-cli --manifest-path "$root/Cargo.toml"
-(cd "$here/.." && "$root/target/release/pata-cli" jenga >/dev/null)
+# release: fail instead of silently benchmarking the VM when native code cannot be built.
+(cd "$here/.." && "$root/target/release/pata-cli" jenga --namna release >/dev/null)
 gcc -O2 -o "$out/sudoku_c" "$here/sudoku.c"
 rustc -O -o "$out/sudoku_rs" "$here/rust/main.rs"
 

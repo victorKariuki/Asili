@@ -556,6 +556,14 @@ pub fn emit_asb(module: &Module, source: &str) -> Vec<u8> {
     asb::emit_asb_bytes(module, source)
 }
 
+/// Like [`emit_asb`] but bytecode is required (for `pata jenga --namna release`): every program
+/// is compiled to bytecode, and when a construct can't be lowered the error names the `kazi` and
+/// line that blocked it instead of silently falling back to the tree-walker's AST artifact.
+pub fn emit_asb_bytecode(module: &Module, source: &str) -> Result<Vec<u8>, String> {
+    bytecode::compile_module_explained(module)
+        .map(|program| asb::emit_bytecode_bytes(&program, source))
+}
+
 fn bytecode_loop_in_block(block: &asili_parser::Block) -> bool {
     block.statements.iter().any(|stmt| match stmt {
         asili_parser::Stmt::While { .. } | asili_parser::Stmt::For { .. } => true,

@@ -56,6 +56,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   value is reported too. `pata njozi` writes the toolchain's own version instead of a hardcoded
   string.
 
+- **`pata jenga --namna release`**: a build profile that guarantees native code. The program must
+  compile to bytecode (otherwise the build fails naming the `kazi` and line the VM can't lower
+  yet) and `clang` must build the native library (otherwise the build fails instead of noting
+  it). `dev` stays the best-effort default; `--namna embedded` and unknown profiles are now
+  rejected instead of silently accepted. The Sudoku benchmark builds with `--namna release`.
+
 ### Changed
 
 - **Indexing an `Orodha` returns the element**: `a[i]` is now the element itself and an

@@ -1,6 +1,6 @@
 use super::{CliError, CliResult};
 use crate::pipeline::compile::{
-    cache_key, compile_project, compile_single_file, emit_build_artifacts,
+    cache_key, compile_project, compile_single_file, emit_build_artifacts, BuildProfile,
 };
 use crate::pipeline::performance::{PerformanceMetrics, ScopedTimer};
 use crate::pipeline::project::find_workspace_root;
@@ -15,7 +15,8 @@ Jenga mradi kutoka pata.toml au faili moja (bila mradi).
 Chagua:
   --tenda            Baada ya kujenga, tenda kazi kuu na hoja zinazofuata.
   --pato <njia>      Mahali pa kuweka kilele (default: kilele/).
-  --namna <dev|release|embedded>  Namna ya kujenga (haijatumika bado).
+  --namna <dev|release>        dev (chaguo-msingi): msimbo asilia ukiwezekana, vinginevyo VM.
+                                release: lazima bytecode na msimbo asilia, la sivyo kosa.
   --lengo <lengo>    Lengo la kujenga (mf. "native", "wasm"). Hupita
                      [jenga] lengo katika pata.toml; default "native".
   --workspace-info   Onyesha wanachama wa workspace na urejeshi.
@@ -42,8 +43,9 @@ pub fn run(args: &[String]) -> CliResult {
         show_workspace_info()?;
         return Ok(());
     }
-    let (_profile, out, do_run, single_file, program_args, build_target, show_timing) =
+    let (profile, out, do_run, single_file, program_args, build_target, show_timing) =
         parse_args(args)?;
+    let profile = BuildProfile::parse(&profile)?;
     let mut metrics = PerformanceMetrics::new(5000);
     let total_timer = ScopedTimer::new("jumla");
     if let Some(ref path) = single_file {
@@ -72,7 +74,8 @@ pub fn run(args: &[String]) -> CliResult {
             .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", path.display()), 1))?;
         let key = cache_key(name, &source, build_target.as_deref().unwrap_or("native"));
         let cache_path = target.join(".asb-cache").join(format!("{key}.asb"));
-        if cache_path.exists() {
+        // The cache only ever holds best-effort artifacts; release always rebuilds.
+        if profile == BuildProfile::Dev && cache_path.exists() {
             fs::create_dir_all(&target).map_err(|e| {
                 CliError::new(format!("imeshindwa kuunda {}: {e}", target.display()), 1)
             })?;
@@ -124,13 +127,13 @@ pub fn run(args: &[String]) -> CliResult {
     };
 
     let emit_timer = ScopedTimer::new("kutoa");
-    let artifact = if compiled.from_cache {
+    let artifact = if compiled.from_cache && profile == BuildProfile::Dev {
         let target = out.as_ref().cloned().unwrap_or_else(|| root.join("kilele"));
         let a = target.join(format!("{}.asb", compiled.config.name));
         println!("imejengwa (cache): {}", a.display());
         a
     } else {
-        let a = emit_build_artifacts(&root, &compiled, out.as_deref())?;
+        let a = emit_build_artifacts(&root, &compiled, out.as_deref(), profile)?;
         println!("imejengwa: {}", a.display());
         a
     };

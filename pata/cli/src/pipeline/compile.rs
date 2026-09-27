@@ -320,35 +320,71 @@ pub fn compile_single_file(
     })
 }
 
+/// `pata jenga --namna`: how hard the build tries for native code.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BuildProfile {
+    /// Best effort: bytecode when the program benefits, native code when `clang` is available,
+    /// otherwise the artifact runs on the VM (or the tree-walker) with a note.
+    #[default]
+    Dev,
+    /// What ships must run as native code: the program must compile to bytecode and the native
+    /// library must be built, or the build fails saying why.
+    Release,
+}
+
+impl BuildProfile {
+    pub fn parse(name: &str) -> Result<Self, CliError> {
+        match name {
+            "dev" => Ok(BuildProfile::Dev),
+            "release" => Ok(BuildProfile::Release),
+            "embedded" => Err(CliError::new("namna 'embedded' haijatekelezwa bado", 2)),
+            other => Err(CliError::new(
+                format!("namna '{other}' haijulikani (tumia dev au release)"),
+                2,
+            )),
+        }
+    }
+}
+
 /// Ahead-of-time compile a bytecode artifact to native code (LLVM, via `clang`) next to it.
-/// Never fails the build: without a compiler the artifact simply runs on the VM.
-fn build_native_library(asb: &[u8], target: &Path, name: &str) {
+/// In `Dev` a missing compiler only means the artifact runs on the VM; `Release` fails instead.
+fn build_native_library(
+    asb: &[u8],
+    target: &Path,
+    name: &str,
+    profile: BuildProfile,
+) -> Result<(), CliError> {
     use asili_evaluator::aot::{build_library, library_file_name, AotError};
     let stale = target.join(library_file_name(name));
     if parse_format(asb).as_deref() != Some("bytecode") {
         let _ = fs::remove_file(&stale);
-        return;
+        return Ok(());
     }
-    let Ok(program) = asili_evaluator::load_asb_bytecode(asb) else {
-        return;
+    let program = asili_evaluator::load_asb_bytecode(asb)
+        .map_err(|e| CliError::new(format!("kuipakia bytecode: {e}"), 1))?;
+    let failure = match build_library(&program, target, name) {
+        Ok(path) => {
+            println!("msimbo asilia: {}", path.display());
+            return Ok(());
+        }
+        Err(AotError::Unavailable(why)) | Err(AotError::Failed(why)) => why,
     };
-    match build_library(&program, target, name) {
-        Ok(path) => println!("msimbo asilia: {}", path.display()),
-        Err(AotError::Unavailable(why)) => {
-            let _ = fs::remove_file(&stale);
-            println!("msimbo asilia haukujengwa ({why}); kilele kitaendeshwa na VM");
-        }
-        Err(AotError::Failed(why)) => {
-            let _ = fs::remove_file(&stale);
-            eprintln!("onyo: msimbo asilia haukujengwa: {why}");
-        }
+    let _ = fs::remove_file(&stale);
+    if profile == BuildProfile::Release {
+        return Err(CliError::new(
+            format!("--namna release inahitaji msimbo asilia, lakini haukujengwa: {failure}"),
+            1,
+        ));
     }
+    println!("msimbo asilia haukujengwa ({failure}); kilele kitaendeshwa na VM");
+    Ok(())
 }
 
 pub fn emit_build_artifacts(
     root: &Path,
     compiled: &CompileOutput,
     out_dir: Option<&Path>,
+    profile: BuildProfile,
 ) -> Result<PathBuf, CliError> {
     let target = out_dir
         .map(|p| p.to_path_buf())
@@ -356,7 +392,18 @@ pub fn emit_build_artifacts(
     fs::create_dir_all(&target)
         .map_err(|e| CliError::new(format!("imeshindwa kuunda {}: {e}", target.display()), 1))?;
 
-    let asb = emit_asb(&compiled.module, &compiled.source);
+    let asb = match profile {
+        BuildProfile::Dev => emit_asb(&compiled.module, &compiled.source),
+        BuildProfile::Release => asili_evaluator::emit_asb_bytecode(&compiled.module, &compiled.source)
+            .map_err(|blocked| {
+                CliError::new(
+                    format!(
+                        "--namna release inahitaji bytecode: {blocked} bado haiwezi kugeuzwa kuwa bytecode"
+                    ),
+                    1,
+                )
+            })?,
+    };
     let artifact = target.join(format!("{}.asb", compiled.config.name));
     fs::write(&artifact, &asb).map_err(|e| {
         CliError::new(
@@ -365,7 +412,7 @@ pub fn emit_build_artifacts(
         )
     })?;
 
-    build_native_library(&asb, &target, &compiled.config.name);
+    build_native_library(&asb, &target, &compiled.config.name, profile)?;
 
     let meta = target.join(format!("{}.build.manifest", compiled.config.name));
     let input_hash_line = compiled
@@ -604,6 +651,49 @@ mod tests {
     /// dependency and uses both. Exercises the resolver's path-dependency lookup and
     /// merge_for_eval's struct/constant handling end-to-end through compile_project.
     #[test]
+    fn build_profiles_parse_and_reject_unimplemented_ones() {
+        assert_eq!(BuildProfile::parse("dev").unwrap(), BuildProfile::Dev);
+        assert_eq!(
+            BuildProfile::parse("release").unwrap(),
+            BuildProfile::Release
+        );
+        assert!(BuildProfile::parse("embedded")
+            .unwrap_err()
+            .message
+            .contains("haijatekelezwa"));
+        assert!(BuildProfile::parse("haraka")
+            .unwrap_err()
+            .message
+            .contains("haijulikani"));
+    }
+
+    /// Release never ships a tree-walker artifact: a program the bytecode compiler can't lower
+    /// fails with the construct that blocked it, where dev quietly falls back.
+    #[test]
+    fn release_profile_refuses_the_ast_fallback() {
+        let root = temp_dir("release-ast");
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("pata.toml"), crate::test_support::MANIFEST).unwrap();
+        // `linganisha` isn't lowered to bytecode yet.
+        fs::write(
+            root.join("src/kuu.as"),
+            "kazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    linganisha 1 {\n        _ => { chapisha(\"x\") }\n    }\n}\n",
+        )
+        .unwrap();
+        let compiled = compile_project(&root, None).expect("compiles");
+        let err = emit_build_artifacts(&root, &compiled, None, BuildProfile::Release)
+            .expect_err("release must refuse the AST artifact");
+        assert!(
+            err.message.contains("inahitaji bytecode"),
+            "{}",
+            err.message
+        );
+        assert!(err.message.contains("kazi 'kuu'"), "{}", err.message);
+        emit_build_artifacts(&root, &compiled, None, BuildProfile::Dev).expect("dev falls back");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn compile_project_resolves_struct_and_constant_from_path_dependency() {
         let workspace = temp_dir("workspace");
         let dep_dir = workspace.join("mathutil");
@@ -783,7 +873,8 @@ mod tests {
             "tu_native should be filtered out of the in-memory module for target=wasm"
         );
 
-        let artifact = emit_build_artifacts(&root, &compiled, None).expect("emit .asb");
+        let artifact =
+            emit_build_artifacts(&root, &compiled, None, BuildProfile::Dev).expect("emit .asb");
         let bytes = fs::read(&artifact).expect("read .asb");
         let loaded = load_asb(&bytes).expect("load_asb");
         assert!(

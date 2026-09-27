@@ -78,7 +78,8 @@ clang is needed only where `pata jenga` runs — not to build `pata`, not to run
 examples/sudoku/bench/run.sh 7      # best-of-7 whole-process wall time
 ```
 
-It builds release `pata`, runs `pata jenga` on the example (which builds the native library),
+It builds release `pata`, runs `pata jenga --namna release` on the example (which fails if the
+program falls back to the tree-walker or native code can't be built),
 and checks every implementation reports `Majaribio: 90665` before timing it.
 
 Reference (2026-09, this container): C 7 ms · Rust 7 ms · **asili-aot 10 ms** · asili-vm

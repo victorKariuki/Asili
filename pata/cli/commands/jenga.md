@@ -7,7 +7,12 @@ Flags:
 - `--tenda`: After building, execute `kuu` with any trailing arguments
 - `--pato <path>`: Output directory (default `kilele/`)
 - `--lengo <lengo>`: Build target (default `native`); overrides `pata.toml`'s `[jenga] lengo`
-- `--namna <profile>`: Build profile (dev/release/embedded) — not yet functional
+- `--namna <dev|release>`: Build profile. `dev` (default) is best effort: bytecode when the
+  program benefits, native code when `clang` is available, otherwise the VM (or tree-walker)
+  with a note. `release` requires both: every program is compiled to bytecode (a construct the
+  VM can't lower yet fails the build, naming the `kazi` and line) and the native library must
+  be built (no `clang` fails the build); release never uses the build cache. `embedded` is
+  rejected as not implemented yet, and unknown names are rejected
 - `--muda`: Print phase-latency timings (`kuchanganua` = compile, `kutoa` = emit) after a
   successful build, via `pata_cli::pipeline::performance::PerformanceMetrics`/`ScopedTimer`.
   Works on both the normal build path and the single-file cache-hit early-return path.
