@@ -12,3 +12,7 @@ kazi jozi(a: Unknown, b: Unknown) -> Jozi
 kazi tokeo(val) -> Tokeo
 kazi kosa(ujumbe: Neno) -> Tokeo
 kazi chaguo(val) -> Chaguo
+
+kazi seti() -> Seti<T>
+kazi seti_tupu() -> Seti<T>
+kazi kumbukumbu_unda(thamani: T) -> Kumbukumbu<T>

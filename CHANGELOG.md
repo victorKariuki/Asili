@@ -105,6 +105,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`lib/std` interface stubs match the real builtins again**: 25 missing functions added
+  (`faili_fungua`, `tenda`/`njia`/`fungo`, the JSON, TCP and TLS functions in `mfumo`, `seti`,
+  `kumbukumbu_unda`, the `runtime` probes and more), the nonexistent `anza_mwendo`/`subiri_mwendo`
+  and three invalid `ni_namba?`-style lines removed, `sikiliza_ishara`/`rejesha_ishara` given
+  their real `Tokeo` return type, and a `kasha_gc.asi` added. A `pata-core` test now fails
+  whenever a stub and its builtin table disagree.
 - **Build restored after dependency updates**: `bincode` is pinned back to 1.3 (3.0.0 is an
   empty release that only raises a compile error, and dependabot now ignores `bincode` 2+), and
   the hosted-index client is ported to `ureq` 3's body API; package tarballs keep having no

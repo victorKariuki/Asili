@@ -152,47 +152,7 @@ impl HoverInfo {
 
 /// Format a ValueType for human-readable display.
 pub fn format_type(t: &ValueType) -> String {
-    match t {
-        ValueType::Namba => "Namba".to_string(),
-        ValueType::Neno => "Neno".to_string(),
-        ValueType::Ukweli => "Ukweli".to_string(),
-        ValueType::Tupu => "Tupu".to_string(),
-        ValueType::Hamna => "Hamna".to_string(),
-        ValueType::Herufi => "Herufi".to_string(),
-        ValueType::NambaKuu => "Namba_Kuu".to_string(),
-        ValueType::NambaSahihi => "Namba_Sahihi".to_string(),
-        ValueType::Wakati => "Wakati".to_string(),
-        ValueType::Anuani => "Anuani".to_string(),
-        ValueType::Unknown => "Haijulikani".to_string(),
-        ValueType::Chaguo(t) => format!("{}?", format_type(t)),
-        ValueType::Tokeo(ok, err) => format!("Tokeo<{}, {}>", format_type(ok), format_type(err)),
-        ValueType::Rejeo(t, mutable) => {
-            if *mutable {
-                format!("&mut {}", format_type(t))
-            } else {
-                format!("&{}", format_type(t))
-            }
-        }
-        ValueType::Orodha(t) => format!("Orodha<{}>", format_type(t)),
-        ValueType::Kamusi(k, v) => format!("Kamusi<{}, {}>", format_type(k), format_type(v)),
-        ValueType::Mfululizo(t) => format!("Mfululizo<{}>", format_type(t)),
-        ValueType::Jozi(a, b) => format!("Jozi<{}, {}>", format_type(a), format_type(b)),
-        ValueType::Seti(t) => format!("Seti<{}>", format_type(t)),
-        ValueType::KashaGC(t) => format!("Kasha_GC<{}>", format_type(t)),
-        ValueType::KashaGCDhaifu(t) => format!("Kasha_GC_Dhaifu<{}>", format_type(t)),
-        ValueType::Faili => "Faili".to_string(),
-        ValueType::Mkondo => "Mkondo".to_string(),
-        ValueType::MkondoSikilizaji => "MkondoSikilizaji".to_string(),
-        ValueType::TlsUsanidi => "TlsUsanidi".to_string(),
-        ValueType::Kumbukumbu(t) => format!("Kumbukumbu<{}>", format_type(t)),
-        ValueType::NjiaTx(t) => format!("NjiaTx<{}>", format_type(t)),
-        ValueType::NjiaRx(t) => format!("NjiaRx<{}>", format_type(t)),
-        ValueType::NjiaTxBounded(t) => format!("NjiaTxBounded<{}>", format_type(t)),
-        ValueType::NjiaRxBounded(t) => format!("NjiaRxBounded<{}>", format_type(t)),
-        ValueType::Fungo(t) => format!("Fungo<{}>", format_type(t)),
-        ValueType::Struct(name) => name.clone(),
-        ValueType::TypeVar(name) => name.clone(),
-    }
+    asili_parser::format_value_type(t)
 }
 
 #[cfg(test)]

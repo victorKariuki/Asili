@@ -176,3 +176,57 @@ pub fn parse_value_type(s: &str) -> ValueType {
     }
     ValueType::Unknown
 }
+
+/// Asili source spelling of a type — the inverse of [`parse_value_type`] (an unknown type prints
+/// as `Haijulikani`). Used by the LSP's hover/completion and by the `.asi` drift check.
+pub fn format_value_type(t: &ValueType) -> String {
+    match t {
+        ValueType::Namba => "Namba".to_string(),
+        ValueType::Neno => "Neno".to_string(),
+        ValueType::Ukweli => "Ukweli".to_string(),
+        ValueType::Tupu => "Tupu".to_string(),
+        ValueType::Hamna => "Hamna".to_string(),
+        ValueType::Herufi => "Herufi".to_string(),
+        ValueType::NambaKuu => "Namba_Kuu".to_string(),
+        ValueType::NambaSahihi => "Namba_Sahihi".to_string(),
+        ValueType::Wakati => "Wakati".to_string(),
+        ValueType::Anuani => "Anuani".to_string(),
+        ValueType::Unknown => "Haijulikani".to_string(),
+        ValueType::Chaguo(t) => format!("{}?", format_value_type(t)),
+        ValueType::Tokeo(ok, err) => format!(
+            "Tokeo<{}, {}>",
+            format_value_type(ok),
+            format_value_type(err)
+        ),
+        ValueType::Rejeo(t, mutable) => {
+            if *mutable {
+                format!("&mut {}", format_value_type(t))
+            } else {
+                format!("&{}", format_value_type(t))
+            }
+        }
+        ValueType::Orodha(t) => format!("Orodha<{}>", format_value_type(t)),
+        ValueType::Kamusi(k, v) => {
+            format!("Kamusi<{}, {}>", format_value_type(k), format_value_type(v))
+        }
+        ValueType::Mfululizo(t) => format!("Mfululizo<{}>", format_value_type(t)),
+        ValueType::Jozi(a, b) => {
+            format!("Jozi<{}, {}>", format_value_type(a), format_value_type(b))
+        }
+        ValueType::Seti(t) => format!("Seti<{}>", format_value_type(t)),
+        ValueType::KashaGC(t) => format!("Kasha_GC<{}>", format_value_type(t)),
+        ValueType::KashaGCDhaifu(t) => format!("Kasha_GC_Dhaifu<{}>", format_value_type(t)),
+        ValueType::Faili => "Faili".to_string(),
+        ValueType::Mkondo => "Mkondo".to_string(),
+        ValueType::MkondoSikilizaji => "MkondoSikilizaji".to_string(),
+        ValueType::TlsUsanidi => "TlsUsanidi".to_string(),
+        ValueType::Kumbukumbu(t) => format!("Kumbukumbu<{}>", format_value_type(t)),
+        ValueType::NjiaTx(t) => format!("NjiaTx<{}>", format_value_type(t)),
+        ValueType::NjiaRx(t) => format!("NjiaRx<{}>", format_value_type(t)),
+        ValueType::NjiaTxBounded(t) => format!("NjiaTxBounded<{}>", format_value_type(t)),
+        ValueType::NjiaRxBounded(t) => format!("NjiaRxBounded<{}>", format_value_type(t)),
+        ValueType::Fungo(t) => format!("Fungo<{}>", format_value_type(t)),
+        ValueType::Struct(name) => name.clone(),
+        ValueType::TypeVar(name) => name.clone(),
+    }
+}

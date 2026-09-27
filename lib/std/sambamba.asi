@@ -1,4 +1,8 @@
 # Sambamba (concurrency) – interface stub
+# Mfumo wa nyuzi 1:1 za OS. `tenda` inapokea jina la kazi na hoja za kazi hiyo (idadi yoyote).
 
-kazi anza_mwendo(kazi_jina: Neno, hoja: Orodha) -> Namba
-kazi subiri_mwendo(mwendo_id: Namba) -> Tokeo<Tupu, Neno>
+kazi tenda(kazi_jina: Neno) -> Tokeo<Namba, Neno>
+kazi subiri_tenda(uzi_id: Namba) -> Tokeo<Tupu, Neno>
+kazi njia() -> Jozi<NjiaTx<T>, NjiaRx<T>>
+kazi njia_na_kikomo(kikomo: Namba) -> Jozi<NjiaTxBounded<T>, NjiaRxBounded<T>>
+kazi fungo(thamani: T) -> Tokeo<Fungo<T>, Neno>

@@ -6,5 +6,16 @@ thabiti JINA_OS: Neno
 kazi vigezo() -> Orodha<Neno>
 kazi pata_env(jina: Neno) -> Chaguo<Neno>
 kazi toka(kodi: Namba) -> Tupu
-kazi sikiliza_ishara(ishara: Namba, kazi_jina: Neno) -> Tupu
-kazi rejesha_ishara(ishara: Namba) -> Tupu
+kazi sikiliza_ishara(ishara: Namba, kazi_jina: Neno) -> Tokeo<Tupu, Neno>
+kazi rejesha_ishara(ishara: Namba) -> Tokeo<Tupu, Neno>
+
+# JSON
+kazi kwa_json(thamani: T) -> Tokeo<Neno, Neno>
+kazi kutoka_json(maandishi: Neno) -> Tokeo<Kamusi<Neno, T>, Neno>
+
+# Mtandao (TCP) na TLS
+kazi mkondo_unganisha(anwani: Neno) -> Tokeo<Mkondo, Neno>
+kazi mkondo_sikiliza(anwani: Neno) -> Tokeo<MkondoSikilizaji, Neno>
+kazi mkondo_tumikia(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls: TlsUsanidi?) -> Tokeo<Tupu, Neno>
+kazi mkondo_tumikia_http(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls: TlsUsanidi?) -> Tokeo<Tupu, Neno>
+kazi tls_sanidi(cheti_njia: Neno, ufunguo_njia: Neno) -> Tokeo<TlsUsanidi, Neno>

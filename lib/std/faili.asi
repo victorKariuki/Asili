@@ -8,3 +8,6 @@ kazi ongeza(njia: Neno, data: Neno) -> Tokeo<Tupu, Neno>
 kazi vipo(njia: Neno) -> Ukweli
 kazi futa(njia: Neno) -> Tokeo<Tupu, Neno>
 kazi ukubwa(njia: Neno) -> Namba
+
+# Kishikizo cha faili; hali ni "soma", "andika" au "ongeza".
+kazi faili_fungua(njia: Neno, hali: Neno) -> Tokeo<Faili, Neno>

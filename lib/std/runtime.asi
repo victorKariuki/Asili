@@ -2,3 +2,8 @@
 
 kazi toleo() -> Neno
 kazi jina_os() -> Neno
+kazi arch() -> Neno
+kazi ni_debug() -> Ukweli
+kazi ni_wasm() -> Ukweli
+kazi mazingira() -> Kamusi<Neno, Neno>
+kazi muda_wa_kuanza() -> Wakati

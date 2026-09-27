@@ -73,8 +73,8 @@ kazi tanjenti_h(x: Namba) -> Namba
 kazi ni_namba(x: Namba) -> Ukweli
 kazi si_namba(x: Namba) -> Ukweli
 kazi ni_ukomo(x: Namba) -> Ukweli
-kazi ni_namba?(x: Namba) -> Ukweli
-kazi si_namba?(x: Namba) -> Ukweli
-kazi ni_ukomo?(x: Namba) -> Ukweli
 kazi nasibu() -> Namba
 kazi nasibu_chini(chini: Namba, juu: Namba) -> Namba
+
+kazi namba_kuu_kutoka(maandishi: Neno) -> Tokeo<Namba_Kuu, Neno>
+kazi namba_sahihi_kutoka(maandishi: Neno) -> Tokeo<Namba_Sahihi, Neno>

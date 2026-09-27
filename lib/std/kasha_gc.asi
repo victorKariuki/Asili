@@ -1,0 +1,5 @@
+# Kasha_GC (managed memory) – interface stub
+# Ya hiari: inahitaji `leta kasha_gc`. Njia (.shirikisha, .idadi, .pata, .weka) ni za kishikizo.
+
+kazi kasha_gc_unda(thamani: T) -> Kasha_GC<T>
+kazi kasha_gc_dhaifu(kasha: Kasha_GC<T>) -> Kasha_GC_Dhaifu<T>

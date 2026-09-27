@@ -12,7 +12,7 @@ mod semantic;
 pub use ast::*;
 pub use attrs::{item_survives, parse_sharti_predicate, ShartiPredicate, Target};
 pub use module_merge::merge_modules;
-pub use semantic::parse_value_type;
+pub use semantic::{format_value_type, parse_value_type};
 
 use cursor::Parser;
 
