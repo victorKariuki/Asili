@@ -8,6 +8,78 @@ use super::BuiltinFn;
 use crate::value::{self, Value};
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
+    // Total unary functions: Namba -> Namba.
+    const UNARY: &[(&str, fn(f64) -> f64)] = &[
+        ("duara", f64::round),
+        ("absolute", f64::abs),
+        ("abs", f64::abs),
+        ("kipeuo3", f64::cbrt),
+        ("upeo_wa_e", f64::exp),
+        ("expm1", f64::exp_m1),
+        ("sakafu", f64::floor),
+        ("dari", f64::ceil),
+        ("punguza", f64::trunc),
+        ("sini", f64::sin),
+        ("kosini", f64::cos),
+        ("tanjenti", f64::tan),
+        ("sini_h", f64::sinh),
+        ("kosini_h", f64::cosh),
+        ("tanjenti_h", f64::tanh),
+    ];
+    for &(name, f) in UNARY {
+        m.insert(
+            name.to_string(),
+            Box::new(move |args: &[Value]| Ok(Value::Namba(f(value::arg_f64(args, 0, name)?)))),
+        );
+    }
+    // Partial unary functions: Namba -> Tokeo<Namba, Neno>, KOSA outside the domain.
+    type Checked = (&'static str, fn(f64) -> bool, &'static str, fn(f64) -> f64);
+    const CHECKED: &[Checked] = &[
+        ("logi", |x| x <= 0.0, "x lazima iwe chanya", f64::ln),
+        ("logi10", |x| x <= 0.0, "x lazima iwe chanya", f64::log10),
+        ("logi2", |x| x <= 0.0, "x lazima iwe chanya", f64::log2),
+        (
+            "logi1p",
+            |x| x <= -1.0,
+            "x lazima iwe kubwa kuliko -1",
+            f64::ln_1p,
+        ),
+        (
+            "asini",
+            |x| !(-1.0..=1.0).contains(&x),
+            "kikoa ni -1 hadi 1",
+            f64::asin,
+        ),
+        (
+            "akosini",
+            |x| !(-1.0..=1.0).contains(&x),
+            "kikoa ni -1 hadi 1",
+            f64::acos,
+        ),
+        ("akosini_h", |x| x < 1.0, "x lazima iwe >= 1", f64::acosh),
+        (
+            "atanjenti_h",
+            |x| x <= -1.0 || x >= 1.0,
+            "kikoa ni -1 < x < 1",
+            f64::atanh,
+        ),
+        ("mizizi", |x| x < 0.0, "namba hasi", f64::sqrt),
+        ("kipeuo2", |x| x < 0.0, "namba hasi", f64::sqrt),
+    ];
+    for &(name, outside_domain, msg, f) in CHECKED {
+        m.insert(
+            name.to_string(),
+            Box::new(move |args: &[Value]| {
+                let x = value::arg_f64(args, 0, name)?;
+                if outside_domain(x) {
+                    return Ok(Value::kosa(format!("{name}: {msg}")));
+                }
+                Ok(Value::sawa(Value::Namba(f(x))))
+            }),
+        );
+    }
+    register_pow(m, "kipeo");
+    register_pow(m, "upeo");
     m.insert(
         "namba_kuu_kutoka".to_string(),
         Box::new(|args: &[Value]| {
@@ -68,50 +140,6 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         }),
     );
     m.insert(
-        "duara".to_string(),
-        Box::new(|args: &[Value]| {
-            let n = value::arg_f64(args, 0, "duara")?;
-            Ok(Value::Namba(n.round()))
-        }),
-    );
-    m.insert(
-        "absolute".to_string(),
-        Box::new(|args: &[Value]| {
-            let n = value::arg_f64(args, 0, "absolute")?;
-            Ok(Value::Namba(n.abs()))
-        }),
-    );
-    m.insert(
-        "kipeo".to_string(),
-        Box::new(|args: &[Value]| {
-            let (n, p) = value::args_f64_2(args, "kipeo")?;
-            let r = n.powf(p);
-            if r.is_finite() {
-                Ok(Value::sawa(Value::Namba(r)))
-            } else {
-                Ok(Value::kosa("kipeo: matokeo si mwisho"))
-            }
-        }),
-    );
-    m.insert(
-        "mizizi".to_string(),
-        Box::new(|args: &[Value]| {
-            let n = value::arg_f64(args, 0, "mizizi")?;
-            if n < 0.0 {
-                Ok(Value::kosa("mizizi: namba hasi"))
-            } else {
-                Ok(Value::sawa(Value::Namba(n.sqrt())))
-            }
-        }),
-    );
-    m.insert(
-        "abs".to_string(),
-        Box::new(|args: &[Value]| {
-            let n = value::arg_f64(args, 0, "abs")?;
-            Ok(Value::Namba(n.abs()))
-        }),
-    );
-    m.insert(
         "ishara".to_string(),
         Box::new(|args: &[Value]| {
             let n = value::arg_f64(args, 0, "ishara")?;
@@ -126,68 +154,10 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         }),
     );
     m.insert(
-        "upeo".to_string(),
-        Box::new(|args: &[Value]| {
-            let (n, p) = value::args_f64_2(args, "upeo")?;
-            let r = n.powf(p);
-            if r.is_finite() {
-                Ok(Value::sawa(Value::Namba(r)))
-            } else {
-                Ok(Value::kosa("upeo: matokeo si mwisho"))
-            }
-        }),
-    );
-    m.insert(
-        "kipeuo2".to_string(),
-        Box::new(|args: &[Value]| {
-            let n = value::arg_f64(args, 0, "kipeuo2")?;
-            if n < 0.0 {
-                Ok(Value::kosa("kipeuo2: namba hasi"))
-            } else {
-                Ok(Value::sawa(Value::Namba(n.sqrt())))
-            }
-        }),
-    );
-    m.insert(
-        "kipeuo3".to_string(),
-        Box::new(|args: &[Value]| {
-            let n = value::arg_f64(args, 0, "kipeuo3")?;
-            Ok(Value::Namba(n.cbrt()))
-        }),
-    );
-    m.insert(
         "haipot".to_string(),
         Box::new(|args: &[Value]| {
             let (x, y) = value::args_f64_2(args, "haipot")?;
             Ok(Value::Namba((x * x + y * y).sqrt()))
-        }),
-    );
-    m.insert(
-        "upeo_wa_e".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "upeo_wa_e")?;
-            Ok(Value::Namba(x.exp()))
-        }),
-    );
-    m.insert(
-        "expm1".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "expm1")?;
-            Ok(Value::Namba(x.exp_m1()))
-        }),
-    );
-    m.insert(
-        "sakafu".to_string(),
-        Box::new(|args: &[Value]| {
-            let n = value::arg_f64(args, 0, "sakafu")?;
-            Ok(Value::Namba(n.floor()))
-        }),
-    );
-    m.insert(
-        "dari".to_string(),
-        Box::new(|args: &[Value]| {
-            let n = value::arg_f64(args, 0, "dari")?;
-            Ok(Value::Namba(n.ceil()))
         }),
     );
     m.insert(
@@ -196,13 +166,6 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             let (x, m) = value::args_f64_2(args, "duara_maeneo")?;
             let factor = 10.0_f64.powi(m as i32);
             Ok(Value::Namba((x * factor).round() / factor))
-        }),
-    );
-    m.insert(
-        "punguza".to_string(),
-        Box::new(|args: &[Value]| {
-            let n = value::arg_f64(args, 0, "punguza")?;
-            Ok(Value::Namba(n.trunc()))
         }),
     );
     m.insert(
@@ -283,66 +246,6 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         }),
     );
     m.insert(
-        "logi".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "logi")?;
-            if x <= 0.0 {
-                return Ok(Value::kosa("logi: x lazima iwe chanya"));
-            }
-            Ok(Value::sawa(Value::Namba(x.ln())))
-        }),
-    );
-    m.insert(
-        "logi10".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "logi10")?;
-            if x <= 0.0 {
-                return Ok(Value::kosa("logi10: x lazima iwe chanya"));
-            }
-            Ok(Value::sawa(Value::Namba(x.log10())))
-        }),
-    );
-    m.insert(
-        "logi2".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "logi2")?;
-            if x <= 0.0 {
-                return Ok(Value::kosa("logi2: x lazima iwe chanya"));
-            }
-            Ok(Value::sawa(Value::Namba(x.log2())))
-        }),
-    );
-    m.insert(
-        "logi1p".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "logi1p")?;
-            if x <= -1.0 {
-                return Ok(Value::kosa("logi1p: x lazima iwe kubwa kuliko -1"));
-            }
-            Ok(Value::sawa(Value::Namba(x.ln_1p())))
-        }),
-    );
-    m.insert(
-        "asini".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "asini")?;
-            if !(-1.0..=1.0).contains(&x) {
-                return Ok(Value::kosa("asini: kikoa ni -1 hadi 1"));
-            }
-            Ok(Value::sawa(Value::Namba(x.asin())))
-        }),
-    );
-    m.insert(
-        "akosini".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "akosini")?;
-            if !(-1.0..=1.0).contains(&x) {
-                return Ok(Value::kosa("akosini: kikoa ni -1 hadi 1"));
-            }
-            Ok(Value::sawa(Value::Namba(x.acos())))
-        }),
-    );
-    m.insert(
         "atanjenti".to_string(),
         Box::new(|args: &[Value]| {
             let x = value::arg_f64(args, 0, "atanjenti")?;
@@ -357,72 +260,10 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         }),
     );
     m.insert(
-        "akosini_h".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "akosini_h")?;
-            if x < 1.0 {
-                return Ok(Value::kosa("akosini_h: x lazima iwe >= 1"));
-            }
-            Ok(Value::sawa(Value::Namba(x.acosh())))
-        }),
-    );
-    m.insert(
-        "atanjenti_h".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "atanjenti_h")?;
-            if x <= -1.0 || x >= 1.0 {
-                return Ok(Value::kosa("atanjenti_h: kikoa ni -1 < x < 1"));
-            }
-            Ok(Value::sawa(Value::Namba(x.atanh())))
-        }),
-    );
-    m.insert(
-        "sini".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "sini")?;
-            Ok(Value::Namba(x.sin()))
-        }),
-    );
-    m.insert(
-        "kosini".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "kosini")?;
-            Ok(Value::Namba(x.cos()))
-        }),
-    );
-    m.insert(
-        "tanjenti".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "tanjenti")?;
-            Ok(Value::Namba(x.tan()))
-        }),
-    );
-    m.insert(
         "atanjenti2".to_string(),
         Box::new(|args: &[Value]| {
             let (y, x) = value::args_f64_2(args, "atanjenti2")?;
             Ok(Value::Namba(y.atan2(x)))
-        }),
-    );
-    m.insert(
-        "sini_h".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "sini_h")?;
-            Ok(Value::Namba(x.sinh()))
-        }),
-    );
-    m.insert(
-        "kosini_h".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "kosini_h")?;
-            Ok(Value::Namba(x.cosh()))
-        }),
-    );
-    m.insert(
-        "tanjenti_h".to_string(),
-        Box::new(|args: &[Value]| {
-            let x = value::arg_f64(args, 0, "tanjenti_h")?;
-            Ok(Value::Namba(x.tanh()))
         }),
     );
     m.insert(
@@ -465,6 +306,22 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             let (min, max) = value::args_f64_2(args, "nasibu_chini")?;
             let r: f64 = rand::rng().random();
             Ok(Value::Namba(min + r * (max - min)))
+        }),
+    );
+}
+
+/// `n ** p` as `Tokeo`, KOSA when the result is not finite.
+fn register_pow(m: &mut HashMap<String, BuiltinFn>, name: &'static str) {
+    m.insert(
+        name.to_string(),
+        Box::new(move |args: &[Value]| {
+            let (n, p) = value::args_f64_2(args, name)?;
+            let r = n.powf(p);
+            if r.is_finite() {
+                Ok(Value::sawa(Value::Namba(r)))
+            } else {
+                Ok(Value::kosa(format!("{name}: matokeo si mwisho")))
+            }
         }),
     );
 }
