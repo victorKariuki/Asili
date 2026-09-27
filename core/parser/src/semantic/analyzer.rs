@@ -19,6 +19,23 @@ struct Binding {
     dropped_at: Option<Span>,
 }
 
+impl Binding {
+    /// A fresh, unmoved, unborrowed binding created at `created_at`.
+    fn new(ty: ValueType, mutable: bool, created_at: Span) -> Self {
+        Binding {
+            ty,
+            mutable,
+            moved: false,
+            imm_borrows: 0,
+            mut_borrowed: false,
+            created_at,
+            moved_at: None,
+            borrowed_at: Vec::new(),
+            dropped_at: None,
+        }
+    }
+}
+
 struct Analyzer<'a> {
     module: &'a Module,
     require_main: bool,
@@ -227,17 +244,7 @@ impl<'a> Analyzer<'a> {
                 if let Some(scope) = scopes.last_mut() {
                     scope.insert(
                         bind_name.clone(),
-                        Binding {
-                            ty,
-                            mutable: true,
-                            moved: false,
-                            imm_borrows: 0,
-                            mut_borrowed: false,
-                            created_at: Span { line, column: 1 },
-                            moved_at: None,
-                            borrowed_at: Vec::new(),
-                            dropped_at: None,
-                        },
+                        Binding::new(ty, true, Span { line, column: 1 }),
                     );
                 }
             }
@@ -280,17 +287,7 @@ impl<'a> Analyzer<'a> {
                 if let Some(scope) = scopes.last_mut() {
                     scope.insert(
                         bind_name.clone(),
-                        Binding {
-                            ty,
-                            mutable: true,
-                            moved: false,
-                            imm_borrows: 0,
-                            mut_borrowed: false,
-                            created_at: Span { line, column: 1 },
-                            moved_at: None,
-                            borrowed_at: Vec::new(),
-                            dropped_at: None,
-                        },
+                        Binding::new(ty, true, Span { line, column: 1 }),
                     );
                 }
             }
@@ -520,20 +517,14 @@ impl<'a> Analyzer<'a> {
             let ty = self.type_from_decl(&p.ty.name);
             scopes[0].insert(
                 p.name.clone(),
-                Binding {
+                Binding::new(
                     ty,
-                    mutable: false,
-                    moved: false,
-                    imm_borrows: 0,
-                    mut_borrowed: false,
-                    created_at: Span {
+                    false,
+                    Span {
                         line: p.line,
                         column: 1,
                     },
-                    moved_at: None,
-                    borrowed_at: Vec::new(),
-                    dropped_at: None,
-                },
+                ),
             );
         }
 
@@ -623,20 +614,14 @@ impl<'a> Analyzer<'a> {
                 if let Some(scope) = scopes.last_mut() {
                     scope.insert(
                         name.clone(),
-                        Binding {
-                            ty: declared.clone(),
-                            mutable: *mutable,
-                            moved: false,
-                            imm_borrows: 0,
-                            mut_borrowed: false,
-                            created_at: Span {
+                        Binding::new(
+                            declared.clone(),
+                            *mutable,
+                            Span {
                                 line: *line,
                                 column: 1,
                             },
-                            moved_at: None,
-                            borrowed_at: Vec::new(),
-                            dropped_at: None,
-                        },
+                        ),
                     );
                 }
                 if matches!(declared, ValueType::Tokeo(_, _)) {
@@ -848,20 +833,14 @@ impl<'a> Analyzer<'a> {
                 if let Some(scope) = scopes.last_mut() {
                     scope.insert(
                         var.clone(),
-                        Binding {
-                            ty: var_ty,
-                            mutable: true,
-                            moved: false,
-                            imm_borrows: 0,
-                            mut_borrowed: false,
-                            created_at: Span {
+                        Binding::new(
+                            var_ty,
+                            true,
+                            Span {
                                 line: *line,
                                 column: 1,
                             },
-                            moved_at: None,
-                            borrowed_at: Vec::new(),
-                            dropped_at: None,
-                        },
+                        ),
                     );
                 }
                 self.check_block(body, scopes, return_type, true);
@@ -940,20 +919,14 @@ impl<'a> Analyzer<'a> {
                                         if let Some(scope) = scopes.last_mut() {
                                             scope.insert(
                                                 bind_name.clone(),
-                                                Binding {
-                                                    ty: inner_ty,
-                                                    mutable: true,
-                                                    moved: false,
-                                                    imm_borrows: 0,
-                                                    mut_borrowed: false,
-                                                    created_at: Span {
+                                                Binding::new(
+                                                    inner_ty,
+                                                    true,
+                                                    Span {
                                                         line: *line,
                                                         column: 1,
                                                     },
-                                                    moved_at: None,
-                                                    borrowed_at: Vec::new(),
-                                                    dropped_at: None,
-                                                },
+                                                ),
                                             );
                                         }
                                     }
