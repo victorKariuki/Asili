@@ -509,6 +509,10 @@ impl<'a> Parser<'a> {
                 depth += 1;
             } else if l == ">" && depth > 0 {
                 depth -= 1;
+            } else if l == ">>" && depth > 0 {
+                // The lexer reads `>>` as one (shift) token; in a type it closes two generics:
+                // `Orodha<Orodha<Namba>>`.
+                depth = depth.saturating_sub(2);
             }
             if !name.is_empty() {
                 name.push(' ');

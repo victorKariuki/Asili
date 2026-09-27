@@ -411,7 +411,11 @@ pub fn dependency_order(resolved: &HashMap<String, ResolvedModule>) -> Vec<Strin
     order
 }
 
-/// Check for duplicate import names when merging (same name from two imports or prelude).
+/// Marker for names that come from the ambient builtin prelude rather than an explicit `leta`.
+const PRELUDE: &str = "msingi";
+
+/// Check for duplicate import names when merging: the same name brought in by two explicit
+/// imports. Imports may shadow ambient prelude names.
 pub fn check_duplicate_imports(
     entrypoint: &Module,
     resolved: &HashMap<String, ResolvedModule>,
@@ -421,10 +425,10 @@ pub fn check_duplicate_imports(
     let mut seen_functions: HashMap<String, String> = HashMap::new();
     let mut seen_constants: HashMap<String, String> = HashMap::new();
     for name in prelude.functions.keys() {
-        seen_functions.insert(name.clone(), "msingi".to_string());
+        seen_functions.insert(name.clone(), PRELUDE.to_string());
     }
     for name in prelude.constants.keys() {
-        seen_constants.insert(name.clone(), "msingi".to_string());
+        seen_constants.insert(name.clone(), PRELUDE.to_string());
     }
     for imp in &entrypoint.imports {
         let (module_name, names_to_import) = match &imp.path {
@@ -440,19 +444,17 @@ pub fn check_duplicate_imports(
         for name in res.exports.functions.keys() {
             let include = names_to_import.as_ref().is_none_or(|n| n.contains(name));
             if include {
-                if let Some(from) = seen_functions.get(name) {
-                    if *from != "msingi" || !res.is_stdlib {
-                        errors.push(
-                            Diagnostic::new(
-                                "SEM090",
-                                format!(
-                                    "jina lamerudia: '{name}' limetoka {from} na {module_name}"
-                                ),
-                            )
-                            .with_stage("semantiki")
-                            .with_span(imp.line, 1),
-                        );
-                    }
+                // Ambient (prelude) names are shadowable, like Rust's prelude: an import of the
+                // same name simply wins. Only two explicit imports of one name clash.
+                if let Some(from) = seen_functions.get(name).filter(|from| *from != PRELUDE) {
+                    errors.push(
+                        Diagnostic::new(
+                            "SEM090",
+                            format!("jina lamerudia: '{name}' limetoka {from} na {module_name}"),
+                        )
+                        .with_stage("semantiki")
+                        .with_span(imp.line, 1),
+                    );
                 } else {
                     seen_functions.insert(name.clone(), module_name.to_string());
                 }
@@ -461,17 +463,17 @@ pub fn check_duplicate_imports(
         for name in res.exports.constants.keys() {
             let include = names_to_import.as_ref().is_none_or(|n| n.contains(name));
             if include {
-                if let Some(from) = seen_constants.get(name) {
-                    if *from != "msingi" || !res.is_stdlib {
-                        errors.push(
-                            Diagnostic::new(
-                                "SEM091",
-                                format!("jina lamerudia: '{name}' (thabiti) limetoka {from}"),
-                            )
-                            .with_stage("semantiki")
-                            .with_span(imp.line, 1),
-                        );
-                    }
+                // Ambient (prelude) names are shadowable, like Rust's prelude: an import of the
+                // same name simply wins. Only two explicit imports of one name clash.
+                if let Some(from) = seen_constants.get(name).filter(|from| *from != PRELUDE) {
+                    errors.push(
+                        Diagnostic::new(
+                            "SEM091",
+                            format!("jina lamerudia: '{name}' (thabiti) limetoka {from}"),
+                        )
+                        .with_stage("semantiki")
+                        .with_span(imp.line, 1),
+                    );
                 } else {
                     seen_constants.insert(name.clone(), module_name.to_string());
                 }
@@ -479,4 +481,42 @@ pub fn check_duplicate_imports(
         }
     }
     errors
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn module(src: &str) -> Module {
+        asili_parser::parse_tokens(&asili_lexer::tokenize(src).expect("lex")).expect("parse")
+    }
+
+    fn exporting_constant(name: &str) -> ResolvedModule {
+        let mut exports = ExportTable::default();
+        exports.constants.insert(name.to_string(), ValueType::Namba);
+        ResolvedModule {
+            module: module(""),
+            exports,
+            is_stdlib: false,
+        }
+    }
+
+    #[test]
+    fn an_import_shadows_an_ambient_name_but_two_imports_clash() {
+        let mut prelude = StdlibEnv::default();
+        prelude.constants.insert("PI".to_string(), ValueType::Namba);
+        let resolved: HashMap<String, ResolvedModule> = [
+            ("a".to_string(), exporting_constant("PI")),
+            ("b".to_string(), exporting_constant("PI")),
+        ]
+        .into_iter()
+        .collect();
+
+        let one = module("leta a\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { }");
+        assert!(check_duplicate_imports(&one, &resolved, &prelude).is_empty());
+
+        let two = module("leta a\nleta b\nkazi kuu(hoja: Orodha<Neno>) -> Tupu { }");
+        let errors = check_duplicate_imports(&two, &resolved, &prelude);
+        assert!(errors.iter().any(|d| d.code == "SEM091"), "{errors:?}");
+    }
 }

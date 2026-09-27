@@ -105,3 +105,26 @@ fn index_compound_assignment_rejects_calls_in_the_index() {
     let errors = parse_tokens(&tokenize(source).expect("tokenize")).expect_err("must reject");
     assert!(errors.iter().any(|d| d.code == "PAR096"), "{errors:?}");
 }
+
+#[test]
+fn nested_generic_closed_by_shift_token() {
+    // The lexer reads `>>` as one token; in a type it must close both generics, so `=` is still
+    // seen as the start of the initializer.
+    let source = "kazi f() -> Tupu {\n    weka m: Orodha<Orodha<Namba>> = orodha()\n    m.ongeza(orodha(1))\n}\n";
+    let module = parse_tokens(&tokenize(source).expect("tokenize")).expect("parse");
+    let Stmt::Let { ty: Some(ty), .. } = &module.functions[0].body.statements[0] else {
+        panic!(
+            "expected a typed let, got {:?}",
+            module.functions[0].body.statements[0]
+        );
+    };
+    assert!(
+        !ty.name.contains('='),
+        "type swallowed the initializer: {:?}",
+        ty.name
+    );
+    assert_eq!(
+        asili_parser::parse_value_type(&ty.name).to_string(),
+        "Orodha<Orodha<Namba>>"
+    );
+}

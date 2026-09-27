@@ -323,11 +323,12 @@ impl InterfaceRegistry {
         env
     }
 
-    /// Builtin stdlib environment. User and third-party modules remain explicit imports.
+    /// Builtin stdlib environment (every builtin module except the opt-in ones). User and
+    /// third-party modules remain explicit imports.
     pub fn prelude_env(&self) -> StdlibEnv {
         let mut env = StdlibEnv::default();
-        for name in builtin_modules::BUILTIN_MODULE_NAMES {
-            if let Some(iface) = self.modules.get(*name) {
+        for name in builtin_modules::ambient_module_names() {
+            if let Some(iface) = self.modules.get(name) {
                 for (k, v) in &iface.functions {
                     env.functions.insert(k.clone(), v.clone());
                 }

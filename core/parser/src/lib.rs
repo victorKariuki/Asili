@@ -48,13 +48,14 @@ pub fn semantic_check_with_options(
 }
 
 /// Build extern function and constant maps for semantic analysis.
-/// Builtin stdlib modules are ambient; explicit imports remain necessary for user modules.
+/// Builtin stdlib modules are ambient (except the opt-in ones, `builtins::OPT_IN_MODULES`);
+/// explicit imports remain necessary for user modules.
 pub fn extern_env_from_imports(
     module: &Module,
 ) -> (HashMap<String, FnContract>, HashMap<String, ValueType>) {
     let mut functions = HashMap::new();
     let mut constants = HashMap::new();
-    for name in builtins::BUILTIN_MODULE_NAMES {
+    for name in builtins::ambient_module_names() {
         if let Some(table) = builtins::builtin_module_exports(name) {
             functions.extend(table.functions);
             constants.extend(table.constants);

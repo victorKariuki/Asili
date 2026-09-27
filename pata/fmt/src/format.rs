@@ -318,7 +318,7 @@ fn classify_generic_brackets(tokens: &[Token]) -> std::collections::HashSet<usiz
                     // by construction — `find_matching_generic_close` only accepts identifiers,
                     // `,`, and balanced `<`/`>` inside the region, so mark the whole span.
                     for (k, t) in tokens.iter().enumerate().take(close + 1).skip(i) {
-                        if t.lexeme == "<" || t.lexeme == ">" {
+                        if matches!(t.lexeme.as_str(), "<" | ">" | ">>") {
                             result.insert(k);
                         }
                     }
@@ -345,10 +345,13 @@ fn find_matching_generic_close(tokens: &[Token], open_idx: usize) -> Option<usiz
         let lex = tokens[j].lexeme.as_str();
         match lex {
             "<" => depth += 1,
-            ">" => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(j);
+            ">" | ">>" => {
+                // `>>` is one token (the shift operator) but closes two nested generics.
+                depth -= if lex == ">>" { 2 } else { 1 };
+                match depth {
+                    0 => return Some(j),
+                    d if d < 0 => return None,
+                    _ => {}
                 }
             }
             "," => {}

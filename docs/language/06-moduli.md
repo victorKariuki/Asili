@@ -2,7 +2,8 @@
 
 ## Kuingiza Moduli (Importing)
 
-Builtin standard-library modules are available without `leta`. The keyword remains necessary for
+Builtin standard-library modules are available without `leta`, except the opt-in `kasha_gc`
+(managed memory), which must be imported explicitly. The keyword remains necessary for
 project and dependency modules; it may also be used as documentation when showing which builtin
 module provides a function.
 
@@ -288,6 +289,8 @@ ulikamilika kwa usalama au ulianguka), si matokeo halisi. Tumia `njia` kutuma ma
 chochote kinachozibeba) hukataliwa na `Kosa` badala ya kuruhusiwa kimya kimya:
 
 ```asili
+leta kasha_gc   # Kasha_GC ni ya hiari: haipatikani bila leta
+
 weka g = kasha_gc_unda(1.0)
 linganisha tenda("kazi_yoyote", g) {
     Tokeo::Sawa(_) => { }
