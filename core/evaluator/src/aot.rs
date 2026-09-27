@@ -65,6 +65,11 @@ impl std::fmt::Display for AotError {
     }
 }
 
+/// Whether native code may be built and loaded (`ASILI_AOT=0` turns it off).
+pub fn enabled() -> bool {
+    std::env::var("ASILI_AOT").map_or(true, |v| v != "0")
+}
+
 fn clang() -> String {
     std::env::var("ASILI_CLANG").unwrap_or_else(|_| "clang".to_string())
 }
@@ -76,7 +81,7 @@ pub fn build_library(
     dir: &Path,
     name: &str,
 ) -> Result<PathBuf, AotError> {
-    if std::env::var("ASILI_AOT").is_ok_and(|v| v == "0") {
+    if !enabled() {
         return Err(AotError::Unavailable("ASILI_AOT=0".into()));
     }
     let compiler = clang();

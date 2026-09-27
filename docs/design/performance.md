@@ -13,18 +13,19 @@ Solve time on one core, best of several runs:
 | Engine | Solve only | Whole process |
 |---|---|---|
 | C, clang -O2 | 3.2 ms | — |
-| C, gcc -O2 | 4.4 ms | 8 ms |
+| C, gcc -O2 | 4.4 ms | 7 ms |
 | Rust -O | — | 7 ms |
-| **Asili AOT (LLVM)** | **4.8 ms** | **11 ms** |
-| Asili register VM | ~110 ms | 110 ms |
-| Python 3.11 | — | 305 ms |
+| **Asili AOT (LLVM)** | **4.8 ms** | **10 ms** |
+| Asili register VM | ~110 ms | 115 ms |
+| Python 3.11 | — | 306 ms |
 | Asili tree-walker (before) | 3.4 s | — |
 | Asili stack VM (before) | 1.5 s | — |
 
 By callgrind instruction count, the AOT solve executes ~30M instructions against ~27M for
 clang-compiled C. The remaining whole-process gap is mostly `pata`'s own startup (~3 ms).
 
-Reproduce with `examples/sudoku/bench/run.sh`.
+Reproduce with `examples/sudoku/bench/run.sh` (whole-process figures above: best of 7,
+re-measured after the codebase-wide deduplication pass, September 2026).
 
 ## Audit findings (September 2026)
 
@@ -58,7 +59,9 @@ registers.
 
 **One source of truth for semantics.** Every operation on a generic `Value` — operators, casts,
 methods, `?`/`jaribu`, iteration, display — is a function in `eval/ops.rs` / `eval/methods.rs`
-that both the tree-walker and the VM call. Differential tests (`tests/engines_agree.rs`) run each
+that both the tree-walker and the VM call; unboxed numeric opcodes share one
+`bytecode.rs::numeric_op` between the interpreter loop and `exec_slow` (the path native code
+calls back into). Differential tests (`tests/engines_agree.rs`) run each
 snippet on every engine and require identical values and error text.
 
 **Native code, two tiers.**
@@ -98,6 +101,9 @@ PyPy) use; `tests/native_tiers.rs` includes values crossing 2^53 to exercise it.
 
 ## Correctness guardrails
 
+The full checklist — invariants, required tests, benchmark thresholds, how to debug a
+regression — is the `performance-guardrails` skill (`.claude/skills/performance-guardrails/`).
+
 - `tests/engines_agree.rs`: tree-walker vs VM vs AOT, values and error messages.
 - `tests/native_tiers.rs`: interpreter vs AOT bit-for-bit on the numeric edge cases
   (`-0.0`, NaN, ±∞, 2^53, negative `%` and floor division, shifts outside `0..=63`,
@@ -105,6 +111,28 @@ PyPy) use; `tests/native_tiers.rs` includes values crossing 2^53 to exercise it.
 - NaN *bit patterns* are the one thing not compared: Asili cannot observe them, and Rust and
   LLVM do not specify them (LLVM constant-folds `∞ − ∞` to a positive NaN, x86 produces a
   negative one).
+
+## Plan and status
+
+The plan this work followed, in order, and where each step stands:
+
+1. Measure honestly — fix the fixture, add identical C/Rust/Python solvers and `run.sh`. Done.
+2. Typed register VM with fused instructions and unboxed register files. Done (1.5 s → 0.11 s).
+3. One implementation of the language's semantics shared by every engine, with differential
+   tests (`engines_agree.rs`, `native_tiers.rs`). Done.
+4. Native code without a C step: LLVM IR text → clang, AOT at `pata jenga`, hash-checked at load.
+   Done; the Cranelift JIT prototype was removed to keep one native backend.
+5. Integer range analysis, speculation with deoptimization, bounds-check elimination. Done
+   (4.8 ms solve vs 4.4 ms for gcc C).
+6. Terse syntax that lowers to the fast forms: `//`, `%= &= |= ^= //=`, compound assignment on
+   list elements, bitwise-before-comparison precedence, `a[i]` returning the element. Done.
+7. Codebase-wide deduplication so nothing is implemented twice (compile front end, keyword list,
+   expression walk, builtin helpers, `pata.toml` discovery, artifact running, …). Done; the
+   single sources are listed in `CLAUDE.md` ("Write once, reuse").
+8. Guardrails: the `performance-guardrails` skill and `CLAUDE.md` rules make the invariants,
+   tests and benchmark thresholds part of finishing any engine change. Done.
+
+Next steps are the "Remaining gaps" below.
 
 ## Knobs
 
