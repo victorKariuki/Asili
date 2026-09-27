@@ -63,6 +63,10 @@ pub fn emit_asb_bytes(module: &Module, source: &str) -> Vec<u8> {
     out
 }
 
+/// Version of the bytecode payload (the register-VM instruction set). Artifacts built by an
+/// older `pata jenga` carry a different `version=` and must be rebuilt.
+const BYTECODE_VERSION: &str = "5";
+
 /// Emit a real bytecode artifact.  The header remains intentionally simple and textual so older
 /// runners can reject it cleanly, while the payload is the same deterministic bincode envelope
 /// used by the AST fallback.
@@ -72,7 +76,7 @@ pub fn emit_bytecode_bytes(program: &crate::bytecode::BytecodeProgram, source: &
     let mut h = std::collections::hash_map::DefaultHasher::new();
     source.hash(&mut h);
     let header = format!(
-        "ASB-STUB\nversion=4\nformat=bytecode\nmodule_hash={:016x}\nPAYLOAD\n",
+        "ASB-STUB\nversion={BYTECODE_VERSION}\nformat=bytecode\nmodule_hash={:016x}\nPAYLOAD\n",
         h.finish()
     );
     let mut out = header.into_bytes();
@@ -101,5 +105,13 @@ fn payload_slice(bytes: &[u8]) -> Result<&[u8], AsbLoadError> {
 /// Load BytecodeProgram from .asb bytes. Expects format=bytecode and a PAYLOAD section.
 pub fn load_asb_bytecode(bytes: &[u8]) -> Result<crate::bytecode::BytecodeProgram, AsbLoadError> {
     let payload = payload_slice(bytes)?;
+    let header = std::str::from_utf8(&bytes[..bytes.len() - payload.len()]).unwrap_or("");
+    let version = header.lines().find_map(|l| l.strip_prefix("version="));
+    if version != Some(BYTECODE_VERSION) {
+        return Err(AsbLoadError::InvalidFormat(
+            "kilele kilijengwa na toleo jingine la bytecode; jenga upya kwa `pata jenga`"
+                .to_string(),
+        ));
+    }
     bincode::deserialize(payload).map_err(|e| AsbLoadError::Decode(e.to_string()))
 }

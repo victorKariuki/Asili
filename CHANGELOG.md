@@ -55,7 +55,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Orodha<Namba>` is one bounds-checked load, and numeric literals are preloaded registers. The
   real Inkala Sudoku (90,665 attempts) drops from 1.50 s to about 0.12 s in release builds (the
   tree-walking evaluator takes 3.4 s; the same algorithm in CPython 3.11 takes 0.33 s, in C
-  0.006 s). The `.asb` bytecode payload format changed; rebuild artifacts with `pata jenga`.
+  0.006 s). The `.asb` bytecode payload format changed (header `version=5`);
+  running an artifact built by an older `pata jenga` now fails with a clear "rebuild with
+  `pata jenga`" message instead of a decode error.
 - **One implementation of the language's value semantics** (`core/evaluator/src/eval/ops.rs`,
   `eval/methods.rs`), used by the tree-walking evaluator and by every bytecode tier: binary and
   unary operators (including `Neno` ordering and `Namba_Kuu`/`Namba_Sahihi` widening), `kama`
