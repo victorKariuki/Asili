@@ -27,6 +27,11 @@ use crate::value::{EvalError, Value};
 
 pub type BuiltinFn = Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>;
 
+/// Builtins that need the running `Module` (they spawn named `kazi` on other threads), so they
+/// are dispatched by the evaluator itself rather than through the plain builtin table, and the
+/// bytecode VM (which carries no `Module`) leaves programs using them to the evaluator.
+pub const MODULE_BUILTINS: &[&str] = &["tenda", "mkondo_tumikia", "mkondo_tumikia_http"];
+
 pub fn builtins() -> HashMap<String, BuiltinFn> {
     let mut m: HashMap<String, BuiltinFn> = HashMap::new();
     msingi::register(&mut m);

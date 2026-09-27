@@ -97,13 +97,13 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             ..
         } => {
             let c = super::eval_expr_impl(cond, rt)?;
-            let run = matches!(&c, Value::Ukweli(true));
+            let run = super::ops::truthy(&c);
             if run {
                 return super::eval_block_impl(then_block, rt);
             }
             for (c2, blk) in else_if {
                 let c2val = super::eval_expr_impl(c2, rt)?;
-                if matches!(&c2val, Value::Ukweli(true)) {
+                if super::ops::truthy(&c2val) {
                     return super::eval_block_impl(blk, rt);
                 }
             }
@@ -120,7 +120,7 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
         } => {
             loop {
                 let c = super::eval_expr_impl(cond, rt)?;
-                if !matches!(&c, Value::Ukweli(true)) {
+                if !super::ops::truthy(&c) {
                     break;
                 }
                 match handle_loop_out(my_label.as_ref(), super::eval_block_impl(body, rt)?) {
@@ -161,38 +161,15 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                 }
                 ForMode::InExpr(expr) => {
                     let col = super::eval_expr_impl(expr, rt)?;
-                    match col {
-                        Value::Orodha(elems) => {
-                            for item in elems {
-                                rt.env.push_scope();
-                                rt.env.define(var, item);
-                                let out = super::eval_block_impl(body, rt)?;
-                                rt.env.pop_scope();
-                                match handle_loop_out(my_label.as_ref(), out) {
-                                    LoopAction::Continue => {}
-                                    LoopAction::Break => break,
-                                    LoopAction::Propagate(out) => return Ok(out),
-                                }
-                            }
-                        }
-                        Value::Kamusi(map) => {
-                            for (key, val) in map {
-                                let pair = Value::Jozi(Box::new(key.to_value()), Box::new(val));
-                                rt.env.push_scope();
-                                rt.env.define(var, pair);
-                                let out = super::eval_block_impl(body, rt)?;
-                                rt.env.pop_scope();
-                                match handle_loop_out(my_label.as_ref(), out) {
-                                    LoopAction::Continue => {}
-                                    LoopAction::Break => break,
-                                    LoopAction::Propagate(out) => return Ok(out),
-                                }
-                            }
-                        }
-                        _ => {
-                            return Err(EvalError::TypeErr(
-                                "kwa...katika inashughulikia Orodha na Kamusi tu".to_string(),
-                            ));
+                    for item in super::methods::iter_items(col)? {
+                        rt.env.push_scope();
+                        rt.env.define(var, item);
+                        let out = super::eval_block_impl(body, rt)?;
+                        rt.env.pop_scope();
+                        match handle_loop_out(my_label.as_ref(), out) {
+                            LoopAction::Continue => {}
+                            LoopAction::Break => break,
+                            LoopAction::Propagate(out) => return Ok(out),
                         }
                     }
                 }

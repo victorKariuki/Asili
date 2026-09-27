@@ -47,9 +47,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   real Inkala Sudoku (90,665 attempts) drops from 1.50 s to about 0.12 s in release builds (the
   tree-walking evaluator takes 3.4 s; the same algorithm in CPython 3.11 takes 0.33 s, in C
   0.006 s). The `.asb` bytecode payload format changed; rebuild artifacts with `pata jenga`.
-- Receiver methods that need no interpreter state (`Neno` methods, `Orodha` `clona`/`urefu`/
-  `pata`/`unganisha`/`jiunge`/`kwa_neno`/`vipande`), indexing and `kama` casts now live in one
-  shared module used by both the evaluator and the VM, so the two execution paths cannot drift.
+- **One implementation of the language's value semantics** (`core/evaluator/src/eval/ops.rs`,
+  `eval/methods.rs`), used by the tree-walking evaluator and by every bytecode tier: binary and
+  unary operators (including `Neno` ordering and `Namba_Kuu`/`Namba_Sahihi` widening), `kama`
+  casts, `?`/`jaribu` unwrapping, condition truthiness, indexing, number-to-text formatting,
+  `kwa ... katika` snapshots (with `Kamusi` entries as `Jozi`), every state-free method on
+  `Neno`/`Orodha`/`Kamusi`/`Seti`/`Chaguo`/`Tokeo`/`Jozi`/`Wakati` and the handle types, the
+  mutating methods (`ongeza`, `ingiza`, `ondoa`, `weka_key`, `badilisha`), and the callback
+  methods (`ramani`, `chuja`, `hesabu`, `chunguza`, `kila_na_fahirisi`, `kila_mmoja`). The VM
+  now dispatches methods at run time when a receiver's type is not known statically (e.g.
+  `weka k = kamusi()`) instead of falling back to the evaluator, iterates `Kamusi`, and runs
+  `badilisha` and other mutating methods on `Orodha<Namba>` locals. `tests/engines_agree.rs`
+  runs each snippet on the evaluator, the VM interpreter, the JIT and AOT and requires
+  identical values and error messages.
+- `Orodha.jiunge`/`kwa_neno` (and string building) now print NaN and infinities the same way as
+  `kama Neno` does (`Siyo_Namba`, `Ukomo`, `-Ukomo`) instead of Rust's `NaN`/`inf`.
 
 ### Fixed
 
@@ -65,6 +77,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   longer share one slot per name, builtins win over same-named `kazi` (matching the evaluator),
   out-of-bounds `Orodha` reads return the evaluator's `KosaMipaka` error, and the nonexistent
   call forms `na_biti(..)`/`sogeza_kushoto(..)` are no longer silently accepted.
+  `kila_na_fahirisi` callbacks on bytecode receive `(kipengele, fahirisi)` like the evaluator
+  (the VM passed the index first).
 
 ## [0.6.0] - 2026-09-21
 
