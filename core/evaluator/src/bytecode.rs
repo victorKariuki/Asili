@@ -97,51 +97,6 @@ pub enum CmpOp {
     Ne,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum BinaryCode {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    Pow,
-    Eq,
-    Ne,
-    Gt,
-    Lt,
-    Ge,
-    Le,
-    BitAnd,
-    BitXor,
-    BitOr,
-    Shl,
-    Shr,
-}
-
-impl BinaryCode {
-    fn to_ast(&self) -> BinaryOp {
-        match self {
-            BinaryCode::Add => BinaryOp::Add,
-            BinaryCode::Sub => BinaryOp::Sub,
-            BinaryCode::Mul => BinaryOp::Mul,
-            BinaryCode::Div => BinaryOp::Div,
-            BinaryCode::Rem => BinaryOp::Rem,
-            BinaryCode::Pow => BinaryOp::Pow,
-            BinaryCode::Eq => BinaryOp::Eq,
-            BinaryCode::Ne => BinaryOp::Ne,
-            BinaryCode::Gt => BinaryOp::Gt,
-            BinaryCode::Lt => BinaryOp::Lt,
-            BinaryCode::Ge => BinaryOp::Ge,
-            BinaryCode::Le => BinaryOp::Le,
-            BinaryCode::BitAnd => BinaryOp::BitAnd,
-            BinaryCode::BitXor => BinaryOp::BitXor,
-            BinaryCode::BitOr => BinaryOp::BitOr,
-            BinaryCode::Shl => BinaryOp::Shl,
-            BinaryCode::Shr => BinaryOp::Shr,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UnaryCode {
     Neg,
@@ -393,7 +348,7 @@ pub enum Opcode {
     },
     /// Generic binary operator on `vals`.
     ValBinary {
-        op: BinaryCode,
+        op: BinaryOp,
         dst: Reg,
         a: Reg,
         b: Reg,
@@ -655,27 +610,13 @@ fn is_cmp(op: &BinaryOp) -> Option<CmpOp> {
     })
 }
 
-fn binary_code(op: &BinaryOp) -> Option<BinaryCode> {
-    Some(match op {
-        BinaryOp::Add => BinaryCode::Add,
-        BinaryOp::Sub => BinaryCode::Sub,
-        BinaryOp::Mul => BinaryCode::Mul,
-        BinaryOp::Div => BinaryCode::Div,
-        BinaryOp::Rem => BinaryCode::Rem,
-        BinaryOp::Pow => BinaryCode::Pow,
-        BinaryOp::Eq => BinaryCode::Eq,
-        BinaryOp::Ne => BinaryCode::Ne,
-        BinaryOp::Gt => BinaryCode::Gt,
-        BinaryOp::Lt => BinaryCode::Lt,
-        BinaryOp::Ge => BinaryCode::Ge,
-        BinaryOp::Le => BinaryCode::Le,
-        BinaryOp::BitAnd => BinaryCode::BitAnd,
-        BinaryOp::BitXor => BinaryCode::BitXor,
-        BinaryOp::BitOr => BinaryCode::BitOr,
-        BinaryOp::Shl => BinaryCode::Shl,
-        BinaryOp::Shr => BinaryCode::Shr,
-        BinaryOp::And | BinaryOp::Or => return None,
-    })
+/// The AST operator a generic `Binary` instruction carries; `na`/`au` short-circuit and are
+/// lowered to jumps instead.
+fn binary_code(op: &BinaryOp) -> Option<BinaryOp> {
+    match op {
+        BinaryOp::And | BinaryOp::Or => None,
+        other => Some(other.clone()),
+    }
 }
 
 /// Static result type name of a supported method, for chaining (`b.vipande(9).ramani(..)`).
@@ -711,7 +652,7 @@ fn probe_value(type_name: &str) -> Option<Value> {
         "Kamusi" => Value::Kamusi(Default::default()),
         "Seti" => Value::Seti(Default::default()),
         "Chaguo" => Value::Chaguo(None),
-        "Tokeo" => Value::Tokeo(Ok(Box::new(Value::Tupu))),
+        "Tokeo" => Value::sawa(Value::Tupu),
         "Jozi" => Value::Jozi(Box::new(Value::Tupu), Box::new(Value::Tupu)),
         "Wakati" => Value::Wakati(0.0),
         _ => return None,
@@ -2640,7 +2581,7 @@ impl<'p> Vm<'p> {
                 let i = to_index(n[*idx as usize]);
                 let l = &frame.lists[*list as usize];
                 let v = match l.get(i) {
-                    Some(v) => Value::Tokeo(Ok(Box::new(Value::Namba(*v)))),
+                    Some(v) => Value::sawa(Value::Namba(*v)),
                     None => methods::out_of_bounds(i, l.len()),
                 };
                 frame.vals[*dst as usize] = v;
@@ -2727,7 +2668,7 @@ impl<'p> Vm<'p> {
                     frame.vals[*a as usize].clone(),
                     frame.vals[*b as usize].clone(),
                 );
-                match ops::binary_value(&op.to_ast(), l, r) {
+                match ops::binary_value(op, l, r) {
                     Ok(v) => frame.vals[*dst as usize] = v,
                     Err(e) => fail!(e),
                 }

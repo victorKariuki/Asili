@@ -258,6 +258,17 @@ pub enum SendValue {
 }
 
 impl Value {
+    /// `SAWA(v)` — a successful `Tokeo`.
+    pub fn sawa(v: Value) -> Value {
+        Value::Tokeo(Ok(Box::new(v)))
+    }
+
+    /// `KOSA(ujumbe)` — a failed `Tokeo` carrying a `Neno` message, the error shape every
+    /// builtin uses.
+    pub fn kosa(ujumbe: impl Into<String>) -> Value {
+        Value::Tokeo(Err(Box::new(Value::Neno(ujumbe.into()))))
+    }
+
     /// `None` if `self` is (or transitively contains) a non-`Send` variant
     /// (`KashaGC`/`Faili`/`Mkondo`, or a `Kumbukumbu` boxing one).
     pub fn try_into_send(&self) -> Option<SendValue> {

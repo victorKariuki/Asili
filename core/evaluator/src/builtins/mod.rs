@@ -33,6 +33,12 @@ pub type BuiltinFn = Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>;
 pub const MODULE_BUILTINS: &[&str] = &["tenda", "mkondo_tumikia", "mkondo_tumikia_http"];
 
 /// Every builtin module's registrations: the single list of what exists.
+/// Argument `i` as a `Neno` (empty when missing or not text) — the lenient string-argument
+/// convention every builtin shares.
+pub(crate) fn arg_str(args: &[Value], i: usize) -> String {
+    crate::value::as_string(args.get(i).unwrap_or(&Value::Hamna)).unwrap_or_default()
+}
+
 fn register_all(m: &mut HashMap<String, BuiltinFn>) {
     msingi::register(m);
     mfumo::register(m);

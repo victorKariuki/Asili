@@ -62,7 +62,7 @@ pub(crate) fn index_value(base: &Value, index: &Value) -> Result<Value, EvalErro
             if idx >= v.len() {
                 Ok(out_of_bounds(idx, v.len()))
             } else {
-                Ok(Value::Tokeo(Ok(Box::new(v[idx].clone()))))
+                Ok(Value::sawa(v[idx].clone()))
             }
         }
 
@@ -398,13 +398,11 @@ pub(crate) fn pure_method(
                 Some(f) => {
                     let mut s = String::new();
                     match f.read_to_string(&mut s) {
-                        Ok(_) => Ok(Value::Tokeo(Ok(Box::new(Value::Neno(s))))),
-                        Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+                        Ok(_) => Ok(Value::sawa(Value::Neno(s))),
+                        Err(e) => Ok(Value::kosa(e.to_string())),
                     }
                 }
-                None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                    "faili: imefungwa tayari".into(),
-                ))))),
+                None => Ok(Value::kosa("faili: imefungwa tayari")),
             }
         }
         (Value::Faili(cell), "andika") => {
@@ -414,12 +412,10 @@ pub(crate) fn pure_method(
             let mut guard = cell.borrow_mut();
             match guard.0.as_mut() {
                 Some(f) => match f.write_all(data.as_bytes()) {
-                    Ok(()) => Ok(Value::Tokeo(Ok(Box::new(Value::Tupu)))),
-                    Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+                    Ok(()) => Ok(Value::sawa(Value::Tupu)),
+                    Err(e) => Ok(Value::kosa(e.to_string())),
                 },
-                None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                    "faili: imefungwa tayari".into(),
-                ))))),
+                None => Ok(Value::kosa("faili: imefungwa tayari")),
             }
         }
         (Value::Faili(cell), "funga") => {
@@ -433,13 +429,11 @@ pub(crate) fn pure_method(
                 Some(s) => {
                     let mut buf = String::new();
                     match s.read_to_string(&mut buf) {
-                        Ok(_) => Ok(Value::Tokeo(Ok(Box::new(Value::Neno(buf))))),
-                        Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+                        Ok(_) => Ok(Value::sawa(Value::Neno(buf))),
+                        Err(e) => Ok(Value::kosa(e.to_string())),
                     }
                 }
-                None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                    "mkondo: imefungwa tayari".into(),
-                ))))),
+                None => Ok(Value::kosa("mkondo: imefungwa tayari")),
             }
         }
         (Value::Mkondo(cell), "andika") => {
@@ -449,12 +443,10 @@ pub(crate) fn pure_method(
             let mut guard = cell.borrow_mut();
             match guard.0.as_mut() {
                 Some(s) => match s.write_all(data.as_bytes()) {
-                    Ok(()) => Ok(Value::Tokeo(Ok(Box::new(Value::Tupu)))),
-                    Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+                    Ok(()) => Ok(Value::sawa(Value::Tupu)),
+                    Err(e) => Ok(Value::kosa(e.to_string())),
                 },
-                None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                    "mkondo: imefungwa tayari".into(),
-                ))))),
+                None => Ok(Value::kosa("mkondo: imefungwa tayari")),
             }
         }
         (Value::Mkondo(cell), "funga") => {
@@ -488,14 +480,12 @@ pub(crate) fn pure_method(
                             // method today, a known, documented limitation of this
                             // minimal framing pass (see docs/design/http-framing-design.md).
                             let text = String::from_utf8_lossy(&buf[..n]).into_owned();
-                            Ok(Value::Tokeo(Ok(Box::new(Value::Neno(text)))))
+                            Ok(Value::sawa(Value::Neno(text)))
                         }
-                        Err(e) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(e.to_string()))))),
+                        Err(e) => Ok(Value::kosa(e.to_string())),
                     }
                 }
-                None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                    "mkondo: imefungwa tayari".into(),
-                ))))),
+                None => Ok(Value::kosa("mkondo: imefungwa tayari")),
             }
         }
         // Kumbukumbu<T> is a plain owning Box, not a shared/interior-mutable cell like
@@ -517,18 +507,16 @@ pub(crate) fn pure_method(
                         )))
                     }))
                 }
-                None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                    "tuma: thamani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)".into(),
-                ))))),
+                None => Ok(Value::kosa(
+                    "tuma: thamani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)",
+                )),
             }
         }
         (Value::NjiaRx(rx), "pokea") => {
             let guard = rx.lock().unwrap();
             match guard.recv() {
-                Ok(sv) => Ok(Value::Tokeo(Ok(Box::new(sv.into_value())))),
-                Err(_) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                    "pokea: upande wa kutuma umefungwa".into(),
-                ))))),
+                Ok(sv) => Ok(Value::sawa(sv.into_value())),
+                Err(_) => Ok(Value::kosa("pokea: upande wa kutuma umefungwa")),
             }
         }
         // Bounded njia_na_kikomo: same .tuma()/.pokea() contract as the unbounded njia()
@@ -548,18 +536,16 @@ pub(crate) fn pure_method(
                         )))
                     }))
                 }
-                None => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                    "tuma: thamani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)".into(),
-                ))))),
+                None => Ok(Value::kosa(
+                    "tuma: thamani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)",
+                )),
             }
         }
         (Value::NjiaRxBounded(rx), "pokea") => {
             let guard = rx.lock().unwrap();
             match guard.recv() {
-                Ok(sv) => Ok(Value::Tokeo(Ok(Box::new(sv.into_value())))),
-                Err(_) => Ok(Value::Tokeo(Err(Box::new(Value::Neno(
-                    "pokea: upande wa kutuma umefungwa".into(),
-                ))))),
+                Ok(sv) => Ok(Value::sawa(sv.into_value())),
+                Err(_) => Ok(Value::kosa("pokea: upande wa kutuma umefungwa")),
             }
         }
         // .funga()/.fungua() are an explicit, best-effort lock/unlock pair for holding
@@ -959,7 +945,7 @@ pub(crate) fn is_shared_method_name(method: &str) -> bool {
         Value::Kamusi(HashMap::new()),
         Value::Seti(HashSet::new()),
         Value::Chaguo(None),
-        Value::Tokeo(Ok(Box::new(Value::Tupu))),
+        Value::sawa(Value::Tupu),
         Value::Jozi(Box::new(Value::Tupu), Box::new(Value::Tupu)),
         Value::Wakati(0.0),
         Value::Kumbukumbu(Box::new(Value::Tupu)),
