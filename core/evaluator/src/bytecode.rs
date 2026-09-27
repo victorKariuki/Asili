@@ -1,89 +1,90 @@
-//! The compact ASB bytecode compiler and stack VM.
+//! The ASB bytecode compiler and typed register VM.
 //!
-//! This is deliberately a conservative lowering pass.  Programs containing syntax which is not
-//! represented by this ISA return `None` from [`compile_module`] and continue to use the serialized
-//! AST artifact.  That keeps the artifact format backwards compatible while allowing the hot,
-//! data-oriented Sudoku subset to run without the tree-walk evaluator.
+//! The compiler lowers a conservative, performance-sensitive subset of Asili to a register
+//! machine with three register files per call frame:
+//!
+//! * `nums`: unboxed `f64`s, holding every `Namba` and `Ukweli` (as `0.0`/`1.0`) local and
+//!   temporary whose type is statically known;
+//! * `lists`: unboxed `Vec<f64>`s for `Orodha<Namba>` locals;
+//! * `vals`: generic [`Value`]s for everything else.
+//!
+//! Numeric code therefore never touches the `Value` enum: `a + b` is one `Add` instruction on two
+//! `f64` registers, `ikiwa x < y` is one fused compare-and-branch, `b[i]?` on an
+//! `Orodha<Namba>` is one bounds-checked load, and every numeric literal lives in a register that
+//! is filled once when the frame is entered. Generic operations reuse the tree-walking
+//! evaluator's shared helpers (`eval::methods`) so both execution paths agree on behaviour and
+//! error text.
+//!
+//! Programs containing syntax that is not represented here make [`compile_module`] return
+//! `None`, and the caller keeps emitting the serialized-AST artifact instead.
 
-use crate::builtins::{builtin_names, builtins};
-use crate::value::{self, EvalError, Value};
+use crate::builtins::{builtin_names, builtins, BuiltinFn};
+use crate::eval::methods;
+use crate::value::{self, EvalError, MapKey, Value};
 use asili_parser::{AssignOp, BinaryOp, Block, Expr, ForMode, Function, Module, Stmt, UnaryOp};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Register index within one register file of a frame.
+pub type Reg = u32;
+
+/// Static type of a register, which also selects its register file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Ty {
+    /// `Namba`, in the `nums` file.
+    Num,
+    /// `Ukweli`, in the `nums` file as `0.0`/`1.0`.
+    Bool,
+    /// `Orodha<Namba>`, in the `lists` file.
+    List,
+    /// Any other value, in the `vals` file.
+    Val,
+}
+
+impl Ty {
+    fn from_type_name(name: &str) -> Ty {
+        match name.replace(' ', "").as_str() {
+            "Namba" => Ty::Num,
+            "Ukweli" => Ty::Bool,
+            "Orodha<Namba>" => Ty::List,
+            _ => Ty::Val,
+        }
+    }
+
+    fn in_nums(self) -> bool {
+        matches!(self, Ty::Num | Ty::Bool)
+    }
+}
+
+/// A typed register reference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Operand {
+    pub ty: Ty,
+    pub reg: Reg,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BytecodeFunc {
     pub name: String,
-    pub arity: u32,
+    pub params: Vec<Operand>,
+    pub ret: Ty,
+    pub num_regs: u32,
+    pub list_regs: u32,
+    pub val_regs: u32,
+    /// Numeric constants copied into their registers on frame entry.
+    pub num_consts: Vec<(Reg, f64)>,
     pub code: Vec<Opcode>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Opcode {
-    Const(u32),
-    Return,
-    /// Legacy one-argument builtin call retained for hand-authored ASB programs.
-    CallBuiltin(u32),
-    LoadLocal(u32),
-    StoreLocal(u32),
-    Nop,
-    Pop,
-    Jump(u32),
-    JumpIfFalse(u32),
-    Binary(BinaryCode),
-    Unary(UnaryCode),
-    MakeList(u32),
-    Index,
-    IndexLocal(u32),
-    ListLen(u32),
-    Unwrap,
-    Cast(String),
-    Call {
-        function: u32,
-        arity: u32,
-    },
-    CallBuiltinN {
-        builtin: u32,
-        arity: u32,
-    },
-    CallMethod {
-        method: String,
-        arity: u32,
-    },
-    ListPush(u32),
-    ListSet(u32),
-    ListRemove(u32),
-    /// Push a numeric constant without materialising a generic `Value`.
-    ConstNumber(u32),
-    /// Load a numeric local into the unboxed numeric stack.
-    LoadNumber(u32),
-    /// Store a numeric stack value without boxing it in the local frame.
-    StoreNumber(u32),
-    /// Numeric arithmetic/comparison.  The operands remain unboxed for arithmetic.
-    NumericBinary(BinaryCode),
-    NumericUnary(UnaryCode),
-    NumericBuiltin(NumericBuiltinCode),
-    /// Numeric-list read; the result is a specialised result value until `UnwrapNumber`.
-    IndexNumberLocal(u32),
-    IndexNumberLocalFromSlot {
-        list: u32,
-        index: u32,
-    },
-    UnwrapNumber,
-    ListPushNumber(u32),
-    ListSetNumber(u32),
-    StoreNumericList(u32),
-    /// Fused loop increment used by range loops and other counted hot paths.
-    IncrementNumberLocal {
-        slot: u32,
-        by: u32,
-    },
-    /// Fused numeric list read followed by addition (common in flat-array loops).
-    IndexAddNumberLocal {
-        slot: u32,
-        index_slot: u32,
-        add: u32,
-    },
+/// Comparison selector for the generic compare-and-branch opcode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CmpOp {
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Eq,
+    Ne,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,30 +106,312 @@ pub enum BinaryCode {
     BitOr,
     Shl,
     Shr,
-    And,
-    Or,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UnaryCode {
     Neg,
-    Not,
     BitNot,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum NumericBuiltinCode {
-    Floor,
-    ShiftLeft,
-    ShiftRight,
-    BitAnd,
-    BitOr,
-    BitXor,
+/// In-place methods on a generic local (`Orodha`/`Kamusi` held in the `vals` file).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MutMethod {
+    Push,
+    Insert,
+    Remove,
+    WekaKey,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CallOp {
+    pub function: u32,
+    pub args: Vec<Operand>,
+    pub dst: Operand,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BuiltinOp {
+    pub builtin: u32,
+    pub args: Vec<Reg>,
+    pub dst: Reg,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MethodOp {
+    pub method: String,
+    pub recv: Reg,
+    pub args: Vec<Reg>,
+    pub dst: Reg,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MutMethodOp {
+    pub method: MutMethod,
+    pub recv: Reg,
+    pub args: Vec<Reg>,
+    pub dst: Reg,
+}
+
+/// Register-machine instructions. Unless noted, `dst`/`a`/`b`/`src` are `nums` registers.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Opcode {
+    Mov {
+        dst: Reg,
+        src: Reg,
+    },
+    Add {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Sub {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Mul {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Div {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Rem {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Pow {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    BitAnd {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    BitOr {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    BitXor {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Shl {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Shr {
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    Neg {
+        dst: Reg,
+        src: Reg,
+    },
+    BitNot {
+        dst: Reg,
+        src: Reg,
+    },
+    Not {
+        dst: Reg,
+        src: Reg,
+    },
+    Floor {
+        dst: Reg,
+        src: Reg,
+    },
+    Ceil {
+        dst: Reg,
+        src: Reg,
+    },
+    /// `dst = (a op b) as 0.0/1.0`.
+    Cmp {
+        op: CmpOp,
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+
+    Jump {
+        target: u32,
+    },
+    JumpIfFalse {
+        cond: Reg,
+        target: u32,
+    },
+    JumpIfTrue {
+        cond: Reg,
+        target: u32,
+    },
+    /// Jump when `a op b` does **not** hold (the fall-through is the "then" path).
+    JumpIfNot {
+        op: CmpOp,
+        a: Reg,
+        b: Reg,
+        target: u32,
+    },
+    /// Counted-loop back edge: `ctr += 1; if ctr < end { goto target }`.
+    ForStep {
+        ctr: Reg,
+        end: Reg,
+        target: u32,
+    },
+    /// `dst = trunc(src)`, used for range-loop bounds.
+    Trunc {
+        dst: Reg,
+        src: Reg,
+    },
+
+    /// `lists[dst] = [nums[items]...]`.
+    MakeNumList {
+        dst: Reg,
+        items: Vec<Reg>,
+    },
+    /// `b[i]?` on an `Orodha<Namba>`: out of bounds returns the `Tokeo` error from the function.
+    ListGet {
+        dst: Reg,
+        list: Reg,
+        idx: Reg,
+    },
+    /// `b[i]` without `?`: `vals[dst]` receives the `Tokeo`.
+    ListGetTokeo {
+        dst: Reg,
+        list: Reg,
+        idx: Reg,
+    },
+    ListSet {
+        list: Reg,
+        idx: Reg,
+        src: Reg,
+    },
+    ListPush {
+        list: Reg,
+        src: Reg,
+    },
+    ListRemove {
+        list: Reg,
+        idx: Reg,
+    },
+    /// `vals[dst] = Chaguo(removed)`.
+    ListRemoveVal {
+        dst: Reg,
+        list: Reg,
+        idx: Reg,
+    },
+    ListLen {
+        dst: Reg,
+        list: Reg,
+    },
+    /// `lists[dst] = lists[src].clone()`.
+    ListMov {
+        dst: Reg,
+        src: Reg,
+    },
+    /// `lists[dst]` from `vals[src]`, which must be an `Orodha` of `Namba`s.
+    ListFromVal {
+        dst: Reg,
+        src: Reg,
+    },
+    /// `vals[dst] = Orodha(lists[src])`.
+    ListToVal {
+        dst: Reg,
+        src: Reg,
+    },
+
+    /// `vals[dst] = constants[k]`.
+    ConstVal {
+        dst: Reg,
+        k: u32,
+    },
+    ValMov {
+        dst: Reg,
+        src: Reg,
+    },
+    /// `vals[dst] = Namba(nums[src])`.
+    BoxNum {
+        dst: Reg,
+        src: Reg,
+    },
+    /// `vals[dst] = Ukweli(nums[src] != 0)`.
+    BoxBool {
+        dst: Reg,
+        src: Reg,
+    },
+    /// `nums[dst]` from `vals[src]`, which must be a `Namba`.
+    UnboxNum {
+        dst: Reg,
+        src: Reg,
+    },
+    /// `nums[dst] = vals[src] == Ukweli(kweli)`.
+    UnboxBool {
+        dst: Reg,
+        src: Reg,
+    },
+    /// Generic binary operator on `vals`.
+    ValBinary {
+        op: BinaryCode,
+        dst: Reg,
+        a: Reg,
+        b: Reg,
+    },
+    ValUnary {
+        op: UnaryCode,
+        dst: Reg,
+        src: Reg,
+    },
+    /// `vals[dst] = vals[base][vals[idx]]`.
+    ValIndex {
+        dst: Reg,
+        base: Reg,
+        idx: Reg,
+    },
+    /// `nums[dst] = vals[src].urefu()`.
+    ValLen {
+        dst: Reg,
+        src: Reg,
+    },
+    /// `?` on `vals[src]`: `Tokeo` errors return from the function.
+    Unwrap {
+        dst: Reg,
+        src: Reg,
+    },
+    /// `jaribu` on `vals[src]`: errors abort execution.
+    Jaribu {
+        dst: Reg,
+        src: Reg,
+    },
+    Cast {
+        dst: Reg,
+        src: Reg,
+        ty: Box<str>,
+    },
+    MakeList {
+        dst: Reg,
+        items: Box<[Reg]>,
+    },
+    Call(Box<CallOp>),
+    CallBuiltin(Box<BuiltinOp>),
+    CallMethod(Box<MethodOp>),
+    MutMethod(Box<MutMethodOp>),
+    Return {
+        src: Operand,
+    },
+    ReturnTupu,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BytecodeProgram {
-    #[serde(default)]
     pub constants: Vec<StoredConstant>,
     pub functions: Vec<BytecodeFunc>,
     pub entry: String,
@@ -139,197 +422,486 @@ pub enum StoredConstant {
     Neno(String),
     Namba(f64),
     Tupu,
+    Hamna,
     Ukweli(bool),
     Herufi(char),
+}
+
+impl StoredConstant {
+    fn to_value(&self) -> Value {
+        match self {
+            StoredConstant::Neno(s) => Value::Neno(s.clone()),
+            StoredConstant::Namba(n) => Value::Namba(*n),
+            StoredConstant::Ukweli(b) => Value::Ukweli(*b),
+            StoredConstant::Herufi(c) => Value::Herufi(*c),
+            StoredConstant::Tupu => Value::Tupu,
+            StoredConstant::Hamna => Value::Hamna,
+        }
+    }
 }
 
 impl BytecodeProgram {
     pub fn find_function(&self, name: &str) -> Option<&BytecodeFunc> {
         self.functions.iter().find(|f| f.name == name)
     }
-
-    fn get_constant(&self, idx: u32) -> Value {
-        self.constants
-            .get(idx as usize)
-            .map(|c| match c {
-                StoredConstant::Neno(s) => Value::Neno(s.clone()),
-                StoredConstant::Namba(n) => Value::Namba(*n),
-                StoredConstant::Ukweli(b) => Value::Ukweli(*b),
-                StoredConstant::Herufi(c) => Value::Herufi(*c),
-                StoredConstant::Tupu => Value::Tupu,
-            })
-            .unwrap_or(Value::Tupu)
-    }
 }
 
-/// Lower the supported, performance-sensitive subset.  `None` means that the caller must emit
-/// the normal serialized AST artifact instead.
+// ---------------------------------------------------------------------------------------------
+// Compiler
+// ---------------------------------------------------------------------------------------------
+
+/// Builtins that need the whole `Module` (they spawn named `kazi`), which the VM does not carry.
+const MODULE_BUILTINS: &[&str] = &["tenda", "mkondo_tumikia", "mkondo_tumikia_http"];
+
+/// `Orodha` methods that take the name of a callback `kazi`.
+const CALLBACK_METHODS: &[&str] = &["ramani", "chuja", "hesabu", "chunguza", "kila_na_fahirisi"];
+
+/// Lower the supported subset. `None` means the caller must emit the serialized AST artifact.
 pub fn compile_module(module: &Module) -> Option<BytecodeProgram> {
-    let names: HashMap<String, u32> = module
-        .functions
-        .iter()
-        .enumerate()
-        .map(|(i, f)| (f.name.clone(), i as u32))
-        .collect();
-    let mut compiler = Compiler {
+    let mut program = ProgramCompiler {
         constants: Vec::new(),
-        functions: Vec::new(),
-        function_names: names,
-        numeric_functions: module
-            .functions
-            .iter()
-            .filter(|f| f.return_type.name == "Namba")
-            .map(|f| f.name.clone())
+        functions: HashMap::new(),
+        module_consts: HashMap::new(),
+        builtins: builtin_names()
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| (name, i as u32))
             .collect(),
-        module_constants: HashMap::new(),
     };
-    for constant in &module.constants {
-        let index = compiler.literal(&constant.value)?;
-        compiler
-            .module_constants
-            .insert(constant.name.clone(), index);
+    for (i, function) in module.functions.iter().enumerate() {
+        program.functions.insert(
+            function.name.clone(),
+            FunctionSig {
+                index: i as u32,
+                params: function
+                    .params
+                    .iter()
+                    .map(|p| Ty::from_type_name(&p.ty.name))
+                    .collect(),
+                ret: Ty::from_type_name(&function.return_type.name),
+                ret_name: function.return_type.name.clone(),
+            },
+        );
     }
+    for constant in &module.constants {
+        let stored = literal(&constant.value)?;
+        let ty = match (&stored, Ty::from_type_name(&constant.ty.name)) {
+            (StoredConstant::Namba(_), _) => Ty::Num,
+            (StoredConstant::Ukweli(_), _) => Ty::Bool,
+            _ => Ty::Val,
+        };
+        program.module_consts.insert(
+            constant.name.clone(),
+            (ty, stored, constant.ty.name.clone()),
+        );
+    }
+    let mut functions = Vec::with_capacity(module.functions.len());
     for function in &module.functions {
-        let compiled = compiler.compile_function(function)?;
-        compiler.functions.push(compiled);
+        functions.push(FunctionCompiler::compile(&mut program, function)?);
     }
     Some(BytecodeProgram {
-        constants: compiler.constants,
-        functions: compiler.functions,
+        constants: program.constants,
+        functions,
         entry: "kuu".to_string(),
     })
 }
 
-struct Compiler {
-    constants: Vec<StoredConstant>,
-    functions: Vec<BytecodeFunc>,
-    function_names: HashMap<String, u32>,
-    numeric_functions: std::collections::HashSet<String>,
-    module_constants: HashMap<String, u32>,
-}
-
-fn is_numeric_list_type(name: &str) -> bool {
-    name.replace(' ', "") == "Orodha<Namba>"
-}
-
-fn numeric_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        "sakafu"
-            | "dari"
-            | "mzizi"
-            | "nguvu"
-            | "sogeza_kushoto"
-            | "sogeza_kulia"
-            | "na_biti"
-            | "au_biti"
-            | "xor_biti"
-    )
-}
-
-fn numeric_builtin_opcode(name: &str, arity: usize) -> Option<NumericBuiltinCode> {
-    match (name, arity) {
-        ("sakafu", 1) => Some(NumericBuiltinCode::Floor),
-        ("sogeza_kushoto", 2) => Some(NumericBuiltinCode::ShiftLeft),
-        ("sogeza_kulia", 2) => Some(NumericBuiltinCode::ShiftRight),
-        ("na_biti", 2) => Some(NumericBuiltinCode::BitAnd),
-        ("au_biti", 2) => Some(NumericBuiltinCode::BitOr),
-        ("xor_biti", 2) => Some(NumericBuiltinCode::BitXor),
-        _ => None,
-    }
-}
-
-impl Compiler {
-    fn literal(&mut self, expr: &Expr) -> Option<u32> {
-        let constant = match expr {
-            Expr::Number(s) => StoredConstant::Namba(value::parse_number(s)),
-            Expr::String(s) => StoredConstant::Neno(s.clone()),
-            Expr::Bool(b) => StoredConstant::Ukweli(*b),
-            Expr::Char(c) => StoredConstant::Herufi(*c),
-            Expr::Hamna => return None,
-            Expr::Group(e) => return self.literal(e),
+fn literal(expr: &Expr) -> Option<StoredConstant> {
+    Some(match expr {
+        Expr::Number(s) => StoredConstant::Namba(value::parse_number(s)),
+        Expr::String(s) => StoredConstant::Neno(s.clone()),
+        Expr::Bool(b) => StoredConstant::Ukweli(*b),
+        Expr::Char(c) => StoredConstant::Herufi(*c),
+        Expr::Hamna => StoredConstant::Hamna,
+        Expr::Group(e) => return literal(e),
+        Expr::Unary {
+            op: UnaryOp::Neg,
+            expr,
+            ..
+        } => match literal(expr)? {
+            StoredConstant::Namba(n) => StoredConstant::Namba(-n),
             _ => return None,
-        };
-        let index = self.constants.len() as u32;
-        self.constants.push(constant);
-        Some(index)
-    }
+        },
+        _ => return None,
+    })
+}
 
-    fn compile_function(&mut self, function: &Function) -> Option<BytecodeFunc> {
-        let mut f = FunctionCompiler {
-            parent: self,
-            locals: HashMap::new(),
-            numeric_locals: std::collections::HashSet::new(),
-            numeric_lists: std::collections::HashSet::new(),
-            next_local: 0,
-            code: Vec::new(),
-            loops: Vec::new(),
-        };
-        for param in &function.params {
-            let slot = f.slot(&param.name);
-            if param.ty.name == "Namba" {
-                f.numeric_locals.insert(slot);
-            } else if is_numeric_list_type(&param.ty.name) {
-                f.numeric_lists.insert(slot);
-            }
+struct FunctionSig {
+    index: u32,
+    params: Vec<Ty>,
+    ret: Ty,
+    ret_name: String,
+}
+
+struct ProgramCompiler {
+    constants: Vec<StoredConstant>,
+    functions: HashMap<String, FunctionSig>,
+    /// name -> (type, value, declared type name)
+    module_consts: HashMap<String, (Ty, StoredConstant, String)>,
+    builtins: HashMap<String, u32>,
+}
+
+impl ProgramCompiler {
+    fn constant(&mut self, constant: StoredConstant) -> u32 {
+        if let Some(i) = self.constants.iter().position(|c| *c == constant) {
+            return i as u32;
         }
-        f.block(&function.body)?;
-        f.code.push(Opcode::Return);
-        Some(BytecodeFunc {
-            name: function.name.clone(),
-            arity: function.params.len() as u32,
-            code: f.code,
-        })
+        self.constants.push(constant);
+        (self.constants.len() - 1) as u32
     }
+}
+
+#[derive(Clone)]
+struct Local {
+    op: Operand,
+    /// Static type name for generic locals (e.g. `Neno`, `Orodha<Neno>`), used to decide
+    /// whether a method call on it is supported.
+    type_name: Option<String>,
 }
 
 struct LoopState {
-    continue_target: u32,
+    label: Option<String>,
     breaks: Vec<usize>,
+    continues: Vec<usize>,
 }
 
 struct FunctionCompiler<'a> {
-    parent: &'a mut Compiler,
-    locals: HashMap<String, u32>,
-    numeric_locals: std::collections::HashSet<u32>,
-    numeric_lists: std::collections::HashSet<u32>,
-    next_local: u32,
+    program: &'a mut ProgramCompiler,
+    scopes: Vec<HashMap<String, Local>>,
     code: Vec<Opcode>,
+    num_regs: u32,
+    list_regs: u32,
+    val_regs: u32,
+    num_consts: Vec<(Reg, f64)>,
+    const_regs: HashMap<u64, Reg>,
     loops: Vec<LoopState>,
+    ret: Ty,
 }
 
-impl FunctionCompiler<'_> {
-    fn slot(&mut self, name: &str) -> u32 {
-        if let Some(slot) = self.locals.get(name) {
-            return *slot;
+fn is_cmp(op: &BinaryOp) -> Option<CmpOp> {
+    Some(match op {
+        BinaryOp::Lt => CmpOp::Lt,
+        BinaryOp::Le => CmpOp::Le,
+        BinaryOp::Gt => CmpOp::Gt,
+        BinaryOp::Ge => CmpOp::Ge,
+        BinaryOp::Eq => CmpOp::Eq,
+        BinaryOp::Ne => CmpOp::Ne,
+        _ => return None,
+    })
+}
+
+fn binary_code(op: &BinaryOp) -> Option<BinaryCode> {
+    Some(match op {
+        BinaryOp::Add => BinaryCode::Add,
+        BinaryOp::Sub => BinaryCode::Sub,
+        BinaryOp::Mul => BinaryCode::Mul,
+        BinaryOp::Div => BinaryCode::Div,
+        BinaryOp::Rem => BinaryCode::Rem,
+        BinaryOp::Pow => BinaryCode::Pow,
+        BinaryOp::Eq => BinaryCode::Eq,
+        BinaryOp::Ne => BinaryCode::Ne,
+        BinaryOp::Gt => BinaryCode::Gt,
+        BinaryOp::Lt => BinaryCode::Lt,
+        BinaryOp::Ge => BinaryCode::Ge,
+        BinaryOp::Le => BinaryCode::Le,
+        BinaryOp::BitAnd => BinaryCode::BitAnd,
+        BinaryOp::BitXor => BinaryCode::BitXor,
+        BinaryOp::BitOr => BinaryCode::BitOr,
+        BinaryOp::Shl => BinaryCode::Shl,
+        BinaryOp::Shr => BinaryCode::Shr,
+        BinaryOp::And | BinaryOp::Or => return None,
+    })
+}
+
+/// Static result type name of a supported method, for chaining (`b.vipande(9).ramani(..)`).
+fn method_result_type(receiver: &str, method: &str) -> Option<&'static str> {
+    if receiver.starts_with("Orodha") {
+        match method {
+            "clona" | "vipande" | "kwa_neno" | "ramani" | "chuja" => Some("Orodha"),
+            "jiunge" | "unganisha" => Some("Neno"),
+            _ => None,
         }
-        let slot = self.next_local;
-        self.next_local += 1;
-        self.locals.insert(name.to_string(), slot);
-        slot
+    } else if receiver == "Neno" {
+        match method {
+            "clona" | "kata" | "kwa_herufi_ndogo" | "kwa_herufi_kubwa" | "unganisha" | "rudia"
+            | "badilisha" => Some("Neno"),
+            "gawanya" => Some("Orodha<Neno>"),
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
+fn pure_method_supported(receiver: &str, method: &str) -> bool {
+    let probe = if receiver.starts_with("Orodha") {
+        Value::Orodha(Vec::new())
+    } else if receiver == "Neno" {
+        Value::Neno(String::new())
+    } else {
+        return false;
+    };
+    methods::is_pure_method(&probe, method)
+}
+
+/// Whether `stmts` (recursively) assign to `name`.
+fn block_assigns(block: &Block, name: &str) -> bool {
+    block.statements.iter().any(|stmt| match stmt {
+        Stmt::Assign { name: n, .. } => n == name,
+        Stmt::If {
+            then_block,
+            else_if,
+            else_block,
+            ..
+        } => {
+            block_assigns(then_block, name)
+                || else_if.iter().any(|(_, b)| block_assigns(b, name))
+                || else_block.as_ref().is_some_and(|b| block_assigns(b, name))
+        }
+        Stmt::While { body, .. } | Stmt::For { body, .. } => block_assigns(body, name),
+        Stmt::Match { arms, .. } => arms.iter().any(|a| block_assigns(&a.body, name)),
+        _ => false,
+    })
+}
+
+impl<'a> FunctionCompiler<'a> {
+    fn compile(program: &'a mut ProgramCompiler, function: &Function) -> Option<BytecodeFunc> {
+        let ret = Ty::from_type_name(&function.return_type.name);
+        let mut f = FunctionCompiler {
+            program,
+            scopes: vec![HashMap::new()],
+            code: Vec::new(),
+            num_regs: 0,
+            list_regs: 0,
+            val_regs: 0,
+            num_consts: Vec::new(),
+            const_regs: HashMap::new(),
+            loops: Vec::new(),
+            ret,
+        };
+        let mut params = Vec::with_capacity(function.params.len());
+        for param in &function.params {
+            let ty = Ty::from_type_name(&param.ty.name);
+            let op = f.declare(&param.name, ty, Some(param.ty.name.clone()));
+            params.push(op);
+        }
+        f.block(&function.body)?;
+        f.emit(Opcode::ReturnTupu);
+        Some(BytecodeFunc {
+            name: function.name.clone(),
+            params,
+            ret,
+            num_regs: f.num_regs,
+            list_regs: f.list_regs,
+            val_regs: f.val_regs,
+            num_consts: f.num_consts,
+            code: f.code,
+        })
     }
 
-    fn existing_slot(&self, name: &str) -> Option<u32> {
-        self.locals.get(name).copied()
+    // -- registers and scopes -----------------------------------------------------------------
+
+    fn temp(&mut self, ty: Ty) -> Operand {
+        let reg = match ty {
+            Ty::Num | Ty::Bool => {
+                self.num_regs += 1;
+                self.num_regs - 1
+            }
+            Ty::List => {
+                self.list_regs += 1;
+                self.list_regs - 1
+            }
+            Ty::Val => {
+                self.val_regs += 1;
+                self.val_regs - 1
+            }
+        };
+        Operand { ty, reg }
+    }
+
+    fn declare(&mut self, name: &str, ty: Ty, type_name: Option<String>) -> Operand {
+        let op = self.temp(ty);
+        self.scopes
+            .last_mut()
+            .expect("scope")
+            .insert(name.to_string(), Local { op, type_name });
+        op
+    }
+
+    fn lookup(&self, name: &str) -> Option<&Local> {
+        self.scopes.iter().rev().find_map(|s| s.get(name))
+    }
+
+    fn num_const(&mut self, n: f64) -> Reg {
+        if let Some(reg) = self.const_regs.get(&n.to_bits()) {
+            return *reg;
+        }
+        let reg = self.temp(Ty::Num).reg;
+        self.num_consts.push((reg, n));
+        self.const_regs.insert(n.to_bits(), reg);
+        reg
     }
 
     fn emit(&mut self, op: Opcode) -> usize {
-        let at = self.code.len();
         self.code.push(op);
-        at
+        self.code.len() - 1
     }
 
-    fn patch(&mut self, at: usize, target: usize) {
+    fn here(&self) -> u32 {
+        self.code.len() as u32
+    }
+
+    fn patch(&mut self, at: usize, to: u32) {
         match &mut self.code[at] {
-            Opcode::Jump(n) | Opcode::JumpIfFalse(n) => *n = target as u32,
+            Opcode::Jump { target }
+            | Opcode::JumpIfFalse { target, .. }
+            | Opcode::JumpIfTrue { target, .. }
+            | Opcode::JumpIfNot { target, .. }
+            | Opcode::ForStep { target, .. } => *target = to,
             _ => {}
         }
     }
 
+    // -- static types -------------------------------------------------------------------------
+
+    fn infer(&self, expr: &Expr) -> Ty {
+        match expr {
+            Expr::Number(_) => Ty::Num,
+            Expr::Bool(_) => Ty::Bool,
+            Expr::Ident { name, .. } => match self.lookup(name) {
+                Some(local) => local.op.ty,
+                None => self
+                    .program
+                    .module_consts
+                    .get(name)
+                    .map(|(ty, _, _)| *ty)
+                    .unwrap_or(Ty::Val),
+            },
+            Expr::Group(e) => self.infer(e),
+            Expr::Unary { op, expr, .. } => match op {
+                UnaryOp::Neg | UnaryOp::BitNot if self.infer(expr) == Ty::Num => Ty::Num,
+                UnaryOp::Not => Ty::Bool,
+                UnaryOp::BorrowImm | UnaryOp::BorrowMut => self.infer(expr),
+                _ => Ty::Val,
+            },
+            Expr::Binary {
+                left, op, right, ..
+            } => {
+                if is_cmp(op).is_some() || matches!(op, BinaryOp::And | BinaryOp::Or) {
+                    Ty::Bool
+                } else if self.infer(left) == Ty::Num && self.infer(right) == Ty::Num {
+                    Ty::Num
+                } else {
+                    Ty::Val
+                }
+            }
+            Expr::Cast { expr, ty, .. } => {
+                if ty.name.replace(' ', "") == "Namba" && self.infer(expr).in_nums() {
+                    Ty::Num
+                } else {
+                    Ty::Val
+                }
+            }
+            Expr::Call { callee, args, .. } => match &**callee {
+                Expr::Ident { name, .. } => {
+                    if matches!(name.as_str(), "sakafu" | "dari")
+                        && args.len() == 1
+                        && self.infer(&args[0]) == Ty::Num
+                        && self.lookup(name).is_none()
+                    {
+                        Ty::Num
+                    } else if self.program.builtins.contains_key(name) {
+                        Ty::Val
+                    } else {
+                        self.program
+                            .functions
+                            .get(name)
+                            .map(|f| f.ret)
+                            .unwrap_or(Ty::Val)
+                    }
+                }
+                _ => Ty::Val,
+            },
+            Expr::MethodCall {
+                method_name, args, ..
+            } if method_name == "urefu" && args.is_empty() => Ty::Num,
+            Expr::Propagate { expr, .. } => match &**expr {
+                Expr::Index { base, .. } if self.infer(base) == Ty::List => Ty::Num,
+                _ => Ty::Val,
+            },
+            Expr::If {
+                then_expr,
+                else_if,
+                else_expr,
+                ..
+            } => {
+                let mut ty = self.infer(then_expr);
+                for (_, e) in else_if {
+                    if self.infer(e) != ty {
+                        ty = Ty::Val;
+                    }
+                }
+                match else_expr {
+                    Some(e) if self.infer(e) == ty => ty,
+                    _ => Ty::Val,
+                }
+            }
+            _ => Ty::Val,
+        }
+    }
+
+    /// Static type name of a generic expression, where known.
+    fn type_name(&self, expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::String(_) => Some("Neno".into()),
+            Expr::List { .. } => Some("Orodha".into()),
+            Expr::Group(e) => self.type_name(e),
+            Expr::Ident { name, .. } => match self.lookup(name) {
+                Some(local) if local.op.ty == Ty::List => Some("Orodha<Namba>".into()),
+                Some(local) => local.type_name.clone(),
+                None => self
+                    .program
+                    .module_consts
+                    .get(name)
+                    .map(|(_, _, t)| t.clone()),
+            },
+            Expr::Cast { ty, .. } if ty.name == "Neno" => Some("Neno".into()),
+            Expr::Binary {
+                left,
+                op: BinaryOp::Add,
+                right,
+                ..
+            } if self.type_name(left).as_deref() == Some("Neno")
+                || self.type_name(right).as_deref() == Some("Neno") =>
+            {
+                Some("Neno".into())
+            }
+            Expr::MethodCall {
+                receiver,
+                method_name,
+                ..
+            } => {
+                let recv = self.type_name(receiver)?;
+                method_result_type(&recv, method_name).map(str::to_string)
+            }
+            Expr::Call { callee, .. } => match &**callee {
+                Expr::Ident { name, .. } if !self.program.builtins.contains_key(name) => {
+                    self.program.functions.get(name).map(|f| f.ret_name.clone())
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    // -- statements ---------------------------------------------------------------------------
+
     fn block(&mut self, block: &Block) -> Option<()> {
+        self.scopes.push(HashMap::new());
         for stmt in &block.statements {
             self.stmt(stmt)?;
         }
+        self.scopes.pop();
         Some(())
     }
 
@@ -338,71 +910,58 @@ impl FunctionCompiler<'_> {
             Stmt::Let {
                 name, ty, value, ..
             } => {
-                let slot = self.slot(name);
-                let numeric =
-                    ty.as_ref().is_some_and(|t| t.name == "Namba") || self.expr_numeric(value);
-                let numeric_list = ty.as_ref().is_some_and(|t| is_numeric_list_type(&t.name));
-                self.expr(value)?;
-                if numeric {
-                    self.numeric_locals.insert(slot);
-                    self.emit(Opcode::StoreNumber(slot));
-                } else if numeric_list {
-                    self.emit(Opcode::StoreNumericList(slot));
-                } else {
-                    self.emit(Opcode::StoreLocal(slot));
-                }
-                if numeric_list {
-                    self.numeric_lists.insert(slot);
-                }
+                let (declared, type_name) = match ty {
+                    Some(t) => (Ty::from_type_name(&t.name), Some(t.name.clone())),
+                    None => {
+                        let inferred = self.infer(value);
+                        let inferred = if inferred == Ty::Val && self.numeric_list_literal(value) {
+                            Ty::List
+                        } else {
+                            inferred
+                        };
+                        (inferred, self.type_name(value))
+                    }
+                };
+                // The initializer is evaluated before the new binding is visible.
+                let dst = self.temp(declared);
+                self.expr_into(value, dst)?;
+                self.scopes
+                    .last_mut()?
+                    .insert(name.clone(), Local { op: dst, type_name });
             }
             Stmt::Assign {
                 name, op, value, ..
             } => {
-                let slot = self.existing_slot(name)?;
-                let numeric = self.numeric_locals.contains(&slot);
-                if !matches!(op, AssignOp::Assign) {
-                    if numeric {
-                        self.emit(Opcode::LoadNumber(slot));
-                    } else {
-                        self.emit(Opcode::LoadLocal(slot));
+                let dst = self.lookup(name)?.op;
+                match op {
+                    AssignOp::Assign => self.expr_into(value, dst)?,
+                    compound => {
+                        let bin = match compound {
+                            AssignOp::AddAssign => BinaryOp::Add,
+                            AssignOp::SubAssign => BinaryOp::Sub,
+                            AssignOp::MulAssign => BinaryOp::Mul,
+                            AssignOp::DivAssign => BinaryOp::Div,
+                            AssignOp::Assign => unreachable!(),
+                        };
+                        let current = Expr::Ident {
+                            name: name.clone(),
+                            line: 0,
+                            column: 0,
+                        };
+                        self.binary(&current, &bin, value, Some(dst))?;
                     }
-                    self.expr(value)?;
-                    let binary = match op {
-                        AssignOp::AddAssign => BinaryCode::Add,
-                        AssignOp::SubAssign => BinaryCode::Sub,
-                        AssignOp::MulAssign => BinaryCode::Mul,
-                        AssignOp::DivAssign => BinaryCode::Div,
-                        AssignOp::Assign => unreachable!(),
-                    };
-                    self.emit(if numeric {
-                        Opcode::NumericBinary(binary)
-                    } else {
-                        Opcode::Binary(binary)
-                    });
-                } else {
-                    self.expr(value)?;
                 }
-                self.emit(if numeric {
-                    Opcode::StoreNumber(slot)
-                } else {
-                    Opcode::StoreLocal(slot)
-                });
             }
-            Stmt::Expr { expr, .. } => {
-                self.expr(expr)?;
-                self.emit(Opcode::Pop);
-            }
-            Stmt::Return { value, .. } => {
-                if let Some(value) = value {
-                    self.expr(value)?;
-                } else {
-                    let empty = self.parent.literal(&Expr::String(String::new()))?;
-                    self.emit(Opcode::Const(empty));
-                    self.emit(Opcode::Pop);
-                    self.emit(Opcode::Nop);
+            Stmt::Expr { expr, .. } => self.expr_stmt(expr)?,
+            Stmt::Return { value, .. } => match value {
+                Some(value) => {
+                    let src = self.expr_as(value, self.ret)?;
+                    self.emit(Opcode::Return { src });
                 }
-                self.emit(Opcode::Return);
-            }
+                None => {
+                    self.emit(Opcode::ReturnTupu);
+                }
+            },
             Stmt::If {
                 cond,
                 then_block,
@@ -410,478 +969,978 @@ impl FunctionCompiler<'_> {
                 else_block,
                 ..
             } => {
-                self.expr(cond)?;
-                let false_jump = self.emit(Opcode::JumpIfFalse(u32::MAX));
+                let mut ends = Vec::new();
+                let skip = self.cond_false_jumps(cond)?;
                 self.block(then_block)?;
-                let mut end_jumps = vec![self.emit(Opcode::Jump(u32::MAX))];
-                self.patch(false_jump, self.code.len());
-                for (condition, block) in else_if {
-                    self.expr(condition)?;
-                    let next_false = self.emit(Opcode::JumpIfFalse(u32::MAX));
+                ends.push(self.emit(Opcode::Jump { target: 0 }));
+                let mut pending = skip;
+                for (cond, block) in else_if {
+                    let here = self.here();
+                    for j in pending {
+                        self.patch(j, here);
+                    }
+                    pending = self.cond_false_jumps(cond)?;
                     self.block(block)?;
-                    end_jumps.push(self.emit(Opcode::Jump(u32::MAX)));
-                    self.patch(next_false, self.code.len());
+                    ends.push(self.emit(Opcode::Jump { target: 0 }));
+                }
+                let here = self.here();
+                for j in pending {
+                    self.patch(j, here);
                 }
                 if let Some(block) = else_block {
                     self.block(block)?;
                 }
-                let end = self.code.len();
-                for jump in end_jumps {
-                    self.patch(jump, end);
+                let end = self.here();
+                for j in ends {
+                    self.patch(j, end);
                 }
             }
-            Stmt::While { cond, body, .. } => {
-                let condition = self.code.len();
-                self.expr(cond)?;
-                let exit = self.emit(Opcode::JumpIfFalse(u32::MAX));
+            Stmt::While {
+                label, cond, body, ..
+            } => {
+                let top = self.here();
+                let exits = self.cond_false_jumps(cond)?;
                 self.loops.push(LoopState {
-                    continue_target: condition as u32,
+                    label: label.clone(),
                     breaks: Vec::new(),
+                    continues: Vec::new(),
                 });
                 self.block(body)?;
-                self.emit(Opcode::Jump(condition as u32));
-                let end = self.code.len();
-                self.patch(exit, end);
-                let loop_state = self.loops.pop()?;
-                for jump in loop_state.breaks {
-                    self.patch(jump, end);
+                self.emit(Opcode::Jump { target: top });
+                let end = self.here();
+                for j in exits {
+                    self.patch(j, end);
+                }
+                let state = self.loops.pop()?;
+                for j in state.breaks {
+                    self.patch(j, end);
+                }
+                for j in state.continues {
+                    self.patch(j, top);
                 }
             }
             Stmt::For {
-                var, mode, body, ..
-            } => self.for_loop(var, mode, body)?,
-            Stmt::Break { .. } => {
-                let jump = self.emit(Opcode::Jump(u32::MAX));
-                self.loops.last_mut()?.breaks.push(jump);
+                label,
+                var,
+                mode,
+                body,
+                ..
+            } => self.for_loop(label.clone(), var, mode, body)?,
+            Stmt::Break { label, .. } => {
+                let jump = self.emit(Opcode::Jump { target: 0 });
+                self.find_loop(label)?.breaks.push(jump);
             }
-            Stmt::Continue { .. } => {
-                let target = self.loops.last()?.continue_target;
-                self.emit(Opcode::Jump(target));
+            Stmt::Continue { label, .. } => {
+                let jump = self.emit(Opcode::Jump { target: 0 });
+                self.find_loop(label)?.continues.push(jump);
             }
-            // These constructs can fall back to the AST evaluator.
             Stmt::Match { .. } | Stmt::Drop { .. } | Stmt::LetPattern { .. } => return None,
         }
         Some(())
     }
 
-    fn for_loop(&mut self, var: &str, mode: &ForMode, body: &Block) -> Option<()> {
-        let var_slot = self.slot(var);
-        match mode {
-            ForMode::Range { start, end } => {
-                let end_slot = self.slot(&format!("__asb_end_{}", self.next_local));
-                self.numeric_locals.insert(var_slot);
-                self.numeric_locals.insert(end_slot);
-                self.expr(start)?;
-                self.emit(Opcode::StoreNumber(var_slot));
-                self.expr(end)?;
-                self.emit(Opcode::StoreNumber(end_slot));
-                let condition = self.code.len();
-                self.emit(Opcode::LoadNumber(var_slot));
-                self.emit(Opcode::LoadNumber(end_slot));
-                self.emit(Opcode::NumericBinary(BinaryCode::Lt));
-                let exit = self.emit(Opcode::JumpIfFalse(u32::MAX));
-                self.loops.push(LoopState {
-                    continue_target: 0,
-                    breaks: Vec::new(),
-                });
-                self.block(body)?;
-                let increment = self.code.len();
-                self.loops.last_mut()?.continue_target = increment as u32;
-                self.emit(Opcode::IncrementNumberLocal {
-                    slot: var_slot,
-                    by: 1,
-                });
-                self.emit(Opcode::Jump(condition as u32));
-                let end_pos = self.code.len();
-                self.patch(exit, end_pos);
-                let state = self.loops.pop()?;
-                for jump in state.breaks {
-                    self.patch(jump, end_pos);
-                }
-            }
-            ForMode::InExpr(expr) => {
-                let collection = self.slot(&format!("__asb_iter_{}", self.next_local));
-                let index = self.slot(&format!("__asb_index_{}", self.next_local));
-                self.numeric_locals.insert(index);
-                self.expr(expr)?;
-                self.emit(Opcode::StoreLocal(collection));
-                let zero = self.parent.literal(&Expr::Number("0.0".into()))?;
-                self.emit(Opcode::ConstNumber(zero));
-                self.emit(Opcode::StoreNumber(index));
-                let condition = self.code.len();
-                self.emit(Opcode::LoadNumber(index));
-                self.emit(Opcode::LoadLocal(collection));
-                self.emit(Opcode::CallMethod {
-                    method: "urefu".into(),
-                    arity: 0,
-                });
-                self.emit(Opcode::Binary(BinaryCode::Lt));
-                let exit = self.emit(Opcode::JumpIfFalse(u32::MAX));
-                self.emit(Opcode::LoadLocal(collection));
-                self.emit(Opcode::LoadLocal(index));
-                self.emit(Opcode::Index);
-                self.emit(Opcode::Unwrap);
-                self.emit(Opcode::StoreLocal(var_slot));
-                self.loops.push(LoopState {
-                    continue_target: 0,
-                    breaks: Vec::new(),
-                });
-                self.block(body)?;
-                let increment = self.code.len();
-                self.loops.last_mut()?.continue_target = increment as u32;
-                self.emit(Opcode::IncrementNumberLocal { slot: index, by: 1 });
-                self.emit(Opcode::Jump(condition as u32));
-                let end_pos = self.code.len();
-                self.patch(exit, end_pos);
-                let state = self.loops.pop()?;
-                for jump in state.breaks {
-                    self.patch(jump, end_pos);
-                }
-            }
+    fn find_loop(&mut self, label: &Option<String>) -> Option<&mut LoopState> {
+        match label {
+            None => self.loops.last_mut(),
+            Some(label) => self
+                .loops
+                .iter_mut()
+                .rev()
+                .find(|l| l.label.as_deref() == Some(label.as_str())),
         }
-        Some(())
     }
 
-    fn expr_numeric(&self, expr: &Expr) -> bool {
+    fn numeric_list_literal(&self, expr: &Expr) -> bool {
         match expr {
-            Expr::Number(_) => true,
-            Expr::Ident { name, .. } => self
-                .existing_slot(name)
-                .is_some_and(|slot| self.numeric_locals.contains(&slot)),
-            Expr::Group(e) => self.expr_numeric(e),
-            Expr::Unary { op, expr, .. } => {
-                matches!(op, UnaryOp::Neg | UnaryOp::BitNot) && self.expr_numeric(expr)
-            }
-            Expr::Binary {
-                left, op, right, ..
-            } => {
-                !matches!(
-                    op,
-                    BinaryOp::Eq
-                        | BinaryOp::Ne
-                        | BinaryOp::Gt
-                        | BinaryOp::Lt
-                        | BinaryOp::Ge
-                        | BinaryOp::Le
-                        | BinaryOp::And
-                        | BinaryOp::Or
-                ) && self.expr_numeric(left)
-                    && self.expr_numeric(right)
-            }
-            Expr::Cast { ty, .. } => ty.name == "Namba",
-            Expr::Call { callee, .. } => match &**callee {
-                Expr::Ident { name, .. } => {
-                    self.parent.numeric_functions.contains(name) || numeric_builtin(name)
-                }
-                _ => false,
-            },
-            Expr::Index { base, .. } => match &**base {
-                Expr::Ident { name, .. } => self
-                    .existing_slot(name)
-                    .is_some_and(|slot| self.numeric_lists.contains(&slot)),
-                _ => false,
-            },
-            Expr::Propagate { expr, .. } => self.expr_numeric(expr),
-            Expr::MethodCall {
-                receiver,
-                method_name,
-                args,
-                ..
-            } => {
-                method_name == "urefu"
-                    && args.is_empty()
-                    && matches!(&**receiver, Expr::Ident { name, .. } if self.existing_slot(name).is_some())
+            Expr::List { elements, .. } => {
+                !elements.is_empty() && elements.iter().all(|e| self.infer(e) == Ty::Num)
             }
             _ => false,
         }
     }
 
-    fn numeric_binary(&self, op: &BinaryOp, left: &Expr, right: &Expr) -> bool {
-        let arithmetic = !matches!(op, BinaryOp::And | BinaryOp::Or);
-        arithmetic && self.expr_numeric(left) && self.expr_numeric(right)
+    fn for_loop(
+        &mut self,
+        label: Option<String>,
+        var: &str,
+        mode: &ForMode,
+        body: &Block,
+    ) -> Option<()> {
+        self.scopes.push(HashMap::new());
+        match mode {
+            ForMode::Range { start, end } => {
+                let start = self.expr_as(start, Ty::Num)?;
+                let end = self.expr_as(end, Ty::Num)?;
+                let ctr = self.temp(Ty::Num).reg;
+                let end_reg = self.temp(Ty::Num).reg;
+                self.emit(Opcode::Trunc {
+                    dst: ctr,
+                    src: start.reg,
+                });
+                self.emit(Opcode::Trunc {
+                    dst: end_reg,
+                    src: end.reg,
+                });
+                let skip = self.emit(Opcode::JumpIfNot {
+                    op: CmpOp::Lt,
+                    a: ctr,
+                    b: end_reg,
+                    target: 0,
+                });
+                let body_top = self.here();
+                // The loop variable is a fresh binding per iteration; reuse the counter
+                // register directly unless the body assigns to it.
+                if block_assigns(body, var) {
+                    let v = self.declare(var, Ty::Num, Some("Namba".into()));
+                    self.emit(Opcode::Mov {
+                        dst: v.reg,
+                        src: ctr,
+                    });
+                } else {
+                    self.scopes.last_mut()?.insert(
+                        var.to_string(),
+                        Local {
+                            op: Operand {
+                                ty: Ty::Num,
+                                reg: ctr,
+                            },
+                            type_name: Some("Namba".into()),
+                        },
+                    );
+                }
+                self.loops.push(LoopState {
+                    label,
+                    breaks: Vec::new(),
+                    continues: Vec::new(),
+                });
+                self.block(body)?;
+                let step = self.here();
+                self.emit(Opcode::ForStep {
+                    ctr,
+                    end: end_reg,
+                    target: body_top,
+                });
+                let end_pos = self.here();
+                self.patch(skip, end_pos);
+                let state = self.loops.pop()?;
+                for j in state.breaks {
+                    self.patch(j, end_pos);
+                }
+                for j in state.continues {
+                    self.patch(j, step);
+                }
+            }
+            ForMode::InExpr(collection) => {
+                // Iterate over a snapshot the body cannot reach, like the evaluator.
+                let idx = self.temp(Ty::Num).reg;
+                let len = self.temp(Ty::Num).reg;
+                let (source, item) = if self.infer(collection) == Ty::List {
+                    let snapshot = self.temp(Ty::List);
+                    self.expr_into(collection, snapshot)?;
+                    self.emit(Opcode::ListLen {
+                        dst: len,
+                        list: snapshot.reg,
+                    });
+                    let item = self.declare(var, Ty::Num, Some("Namba".into()));
+                    (snapshot, item)
+                } else {
+                    // `Kamusi` iteration (key/value pairs) is left to the evaluator.
+                    let type_name = self.type_name(collection)?;
+                    if !type_name.starts_with("Orodha") {
+                        return None;
+                    }
+                    let elem = type_name
+                        .strip_prefix("Orodha<")
+                        .and_then(|rest| rest.strip_suffix('>'))
+                        .map(str::to_string);
+                    let snapshot = self.temp(Ty::Val);
+                    self.expr_into(collection, snapshot)?;
+                    self.emit(Opcode::ValLen {
+                        dst: len,
+                        src: snapshot.reg,
+                    });
+                    let item_ty = match elem.as_deref().map(Ty::from_type_name) {
+                        Some(Ty::List) | None => Ty::Val,
+                        Some(ty) => ty,
+                    };
+                    let item = self.declare(var, item_ty, elem);
+                    (snapshot, item)
+                };
+                let zero = self.num_const(0.0);
+                self.emit(Opcode::Mov {
+                    dst: idx,
+                    src: zero,
+                });
+                let skip = self.emit(Opcode::JumpIfNot {
+                    op: CmpOp::Lt,
+                    a: idx,
+                    b: len,
+                    target: 0,
+                });
+                let body_top = self.here();
+                if source.ty == Ty::List {
+                    self.emit(Opcode::ListGet {
+                        dst: item.reg,
+                        list: source.reg,
+                        idx,
+                    });
+                } else {
+                    let boxed_idx = self.temp(Ty::Val).reg;
+                    let tokeo = self.temp(Ty::Val).reg;
+                    let unwrapped = self.temp(Ty::Val);
+                    self.emit(Opcode::BoxNum {
+                        dst: boxed_idx,
+                        src: idx,
+                    });
+                    self.emit(Opcode::ValIndex {
+                        dst: tokeo,
+                        base: source.reg,
+                        idx: boxed_idx,
+                    });
+                    self.emit(Opcode::Unwrap {
+                        dst: unwrapped.reg,
+                        src: tokeo,
+                    });
+                    self.convert(unwrapped, item)?;
+                }
+                self.loops.push(LoopState {
+                    label,
+                    breaks: Vec::new(),
+                    continues: Vec::new(),
+                });
+                self.block(body)?;
+                let step = self.here();
+                self.emit(Opcode::ForStep {
+                    ctr: idx,
+                    end: len,
+                    target: body_top,
+                });
+                let end_pos = self.here();
+                self.patch(skip, end_pos);
+                let state = self.loops.pop()?;
+                for j in state.breaks {
+                    self.patch(j, end_pos);
+                }
+                for j in state.continues {
+                    self.patch(j, step);
+                }
+            }
+        }
+        self.scopes.pop();
+        Some(())
     }
 
-    fn expr(&mut self, expr: &Expr) -> Option<()> {
-        match expr {
-            Expr::Number(_) => {
-                let constant = self.parent.literal(expr)?;
-                self.emit(Opcode::ConstNumber(constant));
-            }
-            Expr::String(_) | Expr::Bool(_) | Expr::Char(_) => {
-                let constant = self.parent.literal(expr)?;
-                self.emit(Opcode::Const(constant));
-            }
-            Expr::Ident { name, .. } => {
-                if let Some(slot) = self.existing_slot(name) {
-                    if self.numeric_locals.contains(&slot) {
-                        self.emit(Opcode::LoadNumber(slot));
-                    } else {
-                        self.emit(Opcode::LoadLocal(slot));
-                    }
-                } else if let Some(index) = self.parent.module_constants.get(name) {
-                    if matches!(
-                        self.parent.constants.get(*index as usize),
-                        Some(StoredConstant::Namba(_))
-                    ) {
-                        self.emit(Opcode::ConstNumber(*index));
-                    } else {
-                        self.emit(Opcode::Const(*index));
-                    }
-                } else {
-                    return None;
-                }
-            }
-            Expr::Group(e) => self.expr(e)?,
-            Expr::List { elements, .. } => {
-                for element in elements {
-                    self.expr(element)?;
-                }
-                self.emit(Opcode::MakeList(elements.len() as u32));
-            }
-            Expr::Index { base, index, .. } => {
-                if let Expr::Ident { name, .. } = &**base {
-                    if let Some(slot) = self.existing_slot(name) {
-                        if self.numeric_lists.contains(&slot) {
-                            if let Some(index_slot) = self.index_slot(index) {
-                                self.emit(Opcode::IndexNumberLocalFromSlot {
-                                    list: slot,
-                                    index: index_slot,
-                                });
-                                return Some(());
-                            }
-                        }
-                        self.expr(index)?;
-                        if self.numeric_lists.contains(&slot) {
-                            self.emit(Opcode::IndexNumberLocal(slot));
-                        } else {
-                            self.emit(Opcode::IndexLocal(slot));
-                        }
+    /// An expression evaluated for its side effects only.
+    fn expr_stmt(&mut self, expr: &Expr) -> Option<()> {
+        if let Expr::MethodCall {
+            receiver,
+            method_name,
+            args,
+            ..
+        } = expr
+        {
+            if let Expr::Ident { name, .. } = &**receiver {
+                if let Some(local) = self.lookup(name).cloned() {
+                    if local.op.ty == Ty::List && method_name == "ondoa" && args.len() == 1 {
+                        let idx = self.expr_as(&args[0], Ty::Num)?;
+                        self.emit(Opcode::ListRemove {
+                            list: local.op.reg,
+                            idx: idx.reg,
+                        });
                         return Some(());
                     }
                 }
-                self.expr(base)?;
-                self.expr(index)?;
-                self.emit(Opcode::Index);
             }
-            Expr::Propagate { expr, .. } => {
-                self.expr(expr)?;
-                if self.expr_numeric(expr) {
-                    self.emit(Opcode::UnwrapNumber);
-                } else {
-                    self.emit(Opcode::Unwrap);
-                }
-            }
-            Expr::Cast { expr, ty, .. } => {
-                self.expr(expr)?;
-                self.emit(Opcode::Cast(ty.name.clone()));
-            }
-            Expr::Unary { op, expr, .. } => {
-                self.expr(expr)?;
-                match op {
-                    UnaryOp::Neg => {
-                        self.emit(if self.expr_numeric(expr) {
-                            Opcode::NumericUnary(UnaryCode::Neg)
-                        } else {
-                            Opcode::Unary(UnaryCode::Neg)
-                        });
-                    }
-                    UnaryOp::Not => {
-                        self.emit(Opcode::Unary(UnaryCode::Not));
-                    }
-                    UnaryOp::BitNot => {
-                        self.emit(if self.expr_numeric(expr) {
-                            Opcode::NumericUnary(UnaryCode::BitNot)
-                        } else {
-                            Opcode::Unary(UnaryCode::BitNot)
-                        });
-                    }
-                    UnaryOp::BorrowImm | UnaryOp::BorrowMut => {}
-                    UnaryOp::Jaribu => {
-                        self.emit(Opcode::Unwrap);
-                    }
-                };
+        }
+        self.expr(expr)?;
+        Some(())
+    }
+
+    /// Emit jumps taken when `cond` is false; returns the jump sites to patch.
+    fn cond_false_jumps(&mut self, cond: &Expr) -> Option<Vec<usize>> {
+        match cond {
+            Expr::Group(inner) => self.cond_false_jumps(inner),
+            Expr::Binary {
+                left,
+                op: BinaryOp::And,
+                right,
+                ..
+            } => {
+                let mut jumps = self.cond_false_jumps(left)?;
+                jumps.extend(self.cond_false_jumps(right)?);
+                Some(jumps)
             }
             Expr::Binary {
                 left, op, right, ..
-            } => {
-                if matches!(op, BinaryOp::Add) {
-                    if let Some((slot, index_slot, add)) = self.fused_index_add(left, right) {
-                        self.emit(Opcode::IndexAddNumberLocal {
-                            slot,
-                            index_slot,
-                            add,
+            } if is_cmp(op).is_some()
+                && self.infer(left) == Ty::Num
+                && self.infer(right) == Ty::Num =>
+            {
+                let a = self.expr_as(left, Ty::Num)?;
+                let b = self.expr_as(right, Ty::Num)?;
+                Some(vec![self.emit(Opcode::JumpIfNot {
+                    op: is_cmp(op)?,
+                    a: a.reg,
+                    b: b.reg,
+                    target: 0,
+                })])
+            }
+            _ => {
+                let c = self.expr_as(cond, Ty::Bool)?;
+                Some(vec![self.emit(Opcode::JumpIfFalse {
+                    cond: c.reg,
+                    target: 0,
+                })])
+            }
+        }
+    }
+
+    // -- expressions --------------------------------------------------------------------------
+
+    /// Compile `expr` into a register of type `ty`.
+    fn expr_as(&mut self, expr: &Expr, ty: Ty) -> Option<Operand> {
+        let op = self.expr(expr)?;
+        if op.ty == ty || (op.ty.in_nums() && ty.in_nums()) {
+            return Some(Operand { ty, reg: op.reg });
+        }
+        let dst = self.temp(ty);
+        self.convert(op, dst)?;
+        Some(dst)
+    }
+
+    /// Compile `expr` so that its value ends up in `dst`.
+    fn expr_into(&mut self, expr: &Expr, dst: Operand) -> Option<()> {
+        let result = self.expr_to(expr, Some(dst))?;
+        if result != dst {
+            self.convert(result, dst)?;
+        }
+        Some(())
+    }
+
+    /// Compile `expr` wherever is natural (possibly an existing local's register).
+    fn expr(&mut self, expr: &Expr) -> Option<Operand> {
+        self.expr_to(expr, None)
+    }
+
+    /// Move/convert between registers.
+    fn convert(&mut self, src: Operand, dst: Operand) -> Option<()> {
+        if src == dst {
+            return Some(());
+        }
+        let op = match (src.ty, dst.ty) {
+            (a, b) if a.in_nums() && b.in_nums() => Opcode::Mov {
+                dst: dst.reg,
+                src: src.reg,
+            },
+            (Ty::List, Ty::List) => Opcode::ListMov {
+                dst: dst.reg,
+                src: src.reg,
+            },
+            (Ty::Val, Ty::Val) => Opcode::ValMov {
+                dst: dst.reg,
+                src: src.reg,
+            },
+            (Ty::Num, Ty::Val) => Opcode::BoxNum {
+                dst: dst.reg,
+                src: src.reg,
+            },
+            (Ty::Bool, Ty::Val) => Opcode::BoxBool {
+                dst: dst.reg,
+                src: src.reg,
+            },
+            (Ty::List, Ty::Val) => Opcode::ListToVal {
+                dst: dst.reg,
+                src: src.reg,
+            },
+            (Ty::Val, Ty::Num) => Opcode::UnboxNum {
+                dst: dst.reg,
+                src: src.reg,
+            },
+            (Ty::Val, Ty::Bool) => Opcode::UnboxBool {
+                dst: dst.reg,
+                src: src.reg,
+            },
+            (Ty::Val, Ty::List) => Opcode::ListFromVal {
+                dst: dst.reg,
+                src: src.reg,
+            },
+            _ => return None,
+        };
+        self.emit(op);
+        Some(())
+    }
+
+    fn dst_or_temp(&mut self, dst: Option<Operand>, ty: Ty) -> Operand {
+        match dst {
+            Some(d) if d.ty == ty || (d.ty.in_nums() && ty.in_nums()) => d,
+            _ => self.temp(ty),
+        }
+    }
+
+    fn expr_to(&mut self, expr: &Expr, dst: Option<Operand>) -> Option<Operand> {
+        match expr {
+            Expr::Number(s) => {
+                let reg = self.num_const(value::parse_number(s));
+                Some(Operand { ty: Ty::Num, reg })
+            }
+            Expr::Bool(b) => {
+                let reg = self.num_const(if *b { 1.0 } else { 0.0 });
+                Some(Operand { ty: Ty::Bool, reg })
+            }
+            Expr::String(_) | Expr::Char(_) | Expr::Hamna => {
+                let k = literal(expr)?;
+                let k = self.program.constant(k);
+                let out = self.dst_or_temp(dst, Ty::Val);
+                self.emit(Opcode::ConstVal { dst: out.reg, k });
+                Some(out)
+            }
+            Expr::Ident { name, .. } => {
+                if let Some(local) = self.lookup(name) {
+                    return Some(local.op);
+                }
+                let (ty, constant, _) = self.program.module_consts.get(name)?.clone();
+                match (ty, constant) {
+                    (Ty::Num, StoredConstant::Namba(n)) => Some(Operand {
+                        ty,
+                        reg: self.num_const(n),
+                    }),
+                    (Ty::Bool, StoredConstant::Ukweli(b)) => Some(Operand {
+                        ty,
+                        reg: self.num_const(if b { 1.0 } else { 0.0 }),
+                    }),
+                    (_, constant) => {
+                        let k = self.program.constant(constant);
+                        let out = self.dst_or_temp(dst, Ty::Val);
+                        self.emit(Opcode::ConstVal { dst: out.reg, k });
+                        Some(out)
+                    }
+                }
+            }
+            Expr::Group(e) => self.expr_to(e, dst),
+            Expr::List { elements, .. } => {
+                if dst.is_some_and(|d| d.ty == Ty::List)
+                    && elements.iter().all(|e| self.infer(e) == Ty::Num)
+                {
+                    let mut items = Vec::with_capacity(elements.len());
+                    for e in elements {
+                        items.push(self.expr_as(e, Ty::Num)?.reg);
+                    }
+                    let out = dst?;
+                    self.emit(Opcode::MakeNumList {
+                        dst: out.reg,
+                        items,
+                    });
+                    return Some(out);
+                }
+                let mut items = Vec::with_capacity(elements.len());
+                for e in elements {
+                    items.push(self.expr_as(e, Ty::Val)?.reg);
+                }
+                let out = self.dst_or_temp(dst, Ty::Val);
+                self.emit(Opcode::MakeList {
+                    dst: out.reg,
+                    items: items.into_boxed_slice(),
+                });
+                Some(out)
+            }
+            Expr::Index { base, index, .. } => {
+                let base_op = self.expr(base)?;
+                if base_op.ty == Ty::List {
+                    let idx = self.expr_as(index, Ty::Num)?;
+                    let out = self.dst_or_temp(dst, Ty::Val);
+                    self.emit(Opcode::ListGetTokeo {
+                        dst: out.reg,
+                        list: base_op.reg,
+                        idx: idx.reg,
+                    });
+                    return Some(out);
+                }
+                let base_val = self.as_val(base_op)?;
+                let idx = self.expr_as(index, Ty::Val)?;
+                let out = self.dst_or_temp(dst, Ty::Val);
+                self.emit(Opcode::ValIndex {
+                    dst: out.reg,
+                    base: base_val.reg,
+                    idx: idx.reg,
+                });
+                Some(out)
+            }
+            Expr::Propagate { expr: inner, .. } => {
+                if let Expr::Index { base, index, .. } = &**inner {
+                    if self.infer(base) == Ty::List {
+                        let list = self.expr_as(base, Ty::List)?;
+                        let idx = self.expr_as(index, Ty::Num)?;
+                        let out = self.dst_or_temp(dst, Ty::Num);
+                        self.emit(Opcode::ListGet {
+                            dst: out.reg,
+                            list: list.reg,
+                            idx: idx.reg,
                         });
-                        return Some(());
+                        return Some(Operand {
+                            ty: Ty::Num,
+                            reg: out.reg,
+                        });
                     }
                 }
-                self.expr(left)?;
-                self.expr(right)?;
-                let binary = match op {
-                    BinaryOp::Add => BinaryCode::Add,
-                    BinaryOp::Sub => BinaryCode::Sub,
-                    BinaryOp::Mul => BinaryCode::Mul,
-                    BinaryOp::Div => BinaryCode::Div,
-                    BinaryOp::Rem => BinaryCode::Rem,
-                    BinaryOp::Pow => BinaryCode::Pow,
-                    BinaryOp::Eq => BinaryCode::Eq,
-                    BinaryOp::Ne => BinaryCode::Ne,
-                    BinaryOp::Gt => BinaryCode::Gt,
-                    BinaryOp::Lt => BinaryCode::Lt,
-                    BinaryOp::Ge => BinaryCode::Ge,
-                    BinaryOp::Le => BinaryCode::Le,
-                    BinaryOp::BitAnd => BinaryCode::BitAnd,
-                    BinaryOp::BitXor => BinaryCode::BitXor,
-                    BinaryOp::BitOr => BinaryCode::BitOr,
-                    BinaryOp::Shl => BinaryCode::Shl,
-                    BinaryOp::Shr => BinaryCode::Shr,
-                    BinaryOp::And => BinaryCode::And,
-                    BinaryOp::Or => BinaryCode::Or,
-                };
-                if self.numeric_binary(op, left, right) {
-                    self.emit(Opcode::NumericBinary(binary));
-                } else {
-                    self.emit(Opcode::Binary(binary));
-                }
+                let src = self.expr_as(inner, Ty::Val)?;
+                let out = self.dst_or_temp(dst, Ty::Val);
+                self.emit(Opcode::Unwrap {
+                    dst: out.reg,
+                    src: src.reg,
+                });
+                Some(out)
             }
-            Expr::Call { callee, args, .. } => {
-                let Expr::Ident { name, .. } = &**callee else {
-                    return None;
+            Expr::Cast {
+                expr: inner, ty, ..
+            } => {
+                if self.infer(expr) == Ty::Num {
+                    let src = self.expr_as(inner, Ty::Num)?;
+                    return Some(Operand {
+                        ty: Ty::Num,
+                        reg: src.reg,
+                    });
+                }
+                let src = self.expr_as(inner, Ty::Val)?;
+                let out = self.dst_or_temp(dst, Ty::Val);
+                self.emit(Opcode::Cast {
+                    dst: out.reg,
+                    src: src.reg,
+                    ty: ty.name.clone().into_boxed_str(),
+                });
+                Some(out)
+            }
+            Expr::Unary {
+                op, expr: inner, ..
+            } => match op {
+                UnaryOp::BorrowImm | UnaryOp::BorrowMut => self.expr_to(inner, dst),
+                UnaryOp::Not => {
+                    let src = self.expr_as(inner, Ty::Bool)?;
+                    let out = self.dst_or_temp(dst, Ty::Bool);
+                    self.emit(Opcode::Not {
+                        dst: out.reg,
+                        src: src.reg,
+                    });
+                    Some(Operand {
+                        ty: Ty::Bool,
+                        reg: out.reg,
+                    })
+                }
+                UnaryOp::Neg | UnaryOp::BitNot if self.infer(inner) == Ty::Num => {
+                    let src = self.expr_as(inner, Ty::Num)?;
+                    let out = self.dst_or_temp(dst, Ty::Num);
+                    self.emit(if *op == UnaryOp::Neg {
+                        Opcode::Neg {
+                            dst: out.reg,
+                            src: src.reg,
+                        }
+                    } else {
+                        Opcode::BitNot {
+                            dst: out.reg,
+                            src: src.reg,
+                        }
+                    });
+                    Some(Operand {
+                        ty: Ty::Num,
+                        reg: out.reg,
+                    })
+                }
+                UnaryOp::Neg | UnaryOp::BitNot => {
+                    let src = self.expr_as(inner, Ty::Val)?;
+                    let out = self.dst_or_temp(dst, Ty::Val);
+                    self.emit(Opcode::ValUnary {
+                        op: if *op == UnaryOp::Neg {
+                            UnaryCode::Neg
+                        } else {
+                            UnaryCode::BitNot
+                        },
+                        dst: out.reg,
+                        src: src.reg,
+                    });
+                    Some(out)
+                }
+                UnaryOp::Jaribu => {
+                    let src = self.expr_as(inner, Ty::Val)?;
+                    let out = self.dst_or_temp(dst, Ty::Val);
+                    self.emit(Opcode::Jaribu {
+                        dst: out.reg,
+                        src: src.reg,
+                    });
+                    Some(out)
+                }
+            },
+            Expr::Binary {
+                left, op, right, ..
+            } => self.binary(left, op, right, dst),
+            Expr::If {
+                cond,
+                then_expr,
+                else_if,
+                else_expr,
+                ..
+            } => {
+                let ty = self.infer(expr);
+                let out = match dst {
+                    Some(d) if d.ty == ty => d,
+                    _ => self.temp(ty),
                 };
-                if let Some(op) = numeric_builtin_opcode(name, args.len()) {
-                    for arg in args {
-                        self.expr(arg)?;
+                let mut ends = Vec::new();
+                let mut pending = self.cond_false_jumps(cond)?;
+                self.expr_into(then_expr, out)?;
+                ends.push(self.emit(Opcode::Jump { target: 0 }));
+                for (c, e) in else_if {
+                    let here = self.here();
+                    for j in pending {
+                        self.patch(j, here);
                     }
-                    self.emit(Opcode::NumericBuiltin(op));
-                    return Some(());
+                    pending = self.cond_false_jumps(c)?;
+                    self.expr_into(e, out)?;
+                    ends.push(self.emit(Opcode::Jump { target: 0 }));
                 }
-                for arg in args {
-                    self.expr(arg)?;
+                let here = self.here();
+                for j in pending {
+                    self.patch(j, here);
                 }
-                if let Some(function) = self.parent.function_names.get(name) {
-                    self.emit(Opcode::Call {
-                        function: *function,
-                        arity: args.len() as u32,
-                    });
-                } else if let Some(builtin) = builtin_names().iter().position(|n| n == name) {
-                    self.emit(Opcode::CallBuiltinN {
-                        builtin: builtin as u32,
-                        arity: args.len() as u32,
-                    });
-                } else {
-                    return None;
+                match else_expr {
+                    Some(e) => self.expr_into(e, out)?,
+                    None => {
+                        let k = self.program.constant(StoredConstant::Tupu);
+                        let tmp = self.temp(Ty::Val);
+                        self.emit(Opcode::ConstVal { dst: tmp.reg, k });
+                        self.convert(tmp, out)?;
+                    }
                 }
+                let end = self.here();
+                for j in ends {
+                    self.patch(j, end);
+                }
+                Some(out)
             }
+            Expr::Call { callee, args, .. } => self.call(callee, args, dst),
             Expr::MethodCall {
                 receiver,
                 method_name,
                 args,
                 ..
-            } => {
-                if let Expr::Ident { name, .. } = &**receiver {
-                    if let Some(slot) = self.existing_slot(name) {
-                        match method_name.as_str() {
-                            "urefu" if args.is_empty() => {
-                                self.emit(Opcode::ListLen(slot));
-                                return Some(());
-                            }
-                            "ongeza" if args.len() == 1 => {
-                                self.expr(&args[0])?;
-                                if self.numeric_lists.contains(&slot) && self.expr_numeric(&args[0])
-                                {
-                                    self.emit(Opcode::ListPushNumber(slot));
-                                } else {
-                                    self.emit(Opcode::ListPush(slot));
-                                }
-                                return Some(());
-                            }
-                            "ingiza" if args.len() == 2 => {
-                                self.expr(&args[0])?;
-                                self.expr(&args[1])?;
-                                if self.numeric_lists.contains(&slot) && self.expr_numeric(&args[1])
-                                {
-                                    self.emit(Opcode::ListSetNumber(slot));
-                                } else {
-                                    self.emit(Opcode::ListSet(slot));
-                                }
-                                return Some(());
-                            }
-                            "ondoa" if args.len() == 1 => {
-                                self.expr(&args[0])?;
-                                self.emit(Opcode::ListRemove(slot));
-                                return Some(());
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                self.expr(receiver)?;
-                for arg in args {
-                    self.expr(arg)?;
-                }
-                self.emit(Opcode::CallMethod {
-                    method: method_name.clone(),
-                    arity: args.len() as u32,
-                });
-            }
-            Expr::Hamna
-            | Expr::Map { .. }
+            } => self.method_call(receiver, method_name, args, dst),
+            Expr::Map { .. }
             | Expr::StructLiteral { .. }
             | Expr::EnumConstruct { .. }
-            | Expr::FieldAccess { .. }
-            | Expr::If { .. } => return None,
+            | Expr::FieldAccess { .. } => None,
         }
-        Some(())
     }
 
-    fn fused_index_add(&self, left: &Expr, right: &Expr) -> Option<(u32, u32, u32)> {
-        let Expr::Propagate { expr, .. } = left else {
-            return None;
-        };
-        let Expr::Index { base, index, .. } = &**expr else {
-            return None;
-        };
-        let Expr::Ident { name: list, .. } = &**base else {
-            return None;
-        };
-        let Expr::Ident {
-            name: index_name, ..
-        } = &**index
-        else {
-            return None;
-        };
-        let Expr::Number(literal) = right else {
-            return None;
-        };
-        let slot = self.existing_slot(list)?;
-        let index_slot = self.existing_slot(index_name)?;
-        if !self.numeric_lists.contains(&slot) || !self.numeric_locals.contains(&index_slot) {
-            return None;
+    fn as_val(&mut self, op: Operand) -> Option<Operand> {
+        if op.ty == Ty::Val {
+            return Some(op);
         }
-        let add = value::parse_number(literal);
-        if !add.is_finite() || add.fract() != 0.0 || add < 0.0 || add > u32::MAX as f64 {
-            return None;
-        }
-        Some((slot, index_slot, add as u32))
+        let dst = self.temp(Ty::Val);
+        self.convert(op, dst)?;
+        Some(dst)
     }
 
-    fn index_slot(&self, expr: &Expr) -> Option<u32> {
-        match expr {
-            Expr::Ident { name, .. } => self
-                .existing_slot(name)
-                .filter(|slot| self.numeric_locals.contains(slot)),
-            Expr::Binary {
-                left,
-                op: BinaryOp::Add,
-                right,
-                ..
-            } if matches!(&**right, Expr::Number(value) if value::parse_number(value) == 0.0) => {
-                self.index_slot(left)
+    fn binary(
+        &mut self,
+        left: &Expr,
+        op: &BinaryOp,
+        right: &Expr,
+        dst: Option<Operand>,
+    ) -> Option<Operand> {
+        if matches!(op, BinaryOp::And | BinaryOp::Or) {
+            // Short-circuit: `out = left; if out (is false | is true) skip; out = right`.
+            // Always a fresh register: `b = a na b` must still read the old `b`.
+            let out = self.temp(Ty::Bool);
+            self.expr_into(left, out)?;
+            let skip = self.emit(if *op == BinaryOp::And {
+                Opcode::JumpIfFalse {
+                    cond: out.reg,
+                    target: 0,
+                }
+            } else {
+                Opcode::JumpIfTrue {
+                    cond: out.reg,
+                    target: 0,
+                }
+            });
+            self.expr_into(right, out)?;
+            let end = self.here();
+            self.patch(skip, end);
+            if let Some(d) = dst {
+                self.convert(out, d)?;
+                return Some(d);
             }
-            Expr::Group(inner) => self.index_slot(inner),
-            _ => None,
+            return Some(out);
         }
+        let numeric = self.infer(left) == Ty::Num && self.infer(right) == Ty::Num;
+        if let Some(cmp) = is_cmp(op) {
+            let bool_ops = matches!(cmp, CmpOp::Eq | CmpOp::Ne)
+                && self.infer(left) == Ty::Bool
+                && self.infer(right) == Ty::Bool;
+            if numeric || bool_ops {
+                let ty = if numeric { Ty::Num } else { Ty::Bool };
+                let a = self.expr_as(left, ty)?;
+                let b = self.expr_as(right, ty)?;
+                let out = self.dst_or_temp(dst, Ty::Bool);
+                self.emit(Opcode::Cmp {
+                    op: cmp,
+                    dst: out.reg,
+                    a: a.reg,
+                    b: b.reg,
+                });
+                return Some(Operand {
+                    ty: Ty::Bool,
+                    reg: out.reg,
+                });
+            }
+            let a = self.expr_as(left, Ty::Val)?;
+            let b = self.expr_as(right, Ty::Val)?;
+            let tmp = self.temp(Ty::Val);
+            self.emit(Opcode::ValBinary {
+                op: binary_code(op)?,
+                dst: tmp.reg,
+                a: a.reg,
+                b: b.reg,
+            });
+            let out = self.dst_or_temp(dst, Ty::Bool);
+            self.emit(Opcode::UnboxBool {
+                dst: out.reg,
+                src: tmp.reg,
+            });
+            return Some(Operand {
+                ty: Ty::Bool,
+                reg: out.reg,
+            });
+        }
+        if numeric {
+            let a = self.expr_as(left, Ty::Num)?.reg;
+            let b = self.expr_as(right, Ty::Num)?.reg;
+            let out = self.dst_or_temp(dst, Ty::Num).reg;
+            self.emit(match op {
+                BinaryOp::Add => Opcode::Add { dst: out, a, b },
+                BinaryOp::Sub => Opcode::Sub { dst: out, a, b },
+                BinaryOp::Mul => Opcode::Mul { dst: out, a, b },
+                BinaryOp::Div => Opcode::Div { dst: out, a, b },
+                BinaryOp::Rem => Opcode::Rem { dst: out, a, b },
+                BinaryOp::Pow => Opcode::Pow { dst: out, a, b },
+                BinaryOp::BitAnd => Opcode::BitAnd { dst: out, a, b },
+                BinaryOp::BitOr => Opcode::BitOr { dst: out, a, b },
+                BinaryOp::BitXor => Opcode::BitXor { dst: out, a, b },
+                BinaryOp::Shl => Opcode::Shl { dst: out, a, b },
+                BinaryOp::Shr => Opcode::Shr { dst: out, a, b },
+                _ => return None,
+            });
+            return Some(Operand {
+                ty: Ty::Num,
+                reg: out,
+            });
+        }
+        let a = self.expr_as(left, Ty::Val)?;
+        let b = self.expr_as(right, Ty::Val)?;
+        let out = self.dst_or_temp(dst, Ty::Val);
+        self.emit(Opcode::ValBinary {
+            op: binary_code(op)?,
+            dst: out.reg,
+            a: a.reg,
+            b: b.reg,
+        });
+        Some(out)
+    }
+
+    fn call(&mut self, callee: &Expr, args: &[Expr], dst: Option<Operand>) -> Option<Operand> {
+        let Expr::Ident { name, .. } = callee else {
+            return None;
+        };
+        if self.lookup(name).is_some() || MODULE_BUILTINS.contains(&name.as_str()) {
+            return None;
+        }
+        if let Some(builtin) = self.program.builtins.get(name).copied() {
+            if matches!(name.as_str(), "sakafu" | "dari")
+                && args.len() == 1
+                && self.infer(&args[0]) == Ty::Num
+            {
+                let src = self.expr_as(&args[0], Ty::Num)?.reg;
+                let out = self.dst_or_temp(dst, Ty::Num).reg;
+                self.emit(if name == "sakafu" {
+                    Opcode::Floor { dst: out, src }
+                } else {
+                    Opcode::Ceil { dst: out, src }
+                });
+                return Some(Operand {
+                    ty: Ty::Num,
+                    reg: out,
+                });
+            }
+            let mut regs = Vec::with_capacity(args.len());
+            for arg in args {
+                regs.push(self.expr_as(arg, Ty::Val)?.reg);
+            }
+            let out = self.dst_or_temp(dst, Ty::Val);
+            self.emit(Opcode::CallBuiltin(Box::new(BuiltinOp {
+                builtin,
+                args: regs,
+                dst: out.reg,
+            })));
+            return Some(out);
+        }
+        let (index, params, ret) = {
+            let sig = self.program.functions.get(name)?;
+            (sig.index, sig.params.clone(), sig.ret)
+        };
+        if params.len() != args.len() {
+            return None;
+        }
+        let mut operands = Vec::with_capacity(args.len());
+        for (arg, ty) in args.iter().zip(params) {
+            operands.push(self.expr_as(arg, ty)?);
+        }
+        let out = match dst {
+            Some(d) if d.ty == ret => d,
+            _ => self.temp(ret),
+        };
+        self.emit(Opcode::Call(Box::new(CallOp {
+            function: index,
+            args: operands,
+            dst: out,
+        })));
+        Some(out)
+    }
+
+    fn method_call(
+        &mut self,
+        receiver: &Expr,
+        method: &str,
+        args: &[Expr],
+        dst: Option<Operand>,
+    ) -> Option<Operand> {
+        let recv_ty = self.infer(receiver);
+        // Numeric-list fast paths.
+        if recv_ty == Ty::List {
+            let local = match receiver {
+                Expr::Ident { name, .. } => self.lookup(name).map(|l| l.op),
+                _ => None,
+            };
+            match (method, args.len(), local) {
+                ("urefu", 0, _) => {
+                    let list = self.expr_as(receiver, Ty::List)?.reg;
+                    let out = self.dst_or_temp(dst, Ty::Num).reg;
+                    self.emit(Opcode::ListLen { dst: out, list });
+                    return Some(Operand {
+                        ty: Ty::Num,
+                        reg: out,
+                    });
+                }
+                ("ongeza", 1, Some(list)) => {
+                    let src = self.expr_as(&args[0], Ty::Num)?.reg;
+                    self.emit(Opcode::ListPush {
+                        list: list.reg,
+                        src,
+                    });
+                    return self.tupu(dst);
+                }
+                ("ingiza", 2, Some(list)) => {
+                    let idx = self.expr_as(&args[0], Ty::Num)?.reg;
+                    let src = self.expr_as(&args[1], Ty::Num)?.reg;
+                    self.emit(Opcode::ListSet {
+                        list: list.reg,
+                        idx,
+                        src,
+                    });
+                    return self.tupu(dst);
+                }
+                ("ondoa", 1, Some(list)) => {
+                    let idx = self.expr_as(&args[0], Ty::Num)?.reg;
+                    let out = self.dst_or_temp(dst, Ty::Val);
+                    self.emit(Opcode::ListRemoveVal {
+                        dst: out.reg,
+                        list: list.reg,
+                        idx,
+                    });
+                    return Some(out);
+                }
+                ("ongeza" | "ingiza" | "ondoa", _, _) => return None,
+                _ => {}
+            }
+        }
+        let recv_type = self.type_name(receiver)?;
+        // In-place mutation of a generic local.
+        let mutating = match method {
+            "ongeza" => Some(MutMethod::Push),
+            "ingiza" => Some(MutMethod::Insert),
+            "ondoa" => Some(MutMethod::Remove),
+            "weka_key" => Some(MutMethod::WekaKey),
+            _ => None,
+        };
+        if let Some(kind) = mutating {
+            let Expr::Ident { name, .. } = receiver else {
+                return None;
+            };
+            let local = self.lookup(name)?.op;
+            let supported = match kind {
+                MutMethod::Push | MutMethod::Remove => recv_type.starts_with("Orodha"),
+                MutMethod::Insert => {
+                    recv_type.starts_with("Orodha") || recv_type.starts_with("Kamusi")
+                }
+                MutMethod::WekaKey => recv_type.starts_with("Kamusi"),
+            };
+            if local.ty != Ty::Val || !supported {
+                return None;
+            }
+            let mut regs = Vec::with_capacity(args.len());
+            for arg in args {
+                regs.push(self.expr_as(arg, Ty::Val)?.reg);
+            }
+            let out = self.dst_or_temp(dst, Ty::Val);
+            self.emit(Opcode::MutMethod(Box::new(MutMethodOp {
+                method: kind,
+                recv: local.reg,
+                args: regs,
+                dst: out.reg,
+            })));
+            return Some(out);
+        }
+        if method == "urefu"
+            && args.is_empty()
+            && (recv_type == "Neno" || recv_type.starts_with("Orodha"))
+        {
+            let src = self.expr_as(receiver, Ty::Val)?.reg;
+            let out = self.dst_or_temp(dst, Ty::Num).reg;
+            self.emit(Opcode::ValLen { dst: out, src });
+            return Some(Operand {
+                ty: Ty::Num,
+                reg: out,
+            });
+        }
+        let callback = recv_type.starts_with("Orodha") && CALLBACK_METHODS.contains(&method);
+        if !callback && !pure_method_supported(&recv_type, method) {
+            return None;
+        }
+        let recv = self.expr_as(receiver, Ty::Val)?.reg;
+        let mut regs = Vec::with_capacity(args.len());
+        for arg in args {
+            regs.push(self.expr_as(arg, Ty::Val)?.reg);
+        }
+        let out = self.dst_or_temp(dst, Ty::Val);
+        self.emit(Opcode::CallMethod(Box::new(MethodOp {
+            method: method.to_string(),
+            recv,
+            args: regs,
+            dst: out.reg,
+        })));
+        Some(out)
+    }
+
+    fn tupu(&mut self, dst: Option<Operand>) -> Option<Operand> {
+        let k = self.program.constant(StoredConstant::Tupu);
+        let out = self.dst_or_temp(dst, Ty::Val);
+        if out.ty == Ty::Val {
+            self.emit(Opcode::ConstVal { dst: out.reg, k });
+        }
+        Some(out)
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Interpreter
+// ---------------------------------------------------------------------------------------------
 
 /// Execute the entry function in a bytecode program.
 pub fn run_bytecode(program: &BytecodeProgram, args: Vec<String>) -> Result<(), EvalError> {
@@ -891,12 +1950,13 @@ pub fn run_bytecode(program: &BytecodeProgram, args: Vec<String>) -> Result<(), 
         .position(|f| f.name == program.entry)
         .ok_or_else(|| EvalError::Unknown(format!("kazi '{}' haikupatikana", program.entry)))?;
     let hoja = Value::Orodha(args.into_iter().map(Value::Neno).collect());
-    let _ = execute_function(program, index, vec![hoja])?;
+    let mut vm = Vm::new(program)?;
+    vm.call_values(index, vec![hoja])?;
     Ok(())
 }
 
-/// Execute a named bytecode function.  This is useful for embedders and focused VM tests; the CLI
-/// entry point above intentionally keeps the `kuu(hoja)` interface.
+/// Execute a named bytecode function. Useful for embedders and focused VM tests; the CLI entry
+/// point above keeps the `kuu(hoja)` interface.
 pub fn run_bytecode_function(
     program: &BytecodeProgram,
     name: &str,
@@ -907,766 +1967,674 @@ pub fn run_bytecode_function(
         .iter()
         .position(|f| f.name == name)
         .ok_or_else(|| EvalError::UndefinedVar(name.to_string()))?;
-    execute_function(program, index, args)
+    let mut vm = Vm::new(program)?;
+    vm.call_values(index, args)
 }
 
-#[derive(Clone, Copy, Debug)]
-enum VmNumber {
-    Integer(i64),
-    Float(f64),
+#[derive(Default)]
+struct Frame {
+    nums: Vec<f64>,
+    lists: Vec<Vec<f64>>,
+    vals: Vec<Value>,
 }
 
-impl VmNumber {
-    fn as_f64(self) -> f64 {
-        match self {
-            Self::Integer(n) => n as f64,
-            Self::Float(n) => n,
-        }
-    }
-
-    fn as_i64(self) -> i64 {
-        self.as_f64() as i64
-    }
-
-    fn into_value(self) -> Value {
-        Value::Namba(self.as_f64())
-    }
+enum Ret {
+    Num(f64),
+    List(Vec<f64>),
+    Val(Value),
 }
 
-enum VmValue {
-    Number(VmNumber),
-    Value(Value),
-    /// The numeric-list read stays unboxed until a following `jaribu`/`?`.
-    NumberResult(Result<VmNumber, Value>),
+struct Vm<'p> {
+    program: &'p BytecodeProgram,
+    builtins: Vec<BuiltinFn>,
+    builtin_index: HashMap<String, usize>,
+    pool: Vec<Frame>,
+    depth: usize,
 }
 
-enum LocalSlot {
-    Empty,
-    Number(VmNumber),
-    NumericList(Vec<VmNumber>),
-    Value(Value),
+const MAX_CALL_DEPTH: usize = 10_000;
+
+fn type_err(msg: &str) -> EvalError {
+    EvalError::TypeErr(msg.to_string())
 }
 
-impl LocalSlot {
-    fn from_vm(value: VmValue) -> Self {
-        match value {
-            VmValue::Number(number) => Self::Number(number),
-            VmValue::Value(value) => Self::Value(value),
-            VmValue::NumberResult(result) => match result {
-                Ok(number) => Self::Number(number),
-                Err(error) => Self::Value(Value::Tokeo(Err(Box::new(error)))),
-            },
-        }
-    }
+#[inline(always)]
+fn to_index(n: f64) -> usize {
+    (n as i64).max(0) as usize
+}
 
-    fn from_numeric_list(value: VmValue) -> Self {
-        match value {
-            VmValue::Value(Value::Orodha(values))
-                if values.iter().all(|value| matches!(value, Value::Namba(_))) =>
-            {
-                Self::NumericList(
-                    values
-                        .into_iter()
-                        .map(|value| match value {
-                            Value::Namba(number) => VmNumber::Float(number),
-                            _ => unreachable!(),
-                        })
-                        .collect(),
-                )
-            }
-            other => Self::from_vm(other),
-        }
-    }
-
-    fn to_vm(&self) -> VmValue {
-        match self {
-            Self::Empty => VmValue::Value(Value::Hamna),
-            Self::Number(number) => VmValue::Number(*number),
-            Self::NumericList(values) => VmValue::Value(Value::Orodha(
-                values.iter().map(|value| value.into_value()).collect(),
-            )),
-            Self::Value(value) => VmValue::Value(value.clone()),
-        }
+#[inline(always)]
+fn shift_amount(n: f64) -> u32 {
+    let shift = n as i32;
+    if (0..=63).contains(&shift) {
+        shift as u32
+    } else {
+        0
     }
 }
 
-fn vm_value(value: Value) -> VmValue {
-    match value {
-        Value::Namba(number) => VmValue::Number(VmNumber::Float(number)),
-        value => VmValue::Value(value),
-    }
-}
-
-fn vm_into_value(value: VmValue) -> Value {
-    match value {
-        VmValue::Number(number) => number.into_value(),
-        VmValue::Value(value) => value,
-        VmValue::NumberResult(Ok(number)) => number.into_value(),
-        VmValue::NumberResult(Err(error)) => Value::Tokeo(Err(Box::new(error))),
-    }
-}
-
-fn pop_vm(stack: &mut Vec<VmValue>) -> Result<VmValue, EvalError> {
-    stack
-        .pop()
-        .ok_or_else(|| EvalError::Unknown("stack imeharibika".into()))
-}
-
-fn pop_number(stack: &mut Vec<VmValue>) -> Result<VmNumber, EvalError> {
-    match pop_vm(stack)? {
-        VmValue::Number(number) => Ok(number),
-        VmValue::Value(Value::Namba(number)) => Ok(VmNumber::Float(number)),
-        other => Err(EvalError::TypeErr(format!(
-            "operesheni inahitaji Namba, ilipata {:?}",
-            vm_into_value(other)
-        ))),
-    }
-}
-
-fn local_number(local: &LocalSlot) -> Result<VmNumber, EvalError> {
-    match local {
-        LocalSlot::Number(number) => Ok(*number),
-        LocalSlot::Value(Value::Namba(number)) => Ok(VmNumber::Float(*number)),
-        _ => Err(EvalError::TypeErr("operesheni inahitaji Namba".into())),
-    }
-}
-
-struct VmPools {
-    locals: Vec<Vec<LocalSlot>>,
-    stacks: Vec<Vec<VmValue>>,
-}
-
-fn builtin_cache() -> Result<Vec<crate::builtins::BuiltinFn>, EvalError> {
-    let names = builtin_names();
-    let mut table = builtins();
-    names
-        .into_iter()
-        .map(|name| {
-            table
-                .remove(&name)
-                .ok_or_else(|| EvalError::Unknown(format!("builtin haipo: {name}")))
-        })
-        .collect()
-}
-
-impl VmPools {
-    fn take_locals(&mut self, len: usize) -> Vec<LocalSlot> {
-        let mut locals = self.locals.pop().unwrap_or_default();
-        locals.clear();
-        locals.resize_with(len, || LocalSlot::Empty);
-        locals
-    }
-
-    fn take_stack(&mut self) -> Vec<VmValue> {
-        self.stacks.pop().unwrap_or_default()
-    }
-
-    fn put(&mut self, mut locals: Vec<LocalSlot>, mut stack: Vec<VmValue>) {
-        locals.clear();
-        stack.clear();
-        self.locals.push(locals);
-        self.stacks.push(stack);
-    }
-}
-
-fn execute_function(
-    program: &BytecodeProgram,
-    function: usize,
-    args: Vec<Value>,
-) -> Result<Value, EvalError> {
-    let mut pools = VmPools {
-        locals: Vec::new(),
-        stacks: Vec::new(),
-    };
-    let builtin_cache = builtin_cache()?;
-    execute_function_with_pools(program, function, args, &mut pools, &builtin_cache)
-}
-
-fn execute_function_with_pools(
-    program: &BytecodeProgram,
-    function: usize,
-    args: Vec<Value>,
-    pools: &mut VmPools,
-    builtin_cache: &[crate::builtins::BuiltinFn],
-) -> Result<Value, EvalError> {
-    let f = program
-        .functions
-        .get(function)
-        .ok_or_else(|| EvalError::Unknown("faharisi ya kazi si halali".into()))?;
-    let mut locals = pools.take_locals(f.arity as usize);
-    for (i, value) in args.into_iter().enumerate() {
-        if i < locals.len() {
-            locals[i] = LocalSlot::from_vm(vm_value(value));
-        }
-    }
-    let mut stack = pools.take_stack();
-    let mut ip = 0usize;
-    while ip < f.code.len() {
-        match &f.code[ip] {
-            Opcode::Const(i) => stack.push(vm_value(program.get_constant(*i))),
-            Opcode::ConstNumber(i) => {
-                let number = match program.constants.get(*i as usize) {
-                    Some(StoredConstant::Namba(number)) => *number,
-                    _ => return Err(EvalError::TypeErr("fahirisi ya namba si Namba".into())),
-                };
-                stack.push(VmValue::Number(VmNumber::Float(number)));
-            }
-            Opcode::LoadLocal(i) => stack.push(
-                locals
-                    .get(*i as usize)
-                    .map(LocalSlot::to_vm)
-                    .unwrap_or(VmValue::Value(Value::Hamna)),
-            ),
-            Opcode::LoadNumber(i) => {
-                let number = locals
-                    .get(*i as usize)
-                    .map(local_number)
-                    .transpose()?
-                    .unwrap_or(VmNumber::Float(0.0));
-                stack.push(VmValue::Number(number));
-            }
-            Opcode::StoreLocal(i) => {
-                let value = pop_vm(&mut stack)?;
-                if *i as usize >= locals.len() {
-                    locals.resize_with(*i as usize + 1, || LocalSlot::Empty);
-                }
-                locals[*i as usize] = LocalSlot::from_vm(value);
-            }
-            Opcode::StoreNumber(i) => {
-                let value = pop_number(&mut stack)?;
-                if *i as usize >= locals.len() {
-                    locals.resize_with(*i as usize + 1, || LocalSlot::Empty);
-                }
-                locals[*i as usize] = LocalSlot::Number(value);
-            }
-            Opcode::StoreNumericList(i) => {
-                let value = pop_vm(&mut stack)?;
-                if *i as usize >= locals.len() {
-                    locals.resize_with(*i as usize + 1, || LocalSlot::Empty);
-                }
-                locals[*i as usize] = LocalSlot::from_numeric_list(value);
-            }
-            Opcode::Pop => {
-                let _ = stack.pop();
-            }
-            Opcode::Jump(target) => {
-                ip = *target as usize;
-                continue;
-            }
-            Opcode::JumpIfFalse(target) => {
-                let value = vm_into_value(pop_vm(&mut stack)?);
-                if !matches!(value, Value::Ukweli(true)) {
-                    ip = *target as usize;
-                    continue;
-                }
-            }
-            Opcode::Binary(op) => {
-                let right = vm_into_value(pop_vm(&mut stack)?);
-                let left = vm_into_value(pop_vm(&mut stack)?);
-                stack.push(vm_value(binary(op, left, right)?));
-            }
-            Opcode::NumericBinary(op) => {
-                let right = pop_number(&mut stack)?;
-                let left = pop_number(&mut stack)?;
-                stack.push(numeric_binary(op, left, right)?);
-            }
-            Opcode::Unary(op) => {
-                let value = vm_into_value(pop_vm(&mut stack)?);
-                stack.push(vm_value(unary(op, value)?));
-            }
-            Opcode::NumericUnary(op) => {
-                let value = pop_number(&mut stack)?;
-                stack.push(numeric_unary(op, value)?);
-            }
-            Opcode::NumericBuiltin(op) => {
-                let right = pop_number(&mut stack)?;
-                let left = match op {
-                    NumericBuiltinCode::Floor => right,
-                    _ => pop_number(&mut stack)?,
-                };
-                stack.push(numeric_builtin_value(op, left, right)?);
-            }
-            Opcode::MakeList(n) => {
-                let n = *n as usize;
-                if stack.len() < n {
-                    return Err(EvalError::Unknown("stack imeharibika".into()));
-                }
-                let values = stack
-                    .split_off(stack.len() - n)
-                    .into_iter()
-                    .map(vm_into_value)
-                    .collect();
-                stack.push(VmValue::Value(Value::Orodha(values)));
-            }
-            Opcode::Index => {
-                let index = vm_into_value(pop_vm(&mut stack)?);
-                let base = vm_into_value(pop_vm(&mut stack)?);
-                stack.push(vm_value(index_value(&base, &index)?));
-            }
-            Opcode::IndexLocal(slot) => {
-                let index = number_index(&vm_into_value(pop_vm(&mut stack)?))?;
-                let value = match locals.get(*slot as usize) {
-                    Some(LocalSlot::Value(Value::Orodha(values))) if index < values.len() => {
-                        Value::Tokeo(Ok(Box::new(values[index].clone())))
-                    }
-                    Some(LocalSlot::NumericList(values)) if index < values.len() => {
-                        Value::Tokeo(Ok(Box::new(values[index].into_value())))
-                    }
-                    Some(LocalSlot::Value(Value::Orodha(_))) => Value::Tokeo(Err(Box::new(
-                        Value::Neno(format!("fahirisi nje ya mipaka: {index}")),
-                    ))),
-                    Some(LocalSlot::NumericList(_)) => Value::Tokeo(Err(Box::new(Value::Neno(
-                        format!("fahirisi nje ya mipaka: {index}"),
-                    )))),
-                    _ => return Err(EvalError::TypeErr("fahirisi inahitaji Orodha".into())),
-                };
-                stack.push(vm_value(value));
-            }
-            Opcode::IndexNumberLocal(slot) => {
-                let index = number_index(&vm_into_value(pop_vm(&mut stack)?))?;
-                let value = match locals.get(*slot as usize) {
-                    Some(LocalSlot::Value(Value::Orodha(values)))
-                        if index < values.len() && matches!(values[index], Value::Namba(_)) =>
-                    {
-                        Ok(VmNumber::Float(match &values[index] {
-                            Value::Namba(number) => *number,
-                            _ => unreachable!(),
-                        }))
-                    }
-                    Some(LocalSlot::NumericList(values)) if index < values.len() => {
-                        Ok(values[index])
-                    }
-                    Some(LocalSlot::Value(Value::Orodha(_))) => {
-                        Err(Value::Neno(format!("fahirisi nje ya mipaka: {index}")))
-                    }
-                    Some(LocalSlot::NumericList(_)) => {
-                        Err(Value::Neno(format!("fahirisi nje ya mipaka: {index}")))
-                    }
-                    _ => return Err(EvalError::TypeErr("fahirisi inahitaji Orodha".into())),
-                };
-                stack.push(VmValue::NumberResult(value));
-            }
-            Opcode::IndexNumberLocalFromSlot { list, index } => {
-                let index = local_number(
-                    locals
-                        .get(*index as usize)
-                        .ok_or_else(|| EvalError::TypeErr("fahirisi inahitaji Namba".into()))?,
-                )?
-                .as_i64()
-                .max(0) as usize;
-                let value = match locals.get(*list as usize) {
-                    Some(LocalSlot::NumericList(values)) if index < values.len() => {
-                        Ok(values[index])
-                    }
-                    Some(LocalSlot::Value(Value::Orodha(values)))
-                        if index < values.len() && matches!(values[index], Value::Namba(_)) =>
-                    {
-                        match &values[index] {
-                            Value::Namba(number) => Ok(VmNumber::Float(*number)),
-                            _ => unreachable!(),
-                        }
-                    }
-                    Some(LocalSlot::NumericList(_)) | Some(LocalSlot::Value(Value::Orodha(_))) => {
-                        Err(Value::Neno(format!("fahirisi nje ya mipaka: {index}")))
-                    }
-                    _ => return Err(EvalError::TypeErr("fahirisi inahitaji Orodha".into())),
-                };
-                stack.push(VmValue::NumberResult(value));
-            }
-            Opcode::ListLen(slot) => {
-                let length = match locals.get(*slot as usize) {
-                    Some(LocalSlot::Value(Value::Orodha(values))) => values.len(),
-                    Some(LocalSlot::NumericList(values)) => values.len(),
-                    Some(LocalSlot::Value(Value::Neno(value))) => {
-                        unicode_segmentation::UnicodeSegmentation::graphemes(value.as_str(), true)
-                            .count()
-                    }
-                    _ => return Err(EvalError::TypeErr("urefu inahitaji Orodha au Neno".into())),
-                };
-                stack.push(VmValue::Number(VmNumber::Integer(length as i64)));
-            }
-            Opcode::Unwrap => {
-                let value = vm_into_value(pop_vm(&mut stack)?);
-                match value {
-                    Value::Tokeo(Ok(v)) | Value::Chaguo(Some(v)) => stack.push(vm_value(*v)),
-                    Value::Tokeo(Err(e)) => {
-                        pools.put(locals, stack);
-                        return Ok(Value::Tokeo(Err(e)));
-                    }
-                    Value::Chaguo(None) => return Err(EvalError::Unknown("Chaguo: Hamna".into())),
-                    _ => return Err(EvalError::TypeErr("jaribu inahitaji Tokeo/Chaguo".into())),
-                }
-            }
-            Opcode::UnwrapNumber => match pop_vm(&mut stack)? {
-                VmValue::NumberResult(Ok(number)) => stack.push(VmValue::Number(number)),
-                VmValue::NumberResult(Err(error)) => {
-                    pools.put(locals, stack);
-                    return Ok(Value::Tokeo(Err(Box::new(error))));
-                }
-                value => match vm_into_value(value) {
-                    Value::Tokeo(Ok(value)) | Value::Chaguo(Some(value)) => {
-                        stack.push(vm_value(*value))
-                    }
-                    Value::Tokeo(Err(error)) => {
-                        pools.put(locals, stack);
-                        return Ok(Value::Tokeo(Err(error)));
-                    }
-                    _ => return Err(EvalError::TypeErr("jaribu inahitaji Tokeo/Chaguo".into())),
-                },
-            },
-            Opcode::Cast(ty) => {
-                let value = vm_into_value(pop_vm(&mut stack)?);
-                stack.push(vm_value(cast(ty, value)?));
-            }
-            Opcode::Call { function, arity } => {
-                let values = take_args(&mut stack, *arity as usize)?;
-                let values = values.into_iter().map(vm_into_value).collect();
-                stack.push(vm_value(execute_function_with_pools(
-                    program,
-                    *function as usize,
-                    values,
-                    pools,
-                    builtin_cache,
-                )?));
-            }
-            Opcode::CallBuiltinN { builtin, arity } => {
-                let values = take_args(&mut stack, *arity as usize)?;
-                let values = values.into_iter().map(vm_into_value).collect::<Vec<_>>();
-                let callable = builtin_cache
-                    .get(*builtin as usize)
-                    .ok_or_else(|| EvalError::Unknown("faharisi ya builtin si halali".into()))?;
-                stack.push(vm_value(callable(&values)?));
-            }
-            Opcode::CallBuiltin(builtin) => {
-                let values = take_args(&mut stack, 1)?;
-                let values = values.into_iter().map(vm_into_value).collect::<Vec<_>>();
-                let callable = builtin_cache
-                    .get(*builtin as usize)
-                    .ok_or_else(|| EvalError::Unknown("faharisi ya builtin si halali".into()))?;
-                stack.push(vm_value(callable(&values)?));
-            }
-            Opcode::CallMethod { method, arity } => {
-                let values = take_args(&mut stack, *arity as usize)?;
-                let values = values.into_iter().map(vm_into_value).collect::<Vec<_>>();
-                let receiver = vm_into_value(pop_vm(&mut stack)?);
-                stack.push(vm_value(method_call(receiver, method, values)?));
-            }
-            Opcode::ListPush(slot) => {
-                let value = vm_into_value(pop_vm(&mut stack)?);
-                match locals.get_mut(*slot as usize) {
-                    Some(LocalSlot::Value(Value::Orodha(values))) => {
-                        values.push(value);
-                        stack.push(VmValue::Value(Value::Tupu));
-                    }
-                    Some(LocalSlot::NumericList(values)) => match value {
-                        Value::Namba(number) => {
-                            values.push(VmNumber::Float(number));
-                            stack.push(VmValue::Value(Value::Tupu));
-                        }
-                        _ => return Err(EvalError::TypeErr("ongeza inahitaji Namba".into())),
-                    },
-                    _ => return Err(EvalError::TypeErr("ongeza inahitaji Orodha".into())),
-                }
-            }
-            Opcode::ListPushNumber(slot) => {
-                let value = pop_number(&mut stack)?;
-                match locals.get_mut(*slot as usize) {
-                    Some(LocalSlot::Value(Value::Orodha(values))) => {
-                        values.push(value.into_value());
-                        stack.push(VmValue::Value(Value::Tupu));
-                    }
-                    Some(LocalSlot::NumericList(values)) => {
-                        values.push(value);
-                        stack.push(VmValue::Value(Value::Tupu));
-                    }
-                    _ => return Err(EvalError::TypeErr("ongeza inahitaji Orodha".into())),
-                }
-            }
-            Opcode::ListSet(slot) => {
-                let value = vm_into_value(pop_vm(&mut stack)?);
-                let index = number_index(&vm_into_value(pop_vm(&mut stack)?))?;
-                match locals.get_mut(*slot as usize) {
-                    Some(LocalSlot::Value(Value::Orodha(values))) if index < values.len() => {
-                        values[index] = value;
-                        stack.push(VmValue::Value(Value::Tupu));
-                    }
-                    Some(LocalSlot::Value(Value::Orodha(_))) => {
-                        return Err(EvalError::TypeErr("ingiza: index nje ya mipaka".into()))
-                    }
-                    Some(LocalSlot::NumericList(values)) if index < values.len() => {
-                        values[index] = match value {
-                            Value::Namba(number) => VmNumber::Float(number),
-                            _ => return Err(EvalError::TypeErr("ingiza inahitaji Namba".into())),
-                        };
-                        stack.push(VmValue::Value(Value::Tupu));
-                    }
-                    Some(LocalSlot::NumericList(_)) => {
-                        return Err(EvalError::TypeErr("ingiza: index nje ya mipaka".into()))
-                    }
-                    _ => return Err(EvalError::TypeErr("ingiza inahitaji Orodha".into())),
-                }
-            }
-            Opcode::ListSetNumber(slot) => {
-                let value = pop_number(&mut stack)?;
-                let index = number_index(&vm_into_value(pop_vm(&mut stack)?))?;
-                match locals.get_mut(*slot as usize) {
-                    Some(LocalSlot::Value(Value::Orodha(values))) if index < values.len() => {
-                        values[index] = value.into_value();
-                        stack.push(VmValue::Value(Value::Tupu));
-                    }
-                    Some(LocalSlot::Value(Value::Orodha(_))) => {
-                        return Err(EvalError::TypeErr("ingiza: index nje ya mipaka".into()))
-                    }
-                    Some(LocalSlot::NumericList(values)) if index < values.len() => {
-                        values[index] = value;
-                        stack.push(VmValue::Value(Value::Tupu));
-                    }
-                    Some(LocalSlot::NumericList(_)) => {
-                        return Err(EvalError::TypeErr("ingiza: index nje ya mipaka".into()))
-                    }
-                    _ => return Err(EvalError::TypeErr("ingiza inahitaji Orodha".into())),
-                }
-            }
-            Opcode::ListRemove(slot) => {
-                let index = number_index(&vm_into_value(pop_vm(&mut stack)?))?;
-                match locals.get_mut(*slot as usize) {
-                    Some(LocalSlot::Value(Value::Orodha(values))) if index < values.len() => stack
-                        .push(VmValue::Value(Value::Chaguo(Some(Box::new(
-                            values.remove(index),
-                        ))))),
-                    Some(LocalSlot::Value(Value::Orodha(_))) => {
-                        stack.push(VmValue::Value(Value::Chaguo(None)))
-                    }
-                    Some(LocalSlot::NumericList(values)) if index < values.len() => {
-                        stack.push(VmValue::Value(Value::Chaguo(Some(Box::new(
-                            values.remove(index).into_value(),
-                        )))))
-                    }
-                    Some(LocalSlot::NumericList(_)) => {
-                        stack.push(VmValue::Value(Value::Chaguo(None)))
-                    }
-                    _ => return Err(EvalError::TypeErr("ondoa inahitaji Orodha".into())),
-                }
-            }
-            Opcode::IncrementNumberLocal { slot, by } => {
-                let value = local_number(
-                    locals
-                        .get(*slot as usize)
-                        .ok_or_else(|| EvalError::TypeErr("ongezeko inahitaji Namba".into()))?,
-                )?;
-                let increment = VmNumber::Integer(*by as i64);
-                locals[*slot as usize] = LocalSlot::Number(numeric_add(value, increment));
-            }
-            Opcode::IndexAddNumberLocal {
-                slot,
-                index_slot,
-                add,
-            } => {
-                let index = match locals.get(*index_slot as usize) {
-                    Some(LocalSlot::Number(number)) => number.as_i64() as usize,
-                    _ => return Err(EvalError::TypeErr("fahirisi inahitaji Namba".into())),
-                };
-                let value = match locals.get(*slot as usize) {
-                    Some(LocalSlot::Value(Value::Orodha(values))) => values
-                        .get(index)
-                        .and_then(|value| match value {
-                            Value::Namba(number) => Some(*number),
-                            _ => None,
-                        })
-                        .ok_or_else(|| EvalError::TypeErr("fahirisi inahitaji Namba".into()))?,
-                    Some(LocalSlot::NumericList(values)) => values
-                        .get(index)
-                        .map(|value| value.as_f64())
-                        .ok_or_else(|| EvalError::TypeErr("fahirisi inahitaji Namba".into()))?,
-                    _ => return Err(EvalError::TypeErr("fahirisi inahitaji Orodha".into())),
-                };
-                stack.push(VmValue::Number(numeric_add(
-                    VmNumber::Float(value),
-                    VmNumber::Integer(*add as i64),
-                )));
-            }
-            Opcode::Return => {
-                let value = vm_into_value(stack.pop().unwrap_or(VmValue::Value(Value::Tupu)));
-                pools.put(locals, stack);
-                return Ok(value);
-            }
-            Opcode::Nop => {}
-        }
-        ip += 1;
-    }
-    pools.put(locals, stack);
-    Ok(Value::Tupu)
-}
-
-fn take_args(stack: &mut Vec<VmValue>, arity: usize) -> Result<Vec<VmValue>, EvalError> {
-    if stack.len() < arity {
-        return Err(EvalError::Unknown("hoja chache kwenye stack".into()));
-    }
-    let mut args = stack.split_off(stack.len() - arity);
-    // Evaluation pushes left-to-right, while split_off already preserves that order.
-    Ok(std::mem::take(&mut args))
-}
-
-fn number_index(value: &Value) -> Result<usize, EvalError> {
-    value::as_f64(value)
-        .map(|n| (n as i64).max(0) as usize)
-        .ok_or_else(|| EvalError::TypeErr("fahirisi inahitaji Namba".into()))
-}
-
-fn index_value(base: &Value, index: &Value) -> Result<Value, EvalError> {
-    match base {
-        Value::Orodha(values) => {
-            let index = number_index(index)?;
-            if index >= values.len() {
-                Ok(Value::Tokeo(Err(Box::new(Value::Neno(format!(
-                    "fahirisi nje ya mipaka: {index}"
-                ))))))
-            } else {
-                Ok(Value::Tokeo(Ok(Box::new(values[index].clone()))))
-            }
-        }
-        Value::Kamusi(map) => {
-            let key = crate::value::MapKey::try_from_value(index)?;
-            Ok(map.get(&key).cloned().unwrap_or(Value::Hamna))
-        }
-        _ => Err(EvalError::TypeErr(
-            "fahirisi inahitaji Orodha au Kamusi".into(),
-        )),
-    }
-}
-
-fn method_call(receiver: Value, method: &str, _args: Vec<Value>) -> Result<Value, EvalError> {
-    match (receiver, method) {
-        (Value::Orodha(values), "urefu") => Ok(Value::Namba(values.len() as f64)),
-        (Value::Neno(value), "urefu") => Ok(Value::Namba(
-            unicode_segmentation::UnicodeSegmentation::graphemes(value.as_str(), true).count()
-                as f64,
-        )),
-        _ => Err(EvalError::Unknown(format!(
-            "bytecode method haijaungwa mkono: {method}"
-        ))),
-    }
-}
-
-fn numeric_add(left: VmNumber, right: VmNumber) -> VmNumber {
-    match (left, right) {
-        (VmNumber::Integer(a), VmNumber::Integer(b)) => VmNumber::Integer(a + b),
-        (left, right) => VmNumber::Float(left.as_f64() + right.as_f64()),
-    }
-}
-
-fn numeric_binary(op: &BinaryCode, left: VmNumber, right: VmNumber) -> Result<VmValue, EvalError> {
-    let result = match op {
-        BinaryCode::Add => VmValue::Number(numeric_add(left, right)),
-        BinaryCode::Sub => VmValue::Number(match (left, right) {
-            (VmNumber::Integer(a), VmNumber::Integer(b)) => VmNumber::Integer(a - b),
-            (left, right) => VmNumber::Float(left.as_f64() - right.as_f64()),
-        }),
-        BinaryCode::Mul => VmValue::Number(match (left, right) {
-            (VmNumber::Integer(a), VmNumber::Integer(b)) => VmNumber::Integer(a * b),
-            (left, right) => VmNumber::Float(left.as_f64() * right.as_f64()),
-        }),
-        BinaryCode::Div => VmValue::Number(VmNumber::Float(left.as_f64() / right.as_f64())),
-        BinaryCode::Rem => VmValue::Number(VmNumber::Float(left.as_f64() % right.as_f64())),
-        BinaryCode::Pow => VmValue::Number(VmNumber::Float(left.as_f64().powf(right.as_f64()))),
-        BinaryCode::Eq => VmValue::Value(Value::Ukweli(left.as_f64() == right.as_f64())),
-        BinaryCode::Ne => VmValue::Value(Value::Ukweli(left.as_f64() != right.as_f64())),
-        BinaryCode::Gt => VmValue::Value(Value::Ukweli(left.as_f64() > right.as_f64())),
-        BinaryCode::Lt => VmValue::Value(Value::Ukweli(left.as_f64() < right.as_f64())),
-        BinaryCode::Ge => VmValue::Value(Value::Ukweli(left.as_f64() >= right.as_f64())),
-        BinaryCode::Le => VmValue::Value(Value::Ukweli(left.as_f64() <= right.as_f64())),
-        BinaryCode::BitAnd => VmValue::Number(VmNumber::Integer(left.as_i64() & right.as_i64())),
-        BinaryCode::BitXor => VmValue::Number(VmNumber::Integer(left.as_i64() ^ right.as_i64())),
-        BinaryCode::BitOr => VmValue::Number(VmNumber::Integer(left.as_i64() | right.as_i64())),
-        BinaryCode::Shl => VmValue::Number(VmNumber::Integer(
-            left.as_i64().wrapping_shl(right.as_i64() as u32),
-        )),
-        BinaryCode::Shr => VmValue::Number(VmNumber::Integer(
-            left.as_i64().wrapping_shr(right.as_i64() as u32),
-        )),
-        BinaryCode::And | BinaryCode::Or => {
-            return Err(EvalError::TypeErr("na/au inahitaji Ukweli".into()))
-        }
-    };
-    Ok(result)
-}
-
-fn numeric_unary(op: &UnaryCode, value: VmNumber) -> Result<VmValue, EvalError> {
-    Ok(match op {
-        UnaryCode::Neg => VmValue::Number(match value {
-            VmNumber::Integer(number) => VmNumber::Integer(-number),
-            VmNumber::Float(number) => VmNumber::Float(-number),
-        }),
-        UnaryCode::BitNot => VmValue::Number(VmNumber::Integer(!value.as_i64())),
-        _ => return Err(EvalError::TypeErr("operesheni si ya Namba".into())),
-    })
-}
-
-fn numeric_builtin_value(
-    op: &NumericBuiltinCode,
-    left: VmNumber,
-    right: VmNumber,
-) -> Result<VmValue, EvalError> {
-    Ok(VmValue::Number(match op {
-        NumericBuiltinCode::Floor => VmNumber::Float(right.as_f64().floor()),
-        NumericBuiltinCode::ShiftLeft => {
-            VmNumber::Integer(left.as_i64().wrapping_shl(right.as_i64() as u32))
-        }
-        NumericBuiltinCode::ShiftRight => {
-            VmNumber::Integer(left.as_i64().wrapping_shr(right.as_i64() as u32))
-        }
-        NumericBuiltinCode::BitAnd => VmNumber::Integer(left.as_i64() & right.as_i64()),
-        NumericBuiltinCode::BitOr => VmNumber::Integer(left.as_i64() | right.as_i64()),
-        NumericBuiltinCode::BitXor => VmNumber::Integer(left.as_i64() ^ right.as_i64()),
-    }))
-}
-
-fn cast(ty: &str, value: Value) -> Result<Value, EvalError> {
-    match ty {
-        "Neno" => Ok(Value::Neno(match value {
-            Value::Namba(n) => n.to_string(),
-            Value::Ukweli(true) => "kweli".into(),
-            Value::Ukweli(false) => "si_kweli".into(),
-            Value::Neno(s) => s,
-            Value::Herufi(c) => c.to_string(),
-            other => format!("{other:?}"),
-        })),
-        "Ukweli" => Ok(Value::Ukweli(match value {
-            Value::Ukweli(b) => b,
-            Value::Namba(n) => n != 0.0,
-            _ => true,
-        })),
-        _ => Ok(value),
-    }
-}
-
-fn unary(op: &UnaryCode, value: Value) -> Result<Value, EvalError> {
+#[inline(always)]
+fn compare(op: CmpOp, a: f64, b: f64) -> bool {
     match op {
-        UnaryCode::Neg => {
-            Ok(Value::Namba(-value::as_f64(&value).ok_or_else(|| {
-                EvalError::TypeErr("- inahitaji Namba".into())
-            })?))
-        }
-        UnaryCode::Not => Ok(Value::Ukweli(!matches!(value, Value::Ukweli(true)))),
-        UnaryCode::BitNot => Ok(Value::Namba(
-            !(value::as_f64(&value)
-                .ok_or_else(|| EvalError::TypeErr("siyo_biti inahitaji Namba".into()))?
-                as i64) as f64,
-        )),
+        CmpOp::Lt => a < b,
+        CmpOp::Le => a <= b,
+        CmpOp::Gt => a > b,
+        CmpOp::Ge => a >= b,
+        CmpOp::Eq => a == b,
+        CmpOp::Ne => a != b,
     }
 }
 
-fn binary(op: &BinaryCode, left: Value, right: Value) -> Result<Value, EvalError> {
+#[inline(always)]
+fn flag(b: bool) -> f64 {
+    if b {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+impl<'p> Vm<'p> {
+    fn new(program: &'p BytecodeProgram) -> Result<Self, EvalError> {
+        let names = builtin_names();
+        let mut table = builtins();
+        let mut list = Vec::with_capacity(names.len());
+        let mut builtin_index = HashMap::with_capacity(names.len());
+        for (i, name) in names.into_iter().enumerate() {
+            let f = table
+                .remove(&name)
+                .ok_or_else(|| EvalError::Unknown(format!("builtin haipo: {name}")))?;
+            list.push(f);
+            builtin_index.insert(name, i);
+        }
+        Ok(Vm {
+            program,
+            builtins: list,
+            builtin_index,
+            pool: Vec::new(),
+            depth: 0,
+        })
+    }
+
+    fn frame_for(&mut self, f: &BytecodeFunc) -> Frame {
+        let mut frame = self.pool.pop().unwrap_or_default();
+        frame.nums.clear();
+        frame.nums.resize(f.num_regs as usize, 0.0);
+        frame.lists.clear();
+        frame.lists.resize_with(f.list_regs as usize, Vec::new);
+        frame.vals.clear();
+        frame.vals.resize(f.val_regs as usize, Value::Hamna);
+        for (reg, n) in &f.num_consts {
+            frame.nums[*reg as usize] = *n;
+        }
+        frame
+    }
+
+    fn release(&mut self, frame: Frame) {
+        self.pool.push(frame);
+    }
+
+    /// Call a function with generic arguments, converting to and from its typed registers.
+    fn call_values(&mut self, index: usize, args: Vec<Value>) -> Result<Value, EvalError> {
+        let program = self.program;
+        let f = program
+            .functions
+            .get(index)
+            .ok_or_else(|| EvalError::Unknown("faharisi ya kazi si halali".into()))?;
+        let mut frame = self.frame_for(f);
+        for (param, arg) in f.params.iter().zip(args) {
+            store_value(&mut frame, *param, arg)?;
+        }
+        Ok(match self.invoke(index, frame)? {
+            Ret::Num(n) if f.ret == Ty::Bool => Value::Ukweli(n != 0.0),
+            Ret::Num(n) => Value::Namba(n),
+            Ret::List(l) => Value::Orodha(l.into_iter().map(Value::Namba).collect()),
+            Ret::Val(v) => v,
+        })
+    }
+
+    fn invoke(&mut self, index: usize, frame: Frame) -> Result<Ret, EvalError> {
+        self.depth += 1;
+        if self.depth > MAX_CALL_DEPTH {
+            self.depth -= 1;
+            return Err(EvalError::Unknown("undani mno".into()));
+        }
+        let result = stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || self.run(index, frame));
+        self.depth -= 1;
+        result
+    }
+
+    /// Invoke a callback named by a string (for `ramani`, `chuja`, ...): builtins first, then
+    /// module functions, matching the evaluator.
+    fn callback(&mut self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
+        if let Some(i) = self.builtin_index.get(name) {
+            return (self.builtins[*i])(&args);
+        }
+        let index = self
+            .program
+            .functions
+            .iter()
+            .position(|f| f.name == name)
+            .ok_or_else(|| EvalError::TypeErr(format!("kazi haijulikani: {name}")))?;
+        self.call_values(index, args)
+    }
+
+    fn call_method(
+        &mut self,
+        recv: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, EvalError> {
+        if methods::is_pure_method(&recv, method) {
+            return methods::pure_method(&recv, method, &args);
+        }
+        let Value::Orodha(items) = recv else {
+            return Err(EvalError::Unknown(format!(
+                "bytecode method haijaungwa mkono: {method}"
+            )));
+        };
+        let cb = args
+            .first()
+            .and_then(value::as_string)
+            .ok_or_else(|| EvalError::TypeErr("njia inahitaji jina la kazi".into()))?;
+        let truthy = |v: &Value| matches!(v, Value::Ukweli(true));
+        match method {
+            "ramani" => {
+                let mut out = Vec::with_capacity(items.len());
+                for item in items {
+                    out.push(self.callback(&cb, vec![item])?);
+                }
+                Ok(Value::Orodha(out))
+            }
+            "chuja" => {
+                let mut out = Vec::new();
+                for item in items {
+                    if truthy(&self.callback(&cb, vec![item.clone()])?) {
+                        out.push(item);
+                    }
+                }
+                Ok(Value::Orodha(out))
+            }
+            "hesabu" => {
+                let mut count = 0.0;
+                for item in items {
+                    if truthy(&self.callback(&cb, vec![item])?) {
+                        count += 1.0;
+                    }
+                }
+                Ok(Value::Namba(count))
+            }
+            "chunguza" => {
+                for item in items {
+                    if truthy(&self.callback(&cb, vec![item])?) {
+                        return Ok(Value::Ukweli(true));
+                    }
+                }
+                Ok(Value::Ukweli(false))
+            }
+            "kila_na_fahirisi" => {
+                for (i, item) in items.into_iter().enumerate() {
+                    self.callback(&cb, vec![Value::Namba(i as f64), item])?;
+                }
+                Ok(Value::Tupu)
+            }
+            _ => Err(EvalError::Unknown(format!(
+                "bytecode method haijaungwa mkono: {method}"
+            ))),
+        }
+    }
+
+    fn run(&mut self, index: usize, mut frame: Frame) -> Result<Ret, EvalError> {
+        let program = self.program;
+        let code = &program.functions[index].code;
+        let mut pc = 0usize;
+        macro_rules! finish {
+            ($ret:expr) => {{
+                let ret = $ret;
+                self.release(frame);
+                return Ok(ret);
+            }};
+        }
+        macro_rules! fail {
+            ($err:expr) => {{
+                let err = $err;
+                self.release(frame);
+                return Err(err);
+            }};
+        }
+        loop {
+            let Some(op) = code.get(pc) else {
+                finish!(Ret::Val(Value::Tupu));
+            };
+            pc += 1;
+            let n = &mut frame.nums;
+            match op {
+                Opcode::Mov { dst, src } => n[*dst as usize] = n[*src as usize],
+                Opcode::Add { dst, a, b } => n[*dst as usize] = n[*a as usize] + n[*b as usize],
+                Opcode::Sub { dst, a, b } => n[*dst as usize] = n[*a as usize] - n[*b as usize],
+                Opcode::Mul { dst, a, b } => n[*dst as usize] = n[*a as usize] * n[*b as usize],
+                Opcode::Div { dst, a, b } => n[*dst as usize] = n[*a as usize] / n[*b as usize],
+                Opcode::Rem { dst, a, b } => n[*dst as usize] = n[*a as usize] % n[*b as usize],
+                Opcode::Pow { dst, a, b } => n[*dst as usize] = n[*a as usize].powf(n[*b as usize]),
+                Opcode::BitAnd { dst, a, b } => {
+                    n[*dst as usize] = ((n[*a as usize] as i64) & (n[*b as usize] as i64)) as f64
+                }
+                Opcode::BitOr { dst, a, b } => {
+                    n[*dst as usize] = ((n[*a as usize] as i64) | (n[*b as usize] as i64)) as f64
+                }
+                Opcode::BitXor { dst, a, b } => {
+                    n[*dst as usize] = ((n[*a as usize] as i64) ^ (n[*b as usize] as i64)) as f64
+                }
+                Opcode::Shl { dst, a, b } => {
+                    n[*dst as usize] =
+                        (n[*a as usize] as i64).wrapping_shl(shift_amount(n[*b as usize])) as f64
+                }
+                Opcode::Shr { dst, a, b } => {
+                    n[*dst as usize] =
+                        (n[*a as usize] as i64).wrapping_shr(shift_amount(n[*b as usize])) as f64
+                }
+                Opcode::Neg { dst, src } => n[*dst as usize] = -n[*src as usize],
+                Opcode::BitNot { dst, src } => n[*dst as usize] = !(n[*src as usize] as i64) as f64,
+                Opcode::Not { dst, src } => n[*dst as usize] = flag(n[*src as usize] == 0.0),
+                Opcode::Floor { dst, src } => n[*dst as usize] = n[*src as usize].floor(),
+                Opcode::Ceil { dst, src } => n[*dst as usize] = n[*src as usize].ceil(),
+                Opcode::Trunc { dst, src } => n[*dst as usize] = (n[*src as usize] as i64) as f64,
+                Opcode::Cmp { op, dst, a, b } => {
+                    n[*dst as usize] = flag(compare(*op, n[*a as usize], n[*b as usize]))
+                }
+                Opcode::Jump { target } => pc = *target as usize,
+                Opcode::JumpIfFalse { cond, target } => {
+                    if n[*cond as usize] == 0.0 {
+                        pc = *target as usize;
+                    }
+                }
+                Opcode::JumpIfTrue { cond, target } => {
+                    if n[*cond as usize] != 0.0 {
+                        pc = *target as usize;
+                    }
+                }
+                Opcode::JumpIfNot { op, a, b, target } => {
+                    if !compare(*op, n[*a as usize], n[*b as usize]) {
+                        pc = *target as usize;
+                    }
+                }
+                Opcode::ForStep { ctr, end, target } => {
+                    let next = n[*ctr as usize] + 1.0;
+                    n[*ctr as usize] = next;
+                    if next < n[*end as usize] {
+                        pc = *target as usize;
+                    }
+                }
+                Opcode::MakeNumList { dst, items } => {
+                    let list: Vec<f64> = items.iter().map(|r| n[*r as usize]).collect();
+                    frame.lists[*dst as usize] = list;
+                }
+                Opcode::ListGet { dst, list, idx } => {
+                    let i = to_index(n[*idx as usize]);
+                    let l = &frame.lists[*list as usize];
+                    match l.get(i) {
+                        Some(v) => frame.nums[*dst as usize] = *v,
+                        None => {
+                            let err = methods::out_of_bounds(i, l.len());
+                            finish!(Ret::Val(err));
+                        }
+                    }
+                }
+                Opcode::ListGetTokeo { dst, list, idx } => {
+                    let i = to_index(n[*idx as usize]);
+                    let l = &frame.lists[*list as usize];
+                    let v = match l.get(i) {
+                        Some(v) => Value::Tokeo(Ok(Box::new(Value::Namba(*v)))),
+                        None => methods::out_of_bounds(i, l.len()),
+                    };
+                    frame.vals[*dst as usize] = v;
+                }
+                Opcode::ListSet { list, idx, src } => {
+                    let i = to_index(n[*idx as usize]);
+                    let v = n[*src as usize];
+                    match frame.lists[*list as usize].get_mut(i) {
+                        Some(slot) => *slot = v,
+                        None => fail!(type_err("ingiza: index nje ya mipaka")),
+                    }
+                }
+                Opcode::ListPush { list, src } => {
+                    let v = n[*src as usize];
+                    frame.lists[*list as usize].push(v);
+                }
+                Opcode::ListRemove { list, idx } => {
+                    let i = to_index(n[*idx as usize]);
+                    let l = &mut frame.lists[*list as usize];
+                    if i < l.len() {
+                        l.remove(i);
+                    }
+                }
+                Opcode::ListRemoveVal { dst, list, idx } => {
+                    let i = to_index(n[*idx as usize]);
+                    let l = &mut frame.lists[*list as usize];
+                    frame.vals[*dst as usize] = if i < l.len() {
+                        Value::Chaguo(Some(Box::new(Value::Namba(l.remove(i)))))
+                    } else {
+                        Value::Chaguo(None)
+                    };
+                }
+                Opcode::ListLen { dst, list } => {
+                    n[*dst as usize] = frame.lists[*list as usize].len() as f64
+                }
+                Opcode::ListMov { dst, src } => {
+                    let copy = frame.lists[*src as usize].clone();
+                    frame.lists[*dst as usize] = copy;
+                }
+                Opcode::ListFromVal { dst, src } => {
+                    match list_from_value(&frame.vals[*src as usize]) {
+                        Ok(list) => frame.lists[*dst as usize] = list,
+                        Err(e) => fail!(e),
+                    }
+                }
+                Opcode::ListToVal { dst, src } => {
+                    let v = Value::Orodha(
+                        frame.lists[*src as usize]
+                            .iter()
+                            .map(|n| Value::Namba(*n))
+                            .collect(),
+                    );
+                    frame.vals[*dst as usize] = v;
+                }
+                Opcode::ConstVal { dst, k } => {
+                    frame.vals[*dst as usize] = program
+                        .constants
+                        .get(*k as usize)
+                        .map(StoredConstant::to_value)
+                        .unwrap_or(Value::Hamna)
+                }
+                Opcode::ValMov { dst, src } => {
+                    frame.vals[*dst as usize] = frame.vals[*src as usize].clone()
+                }
+                Opcode::BoxNum { dst, src } => {
+                    frame.vals[*dst as usize] = Value::Namba(n[*src as usize])
+                }
+                Opcode::BoxBool { dst, src } => {
+                    frame.vals[*dst as usize] = Value::Ukweli(n[*src as usize] != 0.0)
+                }
+                Opcode::UnboxNum { dst, src } => match &frame.vals[*src as usize] {
+                    Value::Namba(v) => frame.nums[*dst as usize] = *v,
+                    Value::Tokeo(Err(_)) => {
+                        let err = frame.vals[*src as usize].clone();
+                        finish!(Ret::Val(err));
+                    }
+                    other => fail!(EvalError::TypeErr(format!(
+                        "operesheni inahitaji Namba, ilipata {other:?}"
+                    ))),
+                },
+                Opcode::UnboxBool { dst, src } => {
+                    frame.nums[*dst as usize] =
+                        flag(matches!(frame.vals[*src as usize], Value::Ukweli(true)))
+                }
+                Opcode::ValBinary { op, dst, a, b } => {
+                    match value_binary(op, &frame.vals[*a as usize], &frame.vals[*b as usize]) {
+                        Ok(v) => frame.vals[*dst as usize] = v,
+                        Err(e) => fail!(e),
+                    }
+                }
+                Opcode::ValUnary { op, dst, src } => {
+                    let x = match value::as_f64(&frame.vals[*src as usize]) {
+                        Some(x) => x,
+                        None => fail!(type_err(match op {
+                            UnaryCode::Neg => "- inahitaji Namba",
+                            UnaryCode::BitNot => "siyo_biti inahitaji Namba",
+                        })),
+                    };
+                    frame.vals[*dst as usize] = Value::Namba(match op {
+                        UnaryCode::Neg => -x,
+                        UnaryCode::BitNot => !(x as i64) as f64,
+                    });
+                }
+                Opcode::ValIndex { dst, base, idx } => {
+                    match methods::index_value(
+                        &frame.vals[*base as usize],
+                        &frame.vals[*idx as usize],
+                    ) {
+                        Ok(v) => frame.vals[*dst as usize] = v,
+                        Err(e) => fail!(e),
+                    }
+                }
+                Opcode::ValLen { dst, src } => {
+                    let len = match &frame.vals[*src as usize] {
+                        Value::Orodha(items) => items.len(),
+                        Value::Neno(s) => {
+                            unicode_segmentation::UnicodeSegmentation::graphemes(s.as_str(), true)
+                                .count()
+                        }
+                        _ => fail!(type_err("urefu inahitaji Orodha au Neno")),
+                    };
+                    frame.nums[*dst as usize] = len as f64;
+                }
+                Opcode::Unwrap { dst, src } => {
+                    let out = match &frame.vals[*src as usize] {
+                        Value::Tokeo(Ok(inner)) | Value::Chaguo(Some(inner)) => {
+                            Ok((**inner).clone())
+                        }
+                        err @ Value::Tokeo(Err(_)) => Err(Ok(err.clone())),
+                        Value::Chaguo(None) => {
+                            Err(Err(EvalError::Unknown("? Chaguo Hamna".into())))
+                        }
+                        _ => Err(Err(type_err("? inahitaji Tokeo/Chaguo"))),
+                    };
+                    match out {
+                        Ok(v) => frame.vals[*dst as usize] = v,
+                        Err(Ok(err)) => finish!(Ret::Val(err)),
+                        Err(Err(e)) => fail!(e),
+                    }
+                }
+                Opcode::Jaribu { dst, src } => {
+                    let out = match &frame.vals[*src as usize] {
+                        Value::Tokeo(Ok(inner)) | Value::Chaguo(Some(inner)) => (**inner).clone(),
+                        Value::Tokeo(Err(e)) => {
+                            fail!(EvalError::Unknown(format!("KOSA: {e:?}")))
+                        }
+                        Value::Chaguo(None) => fail!(EvalError::Unknown("Chaguo: Hamna".into())),
+                        _ => fail!(type_err("jaribu inahitaji Tokeo/Chaguo")),
+                    };
+                    frame.vals[*dst as usize] = out;
+                }
+                Opcode::Cast { dst, src, ty } => {
+                    let v = frame.vals[*src as usize].clone();
+                    match methods::cast_value(v, ty) {
+                        Ok(v) => frame.vals[*dst as usize] = v,
+                        Err(e) => fail!(e),
+                    }
+                }
+                Opcode::MakeList { dst, items } => {
+                    let list = items
+                        .iter()
+                        .map(|r| frame.vals[*r as usize].clone())
+                        .collect();
+                    frame.vals[*dst as usize] = Value::Orodha(list);
+                }
+                Opcode::Call(call) => {
+                    let callee = &program.functions[call.function as usize];
+                    let mut callee_frame = self.frame_for(callee);
+                    for (arg, param) in call.args.iter().zip(&callee.params) {
+                        copy_operand(&frame, *arg, &mut callee_frame, *param);
+                    }
+                    let ret = match self.invoke(call.function as usize, callee_frame) {
+                        Ok(r) => r,
+                        Err(e) => fail!(e),
+                    };
+                    let dst = call.dst;
+                    match (ret, dst.ty) {
+                        (Ret::Num(v), Ty::Num | Ty::Bool) => frame.nums[dst.reg as usize] = v,
+                        (Ret::List(l), Ty::List) => frame.lists[dst.reg as usize] = l,
+                        (Ret::Val(v), Ty::Val) => frame.vals[dst.reg as usize] = v,
+                        // A typed callee that exited through `?` hands back its `Tokeo` error;
+                        // propagate it like the evaluator's early return.
+                        (Ret::Val(err @ Value::Tokeo(Err(_))), _) => finish!(Ret::Val(err)),
+                        (Ret::Val(v), ty) => {
+                            if let Err(e) = store_value(&mut frame, dst, v) {
+                                fail!(e);
+                            }
+                            let _ = ty;
+                        }
+                        (Ret::Num(v), Ty::Val) => {
+                            frame.vals[dst.reg as usize] = if callee.ret == Ty::Bool {
+                                Value::Ukweli(v != 0.0)
+                            } else {
+                                Value::Namba(v)
+                            }
+                        }
+                        (Ret::List(l), Ty::Val) => {
+                            frame.vals[dst.reg as usize] =
+                                Value::Orodha(l.into_iter().map(Value::Namba).collect())
+                        }
+                        _ => fail!(type_err("aina ya thamani ya kurudi si sahihi")),
+                    }
+                }
+                Opcode::CallBuiltin(call) => {
+                    let args: Vec<Value> = call
+                        .args
+                        .iter()
+                        .map(|r| frame.vals[*r as usize].clone())
+                        .collect();
+                    match (self.builtins[call.builtin as usize])(&args) {
+                        Ok(v) => frame.vals[call.dst as usize] = v,
+                        Err(e) => fail!(e),
+                    }
+                }
+                Opcode::CallMethod(call) => {
+                    let recv = frame.vals[call.recv as usize].clone();
+                    let args: Vec<Value> = call
+                        .args
+                        .iter()
+                        .map(|r| frame.vals[*r as usize].clone())
+                        .collect();
+                    match self.call_method(recv, &call.method, args) {
+                        Ok(v) => frame.vals[call.dst as usize] = v,
+                        Err(e) => fail!(e),
+                    }
+                }
+                Opcode::MutMethod(call) => {
+                    let args: Vec<Value> = call
+                        .args
+                        .iter()
+                        .map(|r| frame.vals[*r as usize].clone())
+                        .collect();
+                    match mut_method(&mut frame.vals[call.recv as usize], call.method, args) {
+                        Ok(v) => frame.vals[call.dst as usize] = v,
+                        Err(e) => fail!(e),
+                    }
+                }
+                Opcode::Return { src } => {
+                    let ret = match src.ty {
+                        Ty::Num | Ty::Bool => Ret::Num(frame.nums[src.reg as usize]),
+                        Ty::List => Ret::List(std::mem::take(&mut frame.lists[src.reg as usize])),
+                        Ty::Val => Ret::Val(std::mem::replace(
+                            &mut frame.vals[src.reg as usize],
+                            Value::Hamna,
+                        )),
+                    };
+                    finish!(ret);
+                }
+                Opcode::ReturnTupu => finish!(Ret::Val(Value::Tupu)),
+            }
+        }
+    }
+}
+
+fn copy_operand(from: &Frame, src: Operand, to: &mut Frame, dst: Operand) {
+    match dst.ty {
+        Ty::Num | Ty::Bool => to.nums[dst.reg as usize] = from.nums[src.reg as usize],
+        Ty::List => to.lists[dst.reg as usize] = from.lists[src.reg as usize].clone(),
+        Ty::Val => to.vals[dst.reg as usize] = from.vals[src.reg as usize].clone(),
+    }
+}
+
+fn list_from_value(v: &Value) -> Result<Vec<f64>, EvalError> {
+    match v {
+        Value::Orodha(items) => items
+            .iter()
+            .map(|item| match item {
+                Value::Namba(n) => Ok(*n),
+                _ => Err(type_err("Orodha<Namba> inahitaji Namba tu")),
+            })
+            .collect(),
+        _ => Err(type_err("thamani si Orodha<Namba>")),
+    }
+}
+
+/// Store a generic value into a typed register.
+fn store_value(frame: &mut Frame, dst: Operand, v: Value) -> Result<(), EvalError> {
+    match dst.ty {
+        Ty::Num => match v {
+            Value::Namba(n) => frame.nums[dst.reg as usize] = n,
+            other => {
+                return Err(EvalError::TypeErr(format!(
+                    "operesheni inahitaji Namba, ilipata {other:?}"
+                )))
+            }
+        },
+        Ty::Bool => frame.nums[dst.reg as usize] = flag(matches!(v, Value::Ukweli(true))),
+        Ty::List => frame.lists[dst.reg as usize] = list_from_value(&v)?,
+        Ty::Val => frame.vals[dst.reg as usize] = v,
+    }
+    Ok(())
+}
+
+fn mut_method(recv: &mut Value, method: MutMethod, args: Vec<Value>) -> Result<Value, EvalError> {
+    let mut args = args.into_iter();
+    match (recv, method) {
+        (Value::Orodha(items), MutMethod::Push) => {
+            items.push(args.next().unwrap_or(Value::Hamna));
+            Ok(Value::Tupu)
+        }
+        (Value::Orodha(items), MutMethod::Insert) => {
+            let idx = args
+                .next()
+                .as_ref()
+                .and_then(value::as_f64)
+                .map(|n| n as usize)
+                .ok_or_else(|| type_err("ingiza inahitaji index na thamani"))?;
+            let v = args.next().unwrap_or(Value::Hamna);
+            match items.get_mut(idx) {
+                Some(slot) => {
+                    *slot = v;
+                    Ok(Value::Tupu)
+                }
+                None => Err(type_err("ingiza: index nje ya mipaka")),
+            }
+        }
+        (Value::Orodha(items), MutMethod::Remove) => {
+            let idx = args
+                .next()
+                .as_ref()
+                .and_then(value::as_f64)
+                .map(|n| n as usize)
+                .unwrap_or(0);
+            Ok(if idx < items.len() {
+                Value::Chaguo(Some(Box::new(items.remove(idx))))
+            } else {
+                Value::Chaguo(None)
+            })
+        }
+        (Value::Kamusi(map), MutMethod::Insert | MutMethod::WekaKey) => {
+            let key = args
+                .next()
+                .ok_or_else(|| type_err("ingiza inahitaji ufunguo na thamani"))?;
+            let v = args.next().unwrap_or(Value::Hamna);
+            map.insert(MapKey::try_from_value(&key)?, v);
+            Ok(Value::Tupu)
+        }
+        _ => Err(type_err("njia ya kubadilisha haijaungwa mkono")),
+    }
+}
+
+fn value_binary(op: &BinaryCode, left: &Value, right: &Value) -> Result<Value, EvalError> {
     let numbers = || -> Result<(f64, f64), EvalError> {
         Ok((
-            value::as_f64(&left)
-                .ok_or_else(|| EvalError::TypeErr("operesheni inahitaji Namba".into()))?,
-            value::as_f64(&right)
-                .ok_or_else(|| EvalError::TypeErr("operesheni inahitaji Namba".into()))?,
+            value::as_f64(left).ok_or_else(|| type_err("operesheni inahitaji Namba"))?,
+            value::as_f64(right).ok_or_else(|| type_err("operesheni inahitaji Namba"))?,
         ))
     };
     Ok(match op {
-        BinaryCode::Add => match (value::as_string(&left), value::as_string(&right)) {
+        BinaryCode::Add => match (value::as_string(left), value::as_string(right)) {
             (Some(a), Some(b)) => Value::Neno(format!("{a}{b}")),
             _ => {
                 let (a, b) = numbers()?;
@@ -1696,6 +2664,15 @@ fn binary(op: &BinaryCode, left: Value, right: Value) -> Result<Value, EvalError
         BinaryCode::Eq => Value::Ukweli(left == right),
         BinaryCode::Ne => Value::Ukweli(left != right),
         BinaryCode::Gt | BinaryCode::Lt | BinaryCode::Ge | BinaryCode::Le => {
+            if let (Some(a), Some(b)) = (value::as_string(left), value::as_string(right)) {
+                let ord = a.cmp(&b);
+                return Ok(Value::Ukweli(match op {
+                    BinaryCode::Gt => ord.is_gt(),
+                    BinaryCode::Lt => ord.is_lt(),
+                    BinaryCode::Ge => ord.is_ge(),
+                    _ => ord.is_le(),
+                }));
+            }
             let (a, b) = numbers()?;
             Value::Ukweli(match op {
                 BinaryCode::Gt => a > b,
@@ -1718,19 +2695,11 @@ fn binary(op: &BinaryCode, left: Value, right: Value) -> Result<Value, EvalError
         }
         BinaryCode::Shl => {
             let (a, b) = numbers()?;
-            Value::Namba(((a as i64) << (b as i64)) as f64)
+            Value::Namba((a as i64).wrapping_shl(shift_amount(b)) as f64)
         }
         BinaryCode::Shr => {
             let (a, b) = numbers()?;
-            Value::Namba(((a as i64) >> (b as i64)) as f64)
+            Value::Namba((a as i64).wrapping_shr(shift_amount(b)) as f64)
         }
-        BinaryCode::And => match (left, right) {
-            (Value::Ukweli(a), Value::Ukweli(b)) => Value::Ukweli(a && b),
-            _ => return Err(EvalError::TypeErr("na inahitaji Ukweli".into())),
-        },
-        BinaryCode::Or => match (left, right) {
-            (Value::Ukweli(a), Value::Ukweli(b)) => Value::Ukweli(a || b),
-            _ => return Err(EvalError::TypeErr("au inahitaji Ukweli".into())),
-        },
     })
 }
