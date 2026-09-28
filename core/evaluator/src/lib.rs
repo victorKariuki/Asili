@@ -1,5 +1,6 @@
 //! Asili interpreter and TIR/ASB emission.
 
+pub mod alloc;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod aot;
 mod asb;

@@ -1,0 +1,8 @@
+[package]
+name = "asili-mem"
+version = "0.1.0"
+edition = "2021"
+description = "Fast memcpy/memmove/memset/memcmp for the statically linked (musl) Asili runner"
+
+[lib]
+path = "src/lib.rs"

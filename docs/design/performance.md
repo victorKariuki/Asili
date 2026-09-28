@@ -69,7 +69,7 @@ Six small programs, each with a line-for-line C port (`gcc -O2`), whole-process 
 | Sieve to 5M | memory bandwidth | 17 ms | 102 ms | 23 ms | 252 ms | 1.4× |
 | 20M-step modular loop | integer division | 85 ms | 124 ms | 69 ms | 679 ms | 0.8× |
 | Bubble sort, 3,000 | branchy list code | 5 ms | 6 ms | 5 ms | 174 ms | 1.05× |
-| 200k string builds | generic values | 10 ms | 237 ms | 95 ms | 90 ms | 9.8× |
+| 200k string builds | generic values | 10 ms | 237 ms | 29 ms | 90 ms | 2.9× |
 
 What it found and what changed:
 
@@ -239,8 +239,10 @@ Next steps are the "Remaining gaps" below.
   against 17 ms). The rest of that gap is the VM call that builds the list
   (`orodha_rudia`) and the bounds checks the analysis cannot drop.
 - `Neno` values are owned `String`s: loading a string constant copies it, and every generic
-  value operation runs in the interpreter. Shared or small-string storage would remove most
-  of the remaining allocation in string-building loops (~10× C).
+  value operation runs in the interpreter. The static runner's own allocator and memory
+  primitives (musl's locked on every allocation and copied bytewise) brought string building
+  from 99 to 29 ms; shared or small-string storage would remove most of the remaining
+  allocation (~3× C).
 - The native image is mapped by `pata tenda` or the standalone runner, not a standalone
   executable. `pata tenda` itself (the full toolchain binary) starts ~3 ms slower than the
   runner; ship programs with the `dist`-profile static runner.

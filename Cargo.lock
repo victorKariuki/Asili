@@ -132,6 +132,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "asili-mem"
+version = "0.1.0"
+
+[[package]]
 name = "asili-parser"
 version = "0.4.0"
 dependencies = [
@@ -146,6 +150,7 @@ name = "asili-runner"
 version = "0.2.1"
 dependencies = [
  "asili-evaluator",
+ "asili-mem",
 ]
 
 [[package]]

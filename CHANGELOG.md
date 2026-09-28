@@ -123,6 +123,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of a hardware divide on x86-64, and for unsigned operands on AArch64: `(s + i * 7 +
   i // 3) % 1000003` over 20 million `i` runs in 70 ms (was 124 ms; gcc `-O2` C: 84 ms). Images
   are rebuilt (`IMAGE_VERSION` 6).
+- **A leaner standalone runner**: the static (musl) `tenda` now carries its own memory
+  allocator (`asili_evaluator::alloc`: per-thread size-class free lists, no locks or atomics on
+  the fast path, 64 KiB chunks from the system allocator) and its own `memcpy`/`memmove`/
+  `memset`/`memcmp` (`pata/runner/mem`: overlapping unaligned loads for up to 64 bytes,
+  `rep movsb` beyond), replacing musl's, which locked on every allocation and copied short
+  strings a byte at a time. String building (200,000 × `"kipengele " + (i kama Neno)`):
+  99 → 29 ms, now faster than the glibc build (35 ms); Sudoku 3.8 → 3.6 ms.
 - **Lists as narrow as their numbers**: `Orodha<Namba>` storage keeps integers in 1, 2, 4 or
   8 bytes — unsigned when no element is negative — and widens the whole list the first time a
   value does not fit (a fraction, `-0.0`, NaN or ±∞ switches it to `f64`), so a list of flags

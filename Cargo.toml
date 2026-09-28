@@ -10,6 +10,7 @@ members = [
   "pata/fmt",
   "pata/package",
   "pata/runner",
+  "pata/runner/mem",
   "pata/lsp",
   "pata/lint",
   "pata/dap",

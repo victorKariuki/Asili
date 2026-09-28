@@ -6,7 +6,13 @@ use std::env;
 use std::path::Path;
 use std::process;
 
+// Small blocks from per-thread free lists: musl's allocator locks on every call.
+#[global_allocator]
+static ALLOC: asili_evaluator::alloc::AsiliAlloc = asili_evaluator::alloc::AsiliAlloc;
+
 fn main() {
+    // Our memcpy/memmove/memset/memcmp replace musl's in the static build.
+    asili_mem::linked();
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("matumizi: tenda <path.asb | path.build.manifest> [hoja za kuu...]");
