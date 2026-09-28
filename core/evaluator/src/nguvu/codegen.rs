@@ -1,7 +1,9 @@
-//! IR → x86-64 (System V calling convention).
+//! IR → x86-64, for the System V (Linux, macOS, BSD) and Microsoft x64 (Windows) calling
+//! conventions ([`Abi`]).
 //!
-//! Frame layout: `rbp` frame pointer, callee-saved `rbx`, `r12`–`r15` pushed, then one 8-byte
-//! home slot per virtual register. Virtual registers live where [`regalloc`] put them; operands
+//! Frame layout: `rbp` frame pointer, the ABI's callee-saved general registers pushed, the
+//! callee-saved xmm registers this function uses (Win64 only, all 128 bits), then one 8-byte
+//! home slot per virtual register, then the callee's shadow space (Win64). Virtual registers live where [`regalloc`] put them; operands
 //! are used in place when they sit in a register, and `rax`/`rcx`/`rdx`, `xmm0`/`xmm1` are
 //! scratch. A comparison feeding the block's branch is fused into `cmp` + `jcc`.
 
@@ -17,14 +19,64 @@ enum Loc {
     Slot,
 }
 
-/// System V x86-64: `rax`, `rcx`, `rdx`, `xmm0`, `xmm1` are scratch; `rsp`/`rbp` frame the
-/// stack; every xmm register is caller-saved.
-pub const TARGET: Target = Target {
-    int_callee_saved: &[3, 12, 13, 14, 15],  // rbx, r12–r15
-    int_caller_saved: &[6, 7, 8, 9, 10, 11], // rsi, rdi, r8–r11
-    float_callee_saved: &[],
-    float_caller_saved: &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+/// A calling convention: which registers carry arguments and survive calls, and what the
+/// caller owes the callee on the stack. `rax`, `rcx`, `rdx`, `xmm0`, `xmm1` are always scratch
+/// and `rsp`/`rbp` frame the stack.
+pub struct Abi {
+    pub target: Target,
+    /// Callee-saved general registers, pushed after `rbp` in the prologue.
+    pushed: &'static [Gpr],
+    /// Integer argument registers.
+    args: &'static [Gpr],
+    /// Arguments take the register of their position whatever their class (Win64), rather than
+    /// the next free register of their class (System V).
+    positional: bool,
+    /// Bytes the caller reserves above the return address for the callee (Win64: 32).
+    shadow: i32,
+    /// Frames larger than a page must touch each page in order (Windows' guard pages).
+    probe: bool,
+}
+
+/// System V AMD64 (Linux, macOS, BSD): every xmm register is caller-saved.
+pub const SYSV: Abi = Abi {
+    target: Target {
+        int_callee_saved: &[3, 12, 13, 14, 15],  // rbx, r12–r15
+        int_caller_saved: &[6, 7, 8, 9, 10, 11], // rsi, rdi, r8–r11
+        float_callee_saved: &[],
+        float_caller_saved: &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    },
+    pushed: &[Gpr::Rbx, Gpr::R12, Gpr::R13, Gpr::R14, Gpr::R15],
+    args: &[Gpr::Rdi, Gpr::Rsi, Gpr::Rdx, Gpr::Rcx, Gpr::R8, Gpr::R9],
+    positional: false,
+    shadow: 0,
+    probe: false,
 };
+
+/// Microsoft x64 (Windows): `rsi`, `rdi` and `xmm6`–`xmm15` are callee-saved too.
+pub const WIN64: Abi = Abi {
+    target: Target {
+        int_callee_saved: &[3, 6, 7, 12, 13, 14, 15], // rbx, rsi, rdi, r12–r15
+        int_caller_saved: &[8, 9, 10, 11],            // r8–r11
+        float_callee_saved: &[6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        float_caller_saved: &[2, 3, 4, 5],
+    },
+    pushed: &[
+        Gpr::Rbx,
+        Gpr::Rsi,
+        Gpr::Rdi,
+        Gpr::R12,
+        Gpr::R13,
+        Gpr::R14,
+        Gpr::R15,
+    ],
+    args: &[Gpr::Rcx, Gpr::Rdx, Gpr::R8, Gpr::R9],
+    positional: true,
+    shadow: 32,
+    probe: true,
+};
+
+/// The convention of the platform this build runs on.
+pub const HOST: &Abi = if cfg!(windows) { &WIN64 } else { &SYSV };
 
 const GPRS: [Gpr; 16] = [
     Gpr::Rax,
@@ -46,9 +98,6 @@ const GPRS: [Gpr; 16] = [
 ];
 use super::x64::{Alu, Asm, Cond, Gpr, Label, Mem, MemIdx, Sse, Xmm};
 
-const INT_ARGS: [Gpr; 6] = [Gpr::Rdi, Gpr::Rsi, Gpr::Rdx, Gpr::Rcx, Gpr::R8, Gpr::R9];
-/// Bytes pushed below `rbp`: rbx, r12, r13, r14, r15.
-const SAVED: i32 = 40;
 const X0: Xmm = Xmm(0);
 const X1: Xmm = Xmm(1);
 
@@ -56,13 +105,9 @@ struct Gen<'f> {
     asm: Asm,
     func: &'f Func,
     alloc: Allocation,
-}
-
-fn slot(v: VReg) -> Mem {
-    Mem {
-        base: Gpr::Rbp,
-        disp: -SAVED - 8 * (v.0 as i32 + 1),
-    }
+    abi: &'static Abi,
+    /// Callee-saved xmm registers this function uses (Win64), saved below the pushes.
+    xmm_saved: Vec<u8>,
 }
 
 fn icond(c: ICond) -> Cond {
@@ -97,8 +142,8 @@ fn negate(c: Cond) -> Cond {
 }
 
 /// Machine code for `func`, position independent (runtime calls go through the `rt` table).
-pub fn generate(func: &Func) -> Vec<u8> {
-    let alloc = allocate(func, &TARGET);
+pub fn generate(func: &Func, abi: &'static Abi) -> Vec<u8> {
+    let alloc = allocate(func, &abi.target);
     if let Ok(path) = std::env::var("ASILI_NGUVU_IR") {
         use std::io::Write as _;
         if let Ok(mut f) = std::fs::OpenOptions::new()
@@ -109,35 +154,24 @@ pub fn generate(func: &Func) -> Vec<u8> {
             let _ = f.write_all(super::regalloc::dump(func, &alloc).as_bytes());
         }
     }
+    let mut xmm_saved: Vec<u8> = alloc
+        .loc
+        .iter()
+        .filter_map(|l| match l {
+            super::regalloc::Loc::Float(x) if abi.target.float_callee_saved.contains(x) => Some(*x),
+            _ => None,
+        })
+        .collect();
+    xmm_saved.sort_unstable();
+    xmm_saved.dedup();
     let mut g = Gen {
         asm: Asm::new(),
         func,
         alloc,
+        abi,
+        xmm_saved,
     };
-    let slots = func.classes.len() as i32;
-    // After `push rbp` the stack is 16-aligned; five more pushes leave it at 8 mod 16, so the
-    // slot area must be 8 mod 16 for calls to see an aligned stack.
-    let mut frame = 8 * slots;
-    if frame % 16 != 8 {
-        frame += 8;
-    }
-    g.asm.push(Gpr::Rbp);
-    g.asm.mov_rr(Gpr::Rbp, Gpr::Rsp);
-    for r in [Gpr::Rbx, Gpr::R12, Gpr::R13, Gpr::R14, Gpr::R15] {
-        g.asm.push(r);
-    }
-    g.asm.alu_ri(Alu::Sub, Gpr::Rsp, frame);
-    // Incoming arguments: park them in their home slots first (their allocated registers may be
-    // other argument registers), then load each where it lives.
-    for (i, r) in INT_ARGS.iter().take(4).enumerate() {
-        g.asm.store(slot(VReg(i as u32)), *r);
-    }
-    for i in 0..4 {
-        let v = VReg(i);
-        if let Loc::Gpr(r) = g.loc(v) {
-            g.asm.load(r, slot(v));
-        }
-    }
+    g.prologue();
     let labels: Vec<_> = (0..func.blocks.len()).map(|_| g.asm.new_label()).collect();
     let order = g.alloc.order.clone();
     for (k, &bi) in order.iter().enumerate() {
@@ -188,6 +222,71 @@ pub fn generate(func: &Func) -> Vec<u8> {
 }
 
 impl<'f> Gen<'f> {
+    /// Bytes between `rbp` and the first home slot: pushed registers and saved xmm registers.
+    fn saved_bytes(&self) -> i32 {
+        8 * self.abi.pushed.len() as i32 + 16 * self.xmm_saved.len() as i32
+    }
+
+    fn slot(&self, v: VReg) -> Mem {
+        Mem {
+            base: Gpr::Rbp,
+            disp: -self.saved_bytes() - 8 * (v.0 as i32 + 1),
+        }
+    }
+
+    fn prologue(&mut self) {
+        let slots = self.func.classes.len() as i32;
+        let pushed = self.abi.pushed.len() as i32;
+        // At entry `rsp` is 8 mod 16 (the return address); `push rbp` realigns it, so after the
+        // pushes it is `8 * pushed` mod 16 and the rest of the frame must restore alignment for
+        // calls.
+        let mut frame = 16 * self.xmm_saved.len() as i32 + 8 * slots + self.abi.shadow;
+        if (8 * pushed + frame) % 16 != 0 {
+            frame += 8;
+        }
+        self.asm.push(Gpr::Rbp);
+        self.asm.mov_rr(Gpr::Rbp, Gpr::Rsp);
+        for r in self.abi.pushed {
+            self.asm.push(*r);
+        }
+        if self.abi.probe && frame > 4096 {
+            // Windows commits the stack one guard page at a time: touch each page in order.
+            let mut left = frame;
+            while left > 4096 {
+                self.asm.alu_ri(Alu::Sub, Gpr::Rsp, 4096);
+                self.asm.test_mem(
+                    Mem {
+                        base: Gpr::Rsp,
+                        disp: 0,
+                    },
+                    Gpr::Rsp,
+                );
+                left -= 4096;
+            }
+            self.asm.alu_ri(Alu::Sub, Gpr::Rsp, left);
+        } else {
+            self.asm.alu_ri(Alu::Sub, Gpr::Rsp, frame);
+        }
+        for (i, x) in self.xmm_saved.clone().into_iter().enumerate() {
+            let m = Mem {
+                base: Gpr::Rbp,
+                disp: -8 * pushed - 16 * (i as i32 + 1),
+            };
+            self.asm.movups_store(m, Xmm(x));
+        }
+        // Incoming arguments: park them in their home slots first (their allocated registers
+        // may be other argument registers), then load each where it lives.
+        for (i, r) in self.abi.args.iter().take(4).enumerate() {
+            self.asm.store(self.slot(VReg(i as u32)), *r);
+        }
+        for i in 0..4 {
+            let v = VReg(i);
+            if let Loc::Gpr(r) = self.loc(v) {
+                self.asm.load(r, self.slot(v));
+            }
+        }
+    }
+
     fn loc(&self, v: VReg) -> Loc {
         match self.alloc.loc[v.0 as usize] {
             super::regalloc::Loc::Int(r) => Loc::Gpr(GPRS[r as usize]),
@@ -197,16 +296,24 @@ impl<'f> Gen<'f> {
     }
 
     fn epilogue(&mut self) {
+        let pushed = self.abi.pushed.len() as i32;
+        for (i, x) in self.xmm_saved.clone().into_iter().enumerate() {
+            let m = Mem {
+                base: Gpr::Rbp,
+                disp: -8 * pushed - 16 * (i as i32 + 1),
+            };
+            self.asm.movups_load(Xmm(x), m);
+        }
         let a = &mut self.asm;
         a.lea(
             Gpr::Rsp,
             Mem {
                 base: Gpr::Rbp,
-                disp: -SAVED,
+                disp: -8 * pushed,
             },
         );
-        for r in [Gpr::R15, Gpr::R14, Gpr::R13, Gpr::R12, Gpr::Rbx] {
-            a.pop(r);
+        for r in self.abi.pushed.iter().rev() {
+            a.pop(*r);
         }
         a.pop(Gpr::Rbp);
         a.ret();
@@ -323,7 +430,7 @@ impl<'f> Gen<'f> {
     /// `dst op= v`, reading `v` straight from its slot when spilled.
     fn alu_with(&mut self, op: Alu, dst: Gpr, v: VReg) {
         match self.loc(v) {
-            Loc::Slot => self.asm.alu_rm(op, dst, slot(v)),
+            Loc::Slot => self.asm.alu_rm(op, dst, self.slot(v)),
             _ => {
                 let r = self.int_in(v, Gpr::Rcx);
                 self.asm.alu_rr(op, dst, r);
@@ -335,7 +442,7 @@ impl<'f> Gen<'f> {
         match self.loc(v) {
             Loc::Gpr(r) => r,
             Loc::Slot => {
-                self.asm.load(scratch, slot(v));
+                self.asm.load(scratch, self.slot(v));
                 scratch
             }
             Loc::Xmm(_) => unreachable!("integer value in an xmm register"),
@@ -346,7 +453,7 @@ impl<'f> Gen<'f> {
         match self.loc(v) {
             Loc::Xmm(x) => x,
             Loc::Slot => {
-                self.asm.movsd_load(scratch, slot(v));
+                self.asm.movsd_load(scratch, self.slot(v));
                 scratch
             }
             Loc::Gpr(_) => unreachable!("float value in a general register"),
@@ -359,7 +466,7 @@ impl<'f> Gen<'f> {
             Loc::Gpr(r) if r == src => {}
             Loc::Gpr(r) => self.asm.mov_rr(r, src),
             Loc::Xmm(x) => self.asm.movq_xr(x, src),
-            Loc::Slot => self.asm.store(slot(v), src),
+            Loc::Slot => self.asm.store(self.slot(v), src),
         }
     }
 
@@ -368,7 +475,7 @@ impl<'f> Gen<'f> {
             Loc::Xmm(x) if x == src => {}
             Loc::Xmm(x) => self.asm.movapd(x, src),
             Loc::Gpr(r) => self.asm.movq_rx(r, src),
-            Loc::Slot => self.asm.movsd_store(slot(v), src),
+            Loc::Slot => self.asm.movsd_store(self.slot(v), src),
         }
     }
 
@@ -381,7 +488,7 @@ impl<'f> Gen<'f> {
                 scratch
             }
             Loc::Slot => {
-                self.asm.load(scratch, slot(v));
+                self.asm.load(scratch, self.slot(v));
                 scratch
             }
         }
@@ -405,16 +512,16 @@ impl<'f> Gen<'f> {
     /// Store `v` to its home slot if it lives in a register.
     fn save(&mut self, v: VReg) {
         match self.loc(v) {
-            Loc::Gpr(r) => self.asm.store(slot(v), r),
-            Loc::Xmm(x) => self.asm.movsd_store(slot(v), x),
+            Loc::Gpr(r) => self.asm.store(self.slot(v), r),
+            Loc::Xmm(x) => self.asm.movsd_store(self.slot(v), x),
             Loc::Slot => {}
         }
     }
 
     fn restore(&mut self, v: VReg) {
         match self.loc(v) {
-            Loc::Gpr(r) => self.asm.load(r, slot(v)),
-            Loc::Xmm(x) => self.asm.movsd_load(x, slot(v)),
+            Loc::Gpr(r) => self.asm.load(r, self.slot(v)),
+            Loc::Xmm(x) => self.asm.movsd_load(x, self.slot(v)),
             Loc::Slot => {}
         }
     }
@@ -832,7 +939,11 @@ impl<'f> Gen<'f> {
                     .cloned()
                     .unwrap_or_default()
                     .into_iter()
-                    .filter(|v| TARGET.is_caller_saved(self.alloc.loc[v.0 as usize]))
+                    .filter(|v| {
+                        self.abi
+                            .target
+                            .is_caller_saved(self.alloc.loc[v.0 as usize])
+                    })
                     .collect();
                 for v in &across {
                     self.save(*v);
@@ -846,14 +957,21 @@ impl<'f> Gen<'f> {
                 let rt = self.int_in(super::ir::RT, Rax);
                 self.asm.mov_rr(Rax, rt);
                 let (mut ni, mut nf) = (0usize, 0u8);
-                for a in args {
+                for (pos, a) in args.iter().enumerate() {
+                    // Win64 gives argument `pos` the pos-th register of its class; System V the
+                    // next free one.
+                    let (i, f) = if self.abi.positional {
+                        (pos, pos as u8)
+                    } else {
+                        (ni, nf)
+                    };
                     match self.func.class(*a) {
                         Class::Int => {
-                            self.asm.load(INT_ARGS[ni], slot(*a));
+                            self.asm.load(self.abi.args[i], self.slot(*a));
                             ni += 1;
                         }
                         Class::Float => {
-                            self.asm.movsd_load(Xmm(nf), slot(*a));
+                            self.asm.movsd_load(Xmm(f), self.slot(*a));
                             nf += 1;
                         }
                     }

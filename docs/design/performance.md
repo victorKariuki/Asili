@@ -94,7 +94,8 @@ Pipeline (`core/evaluator/src/nguvu/`):
 - `regalloc.rs` + `schedule.rs` (shared by targets): priority allocation over precise live
   ranges with copy coalescing and callee-saved preference across calls; compares fused into
   branches and conditional selects.
-- `codegen.rs`/`x64.rs` (x86-64 System V) and `codegen_a64.rs`/`a64.rs` (AArch64 AAPCS64):
+- `codegen.rs`/`x64.rs` (x86-64, System V or Windows x64) and `codegen_a64.rs`/`a64.rs`
+  (AArch64 AAPCS64):
   instruction selection and encoding; `mem.rs` maps the code executable (never writable and
   executable at once).
 
@@ -191,5 +192,6 @@ Next steps are the "Remaining gaps" below.
   to clang C. A statically linked runner cut ~0.4 ms in a trial.
 - `list_push`/`list_remove` are runtime calls (~1M instructions on the benchmark); inlining the
   common case needs a list layout native code may write directly.
-- Windows is not supported by `nguvu` yet (the code generators are System V/AAPCS64 only), and
-  macOS arm64 may refuse to map the image under a hardened runtime (it then runs on the VM).
+- Platforms: x86-64 (System V and Windows x64) and AArch64 (Linux, macOS) are supported;
+  Windows on ARM64 and 32-bit targets run on the VM. A hardened-runtime macOS app needs the
+  `com.apple.security.cs.allow-jit` entitlement for native code (without it, the VM).

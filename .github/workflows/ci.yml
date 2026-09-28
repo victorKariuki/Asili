@@ -28,11 +28,16 @@ jobs:
       - name: cargo test --workspace
         run: cargo test --workspace
 
-  native-arm64:
-    # The AArch64 native backend (nguvu codegen_a64) on real hardware: the engine
-    # differential tests compare its code against the interpreter and the tree-walker.
-    name: Native code on arm64
-    runs-on: ubuntu-24.04-arm
+  native-platforms:
+    # nguvu on every platform it targets, on real hardware: AArch64 Linux, Apple silicon macOS
+    # (MAP_JIT mapping) and x86-64 Windows (Microsoft x64 calling convention). The engine
+    # differential tests compare native code against the interpreter and the tree-walker.
+    name: Native code on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
 

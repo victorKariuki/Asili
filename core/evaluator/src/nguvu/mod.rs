@@ -5,7 +5,7 @@
 //! Pipeline: [`lower`] (bytecode → [`ir`]) → [`opt`] (with [`range`]) → [`regalloc`] and
 //! [`schedule`] (shared by every target) → [`codegen`] (x86-64 via [`x64`]) or
 //! [`codegen_a64`] (AArch64 via [`a64`]) → [`mem`] (executable mapping). Supported on x86-64
-//! and AArch64 Unix.
+//! and AArch64 Unix (Linux, macOS, BSD) and x86-64 Windows.
 
 pub mod a64;
 pub mod codegen;
@@ -24,9 +24,9 @@ use crate::bytecode::BytecodeProgram;
 
 /// Whether this build can generate native code for the host.
 pub fn supported() -> bool {
-    cfg!(all(
-        any(target_arch = "x86_64", target_arch = "aarch64"),
-        unix
+    cfg!(any(
+        all(any(target_arch = "x86_64", target_arch = "aarch64"), unix),
+        all(target_arch = "x86_64", windows)
     ))
 }
 
@@ -63,7 +63,7 @@ pub fn generate(program: &BytecodeProgram) -> Result<Image, String> {
         #[cfg(target_arch = "aarch64")]
         code.extend(codegen_a64::generate(&func)?);
         #[cfg(not(target_arch = "aarch64"))]
-        code.extend(codegen::generate(&func));
+        code.extend(codegen::generate(&func, codegen::HOST));
     }
     if let Ok(path) = std::env::var("ASILI_NGUVU_DUMP") {
         // Debugging aid: raw machine code plus function offsets, for `objdump -b binary`.
@@ -158,8 +158,15 @@ const MAGIC: &[u8; 8] = b"NGUVU\0\0\0";
 /// Bumped whenever generated code changes, so images from an older toolchain are rebuilt
 /// rather than run.
 const IMAGE_VERSION: u32 = 3;
-/// Instruction set of the image (1 = x86-64 System V, 2 = AArch64 AAPCS64).
-const ARCH: u32 = if cfg!(target_arch = "aarch64") { 2 } else { 1 };
+/// Instruction set and calling convention of the image (1 = x86-64 System V, 2 = AArch64
+/// AAPCS64, 3 = x86-64 Microsoft x64).
+const ARCH: u32 = if cfg!(target_arch = "aarch64") {
+    2
+} else if cfg!(windows) {
+    3
+} else {
+    1
+};
 
 struct Reader<'a> {
     bytes: &'a [u8],

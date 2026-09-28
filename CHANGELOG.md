@@ -49,6 +49,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   register allocator and block scheduling are shared between targets; images record their
   architecture. The engine differential tests pass on arm64 (CI runs them on
   `ubuntu-24.04-arm`).
+- **Windows and macOS native code**: `nguvu` generates x86-64 code for the Microsoft x64
+  calling convention on Windows (positional argument registers, 32-byte shadow space,
+  `rsi`/`rdi`/`xmm6`–`xmm15` preserved in full, stack probes for frames over a page) and maps it
+  with `VirtualAlloc`/`VirtualProtect`; on macOS it maps code with `MAP_JIT` (toggling Apple
+  silicon's per-thread JIT write protection) and falls back to the plain mapping. Images record
+  the calling convention. Verified under wine for Windows; CI runs the evaluator tests on
+  Linux arm64, macOS 14 (Apple silicon) and Windows.
 - **Integer lists**: `Orodha<Namba>` storage (`numlist.rs`) keeps a list's elements as `i64`
   words while every element converts exactly (no `-0.0`, NaN, ±∞ or fraction) and as `f64`
   bits otherwise; reading is unchanged for programs. Native code keeps lists the analysis

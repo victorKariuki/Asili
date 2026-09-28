@@ -422,6 +422,26 @@ impl Asm {
         self.modrm_mem(dst.0, m);
     }
 
+    /// `movups xmm, [m]`: all 128 bits (callee-saved xmm registers on Win64).
+    pub fn movups_load(&mut self, dst: Xmm, m: Mem) {
+        self.rex(false, dst.0, 0, m.base as u8, false);
+        self.bytes(&[0x0F, 0x10]);
+        self.modrm_mem(dst.0, m);
+    }
+
+    pub fn movups_store(&mut self, m: Mem, src: Xmm) {
+        self.rex(false, src.0, 0, m.base as u8, false);
+        self.bytes(&[0x0F, 0x11]);
+        self.modrm_mem(src.0, m);
+    }
+
+    /// `test [m], r` — touches memory without changing it (stack probes).
+    pub fn test_mem(&mut self, m: Mem, r: Gpr) {
+        self.rex(true, r as u8, 0, m.base as u8, false);
+        self.byte(0x85);
+        self.modrm_mem(r as u8, m);
+    }
+
     pub fn movsd_store(&mut self, m: Mem, src: Xmm) {
         self.byte(0xF2);
         self.rex(false, src.0, 0, m.base as u8, false);
