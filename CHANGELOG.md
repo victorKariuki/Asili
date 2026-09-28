@@ -159,6 +159,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`Kamusi` and `Seti` hash with `foldhash`** instead of std's SipHash: several times faster on
   short keys and, like SipHash, seeded per process, so maps of untrusted keys (HTTP headers)
   stay resistant to collision flooding. Counting words in a `Kamusi`: 64 → 56 ms.
+- **More receivers typed where they are compiled**: a list literal whose items share a type is an
+  `Orodha<T>` (`["a", "b"]` is `Orodha<Neno>`), indexing an `Orodha<T>` gives a `T`, and a call
+  of the program's own `kazi` has its declared return type even when a builtin shares its name;
+  `clona()` of a `Neno` or `Orodha` is a register copy rather than a by-name method call.
 - **Cheaper string building, part two**: `+` on two `Neno` values borrows both and allocates
   the result once at its final size (operands are no longer copied first, and nothing
   reallocates); whole numbers are formatted by a direct digit writer; `urefu` of ASCII text

@@ -871,3 +871,33 @@ fn own_kazi_shadow_builtins() {
         canon(&Value::Namba(204.75))
     );
 }
+
+#[test]
+fn list_literal_element_types() {
+    agree(
+        "literal_types",
+        r#"
+        kazi t() -> Orodha<Namba> {
+            weka maneno = ["simba", "tembo", "chui"]
+            weka k: Kamusi<Neno, Namba> = { "simba": 0 }
+            weka r: Orodha<Namba> = []
+            kwa i kutoka 0 hadi 9 {
+                weka neno = maneno[i % 3]
+                weka nakala = neno.clona()
+                r.ongeza(nakala.urefu())
+                linganisha k.pata(neno.clona()) {
+                    Chaguo::Kuna(n) => { k.ingiza(neno.clona(), n + 1) }
+                    Chaguo::Hamna => { k.ingiza(neno.clona(), 1) }
+                }
+            }
+            weka m = maneno.clona()
+            m.ongeza("x")
+            r.ongeza(maneno.urefu())
+            r.ongeza(m.urefu())
+            r.ongeza(k.idadi())
+            rejesha r
+        }
+        "#,
+        &["t"],
+    );
+}

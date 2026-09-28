@@ -1095,7 +1095,28 @@ impl<'a> FunctionCompiler<'a> {
     fn type_name(&self, expr: &Expr) -> Option<String> {
         match expr {
             Expr::String(_) => Some("Neno".into()),
-            Expr::List { .. } => Some("Orodha".into()),
+            // Items of one known type: `["a", "b"]` is an `Orodha<Neno>`.
+            Expr::List {
+                elements: items, ..
+            } => {
+                let first = items.first().and_then(|e| self.type_name(e));
+                Some(match first {
+                    Some(t)
+                        if items[1..]
+                            .iter()
+                            .all(|e| self.type_name(e).as_ref() == Some(&t)) =>
+                    {
+                        format!("Orodha<{t}>")
+                    }
+                    _ => "Orodha".into(),
+                })
+            }
+            // An element of an `Orodha<T>` (not `?`, which keeps the `Tokeo`).
+            Expr::Index { base, .. } => self
+                .type_name(base)?
+                .strip_prefix("Orodha<")?
+                .strip_suffix('>')
+                .map(str::to_string),
             Expr::StructLiteral { struct_name, .. } => Some(struct_name.clone()),
             Expr::Group(e) => self.type_name(e),
             Expr::Ident { name, .. } => match self.lookup(name) {
@@ -1129,8 +1150,9 @@ impl<'a> FunctionCompiler<'a> {
                 let recv = self.type_name(receiver)?;
                 method_result_type(&recv, method_name).map(str::to_string)
             }
+            // The program's own `kazi` (which shadows a builtin of the same name).
             Expr::Call { callee, .. } => match &**callee {
-                Expr::Ident { name, .. } if !self.program.builtins.contains_key(name) => {
+                Expr::Ident { name, .. } => {
                     self.program.functions.get(name).map(|f| f.ret_name.clone())
                 }
                 _ => None,
@@ -2373,6 +2395,16 @@ impl<'a> FunctionCompiler<'a> {
                 }
                 return self.emit_mut_method(method, local.reg, args, dst);
             }
+        }
+        // `clona` of text or a list is a copy of the value (shared until written).
+        if method == "clona"
+            && args.is_empty()
+            && matches!(probe, Value::Neno(_) | Value::Orodha(_))
+        {
+            let src = self.expr_as(receiver, Ty::Val)?;
+            let out = self.dst_or_temp(dst, Ty::Val);
+            self.convert(src, out)?;
+            return Some(out);
         }
         if method == "urefu"
             && args.is_empty()
