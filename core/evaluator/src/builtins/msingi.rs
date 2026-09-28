@@ -8,7 +8,7 @@ use crate::value::Value;
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     m.insert(
         "orodha".to_string(),
-        Box::new(|args: &[Value]| Ok(Value::Orodha(args.to_vec()))),
+        Box::new(|args: &[Value]| Ok(Value::list(args.to_vec()))),
     );
     m.insert(
         "orodha_rudia".to_string(),
@@ -24,7 +24,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
                     ));
                 }
             };
-            Ok(Value::Orodha(std::iter::repeat_n(value, count).collect()))
+            Ok(Value::list(std::iter::repeat_n(value, count).collect()))
         }),
     );
     m.insert(

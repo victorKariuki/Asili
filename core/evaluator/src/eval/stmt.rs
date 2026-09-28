@@ -161,7 +161,16 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                 }
                 ForMode::InExpr(expr) => {
                     let col = super::eval_expr_impl(expr, rt)?;
-                    for item in super::methods::iter_items(col)? {
+                    // Move the items out when nothing else shares them; copy one at a time
+                    // otherwise.
+                    let items: Box<dyn Iterator<Item = Value>> =
+                        match std::rc::Rc::try_unwrap(super::methods::iter_items(col)?) {
+                            Ok(items) => Box::new(items.into_iter()),
+                            Err(shared) => {
+                                Box::new((0..shared.len()).map(move |i| shared[i].clone()))
+                            }
+                        };
+                    for item in items {
                         rt.env.push_scope();
                         rt.env.define(var, item);
                         let out = super::eval_block_impl(body, rt)?;

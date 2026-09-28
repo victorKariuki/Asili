@@ -204,7 +204,7 @@ fn test_constant_is_usable_at_runtime() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let result = run_function(&module, "kuu", vec![Value::Orodha(vec![])])
+    let result = run_function(&module, "kuu", vec![Value::list(vec![])])
         .expect("kuu should run and return PI");
     match result {
         Value::Namba(n) => assert!((n - 3.14159).abs() < 1e-9, "expected PI, got {n}"),
@@ -224,7 +224,7 @@ fn test_constant_expression_is_evaluated_before_use() {
     "#;
     let toks = tokenize(src).expect("tokenize");
     let module = parse_tokens(&toks).expect("parse");
-    let result = run_function(&module, "kuu", vec![Value::Orodha(vec![])])
+    let result = run_function(&module, "kuu", vec![Value::list(vec![])])
         .expect("kuu should run and return DOUBLE_PI");
     match result {
         Value::Namba(n) => assert!((n - 6.28318).abs() < 1e-9, "expected 6.28318, got {n}"),

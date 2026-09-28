@@ -200,7 +200,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 .iter()
                 .map(|e| super::eval_expr_impl(e, rt))
                 .collect::<Result<_, _>>()?;
-            Ok(Value::Orodha(vals))
+            Ok(Value::list(vals))
         }
         Expr::Map { entries, .. } => {
             use std::collections::HashMap;

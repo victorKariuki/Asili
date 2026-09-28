@@ -14,7 +14,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             let args_vec: Vec<Value> = std::env::args().map(Value::Neno).collect();
             #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
             let args_vec: Vec<Value> = Vec::new();
-            Ok(Value::Orodha(args_vec))
+            Ok(Value::list(args_vec))
         }),
     );
     m.insert(

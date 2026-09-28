@@ -789,7 +789,7 @@ fn probe_value(type_name: &str) -> Option<Value> {
     let base = type_name.split('<').next().unwrap_or(type_name).trim();
     Some(match base {
         "Neno" => Value::Neno(String::new()),
-        "Orodha" => Value::Orodha(Vec::new()),
+        "Orodha" => Value::list(Vec::new()),
         "Kamusi" => Value::Kamusi(Default::default()),
         "Seti" => Value::Seti(Default::default()),
         "Chaguo" => Value::Chaguo(None),
@@ -2324,7 +2324,7 @@ impl<'a> FunctionCompiler<'a> {
                     });
                     return Some(out);
                 }
-                (_, _, Some(list)) if methods::is_mutating(&Value::Orodha(Vec::new()), method) => {
+                (_, _, Some(list)) if methods::is_mutating(&Value::list(Vec::new()), method) => {
                     let regs = self.val_args(args)?;
                     let out = self.dst_or_temp(dst, Ty::Val);
                     self.emit(Opcode::ListMutate(Box::new(MutMethodOp {
@@ -2462,7 +2462,7 @@ pub fn run_bytecode(program: &BytecodeProgram, args: Vec<String>) -> Result<(), 
         .iter()
         .position(|f| f.name == program.entry)
         .ok_or_else(|| EvalError::Unknown(format!("kazi '{}' haikupatikana", program.entry)))?;
-    let hoja = Value::Orodha(args.into_iter().map(Value::Neno).collect());
+    let hoja = Value::list(args.into_iter().map(Value::Neno).collect());
     let mut vm = Vm::new(program)?;
     vm.call_values(index, vec![hoja])?;
     Ok(())
@@ -2481,7 +2481,7 @@ pub fn run_bytecode_native(
         .iter()
         .position(|f| f.name == program.entry)
         .ok_or_else(|| EvalError::Unknown(format!("kazi '{}' haikupatikana", program.entry)))?;
-    let hoja = Value::Orodha(args.into_iter().map(Value::Neno).collect());
+    let hoja = Value::list(args.into_iter().map(Value::Neno).collect());
     let mut vm = match library {
         Some(lib) => Vm::with_aot(program, lib)?,
         None => Vm::new(program)?,
@@ -2794,7 +2794,7 @@ impl<'p> Vm<'p> {
         Ok(match self.invoke(index, frame)? {
             Ret::Num(n) if f.ret == Ty::Bool => Value::Ukweli(n != 0.0),
             Ret::Num(n) => Value::Namba(n),
-            Ret::List(l) => Value::Orodha(l.iter().map(Value::Namba).collect()),
+            Ret::List(l) => Value::list(l.iter().map(Value::Namba).collect()),
             Ret::Val(v) => v,
         })
     }
@@ -3191,7 +3191,7 @@ impl<'p> Vm<'p> {
                 Err(e) => fail!(e),
             },
             Opcode::ListToVal { dst, src } => {
-                let v = Value::Orodha(
+                let v = Value::list(
                     frame.lists[*src as usize]
                         .iter()
                         .map(Value::Namba)
@@ -3291,7 +3291,7 @@ impl<'p> Vm<'p> {
                     .map(|r| frame.vals[*r as usize].clone())
                     .collect();
                 let list = std::mem::take(&mut frame.lists[call.recv as usize]);
-                let mut value = Value::Orodha(list.iter().map(Value::Namba).collect());
+                let mut value = Value::list(list.iter().map(Value::Namba).collect());
                 let result = methods::mutate(&mut value, &call.method, &args);
                 match list_from_value(&value) {
                     Ok(list) => frame.lists[call.recv as usize] = list,
@@ -3324,7 +3324,7 @@ impl<'p> Vm<'p> {
                     .iter()
                     .map(|r| frame.vals[*r as usize].clone())
                     .collect();
-                frame.vals[*dst as usize] = Value::Orodha(list);
+                frame.vals[*dst as usize] = Value::list(list);
             }
             Opcode::Call(call) => {
                 let callee = &program.functions[call.function as usize];
@@ -3359,7 +3359,7 @@ impl<'p> Vm<'p> {
                     }
                     (Ret::List(l), Ty::Val) => {
                         frame.vals[dst.reg as usize] =
-                            Value::Orodha(l.iter().map(Value::Namba).collect())
+                            Value::list(l.iter().map(Value::Namba).collect())
                     }
                     _ => fail!(type_err("aina ya thamani ya kurudi si sahihi")),
                 }
@@ -3551,7 +3551,7 @@ fn operand_value(frame: &Frame, op: Operand) -> Value {
     match op.ty {
         Ty::Num => Value::Namba(frame.nums[op.reg as usize]),
         Ty::Bool => Value::Ukweli(frame.nums[op.reg as usize] != 0.0),
-        Ty::List => Value::Orodha(
+        Ty::List => Value::list(
             frame.lists[op.reg as usize]
                 .iter()
                 .map(Value::Namba)

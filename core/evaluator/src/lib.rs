@@ -238,7 +238,7 @@ pub fn run_function_with_metrics(
 
 /// Run `kuu` with CLI args as `hoja: Orodha<Neno>`.
 pub fn run_main(module: &Module, args: Vec<String>) -> Result<(), EvalError> {
-    let hoja = Value::Orodha(args.into_iter().map(Value::Neno).collect());
+    let hoja = Value::list(args.into_iter().map(Value::Neno).collect());
     run_function(module, "kuu", vec![hoja]).map(|_| ())
 }
 
@@ -251,7 +251,7 @@ pub fn run_main_with_debug_hook(
     args: Vec<String>,
     hook: std::sync::Arc<dyn debug_hook::DebugHook>,
 ) -> Result<(), EvalError> {
-    let hoja = Value::Orodha(args.into_iter().map(Value::Neno).collect());
+    let hoja = Value::list(args.into_iter().map(Value::Neno).collect());
     let f = module
         .functions
         .iter()

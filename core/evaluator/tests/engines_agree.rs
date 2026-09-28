@@ -769,3 +769,39 @@ fn typed_struct_fields() {
         &["hesabu"],
     );
 }
+
+#[test]
+fn shared_lists_keep_value_semantics() {
+    agree(
+        "cow",
+        r#"
+        kazi badili(m: Orodha<Neno>) -> Namba {
+            m.ongeza("ndani")
+            m.badilisha(0, "x")
+            rejesha m.urefu()
+        }
+        kazi nakala() -> Orodha<Neno> {
+            weka a: Orodha<Neno> = ["moja", "mbili"]
+            weka b = a.clona()
+            b.ongeza("tatu")
+            weka c = b.clona()
+            c.ondoa(0)
+            weka n = badili(a.clona())
+            kwa w katika a {
+                a.ongeza(w + "!")
+            }
+            weka r: Orodha<Neno> = []
+            r.ongeza(a.urefu() kama Neno)
+            r.ongeza(b.urefu() kama Neno)
+            r.ongeza(c.urefu() kama Neno)
+            r.ongeza(n kama Neno)
+            r.ongeza(a[0])
+            r.ongeza(b[0])
+            r.ongeza(c[0])
+            r.ongeza(a[3])
+            rejesha r
+        }
+        "#,
+        &["nakala"],
+    );
+}

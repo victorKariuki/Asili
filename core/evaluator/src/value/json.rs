@@ -191,7 +191,7 @@ fn from_json_depth(j: &serde_json::Value, depth: usize) -> Value {
         J::Bool(b) => Value::Ukweli(*b),
         J::Number(n) => Value::Namba(n.as_f64().unwrap_or(f64::NAN)),
         J::String(s) => Value::Neno(s.clone()),
-        J::Array(items) => Value::Orodha(
+        J::Array(items) => Value::list(
             items
                 .iter()
                 .map(|v| from_json_depth(v, depth + 1))
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn orodha_round_trips() {
-        let v = Value::Orodha(vec![
+        let v = Value::list(vec![
             Value::Namba(1.0),
             Value::Namba(2.0),
             Value::Neno("x".into()),
@@ -357,7 +357,7 @@ mod tests {
     fn depth_limit_fails_cleanly_instead_of_overflowing_stack() {
         let mut v = Value::Namba(0.0);
         for _ in 0..(MAX_DEPTH + 10) {
-            v = Value::Orodha(vec![v]);
+            v = Value::list(vec![v]);
         }
         assert!(
             v.to_json().is_err(),

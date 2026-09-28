@@ -275,7 +275,7 @@ pub(crate) fn pure_method(
             let sep = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
                 .ok_or_else(|| EvalError::TypeErr("gawanya inahitaji Neno".into()))?;
             let parts: Vec<Value> = s.split(&sep).map(|p| Value::Neno(p.to_string())).collect();
-            Ok(Value::Orodha(parts))
+            Ok(Value::list(parts))
         }
         (Value::Neno(s), "badilisha") => {
             let from = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
@@ -300,7 +300,7 @@ pub(crate) fn pure_method(
             let sep = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
                 .ok_or_else(|| EvalError::TypeErr("unganisha inahitaji Neno".into()))?;
             let mut parts = Vec::with_capacity(l.len());
-            for item in l {
+            for item in l.iter() {
                 parts.push(value::as_string(item).ok_or_else(|| {
                     EvalError::TypeErr("unganisha inahitaji Orodha ya Neno".into())
                 })?);
@@ -336,7 +336,7 @@ pub(crate) fn pure_method(
                         })
                 })
                 .collect::<Result<_, _>>()?;
-            Ok(Value::Orodha(strings))
+            Ok(Value::list(strings))
         }
         (Value::Orodha(l), "vipande") => {
             let size = args_val
@@ -347,9 +347,9 @@ pub(crate) fn pure_method(
                 .ok_or_else(|| {
                     EvalError::TypeErr("vipande inahitaji ukubwa chanya wa Namba kamili".into())
                 })?;
-            Ok(Value::Orodha(
+            Ok(Value::list(
                 l.chunks(size)
-                    .map(|chunk| Value::Orodha(chunk.to_vec()))
+                    .map(|chunk| Value::list(chunk.to_vec()))
                     .collect(),
             ))
         }
@@ -362,7 +362,7 @@ pub(crate) fn pure_method(
             let key = MapKey::try_from_value(key_val)?;
             Ok(Value::Chaguo(m.get(&key).cloned().map(Box::new)))
         }
-        (Value::Kamusi(m), "funguo") => Ok(Value::Orodha(m.keys().map(MapKey::to_value).collect())),
+        (Value::Kamusi(m), "funguo") => Ok(Value::list(m.keys().map(MapKey::to_value).collect())),
         (Value::Kamusi(m), "vipo") => {
             let key_val = args_val
                 .first()
@@ -379,7 +379,7 @@ pub(crate) fn pure_method(
         }
         (Value::Seti(s), "urefu") => Ok(Value::Namba(s.len() as f64)),
         (Value::Seti(s), "clona") => Ok(Value::Seti(s.clone())),
-        (Value::Seti(s), "orodha") => Ok(Value::Orodha(s.iter().map(MapKey::to_value).collect())),
+        (Value::Seti(s), "orodha") => Ok(Value::list(s.iter().map(MapKey::to_value).collect())),
         (Value::Chaguo(opt), "angu") => {
             let mbadala = args_val.first().cloned().unwrap_or(Value::Hamna);
             Ok(match opt {
@@ -699,13 +699,13 @@ pub(crate) fn mutate(
     let arg = |i: usize| args_val.get(i).cloned().unwrap_or(Value::Hamna);
     match (recv, method) {
         (Value::Orodha(values), "ongeza") => {
-            values.push(arg(0));
+            Rc::make_mut(values).push(arg(0));
             Ok(Value::Tupu)
         }
         (Value::Orodha(values), "ingiza") => {
             let idx = index_arg(args_val)
                 .ok_or_else(|| EvalError::TypeErr("ingiza inahitaji index na thamani".into()))?;
-            match values.get_mut(idx) {
+            match Rc::make_mut(values).get_mut(idx) {
                 Some(slot) => {
                     *slot = arg(1);
                     Ok(Value::Tupu)
@@ -716,7 +716,7 @@ pub(crate) fn mutate(
         (Value::Orodha(values), "ondoa") => {
             let idx = index_arg(args_val).unwrap_or(0);
             Ok(if idx < values.len() {
-                Value::Chaguo(Some(Box::new(values.remove(idx))))
+                Value::Chaguo(Some(Box::new(Rc::make_mut(values).remove(idx))))
             } else {
                 Value::Chaguo(None)
             })
@@ -728,7 +728,7 @@ pub(crate) fn mutate(
                 .filter(|n| n.is_finite() && *n >= 0.0 && n.fract() == 0.0)
                 .map(|n| n as usize)
                 .ok_or_else(|| EvalError::TypeErr("badilisha inahitaji fahirisi".into()))?;
-            match values.get_mut(idx) {
+            match Rc::make_mut(values).get_mut(idx) {
                 Some(slot) => {
                     *slot = arg(1);
                     Ok(Value::Tupu)
@@ -803,7 +803,7 @@ pub(crate) fn callback_method(
     if method == "kila_mmoja" {
         // No callback: a no-op.
         if let Some(name) = cb_name {
-            for item in items {
+            for item in items.iter() {
                 call(&name, std::slice::from_ref(item))?;
             }
         }
@@ -819,23 +819,23 @@ pub(crate) fn callback_method(
     match method {
         "ramani" => {
             let mut mapped = Vec::with_capacity(items.len());
-            for item in items {
+            for item in items.iter() {
                 mapped.push(call(&name, std::slice::from_ref(item))?);
             }
-            Ok(Value::Orodha(mapped))
+            Ok(Value::list(mapped))
         }
         "chuja" => {
             let mut kept = Vec::new();
-            for item in items {
+            for item in items.iter() {
                 if test(item)? {
                     kept.push(item.clone());
                 }
             }
-            Ok(Value::Orodha(kept))
+            Ok(Value::list(kept))
         }
         "hesabu" => {
             let mut count = 0.0;
-            for item in items {
+            for item in items.iter() {
                 if test(item)? {
                     count += 1.0;
                 }
@@ -843,7 +843,7 @@ pub(crate) fn callback_method(
             Ok(Value::Namba(count))
         }
         "chunguza" => {
-            for item in items {
+            for item in items.iter() {
                 if test(item)? {
                     return Ok(Value::Ukweli(true));
                 }
@@ -976,14 +976,16 @@ pub(crate) fn cast_value(v: Value, ty: &str) -> Result<Value, EvalError> {
 }
 
 /// The elements `kwa x katika v` visits: an `Orodha`'s items, or a `Kamusi`'s entries as
-/// `Jozi(ufunguo, thamani)`. The loop iterates this snapshot, so the body may mutate `v`.
-pub(crate) fn iter_items(v: Value) -> Result<Vec<Value>, EvalError> {
+/// `Jozi(ufunguo, thamani)`. The loop iterates this snapshot (shared, not copied), so the body
+/// may mutate `v`.
+pub(crate) fn iter_items(v: Value) -> Result<Rc<Vec<Value>>, EvalError> {
     match v {
         Value::Orodha(items) => Ok(items),
-        Value::Kamusi(map) => Ok(map
-            .into_iter()
-            .map(|(k, v)| Value::Jozi(Box::new(k.to_value()), Box::new(v)))
-            .collect()),
+        Value::Kamusi(map) => Ok(Rc::new(
+            map.into_iter()
+                .map(|(k, v)| Value::Jozi(Box::new(k.to_value()), Box::new(v)))
+                .collect(),
+        )),
         _ => Err(EvalError::TypeErr(
             "kwa...katika inashughulikia Orodha na Kamusi tu".to_string(),
         )),
@@ -996,7 +998,7 @@ pub(crate) fn is_shared_method_name(method: &str) -> bool {
     use std::collections::{HashMap, HashSet};
     let probes = [
         Value::Neno(String::new()),
-        Value::Orodha(Vec::new()),
+        Value::list(Vec::new()),
         Value::Kamusi(HashMap::new()),
         Value::Seti(HashSet::new()),
         Value::Chaguo(None),

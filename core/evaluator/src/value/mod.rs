@@ -73,7 +73,9 @@ pub enum Value {
     Hamna,
     Chaguo(Option<Box<Value>>),
     Tokeo(Result<Box<Value>, Box<Value>>),
-    Orodha(Vec<Value>),
+    /// Shared until written: copying a list is a reference-count bump, and a write copies the
+    /// items only while another copy still refers to them ([`Rc::make_mut`]).
+    Orodha(Rc<Vec<Value>>),
     /// A `umbo` value: its name and fields in declaration order. `umbo` fields are never
     /// assigned in place, so the fields are shared (`Rc`): copying a struct is a reference-count
     /// bump, not a copy of its fields.
@@ -269,6 +271,11 @@ impl Value {
         Value::Tokeo(Ok(Box::new(v)))
     }
 
+    /// An `Orodha` holding `items`.
+    pub fn list(items: Vec<Value>) -> Value {
+        Value::Orodha(Rc::new(items))
+    }
+
     /// `KOSA(ujumbe)` — a failed `Tokeo` carrying a `Neno` message, the error shape every
     /// builtin uses.
     pub fn kosa(ujumbe: impl Into<String>) -> Value {
@@ -370,7 +377,7 @@ impl SendValue {
                 Err(v) => Err(Box::new(v.into_value())),
             }),
             SendValue::Orodha(items) => {
-                Value::Orodha(items.into_iter().map(SendValue::into_value).collect())
+                Value::list(items.into_iter().map(SendValue::into_value).collect())
             }
             SendValue::Jozi(a, b) => {
                 Value::Jozi(Box::new(a.into_value()), Box::new(b.into_value()))

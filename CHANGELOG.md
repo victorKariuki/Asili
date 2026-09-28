@@ -141,6 +141,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   position before searching by name. `tupa` on a binding of the innermost scope compiles to
   bytecode (it releases the register's value). The particle simulation above: 275 → 106 ms.
   `.asb` bytecode version 8.
+- **`Orodha` values are shared until written**: a generic list is `Rc<Vec<Value>>`; copying one
+  (`clona`, passing it, `kwa … katika`'s snapshot, boxing a register) is a reference-count
+  bump, and `ongeza`/`badilisha`/`ingiza`/`ondoa` copy the items only while another copy still
+  refers to them. The tree-walker's `kwa … katika` moves items out of an unshared list instead
+  of copying them.
 - **Cheaper string building, part two**: `+` on two `Neno` values borrows both and allocates
   the result once at its final size (operands are no longer copied first, and nothing
   reallocates); whole numbers are formatted by a direct digit writer; `urefu` of ASCII text

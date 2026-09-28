@@ -77,7 +77,7 @@ fn kamusi_iteration() {
     let result = asili_evaluator::run_function_with_builtins(
         &module,
         "kuu",
-        vec![Value::Orodha(vec![])],
+        vec![Value::list(vec![])],
         builtins,
     )
     .expect("eval");
