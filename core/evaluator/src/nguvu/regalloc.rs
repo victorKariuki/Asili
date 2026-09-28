@@ -13,22 +13,34 @@
 //! register-resident ones are saved there around runtime calls when caller-saved.
 
 use super::ir::{Class, Func, Inst, VReg};
-use super::x64::{Gpr, Xmm};
 use std::collections::HashMap;
 
-/// Where a virtual register lives.
+/// Where a virtual register lives: a machine register by its target number, or its stack slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Loc {
-    Gpr(Gpr),
-    Xmm(Xmm),
+    Int(u8),
+    Float(u8),
     Slot,
 }
 
-/// Integer registers the allocator may hand out; `rax`, `rcx`, `rdx` are codegen scratch.
-pub const CALLEE_SAVED: [Gpr; 5] = [Gpr::Rbx, Gpr::R12, Gpr::R13, Gpr::R14, Gpr::R15];
-pub const CALLER_SAVED: [Gpr; 6] = [Gpr::Rsi, Gpr::Rdi, Gpr::R8, Gpr::R9, Gpr::R10, Gpr::R11];
-/// `xmm0`/`xmm1` are scratch; every xmm register is caller-saved in System V.
-pub const FLOATS: [u8; 14] = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+/// The registers a target lets the allocator hand out (its code generator keeps a few more as
+/// scratch), split by whether a runtime call preserves them.
+pub struct Target {
+    pub int_callee_saved: &'static [u8],
+    pub int_caller_saved: &'static [u8],
+    pub float_callee_saved: &'static [u8],
+    pub float_caller_saved: &'static [u8],
+}
+
+impl Target {
+    pub fn is_caller_saved(&self, loc: Loc) -> bool {
+        match loc {
+            Loc::Int(r) => !self.int_callee_saved.contains(&r),
+            Loc::Float(r) => !self.float_callee_saved.contains(&r),
+            Loc::Slot => false,
+        }
+    }
+}
 
 pub struct Allocation {
     pub loc: Vec<Loc>,
@@ -40,14 +52,6 @@ pub struct Allocation {
     pub uses: Vec<u32>,
     /// Estimated loop nesting depth of each block.
     pub depth: Vec<u32>,
-}
-
-pub fn is_caller_saved(loc: Loc) -> bool {
-    match loc {
-        Loc::Gpr(g) => !CALLEE_SAVED.contains(&g),
-        Loc::Xmm(_) => true,
-        Loc::Slot => false,
-    }
 }
 
 /// Reverse postorder from block 0, cold blocks (and anything only reachable through them)
@@ -78,7 +82,7 @@ fn layout(func: &Func) -> Vec<usize> {
     hot.into_iter().chain(cold).collect()
 }
 
-pub fn allocate(func: &Func) -> Allocation {
+pub fn allocate(func: &Func, target: &Target) -> Allocation {
     let n = func.classes.len();
     let nb = func.blocks.len();
     let order = layout(func);
@@ -254,25 +258,28 @@ pub fn allocate(func: &Func) -> Allocation {
     let mut loc = vec![Loc::Slot; n];
     for v in todo {
         let rs = &ranges[v];
-        let candidates: Vec<Loc> = match func.classes[v] {
-            Class::Int => {
-                let (first, second) = if spans_call(rs) {
-                    (&CALLEE_SAVED[..], &CALLER_SAVED[..])
-                } else {
-                    (&CALLER_SAVED[..], &CALLEE_SAVED[..])
-                };
-                first
-                    .iter()
-                    .chain(second.iter())
-                    .map(|g| Loc::Gpr(*g))
-                    .collect()
-            }
-            Class::Float => FLOATS.iter().map(|x| Loc::Xmm(Xmm(*x))).collect(),
+        // Values live across a runtime call prefer registers it preserves.
+        let (preserved, clobbered) = match func.classes[v] {
+            Class::Int => (target.int_callee_saved, target.int_caller_saved),
+            Class::Float => (target.float_callee_saved, target.float_caller_saved),
         };
+        let (first, second) = if spans_call(rs) {
+            (preserved, clobbered)
+        } else {
+            (clobbered, preserved)
+        };
+        let candidates: Vec<Loc> = first
+            .iter()
+            .chain(second)
+            .map(|&r| match func.classes[v] {
+                Class::Int => Loc::Int(r),
+                Class::Float => Loc::Float(r),
+            })
+            .collect();
         for c in candidates {
             let key = match c {
-                Loc::Gpr(g) => (false, g as u8),
-                Loc::Xmm(x) => (true, x.0),
+                Loc::Int(r) => (false, r),
+                Loc::Float(r) => (true, r),
                 Loc::Slot => unreachable!(),
             };
             let used = taken.entry(key).or_default();
@@ -302,8 +309,8 @@ pub fn dump(func: &Func, a: &Allocation) -> String {
     use std::fmt::Write as _;
     let mut out = String::new();
     let name = |v: VReg| match a.loc[v.0 as usize] {
-        Loc::Gpr(g) => format!("v{}:{:?}", v.0, g),
-        Loc::Xmm(x) => format!("v{}:xmm{}", v.0, x.0),
+        Loc::Int(r) => format!("v{}:r{r}", v.0),
+        Loc::Float(r) => format!("v{}:f{r}", v.0),
         Loc::Slot => format!("v{}:mem", v.0),
     };
     for &b in &a.order {

@@ -14,6 +14,7 @@ pub mod mem;
 pub mod opt;
 pub mod range;
 pub mod regalloc;
+pub mod schedule;
 pub mod x64;
 
 use crate::bytecode::BytecodeProgram;

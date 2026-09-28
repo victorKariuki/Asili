@@ -6,7 +6,44 @@
 //! scratch. A comparison feeding the block's branch is fused into `cmp` + `jcc`.
 
 use super::ir::{Class, FCond, FloatOp, Func, ICond, Inst, IntOp, Term, VReg};
-use super::regalloc::{allocate, is_caller_saved, Allocation, Loc};
+use super::regalloc::{allocate, Allocation, Target};
+use super::schedule::Step;
+
+/// Where a value lives, in x86-64 terms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Loc {
+    Gpr(Gpr),
+    Xmm(Xmm),
+    Slot,
+}
+
+/// System V x86-64: `rax`, `rcx`, `rdx`, `xmm0`, `xmm1` are scratch; `rsp`/`rbp` frame the
+/// stack; every xmm register is caller-saved.
+pub const TARGET: Target = Target {
+    int_callee_saved: &[3, 12, 13, 14, 15],  // rbx, r12–r15
+    int_caller_saved: &[6, 7, 8, 9, 10, 11], // rsi, rdi, r8–r11
+    float_callee_saved: &[],
+    float_caller_saved: &[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+};
+
+const GPRS: [Gpr; 16] = [
+    Gpr::Rax,
+    Gpr::Rcx,
+    Gpr::Rdx,
+    Gpr::Rbx,
+    Gpr::Rsp,
+    Gpr::Rbp,
+    Gpr::Rsi,
+    Gpr::Rdi,
+    Gpr::R8,
+    Gpr::R9,
+    Gpr::R10,
+    Gpr::R11,
+    Gpr::R12,
+    Gpr::R13,
+    Gpr::R14,
+    Gpr::R15,
+];
 use super::x64::{Alu, Asm, Cond, Gpr, Label, Mem, MemIdx, Sse, Xmm};
 
 const INT_ARGS: [Gpr; 6] = [Gpr::Rdi, Gpr::Rsi, Gpr::Rdx, Gpr::Rcx, Gpr::R8, Gpr::R9];
@@ -61,7 +98,7 @@ fn negate(c: Cond) -> Cond {
 
 /// Machine code for `func`, position independent (runtime calls go through the `rt` table).
 pub fn generate(func: &Func) -> Vec<u8> {
-    let alloc = allocate(func);
+    let alloc = allocate(func, &TARGET);
     if let Ok(path) = std::env::var("ASILI_NGUVU_IR") {
         use std::io::Write as _;
         if let Ok(mut f) = std::fs::OpenOptions::new()
@@ -107,61 +144,20 @@ pub fn generate(func: &Func) -> Vec<u8> {
         let block = &func.blocks[bi];
         g.asm.bind(labels[bi]);
         let next = order.get(k + 1).map(|&b| labels[b]);
-        // A comparison whose only reader is this block's branch compiles to cmp + jcc.
-        let fused = matches!(
-            (&block.term, block.insts.last()),
-            (
-                Term::Branch { cond, .. },
-                Some(
-                    Inst::ICmp { dst, .. }
-                    | Inst::ICmpImm { dst, .. }
-                    | Inst::TestImm { dst, .. }
-                    | Inst::FCmp { dst, .. },
-                ),
-            ) if dst == cond && g.alloc.uses[cond.0 as usize] == 1
-        );
-        let body = if fused {
-            &block.insts[..block.insts.len() - 1]
-        } else {
-            &block.insts[..]
-        };
-        let mut ii = 0;
-        while ii < body.len() {
-            // A comparison read only by the selects right after it: cmp once, then cmovcc.
-            // Conditional moves and plain copies (mov/movapd/loads/stores) leave the flags
-            // intact, so copies may sit in between.
-            let run = match body[ii] {
-                Inst::ICmp { dst, .. } | Inst::ICmpImm { dst, .. } | Inst::TestImm { dst, .. } => {
-                    let run = body[ii + 1..]
-                        .iter()
-                        .take_while(|i| match i {
-                            Inst::Select { cond, dst: d, .. } => *cond == dst && *d != dst,
-                            Inst::Mov { dst: d, src } => *d != dst && *src != dst,
-                            _ => false,
-                        })
-                        .count();
-                    let selects = body[ii + 1..ii + 1 + run]
-                        .iter()
-                        .filter(|i| matches!(i, Inst::Select { .. }))
-                        .count();
-                    (selects > 0 && g.alloc.uses[dst.0 as usize] as usize == selects).then_some(run)
-                }
-                _ => None,
-            };
-            match run {
-                Some(n) => {
-                    let cc = g.flags_for(&body[ii]);
-                    for (k, inst) in body[ii + 1..ii + 1 + n].iter().enumerate() {
-                        match inst {
+        let plan = super::schedule::plan(block, &g.alloc.uses);
+        let fused = plan.fused_branch;
+        for step in plan.steps {
+            match step {
+                Step::Inst(i) => g.inst(bi, i, &block.insts[i]),
+                // Conditional moves and plain copies leave the flags intact.
+                Step::FlagSelects { cmp, run } => {
+                    let cc = g.flags_for(&block.insts[cmp]);
+                    for i in run {
+                        match &block.insts[i] {
                             Inst::Select { dst, a, b, .. } => g.select_on(cc, *dst, *a, *b),
-                            other => g.inst(bi, ii + 1 + k, other),
+                            other => g.inst(bi, i, other),
                         }
                     }
-                    ii += 1 + n;
-                }
-                None => {
-                    g.inst(bi, ii, &body[ii]);
-                    ii += 1;
                 }
             }
         }
@@ -193,7 +189,11 @@ pub fn generate(func: &Func) -> Vec<u8> {
 
 impl<'f> Gen<'f> {
     fn loc(&self, v: VReg) -> Loc {
-        self.alloc.loc[v.0 as usize]
+        match self.alloc.loc[v.0 as usize] {
+            super::regalloc::Loc::Int(r) => Loc::Gpr(GPRS[r as usize]),
+            super::regalloc::Loc::Float(r) => Loc::Xmm(Xmm(r)),
+            super::regalloc::Loc::Slot => Loc::Slot,
+        }
     }
 
     fn epilogue(&mut self) {
@@ -832,7 +832,7 @@ impl<'f> Gen<'f> {
                     .cloned()
                     .unwrap_or_default()
                     .into_iter()
-                    .filter(|v| is_caller_saved(self.loc(*v)))
+                    .filter(|v| TARGET.is_caller_saved(self.alloc.loc[v.0 as usize]))
                     .collect();
                 for v in &across {
                     self.save(*v);
