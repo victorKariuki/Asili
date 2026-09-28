@@ -618,3 +618,86 @@ fn user_methods_named_like_builtins_stay_user_methods() {
         &["t"],
     );
 }
+
+const METHODS: &str = r#"
+    sifa Eneo {
+        kazi eneo(self: Self) -> Namba
+    }
+    umbo Mstatili {
+        upana: Namba,
+        urefu_wake: Namba,
+    }
+    shughuli ya Mstatili {
+        kazi mzunguko(self: Mstatili) -> Namba {
+            rejesha 2 * (self.upana + self.urefu_wake)
+        }
+        kazi jumla_ya_hatua(self: Mstatili, n: Namba) -> Namba {
+            weka s: Namba = 0
+            kwa i kutoka 0 hadi n {
+                s += self.mzunguko() + i
+            }
+            rejesha s
+        }
+        # inherent and trait methods of the same name: inherent wins
+        kazi eneo(self: Mstatili) -> Namba {
+            rejesha self.upana * self.urefu_wake
+        }
+    }
+    shughuli ya Mstatili: Eneo {
+        kazi eneo(self: Mstatili) -> Namba {
+            rejesha - 1
+        }
+    }
+    umbo Duara {
+        nusu: Namba,
+    }
+    shughuli ya Duara: Eneo {
+        kazi eneo(self: Duara) -> Namba {
+            rejesha self.nusu * self.nusu * 3
+        }
+    }
+"#;
+
+#[test]
+fn methods_dispatch_like_the_tree_walker() {
+    agree(
+        "methods",
+        &format!(
+            "{METHODS}{}",
+            r#"
+            kazi t() -> Orodha<Namba> {
+                weka m = Mstatili { upana: 3, urefu_wake: 4 }
+                weka d: Duara = Duara { nusu: 2 }
+                weka r: Orodha<Namba> = []
+                # a method call as a statement (result discarded)
+                m.mzunguko()
+                r.ongeza(m.eneo())
+                r.ongeza(m.mzunguko())
+                r.ongeza(m.jumla_ya_hatua(5))
+                r.ongeza(d.eneo())
+                rejesha r
+            }
+            "#
+        ),
+        &["t"],
+    );
+    agree_mixed(
+        "methods_mixed",
+        &format!(
+            "{METHODS}{}",
+            r#"
+            kazi t() -> Orodha<Namba> {
+                # `tupa` keeps this kazi on the tree-walker, which calls compiled methods
+                weka m = Mstatili { upana: 3, urefu_wake: 4 }
+                weka tupu = 0
+                tupa tupu
+                weka r: Orodha<Namba> = []
+                r.ongeza(m.eneo())
+                r.ongeza(m.jumla_ya_hatua(5))
+                rejesha r
+            }
+            "#
+        ),
+        &["t"],
+    );
+}

@@ -541,6 +541,7 @@ fn compile_module_inner(
             .iter()
             .flat_map(|i| i.body.iter().map(|f| f.name.clone()))
             .collect(),
+        impl_index: HashMap::new(),
     };
     for (i, function) in module.functions.iter().enumerate() {
         program.functions.insert(
@@ -557,6 +558,30 @@ fn compile_module_inner(
             },
         );
     }
+    // `shughuli ya` methods compile as functions after the module's own, named
+    // `Umbo::njia` (see `impl_function_name`).
+    let methods = impl_methods(module);
+    for (k, (imp, f)) in methods.iter().enumerate() {
+        let index = (module.functions.len() + k) as u32;
+        let name = impl_function_name(&imp.target, imp.trait_name.as_deref(), &f.name);
+        program.functions.insert(
+            name,
+            FunctionSig {
+                index,
+                params: f
+                    .params
+                    .iter()
+                    .map(|p| Ty::from_type_name(&p.ty.name))
+                    .collect(),
+                ret: Ty::from_type_name(&f.return_type.name),
+                ret_name: f.return_type.name.clone(),
+            },
+        );
+        program
+            .impl_index
+            .entry((imp.target.clone(), f.name.clone()))
+            .or_insert(index);
+    }
     for constant in &module.constants {
         let stored = literal(&constant.value)?;
         let ty = match (&stored, Ty::from_type_name(&constant.ty.name)) {
@@ -569,10 +594,23 @@ fn compile_module_inner(
             (ty, stored, constant.ty.name.clone()),
         );
     }
-    let mut functions = Vec::with_capacity(module.functions.len());
+    let mut functions = Vec::with_capacity(module.functions.len() + methods.len());
     let mut interpreted = false;
-    for (index, function) in module.functions.iter().enumerate() {
-        match FunctionCompiler::compile(&mut program, function) {
+    let all = module
+        .functions
+        .iter()
+        .map(|f| (f.name.clone(), f))
+        .chain(methods.iter().map(|(imp, f)| {
+            (
+                impl_function_name(&imp.target, imp.trait_name.as_deref(), &f.name),
+                *f,
+            )
+        }));
+    for (index, (qualified, function)) in all.enumerate() {
+        match FunctionCompiler::compile(&mut program, function).map(|mut f| {
+            f.name = qualified.clone();
+            f
+        }) {
             Some(f) => functions.push(f),
             None => {
                 if failed_line.is_none() {
@@ -590,7 +628,9 @@ fn compile_module_inner(
                     );
                 }
                 program.failed_line = None;
-                functions.push(FunctionCompiler::interpreted(&mut program, function, index));
+                let mut stub = FunctionCompiler::interpreted(&mut program, function, index);
+                stub.name = qualified;
+                functions.push(stub);
                 interpreted = true;
             }
         }
@@ -642,9 +682,12 @@ struct ProgramCompiler {
     structs: HashMap<String, Vec<String>>,
     /// Declared `jenum` names.
     enums: std::collections::HashSet<String>,
-    /// Method names some `impl` block defines: only the tree-walker dispatches those (a call may
-    /// reach a user method even where a builtin method of the same name exists).
+    /// Method names some `impl` block defines (a call may reach a user method even where a
+    /// builtin method of the same name exists).
     impl_methods: std::collections::HashSet<String>,
+    /// (`umbo`, method) -> the compiled method's function index; inherent `shughuli ya` blocks
+    /// first, then trait impls, as the tree-walker searches them.
+    impl_index: HashMap<(String, String), u32>,
 }
 
 impl ProgramCompiler {
@@ -1001,6 +1044,7 @@ impl<'a> FunctionCompiler<'a> {
         match expr {
             Expr::String(_) => Some("Neno".into()),
             Expr::List { .. } => Some("Orodha".into()),
+            Expr::StructLiteral { struct_name, .. } => Some(struct_name.clone()),
             Expr::Group(e) => self.type_name(e),
             Expr::Ident { name, .. } => match self.lookup(name) {
                 Some(local) if local.op.ty == Ty::List => Some("Orodha<Namba>".into()),
@@ -1434,10 +1478,10 @@ impl<'a> FunctionCompiler<'a> {
             ..
         } = expr
         {
-            if self.program.impl_methods.contains(method_name) {
-                return None; // possibly a user method: the tree-walker's
-            }
-            if let Expr::Ident { name, .. } = &**receiver {
+            // (A user method name skips the numeric-list fast paths: `method_call` handles it.)
+            if let (false, Expr::Ident { name, .. }) =
+                (self.program.impl_methods.contains(method_name), &**receiver)
+            {
                 if let Some(local) = self.lookup(name).cloned() {
                     // Statement-level numeric-list mutations: no `Tupu`/`Chaguo` result.
                     let list = local.op.reg;
@@ -2125,15 +2169,27 @@ impl<'a> FunctionCompiler<'a> {
             })));
             return Some(out);
         }
-        let (index, params, ret) = {
-            let sig = self.program.functions.get(name)?;
-            (sig.index, sig.params.clone(), sig.ret)
+        let index = self.program.functions.get(name)?.index;
+        self.call_index(index, args.iter(), dst)
+    }
+
+    /// Call program function `index` with `args` evaluated in order.
+    fn call_index<'e>(
+        &mut self,
+        index: u32,
+        args: impl Iterator<Item = &'e Expr>,
+        dst: Option<Operand>,
+    ) -> Option<Operand> {
+        let (params, ret) = {
+            let sig = self.program.functions.values().find(|s| s.index == index)?;
+            (sig.params.clone(), sig.ret)
         };
+        let args: Vec<&Expr> = args.collect();
         if params.len() != args.len() {
             return None;
         }
-        let mut operands = Vec::with_capacity(args.len());
-        for (arg, ty) in args.iter().zip(params) {
+        let mut operands = Vec::with_capacity(params.len());
+        for (arg, ty) in args.into_iter().zip(params) {
             operands.push(self.expr_as(arg, ty)?);
         }
         let out = match dst {
@@ -2156,7 +2212,10 @@ impl<'a> FunctionCompiler<'a> {
         dst: Option<Operand>,
     ) -> Option<Operand> {
         if self.program.impl_methods.contains(method) {
-            return None;
+            // A user method: called directly when the receiver's `umbo` is known here.
+            let target = self.type_name(receiver)?;
+            let index = *self.program.impl_index.get(&(target, method.to_string()))?;
+            return self.call_index(index, std::iter::once(receiver).chain(args), dst);
         }
         let recv_ty = self.infer(receiver);
         // Numeric-list fast paths.
@@ -2645,11 +2704,7 @@ impl<'p> Vm<'p> {
             .as_ref()
             .ok_or_else(|| EvalError::Unknown("kilele hakina mti wa programu".into()))?;
         let name = &program.functions[index].name;
-        let f = module
-            .functions
-            .iter()
-            .find(|f| &f.name == name)
-            .ok_or_else(|| EvalError::UndefinedVar(name.clone()))?;
+        let f = ast_function(module, name).ok_or_else(|| EvalError::UndefinedVar(name.clone()))?;
         let mut tree = match self.trees.pop() {
             Some(tree) => tree,
             None => crate::TreeContext::new(module)?,
@@ -3347,6 +3402,41 @@ fn numeric_op(op: &Opcode, n: &mut [f64]) -> bool {
         _ => return false,
     }
     true
+}
+
+/// Every `shughuli ya` method, inherent blocks first (the order the tree-walker searches them).
+fn impl_methods(module: &Module) -> Vec<(&asili_parser::ImplDecl, &Function)> {
+    let inherent = module.impls.iter().filter(|i| i.trait_name.is_none());
+    let traits = module.impls.iter().filter(|i| i.trait_name.is_some());
+    inherent
+        .chain(traits)
+        .flat_map(|i| i.body.iter().map(move |f| (i, f)))
+        .collect()
+}
+
+/// The bytecode function name of a `shughuli ya` method: `Umbo::njia`, or `Umbo<Sifa>::njia`
+/// for a trait's.
+pub(crate) fn impl_function_name(target: &str, trait_name: Option<&str>, method: &str) -> String {
+    match trait_name {
+        None => format!("{target}::{method}"),
+        Some(t) => format!("{target}<{t}>::{method}"),
+    }
+}
+
+/// The syntax tree of program function `name` (a module function, or a method by its
+/// `impl_function_name`).
+pub(crate) fn ast_function<'m>(module: &'m Module, name: &str) -> Option<&'m Function> {
+    module
+        .functions
+        .iter()
+        .find(|f| f.name == name)
+        .or_else(|| {
+            module.impls.iter().find_map(|i| {
+                i.body.iter().find(|f| {
+                    impl_function_name(&i.target, i.trait_name.as_deref(), &f.name) == name
+                })
+            })
+        })
 }
 
 /// The names a pattern binds, each once, in first-bound order.

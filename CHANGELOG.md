@@ -123,6 +123,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of a hardware divide on x86-64, and for unsigned operands on AArch64: `(s + i * 7 +
   i // 3) % 1000003` over 20 million `i` runs in 70 ms (was 124 ms; gcc `-O2` C: 84 ms). Images
   are rebuilt (`IMAGE_VERSION` 6).
+- **`shughuli ya` methods compile to bytecode**: every method (inherent and trait) becomes a
+  bytecode function (`Umbo::njia`, `Umbo<Sifa>::njia`); a call whose receiver's `umbo` is known
+  where it is compiled (a typed parameter such as `self`, a typed local, or one built from a
+  `umbo` literal) is a direct call, resolved inherent-first as the tree-walker does, and the
+  tree-walker's own method calls reach compiled methods through the VM. Interpreted `kazi`
+  across the examples: 10 → 8.
 - **Cheaper `umbo` values**: a struct's name and field names are shared (`Rc<str>`) instead of
   copied into every value, so copying a struct copies only its field values; calling a
   `shughuli ya` method on the tree-walker no longer deep-copies the method's syntax tree. A

@@ -435,19 +435,19 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     // method's AST per call.
                     let module = rt.module;
                     let struct_name: &str = struct_name;
-                    let method = module
+                    let (imp, method) = module
                         .impls
                         .iter()
                         .filter(|i| i.target == struct_name && i.trait_name.is_none())
-                        .flat_map(|i| i.body.iter())
-                        .find(|mf| mf.name == *method_name)
+                        .flat_map(|i| i.body.iter().map(move |f| (i, f)))
+                        .find(|(_, mf)| mf.name == *method_name)
                         .or_else(|| {
                             module
                                 .impls
                                 .iter()
                                 .filter(|i| i.target == struct_name && i.trait_name.is_some())
-                                .flat_map(|i| i.body.iter())
-                                .find(|mf| mf.name == *method_name)
+                                .flat_map(|i| i.body.iter().map(move |f| (i, f)))
+                                .find(|(_, mf)| mf.name == *method_name)
                         })
                         .ok_or_else(|| {
                             let has_any_impl = module.impls.iter().any(|i| i.target == struct_name);
@@ -464,6 +464,20 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                             }
                         })?;
 
+                    // Mixed mode: a method the VM compiled runs there (and in native code).
+                    if let Some(hook) = rt.vm {
+                        let qualified = crate::bytecode::impl_function_name(
+                            &imp.target,
+                            imp.trait_name.as_deref(),
+                            &method.name,
+                        );
+                        let mut call_args = Vec::with_capacity(args_val.len() + 1);
+                        call_args.push(recv.clone());
+                        call_args.extend(args_val.iter().cloned());
+                        if let Some(result) = (hook.call)(hook.vm, &qualified, &call_args) {
+                            return result;
+                        }
+                    }
                     rt.env.push_scope();
                     for (i, p) in method.params.iter().enumerate() {
                         let val = if i == 0 {
