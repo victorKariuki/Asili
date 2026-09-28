@@ -60,12 +60,24 @@ pub(crate) struct VmHook {
     ) -> Option<Result<crate::value::Value, crate::value::EvalError>>,
 }
 
+/// `builtins` without the names `module` defines as its own `kazi`: a program's `kazi` shadows
+/// an ambient builtin of the same name (as the analyzer and the bytecode compiler assume).
+pub(crate) fn unshadowed(
+    mut builtins: HashMap<String, builtins::BuiltinFn>,
+    module: &Module,
+) -> HashMap<String, builtins::BuiltinFn> {
+    for f in &module.functions {
+        builtins.remove(f.name.as_str());
+    }
+    builtins
+}
+
 impl<'a> Runtime<'a> {
     pub fn new(env: &'a mut Env, module: &'a Module) -> Self {
         Self {
             env,
             module,
-            builtins: builtins::builtins(),
+            builtins: unshadowed(builtins::builtins(), module),
             depth: 0,
             peak_depth: 0,
             executed_lines: None,

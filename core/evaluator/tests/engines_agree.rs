@@ -805,3 +805,69 @@ fn shared_lists_keep_value_semantics() {
         &["nakala"],
     );
 }
+
+#[test]
+fn kwa_katika_over_generic_lists() {
+    // Native code keeps the loop index in a machine register: `IterItem` must be told it
+    // reads it (`native::num_reads`), or every pass sees the first item.
+    agree(
+        "iter",
+        r#"
+        umbo Nukta {
+            x: Namba,
+            y: Namba,
+        }
+        kazi urefu_wote(maneno: Orodha < Neno >) -> Namba {
+            weka s: Namba = 0
+            kwa w katika maneno {
+                s += w.urefu()
+            }
+            rejesha s
+        }
+        kazi jumla(ns: Orodha<Nukta>) -> Namba {
+            weka s: Namba = 0
+            kwa n katika ns {
+                s += n.x * 10 + n.y
+            }
+            rejesha s
+        }
+        kazi maneno() -> Namba {
+            weka m: Orodha<Neno> = []
+            kwa i kutoka 0 hadi 40 {
+                m.ongeza("neno" + (i kama Neno))
+            }
+            rejesha urefu_wote(m.clona())
+        }
+        kazi nukta() -> Namba {
+            weka ns: Orodha<Nukta> = []
+            kwa i kutoka 0 hadi 40 {
+                ns.ongeza(Nukta { x: i, y: 40 - i })
+            }
+            rejesha jumla(ns)
+        }
+        "#,
+        &["maneno", "nukta"],
+    );
+}
+
+#[test]
+fn own_kazi_shadow_builtins() {
+    let source = r#"
+        kazi jumla(a: Namba, b: Namba) -> Namba {
+            rejesha a * 100 + b
+        }
+        kazi sakafu(n: Namba) -> Namba {
+            rejesha n + 0.25
+        }
+        kazi t() -> Namba {
+            rejesha jumla(2, 3) + sakafu(1.5)
+        }
+        "#;
+    agree("shadow", source, &["t"]);
+    // Agreeing is not enough: every engine used to call the builtins instead.
+    let module = parse_tokens(&tokenize(source).unwrap()).unwrap();
+    assert_eq!(
+        canon(&run_function(&module, "t", vec![]).unwrap()),
+        canon(&Value::Namba(204.75))
+    );
+}

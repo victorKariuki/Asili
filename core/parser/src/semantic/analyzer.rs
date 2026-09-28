@@ -58,7 +58,7 @@ struct Analyzer<'a> {
     local_constants: HashMap<String, ValueType>,
 }
 
-use super::types::parse_value_type;
+use super::types::{parse_value_type, parse_value_type_with};
 
 #[derive(Copy, Clone)]
 enum UseMode {
@@ -1936,6 +1936,8 @@ impl<'a> Analyzer<'a> {
                             ValueType::Unknown
                         }
                     }
+                    // Not known here (e.g. a generic's result): assume it has the field.
+                    ValueType::Unknown => ValueType::Unknown,
                     _ => {
                         self.errors.push(
                             Diagnostic::new("SEM099", "uga unahitaji kitu cha aina ya umbo")
@@ -2277,15 +2279,13 @@ impl<'a> Analyzer<'a> {
         true
     }
 
+    /// A written type, with this module's `umbo`/`jenum` names resolved at any depth.
     fn type_from_decl(&self, t: &str) -> ValueType {
-        let s = t.trim();
-        if self.module.structs.iter().any(|st| st.name == s) {
-            return ValueType::Struct(s.to_string());
-        }
-        if self.module.enums.iter().any(|e| e.name == s) {
-            return ValueType::Struct(s.to_string());
-        }
-        parse_value_type(t)
+        parse_value_type_with(t, &|name| {
+            (self.module.structs.iter().any(|st| st.name == name)
+                || self.module.enums.iter().any(|e| e.name == name))
+            .then(|| ValueType::Struct(name.to_string()))
+        })
     }
 }
 

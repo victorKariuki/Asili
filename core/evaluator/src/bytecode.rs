@@ -423,6 +423,13 @@ pub enum Opcode {
         field: String,
         slot: u32,
     },
+    /// `vals[dst] = vals[items][nums[idx]]`: the next item of a `kwa … katika` snapshot (an
+    /// `Orodha` from `IterItems`; the loop keeps the index in range).
+    IterItem {
+        dst: Reg,
+        items: Reg,
+        idx: Reg,
+    },
     /// `nums[dst] = vals[src].field`, a field declared `Namba`.
     FieldNum {
         dst: Reg,
@@ -644,6 +651,15 @@ fn compile_module_inner(
                 stub.name = qualified;
                 functions.push(stub);
                 interpreted = true;
+            }
+        }
+    }
+    if std::env::var_os("ASILI_BYTECODE_DUMP").is_some() {
+        // Debugging aid: the instructions of every compiled `kazi`.
+        for f in &functions {
+            eprintln!("kazi {}:", f.name);
+            for (pc, op) in f.code.iter().enumerate() {
+                eprintln!("  {pc:4} {op:?}");
             }
         }
     }
@@ -915,6 +931,14 @@ impl<'a> FunctionCompiler<'a> {
     }
 
     fn declare(&mut self, name: &str, ty: Ty, type_name: Option<String>) -> Operand {
+        // Written type names may carry spaces (`Orodha < Neno >`); keep one spelling.
+        let type_name = type_name.map(|t| {
+            if t.contains(' ') {
+                t.replace(' ', "")
+            } else {
+                t
+            }
+        });
         let op = self.temp(ty);
         self.scopes
             .last_mut()
@@ -1008,11 +1032,11 @@ impl<'a> FunctionCompiler<'a> {
                         && args.len() == 1
                         && self.infer(&args[0]) == Ty::Num
                         && self.lookup(name).is_none()
+                        && !self.program.functions.contains_key(name)
                     {
                         Ty::Num
-                    } else if self.program.builtins.contains_key(name) {
-                        Ty::Val
                     } else {
+                        // The program's own `kazi` first: it shadows a builtin.
                         self.program
                             .functions
                             .get(name)
@@ -1478,19 +1502,13 @@ impl<'a> FunctionCompiler<'a> {
                         mode: IndexMode::Element,
                     });
                 } else {
-                    let boxed_idx = self.temp(Ty::Val).reg;
-                    let unwrapped = self.temp(Ty::Val);
-                    self.emit(Opcode::BoxNum {
-                        dst: boxed_idx,
-                        src: idx,
+                    let next = self.dst_or_temp(Some(item), Ty::Val);
+                    self.emit(Opcode::IterItem {
+                        dst: next.reg,
+                        items: source.reg,
+                        idx,
                     });
-                    self.emit(Opcode::ValIndex {
-                        dst: unwrapped.reg,
-                        base: source.reg,
-                        idx: boxed_idx,
-                        mode: IndexMode::Element,
-                    });
-                    self.convert(unwrapped, item)?;
+                    self.convert(next, item)?;
                 }
                 self.loops.push(LoopState {
                     label,
@@ -2190,10 +2208,15 @@ impl<'a> FunctionCompiler<'a> {
         let Expr::Ident { name, .. } = callee else {
             return None;
         };
-        if self.lookup(name).is_some() || MODULE_BUILTINS.contains(&name.as_str()) {
+        if self.lookup(name).is_some() {
             return None;
         }
-        if let Some(builtin) = self.program.builtins.get(name).copied() {
+        // The program's own `kazi` shadows a builtin of the same name.
+        let own = self.program.functions.contains_key(name);
+        if !own && MODULE_BUILTINS.contains(&name.as_str()) {
+            return None;
+        }
+        if let Some(builtin) = self.program.builtins.get(name).copied().filter(|_| !own) {
             if let (Some(out), "orodha_rudia", 2) = (dst, name.as_str(), args.len()) {
                 if out.ty == Ty::List && self.infer(&args[0]) == Ty::Num {
                     let value = self.expr_as(&args[0], Ty::Num)?.reg;
@@ -3045,6 +3068,13 @@ impl<'p> Vm<'p> {
                     Err(e) => Flow::Fail(e),
                 };
             }
+            Opcode::IterItem { dst, items, idx } => {
+                let Value::Orodha(items) = &frame.vals[*items as usize] else {
+                    unreachable!("IterItems leaves an Orodha")
+                };
+                frame.vals[*dst as usize] = items[frame.nums[*idx as usize] as usize].clone();
+                return Flow::Next;
+            }
             Opcode::FieldNum {
                 dst,
                 src,
@@ -3412,6 +3442,7 @@ impl<'p> Vm<'p> {
             | Opcode::MakeStruct { .. }
             | Opcode::Field { .. }
             | Opcode::FieldNum { .. }
+            | Opcode::IterItem { .. }
             | Opcode::MakeEnum { .. }
             | Opcode::MakeMap { .. }
             | Opcode::MatchPattern { .. }

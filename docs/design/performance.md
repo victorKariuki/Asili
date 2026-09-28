@@ -220,6 +220,8 @@ Next steps are the "Remaining gaps" below.
 - `ASILI_AOT=0` — don't build (at `pata jenga`) or load (at run time) native code.
 - `ASILI_NGUVU=1` — compile in memory at load time when no `.nguvu` image was built.
 - `ASILI_NATIVE_TRACE=1` — print every deoptimization (function and bytecode pc).
+- `ASILI_BYTECODE_REPORT=1` / `ASILI_BYTECODE_DUMP=1` (at `pata jenga`) — list the `kazi` left
+  to the tree-walker / print every compiled `kazi`'s instructions.
 - `ASILI_NGUVU_IR=<file>` / `ASILI_NGUVU_DUMP=<file>` — dump the optimized IR with register
   locations / the machine code, function offsets and load address (in-memory compiles).
 

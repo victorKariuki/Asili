@@ -37,6 +37,12 @@ fn is_type_variable(s: &str) -> bool {
 
 /// Parse a type string (e.g. from .asi or AST) into ValueType. Public API for shared use.
 pub fn parse_value_type(s: &str) -> ValueType {
+    parse_value_type_with(s, &|_| None)
+}
+
+/// [`parse_value_type`], with `resolve` naming the types it does not know itself (a module's
+/// `umbo`/`jenum` names), at any depth: `Orodha<Nukta>` is a list of `Nukta`.
+pub fn parse_value_type_with(s: &str, resolve: &dyn Fn(&str) -> Option<ValueType>) -> ValueType {
     let s = s.replace(' ', "");
     if s == "Namba" || s.starts_with("Biti") || s.starts_with("uBiti") {
         return ValueType::Namba;
@@ -51,98 +57,104 @@ pub fn parse_value_type(s: &str) -> ValueType {
         return ValueType::Tupu;
     }
     if let Some(rest) = s.strip_prefix("&mut") {
-        return ValueType::Rejeo(Box::new(parse_value_type(rest)), true);
+        return ValueType::Rejeo(Box::new(parse_value_type_with(rest, resolve)), true);
     }
     if let Some(rest) = s.strip_prefix('&') {
-        return ValueType::Rejeo(Box::new(parse_value_type(rest)), false);
+        return ValueType::Rejeo(Box::new(parse_value_type_with(rest, resolve)), false);
     }
     if s.starts_with("Rejeo_Tenda<") && s.ends_with('>') {
-        return ValueType::Rejeo(Box::new(parse_value_type(&s[12..s.len() - 1])), true);
+        return ValueType::Rejeo(
+            Box::new(parse_value_type_with(&s[12..s.len() - 1], resolve)),
+            true,
+        );
     }
     if s.starts_with("Rejeo<") && s.ends_with('>') {
-        return ValueType::Rejeo(Box::new(parse_value_type(&s[6..s.len() - 1])), false);
+        return ValueType::Rejeo(
+            Box::new(parse_value_type_with(&s[6..s.len() - 1], resolve)),
+            false,
+        );
     }
     if s.ends_with('?') {
-        return ValueType::Chaguo(Box::new(parse_value_type(&s[..s.len() - 1])));
+        return ValueType::Chaguo(Box::new(parse_value_type_with(&s[..s.len() - 1], resolve)));
     }
     if s.starts_with("Chaguo<") && s.ends_with('>') {
         let inner = &s[7..s.len() - 1];
-        return ValueType::Chaguo(Box::new(parse_value_type(inner)));
+        return ValueType::Chaguo(Box::new(parse_value_type_with(inner, resolve)));
     }
     if s.starts_with("Tokeo<") && s.ends_with('>') {
         let inner = s[6..s.len() - 1].trim();
         let parts = split_generic_args(inner);
         if parts.len() >= 2 {
             return ValueType::Tokeo(
-                Box::new(parse_value_type(parts[0])),
-                Box::new(parse_value_type(parts[1])),
+                Box::new(parse_value_type_with(parts[0], resolve)),
+                Box::new(parse_value_type_with(parts[1], resolve)),
             );
         }
         return ValueType::Tokeo(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown));
     }
     if s.starts_with("Orodha<") && s.ends_with('>') {
         let inner = s[7..s.len() - 1].trim();
-        return ValueType::Orodha(Box::new(parse_value_type(inner)));
+        return ValueType::Orodha(Box::new(parse_value_type_with(inner, resolve)));
     }
     if s.starts_with("Kamusi<") && s.ends_with('>') {
         let inner = s[7..s.len() - 1].trim();
         let parts = split_generic_args(inner);
         if parts.len() >= 2 {
             return ValueType::Kamusi(
-                Box::new(parse_value_type(parts[0])),
-                Box::new(parse_value_type(parts[1])),
+                Box::new(parse_value_type_with(parts[0], resolve)),
+                Box::new(parse_value_type_with(parts[1], resolve)),
             );
         }
     }
     if s.starts_with("Mfululizo<") && s.ends_with('>') {
         let inner = s[10..s.len() - 1].trim();
-        return ValueType::Mfululizo(Box::new(parse_value_type(inner)));
+        return ValueType::Mfululizo(Box::new(parse_value_type_with(inner, resolve)));
     }
     if s.starts_with("Jozi<") && s.ends_with('>') {
         let inner = s[5..s.len() - 1].trim();
         let parts = split_generic_args(inner);
         if parts.len() >= 2 {
             return ValueType::Jozi(
-                Box::new(parse_value_type(parts[0])),
-                Box::new(parse_value_type(parts[1])),
+                Box::new(parse_value_type_with(parts[0], resolve)),
+                Box::new(parse_value_type_with(parts[1], resolve)),
             );
         }
     }
     if s.starts_with("Seti<") && s.ends_with('>') {
         let inner = s[5..s.len() - 1].trim();
-        return ValueType::Seti(Box::new(parse_value_type(inner)));
+        return ValueType::Seti(Box::new(parse_value_type_with(inner, resolve)));
     }
     if s.starts_with("Kasha_GC<") && s.ends_with('>') {
         let inner = s[9..s.len() - 1].trim();
-        return ValueType::KashaGC(Box::new(parse_value_type(inner)));
+        return ValueType::KashaGC(Box::new(parse_value_type_with(inner, resolve)));
     }
     if s.starts_with("Kasha_GC_Dhaifu<") && s.ends_with('>') {
         let inner = s[16..s.len() - 1].trim();
-        return ValueType::KashaGCDhaifu(Box::new(parse_value_type(inner)));
+        return ValueType::KashaGCDhaifu(Box::new(parse_value_type_with(inner, resolve)));
     }
     if s.starts_with("Kumbukumbu<") && s.ends_with('>') {
         let inner = s[11..s.len() - 1].trim();
-        return ValueType::Kumbukumbu(Box::new(parse_value_type(inner)));
+        return ValueType::Kumbukumbu(Box::new(parse_value_type_with(inner, resolve)));
     }
     if s.starts_with("NjiaTx<") && s.ends_with('>') {
         let inner = s[7..s.len() - 1].trim();
-        return ValueType::NjiaTx(Box::new(parse_value_type(inner)));
+        return ValueType::NjiaTx(Box::new(parse_value_type_with(inner, resolve)));
     }
     if s.starts_with("NjiaRx<") && s.ends_with('>') {
         let inner = s[7..s.len() - 1].trim();
-        return ValueType::NjiaRx(Box::new(parse_value_type(inner)));
+        return ValueType::NjiaRx(Box::new(parse_value_type_with(inner, resolve)));
     }
     if s.starts_with("NjiaTxBounded<") && s.ends_with('>') {
         let inner = s[14..s.len() - 1].trim();
-        return ValueType::NjiaTxBounded(Box::new(parse_value_type(inner)));
+        return ValueType::NjiaTxBounded(Box::new(parse_value_type_with(inner, resolve)));
     }
     if s.starts_with("NjiaRxBounded<") && s.ends_with('>') {
         let inner = s[14..s.len() - 1].trim();
-        return ValueType::NjiaRxBounded(Box::new(parse_value_type(inner)));
+        return ValueType::NjiaRxBounded(Box::new(parse_value_type_with(inner, resolve)));
     }
     if s.starts_with("Fungo<") && s.ends_with('>') {
         let inner = s[6..s.len() - 1].trim();
-        return ValueType::Fungo(Box::new(parse_value_type(inner)));
+        return ValueType::Fungo(Box::new(parse_value_type_with(inner, resolve)));
     }
     if s == "Faili" {
         return ValueType::Faili;
@@ -174,7 +186,7 @@ pub fn parse_value_type(s: &str) -> ValueType {
     if is_type_variable(&s) {
         return ValueType::TypeVar(s.to_string());
     }
-    ValueType::Unknown
+    resolve(&s).unwrap_or(ValueType::Unknown)
 }
 
 /// Asili source spelling of a type — the inverse of [`parse_value_type`] (an unknown type prints

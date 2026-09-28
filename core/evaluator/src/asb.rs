@@ -65,7 +65,7 @@ pub fn emit_asb_bytes(module: &Module, source: &str) -> Vec<u8> {
 
 /// Version of the bytecode payload (the register-VM instruction set). Artifacts built by an
 /// older `pata jenga` carry a different `version=` and must be rebuilt.
-const BYTECODE_VERSION: &str = "8";
+const BYTECODE_VERSION: &str = "9";
 
 /// Emit a real bytecode artifact.  The header remains intentionally simple and textual so older
 /// runners can reject it cleanly, while the payload is the same deterministic bincode envelope

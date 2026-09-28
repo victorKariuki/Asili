@@ -342,3 +342,28 @@ fn method_call_type_checking_is_implemented() {
         panic!("expected Let with method call");
     }
 }
+
+#[test]
+fn umbo_names_resolve_inside_generic_types() {
+    // `n` is a `Nukta` (not an unknown or a `Namba`), so `n.x` checks.
+    let src = r#"
+umbo Nukta {
+    x: Namba,
+    y: Namba,
+}
+kazi jumla_ya(ns: Orodha<Nukta>) -> Namba {
+    weka s: Namba = 0
+    kwa n katika ns {
+        s += n.x + n.y
+    }
+    rejesha s
+}
+kazi kuu(hoja: Orodha<Neno>) -> Tupu {
+    weka ns: Orodha<Nukta> = []
+    ns.ongeza(Nukta { x: 1, y: 2 })
+    chapisha(jumla_ya(ns) kama Neno)
+}
+"#;
+    let module = parse_tokens(&tokenize(src).unwrap()).unwrap();
+    semantic_check(&module).expect("fields of a umbo inside Orodha<...>");
+}

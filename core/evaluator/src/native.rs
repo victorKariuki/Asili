@@ -207,7 +207,44 @@ pub(crate) fn num_reads(op: &Opcode) -> Vec<Reg> {
             .filter(|a| matches!(a.ty, Ty::Num | Ty::Bool))
             .map(|a| a.reg)
             .collect(),
-        _ => Vec::new(),
+        Opcode::IterItem { idx, .. } => vec![*idx],
+        // Listed one by one (no `_` arm), so a new instruction must say what it reads: native
+        // code keeps numbers in machine registers and stores only these before `exec_slow`.
+        Opcode::Jump { .. }
+        | Opcode::JumpIfFalse { .. }
+        | Opcode::JumpIfTrue { .. }
+        | Opcode::JumpIfNot { .. }
+        | Opcode::ForStep { .. }
+        | Opcode::Return { .. }
+        | Opcode::ReturnTupu
+        | Opcode::ListLen { .. }
+        | Opcode::ListMov { .. }
+        | Opcode::ListFromVal { .. }
+        | Opcode::ListToVal { .. }
+        | Opcode::ConstVal { .. }
+        | Opcode::ValMov { .. }
+        | Opcode::UnboxNum { .. }
+        | Opcode::UnboxBool { .. }
+        | Opcode::ValBinary { .. }
+        | Opcode::ValUnary { .. }
+        | Opcode::ValIndex { .. }
+        | Opcode::ValLen { .. }
+        | Opcode::Unwrap { .. }
+        | Opcode::ListMutate(_)
+        | Opcode::IterItems { .. }
+        | Opcode::Jaribu { .. }
+        | Opcode::Cast { .. }
+        | Opcode::MakeList { .. }
+        | Opcode::CallBuiltin(_)
+        | Opcode::CallMethod(_)
+        | Opcode::MutMethod(_)
+        | Opcode::MakeStruct { .. }
+        | Opcode::Field { .. }
+        | Opcode::FieldNum { .. }
+        | Opcode::MakeEnum { .. }
+        | Opcode::MatchPattern { .. }
+        | Opcode::MakeMap { .. }
+        | Opcode::Interpreted { .. } => Vec::new(),
     }
 }
 
@@ -241,7 +278,47 @@ pub(crate) fn num_writes(op: &Opcode) -> Vec<Reg> {
         | Opcode::ValLen { dst, .. }
         | Opcode::MatchPattern { dst, .. } => vec![*dst],
         Opcode::Call(call) if matches!(call.dst.ty, Ty::Num | Ty::Bool) => vec![call.dst.reg],
-        _ => Vec::new(),
+        // Exhaustive, like `num_reads`. (Jumps, `ForStep` and returns never reach `exec_slow`.)
+        Opcode::Call(_)
+        | Opcode::Jump { .. }
+        | Opcode::JumpIfFalse { .. }
+        | Opcode::JumpIfTrue { .. }
+        | Opcode::JumpIfNot { .. }
+        | Opcode::ForStep { .. }
+        | Opcode::Return { .. }
+        | Opcode::ReturnTupu
+        | Opcode::MakeNumList { .. }
+        | Opcode::ListRepeat { .. }
+        | Opcode::ListGetTokeo { .. }
+        | Opcode::ListSet { .. }
+        | Opcode::ListPush { .. }
+        | Opcode::ListRemove { .. }
+        | Opcode::ListRemoveVal { .. }
+        | Opcode::ListMov { .. }
+        | Opcode::ListFromVal { .. }
+        | Opcode::ListToVal { .. }
+        | Opcode::ConstVal { .. }
+        | Opcode::ValMov { .. }
+        | Opcode::BoxNum { .. }
+        | Opcode::BoxBool { .. }
+        | Opcode::ValBinary { .. }
+        | Opcode::ValUnary { .. }
+        | Opcode::ValIndex { .. }
+        | Opcode::Unwrap { .. }
+        | Opcode::ListMutate(_)
+        | Opcode::IterItems { .. }
+        | Opcode::IterItem { .. }
+        | Opcode::Jaribu { .. }
+        | Opcode::Cast { .. }
+        | Opcode::MakeList { .. }
+        | Opcode::CallBuiltin(_)
+        | Opcode::CallMethod(_)
+        | Opcode::MutMethod(_)
+        | Opcode::MakeStruct { .. }
+        | Opcode::Field { .. }
+        | Opcode::MakeEnum { .. }
+        | Opcode::MakeMap { .. }
+        | Opcode::Interpreted { .. } => Vec::new(),
     }
 }
 
@@ -257,7 +334,65 @@ pub(crate) fn list_writes(op: &Opcode) -> Vec<Reg> {
         | Opcode::ListRemoveVal { list, .. } => vec![*list],
         Opcode::ListMutate(call) => vec![call.recv],
         Opcode::Call(call) if call.dst.ty == Ty::List => vec![call.dst.reg],
-        _ => Vec::new(),
+        // Exhaustive, like `num_reads`.
+        Opcode::Call(_)
+        | Opcode::Mov { .. }
+        | Opcode::Add { .. }
+        | Opcode::Sub { .. }
+        | Opcode::Mul { .. }
+        | Opcode::Div { .. }
+        | Opcode::Rem { .. }
+        | Opcode::Pow { .. }
+        | Opcode::BitAnd { .. }
+        | Opcode::BitOr { .. }
+        | Opcode::BitXor { .. }
+        | Opcode::Shl { .. }
+        | Opcode::Shr { .. }
+        | Opcode::Neg { .. }
+        | Opcode::BitNot { .. }
+        | Opcode::Not { .. }
+        | Opcode::Floor { .. }
+        | Opcode::Ceil { .. }
+        | Opcode::Trunc { .. }
+        | Opcode::Cmp { .. }
+        | Opcode::Jump { .. }
+        | Opcode::JumpIfFalse { .. }
+        | Opcode::JumpIfTrue { .. }
+        | Opcode::JumpIfNot { .. }
+        | Opcode::ForStep { .. }
+        | Opcode::Return { .. }
+        | Opcode::ReturnTupu
+        | Opcode::ListGet { .. }
+        | Opcode::ListGetTokeo { .. }
+        | Opcode::ListSet { .. }
+        | Opcode::ListLen { .. }
+        | Opcode::ListToVal { .. }
+        | Opcode::ConstVal { .. }
+        | Opcode::ValMov { .. }
+        | Opcode::BoxNum { .. }
+        | Opcode::BoxBool { .. }
+        | Opcode::UnboxNum { .. }
+        | Opcode::UnboxBool { .. }
+        | Opcode::ValBinary { .. }
+        | Opcode::ValUnary { .. }
+        | Opcode::ValIndex { .. }
+        | Opcode::ValLen { .. }
+        | Opcode::Unwrap { .. }
+        | Opcode::IterItems { .. }
+        | Opcode::IterItem { .. }
+        | Opcode::Jaribu { .. }
+        | Opcode::Cast { .. }
+        | Opcode::MakeList { .. }
+        | Opcode::CallBuiltin(_)
+        | Opcode::CallMethod(_)
+        | Opcode::MutMethod(_)
+        | Opcode::MakeStruct { .. }
+        | Opcode::Field { .. }
+        | Opcode::FieldNum { .. }
+        | Opcode::MakeEnum { .. }
+        | Opcode::MatchPattern { .. }
+        | Opcode::MakeMap { .. }
+        | Opcode::Interpreted { .. } => Vec::new(),
     }
 }
 

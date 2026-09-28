@@ -151,6 +151,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   materialized once per VM) is a reference-count bump. Concatenation and `kama Neno` write
   their result straight into its single allocation; `urefu` checks for ASCII without `\r` in
   one vectorizable pass. Iterating a 1,000-word list 5,000 times: 483 → 384 ms.
+- **Faster `kwa … katika` over generic lists**: each item is read by one instruction
+  (`IterItem`, index unboxed) straight into the loop variable, and typed receivers written with
+  spaces (`Orodha < Neno >`) now reach the typed fast paths (`w.urefu()` is `ValLen`, not a
+  by-name method call). The 1,000-word loop: 384 → 125 ms. `.asb` bytecode version 9.
+  `ASILI_BYTECODE_DUMP=1 pata jenga` prints each compiled `kazi`'s instructions.
 - **Cheaper string building, part two**: `+` on two `Neno` values borrows both and allocates
   the result once at its final size (operands are no longer copied first, and nothing
   reallocates); whole numbers are formatted by a direct digit writer; `urefu` of ASCII text
@@ -255,6 +260,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `kama Neno` does (`Siyo_Namba`, `Ukomo`, `-Ukomo`) instead of Rust's `NaN`/`inf`.
 
 ### Fixed
+
+- **A program's own `kazi` now shadows an ambient builtin of the same name** on every engine,
+  as the analyzer and the language docs already assumed; `kazi jumla(…)` used to be ignored
+  at run time in favour of the builtin `jumla`.
+- **`umbo`/`jenum` names inside generic types resolve** in the analyzer: iterating an
+  `Orodha<Nukta>` binds a `Nukta`, so `n.x` checks (it was a false `SEM099`), and a field of a
+  value whose type is not known where it is used is no longer reported as `SEM099`.
 
 - **Import cycles name the modules involved**: `RES001` now reads e.g.
   `mzunguko wa moduli: a → b → c → a` and points at the `leta` line that closes the loop (it

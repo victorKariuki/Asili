@@ -178,7 +178,9 @@ fn run_in_fresh_runtime<T>(
     let mut env = Env::new();
     env.seed_global_constants();
     let mut rt = match builtins {
-        Some(b) => runtime::Runtime::with_builtins(&mut env, module, b),
+        Some(b) => {
+            runtime::Runtime::with_builtins(&mut env, module, runtime::unshadowed(b, module))
+        }
         None => runtime::Runtime::new(&mut env, module),
     };
     setup(&mut rt);
