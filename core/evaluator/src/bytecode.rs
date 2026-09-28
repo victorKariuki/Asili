@@ -2395,9 +2395,18 @@ impl<'p> Vm<'p> {
             self.depth -= 1;
             return Err(EvalError::Unknown("undani mno".into()));
         }
-        let result = stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || {
+        // Native code makes direct calls only while `DIRECT_CALL_HEADROOM` is free below it, so
+        // give it that much (on a fresh segment when the stack is short — or when its size is
+        // unknown past the committed pages, as on musl's main thread).
+        #[cfg(not(target_arch = "wasm32"))]
+        let native = self.aot.map(|lib| lib.funcs[index]);
+        #[cfg(not(target_arch = "wasm32"))]
+        let red_zone = 64 * 1024 + native.map_or(0, |_| crate::native::DIRECT_CALL_HEADROOM);
+        #[cfg(target_arch = "wasm32")]
+        let red_zone = 64 * 1024;
+        let result = stacker::maybe_grow(red_zone, 2 * 1024 * 1024, || {
             #[cfg(not(target_arch = "wasm32"))]
-            if let Some(native) = self.aot.map(|lib| lib.funcs[index]) {
+            if let Some(native) = native {
                 return self.run_native(native, index, frame);
             }
             self.run(index, frame, 0)

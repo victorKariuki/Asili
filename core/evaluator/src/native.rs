@@ -52,7 +52,7 @@ pub(crate) const VM_DEPTH_OFFSET: i32 = 0;
 
 /// Stack headroom kept free below a direct native call: generated frames and the runtime
 /// functions they call fit well inside it.
-const DIRECT_CALL_HEADROOM: usize = 256 * 1024;
+pub(crate) const DIRECT_CALL_HEADROOM: usize = 256 * 1024;
 
 /// The lowest stack address at which native code may still make a direct call (a stack pointer
 /// at or below it takes the interpreter's call path, which can grow the stack), or `usize::MAX`
