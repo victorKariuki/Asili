@@ -31,6 +31,12 @@ pub(crate) fn handle_loop_out(my_label: Option<&String>, out: EvalOut) -> LoopAc
 // "1e3" with locale-specific separators, binary "0b1010"). Invalid literals should produce a lex
 // error at tokenization time, not silently evaluate to zero at runtime.
 pub(crate) fn parse_number(s: &str) -> f64 {
+    // Most literals are short runs of digits: exact as integers, and much cheaper than the
+    // general float parser (the tree-walker parses a literal each time it evaluates one).
+    let b = s.as_bytes();
+    if !b.is_empty() && b.len() <= 15 && b.iter().all(u8::is_ascii_digit) {
+        return b.iter().fold(0u64, |n, d| n * 10 + (d - b'0') as u64) as f64;
+    }
     s.trim().parse().unwrap_or(0.0)
 }
 

@@ -1,57 +1,133 @@
 //! Variable environment (stack of scopes).
+//!
+//! Local scopes live in one flat vector of bindings with a mark where each scope starts, so
+//! entering and leaving a block allocates nothing and a lookup is a short scan from the
+//! innermost binding outwards (scopes hold a handful of names). Names up to 22 bytes are stored
+//! inline. The outermost (global) scope — constants and module-level names — is a hash map.
 
 use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, Hasher};
 
 use crate::value::Value;
+
+/// FxHash (Firefox/rustc's hasher): a multiply and a rotate per word — far cheaper than SipHash
+/// for short identifier keys, and this map is never keyed by untrusted input at scale.
+#[derive(Default, Clone, Copy)]
+struct FxHasher(u64);
+
+impl Hasher for FxHasher {
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        const K: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+        let mut chunks = bytes.chunks_exact(8);
+        for c in &mut chunks {
+            let w = u64::from_le_bytes(c.try_into().expect("8 bytes"));
+            self.0 = (self.0.rotate_left(5) ^ w).wrapping_mul(K);
+        }
+        for &b in chunks.remainder() {
+            self.0 = (self.0.rotate_left(5) ^ b as u64).wrapping_mul(K);
+        }
+    }
+
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+type Globals = HashMap<String, Value, BuildHasherDefault<FxHasher>>;
+
+/// An identifier, inline when short.
+#[derive(Clone)]
+enum Name {
+    Inline { len: u8, bytes: [u8; 22] },
+    Heap(Box<str>),
+}
+
+impl Name {
+    #[inline]
+    fn new(s: &str) -> Name {
+        if s.len() <= 22 {
+            let mut bytes = [0u8; 22];
+            bytes[..s.len()].copy_from_slice(s.as_bytes());
+            Name::Inline {
+                len: s.len() as u8,
+                bytes,
+            }
+        } else {
+            Name::Heap(s.into())
+        }
+    }
+
+    #[inline]
+    fn as_str(&self) -> &str {
+        match self {
+            // SAFETY: built from a `&str` prefix of exactly `len` bytes.
+            Name::Inline { len, bytes } => unsafe {
+                std::str::from_utf8_unchecked(&bytes[..*len as usize])
+            },
+            Name::Heap(s) => s,
+        }
+    }
+}
+
+impl std::fmt::Debug for Name {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_str().fmt(f)
+    }
+}
 
 /// Stack of scopes; inner scope shadows outer.
 #[derive(Clone, Debug, Default)]
 pub struct Env {
-    scopes: Vec<HashMap<String, Value>>,
+    /// The outermost scope.
+    globals: Globals,
+    /// Bindings of every inner scope, outermost first.
+    locals: Vec<(Name, Value)>,
+    /// Where each inner scope's bindings start in `locals`.
+    marks: Vec<usize>,
 }
 
 impl Env {
     pub fn new() -> Self {
-        Self {
-            scopes: vec![HashMap::new()],
-        }
+        Self::default()
     }
 
+    #[inline]
     pub fn push_scope(&mut self) {
-        self.scopes.push(HashMap::new());
+        self.marks.push(self.locals.len());
     }
 
+    #[inline]
     pub fn pop_scope(&mut self) {
-        if self.scopes.len() > 1 {
-            self.scopes.pop();
+        if let Some(start) = self.marks.pop() {
+            self.locals.truncate(start);
         }
+    }
+
+    /// Index in `locals` of the innermost binding of `name`.
+    #[inline]
+    fn find(&self, name: &str) -> Option<usize> {
+        self.locals.iter().rposition(|(n, _)| n.as_str() == name)
     }
 
     pub fn get(&self, name: &str) -> Option<Value> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(v) = scope.get(name) {
-                return Some(v.clone());
-            }
-        }
-        None
+        self.get_ref(name).cloned()
     }
 
+    #[inline]
     pub(crate) fn get_ref(&self, name: &str) -> Option<&Value> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(value) = scope.get(name) {
-                return Some(value);
-            }
+        match self.find(name) {
+            Some(i) => Some(&self.locals[i].1),
+            None => self.globals.get(name),
         }
-        None
     }
 
     pub(crate) fn get_mut(&mut self, name: &str) -> Option<&mut Value> {
-        for scope in self.scopes.iter_mut().rev() {
-            if let Some(value) = scope.get_mut(name) {
-                return Some(value);
-            }
+        match self.find(name) {
+            Some(i) => Some(&mut self.locals[i].1),
+            None => self.globals.get_mut(name),
         }
-        None
     }
 
     // HACK: set() falls back to inserting into the global (first) scope when the name is not found
@@ -59,36 +135,48 @@ impl Env {
     // undefined-variable bugs. Should return an error (or at minimum panic in debug builds) when
     // the name does not already exist in any scope.
     pub fn set(&mut self, name: &str, value: Value) {
-        for scope in self.scopes.iter_mut().rev() {
-            if scope.contains_key(name) {
-                scope.insert(name.to_string(), value);
-                return;
+        match self.find(name) {
+            Some(i) => self.locals[i].1 = value,
+            None => {
+                self.globals.insert(name.to_string(), value);
             }
-        }
-        if let Some(scope) = self.scopes.first_mut() {
-            scope.insert(name.to_string(), value);
         }
     }
 
     pub fn define(&mut self, name: &str, value: Value) {
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name.to_string(), value);
+        let Some(&start) = self.marks.last() else {
+            self.globals.insert(name.to_string(), value);
+            return;
+        };
+        // Redefining a name in the same scope replaces it.
+        match self.locals[start..]
+            .iter()
+            .position(|(n, _)| n.as_str() == name)
+        {
+            Some(i) => self.locals[start + i].1 = value,
+            None => self.locals.push((Name::new(name), value)),
         }
     }
 
     pub fn drop(&mut self, name: &str) -> bool {
-        for scope in self.scopes.iter_mut().rev() {
-            if scope.contains_key(name) {
-                scope.remove(name);
-                return true;
+        match self.find(name) {
+            Some(i) => {
+                self.locals.remove(i);
+                for m in self.marks.iter_mut() {
+                    if *m > i {
+                        *m -= 1;
+                    }
+                }
+                true
             }
+            None => self.globals.remove(name).is_some(),
         }
-        false
     }
 
     /// Seed the outermost scope with global constants (Ukomo, Siyo_Namba, PI, E, KWELI, TOLEO, etc.).
     pub fn seed_global_constants(&mut self) {
-        if let Some(scope) = self.scopes.last_mut() {
+        {
+            let scope = &mut self.globals;
             scope.insert("KWELI".to_string(), Value::Ukweli(true));
             scope.insert("SIYO_KWELI".to_string(), Value::Ukweli(false));
             scope.insert("TUPU".to_string(), Value::Tupu);
@@ -137,12 +225,8 @@ impl Env {
 
     /// Names defined in any scope (for REPL: pass as extern_constants so later lines see them).
     pub fn defined_names(&self) -> Vec<String> {
-        let mut names = std::collections::HashSet::new();
-        for scope in &self.scopes {
-            for k in scope.keys() {
-                names.insert(k.clone());
-            }
-        }
+        let mut names: std::collections::HashSet<String> = self.globals.keys().cloned().collect();
+        names.extend(self.locals.iter().map(|(n, _)| n.as_str().to_string()));
         names.into_iter().collect()
     }
 
@@ -153,9 +237,10 @@ impl Env {
     /// job (keep only the first occurrence of each name) — this just yields every scope's own
     /// entries, innermost first.
     pub fn iter_innermost_first(&self) -> impl Iterator<Item = (String, Value)> + '_ {
-        self.scopes
+        self.locals
             .iter()
             .rev()
-            .flat_map(|scope| scope.iter().map(|(k, v)| (k.clone(), v.clone())))
+            .map(|(n, v)| (n.as_str().to_string(), v.clone()))
+            .chain(self.globals.iter().map(|(k, v)| (k.clone(), v.clone())))
     }
 }

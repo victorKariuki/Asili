@@ -123,6 +123,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of a hardware divide on x86-64, and for unsigned operands on AArch64: `(s + i * 7 +
   i // 3) % 1000003` over 20 million `i` runs in 70 ms (was 124 ms; gcc `-O2` C: 84 ms). Images
   are rebuilt (`IMAGE_VERSION` 6).
+- **Faster tree-walker** (still what runs any program the bytecode compiler cannot lower):
+  calling a `kazi` no longer deep-copies its whole body (AST) on every call; variables live in
+  one flat vector of bindings per run instead of a hash map per block (no allocation to enter
+  a block, names up to 22 bytes stored inline, FxHash instead of SipHash for globals); integer
+  literals skip the general float parser. `fib(25)`: 189 → 67 ms.
 - **A leaner standalone runner**: the static (musl) `tenda` now carries its own memory
   allocator (`asili_evaluator::alloc`: per-thread size-class free lists, no locks or atomics on
   the fast path, 64 KiB chunks from the system allocator) and its own `memcpy`/`memmove`/

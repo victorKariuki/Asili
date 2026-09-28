@@ -34,7 +34,8 @@ fn invoke_named_callback(
     if let Some(f) = rt.builtins.get(name) {
         return f(args);
     }
-    let Some(f) = rt.module.functions.iter().find(|x| x.name == name).cloned() else {
+    let module = rt.module;
+    let Some(f) = module.functions.iter().find(|x| x.name == name) else {
         return Err(EvalError::TypeErr(format!("kazi haijulikani: {name}")));
     };
     rt.env.push_scope();
@@ -320,14 +321,10 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 if let Some(f) = rt.builtins.get(name) {
                     return f(&args_val);
                 }
-                // Clone so we can mutably borrow rt.env below without conflict.
-                let module_fn = rt
-                    .module
-                    .functions
-                    .iter()
-                    .find(|x| x.name == *name)
-                    .cloned();
-                if let Some(f) = module_fn {
+                // Borrow through a copy of the module reference (not `rt`), so `rt` stays free
+                // for the body — no clone of the function's AST per call.
+                let module = rt.module;
+                if let Some(f) = module.functions.iter().find(|x| x.name == *name) {
                     rt.env.push_scope();
                     for (i, p) in f.params.iter().enumerate() {
                         let val = args_val.get(i).cloned().unwrap_or(Value::Hamna);
