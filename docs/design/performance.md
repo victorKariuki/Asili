@@ -57,6 +57,46 @@ resolution).
 6. Language: bitwise operators bound looser than `==` (the C wart), forcing parentheses in every
    bit test; no `|=`/`&=`/`^=`; no compound assignment on list elements.
 
+## Beyond Sudoku: second audit (September 2026)
+
+Six small programs, each with a line-for-line C port (`gcc -O2`), whole-process best of 9 on the
+`dist`/musl runner:
+
+| Program | What it stresses | C | Before | Asili native | VM | Native / C |
+|---|---|---|---|---|---|---|
+| `fib(32)` | 7M scalar calls | 11 ms | 1706 ms | 40 ms | 376 ms | 3.5× |
+| Mandelbrot 400×300 | float loops | 30 ms | 33 ms | 33 ms | 224 ms | 1.1× |
+| Sieve to 5M | memory bandwidth | 17 ms | 102 ms | 108 ms | 306 ms | 6.4× |
+| 20M-step modular loop | integer division | 85 ms | 124 ms | 69 ms | 679 ms | 0.8× |
+| Bubble sort, 3,000 | branchy list code | 5 ms | 6 ms | 5 ms | 174 ms | 1.05× |
+| 200k string builds | generic values | 10 ms | 237 ms | 95 ms | 90 ms | 9.8× |
+
+What it found and what changed:
+
+1. **Calls between `kazi` went through the interpreter** from native code (a full VM frame per
+   call). Scalar functions now get a second, direct native entry (`CallDirect`), keeping the
+   VM's depth limit and a stack-headroom check. On musl's main thread stacker sees only the
+   committed ~128 KB of stack, which silently sent every direct call to the slow path until the
+   VM kept the headroom free (on a fresh segment) before entering native code.
+2. **Call sites stored every live value and argument** around every call; they now skip
+   values whose stack slot is already current and rematerialize constants. Frames give slots
+   only to values that can need one.
+3. **`reuse_values` was block-local**, so a branch arm reloaded the elements its test had just
+   compared. It now runs over extended basic blocks, forwards stored list elements, and looks
+   through copies.
+4. **Division by constants ≥ 2048 used `div`** (tens of cycles). `div_magic` covers every
+   divisor for the ±2^53 integer range, on AArch64 too (`umulh`).
+5. **Generic strings paid for copies**: concatenation copied both operands, `urefu` ran Unicode
+   segmentation on ASCII, number formatting went through float printing, and the VM cloned
+   method receivers (and had its own copy of `urefu`).
+6. x86-64 memory operands always carried 32-bit displacements. Loop-head alignment was tried
+   and rejected: it slowed the Sudoku run by 3 %.
+
+What is left: the sieve is memory-bound on 8-byte list elements against C's bytes (C with
+`long` elements takes 89 ms, the same as Asili); `fib` still passes arguments and results
+through memory and checks depth and stack on every call; strings are owned `String`s that are
+cloned whenever a constant is loaded. See *Remaining gaps*.
+
 ## Techniques, and how Asili uses them
 
 **Typed register VM.** Stack VMs spend most of their time moving operands; register VMs (Lua 5,
@@ -191,9 +231,15 @@ Next steps are the "Remaining gaps" below.
   `compile_module_explained` reports the blocking `kazi` and line.
 - Native-to-native calls are direct only for scalar (`Namba`/`Buliani`) functions without
   lists or generic values; others go through the interpreter's call path. Direct calls pass
-  arguments as `f64` through a memory buffer and save live registers around the call, so
-  `fib(32)` is ~39 ms against C's ~11 ms; typed register arguments and inlining small helpers
-  (`sanduku_la(r, c)`) would close most of that.
+  arguments as `f64` through a memory buffer, so `fib(32)` is ~40 ms against C's ~11 ms;
+  arguments and results in registers, and inlining small helpers (`sanduku_la(r, c)`), would
+  close most of that.
+- List elements are 8-byte words. A byte- or 32-bit representation for lists whose values
+  fit would cut memory traffic up to 8× for sieve-like code (Asili matches C that uses
+  `long` elements).
+- `Neno` values are owned `String`s: loading a string constant copies it, and every generic
+  value operation runs in the interpreter. Shared or small-string storage would remove most
+  of the remaining allocation in string-building loops (~10× C).
 - The native image is mapped by `pata tenda` or the standalone runner, not a standalone
   executable. `pata tenda` itself (the full toolchain binary) starts ~3 ms slower than the
   runner; ship programs with the `dist`-profile static runner.
