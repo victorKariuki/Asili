@@ -40,6 +40,30 @@ pub(crate) struct Runtime {
     pub float_to_int_sat: extern "C" fn(f64) -> i64,
     /// The interpreter's shift amount (`f64 as i32`, outside `0..=63` → 0).
     pub shift_amount: extern "C" fn(f64) -> i64,
+    /// Lowest stack address direct native calls may run below (see [`rt_stack_limit`]).
+    pub stack_limit: extern "C" fn() -> usize,
+    /// `(vm, function, nums, pc) -> status`: finish a directly called function in the
+    /// interpreter after it deoptimized.
+    pub resume: extern "C" fn(*mut c_void, u32, *mut f64, u32) -> u64,
+}
+
+/// Byte offset of the VM's call-depth counter (`Vm` is `repr(C)` with `depth` first).
+pub(crate) const VM_DEPTH_OFFSET: i32 = 0;
+
+/// Stack headroom kept free below a direct native call: generated frames and the runtime
+/// functions they call fit well inside it.
+const DIRECT_CALL_HEADROOM: usize = 256 * 1024;
+
+/// The lowest stack address at which native code may still make a direct call (a stack pointer
+/// at or below it takes the interpreter's call path, which can grow the stack), or `usize::MAX`
+/// when the stack's extent is unknown (every call then takes that path).
+pub(crate) extern "C" fn rt_stack_limit() -> usize {
+    let marker = 0u8;
+    let sp = std::hint::black_box(&marker) as *const u8 as usize;
+    match stacker::remaining_stack() {
+        Some(left) if left > DIRECT_CALL_HEADROOM => sp - left + DIRECT_CALL_HEADROOM,
+        _ => usize::MAX,
+    }
 }
 
 pub(crate) extern "C" fn rt_fmod(a: f64, b: f64) -> f64 {

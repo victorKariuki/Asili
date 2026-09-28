@@ -171,6 +171,13 @@ impl Asm {
         self.branch(0xB500_0000 | r(rt), l, Fix::B19);
     }
 
+    /// `bl` with a zero offset to be linked later; returns the instruction's offset.
+    pub fn bl_placeholder(&mut self) -> usize {
+        let at = self.code.len();
+        self.word(0x9400_0000);
+        at
+    }
+
     pub fn blr(&mut self, rn: u8) {
         self.word(0xD63F_0000 | r(rn) << 5);
     }

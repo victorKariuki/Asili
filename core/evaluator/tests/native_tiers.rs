@@ -494,3 +494,62 @@ fn integer_and_float_list_representations() {
         &["t"],
     );
 }
+
+#[test]
+fn direct_native_calls_keep_interpreter_semantics() {
+    check(
+        "direct",
+        r#"
+        kazi fib(n: Namba) -> Namba {
+            ikiwa n < 2 {
+                rejesha n
+            }
+            rejesha fib(n - 1) + fib(n - 2)
+        }
+        kazi ngazi_chini(n: Namba) -> Namba {
+            ikiwa n == 0 {
+                rejesha 0
+            }
+            rejesha 1 + ngazi_chini(n - 1)
+        }
+        kazi ni_shufwa_moja(n: Namba) -> Namba {
+            ikiwa n == 0 {
+                rejesha 1
+            }
+            rejesha ni_witiri_moja(n - 1)
+        }
+        kazi ni_witiri_moja(n: Namba) -> Namba {
+            ikiwa n == 0 {
+                rejesha 0
+            }
+            rejesha ni_shufwa_moja(n - 1)
+        }
+        kazi vuka_kikomo(n: Namba) -> Namba {
+            # a counter pushed past 2^53 deoptimizes inside a directly called function
+            weka x: Namba = 9007199254740980
+            kwa i kutoka 0 hadi n {
+                x += 1
+            }
+            rejesha x
+        }
+        kazi t() -> Orodha<Namba> {
+            weka r: Orodha<Namba> = []
+            r.ongeza(fib(20))
+            r.ongeza(ni_shufwa_moja(1001))
+            r.ongeza(ni_witiri_moja(1001))
+            r.ongeza(vuka_kikomo(5))
+            r.ongeza(vuka_kikomo(40))
+            r.ongeza(ngazi_chini(9000))
+            rejesha r
+        }
+        kazi mno() -> Namba {
+            # deeper than the VM allows: the same error on every tier
+            rejesha ngazi_chini(20000)
+        }
+        kazi ukingoni() -> Namba {
+            rejesha ngazi_chini(9998)
+        }
+        "#,
+        &["t", "mno", "ukingoni"],
+    );
+}

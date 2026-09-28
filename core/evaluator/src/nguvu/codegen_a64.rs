@@ -68,10 +68,12 @@ struct Gen<'f> {
     /// Callee-saved registers this function uses, saved in the frame: (register, is_float).
     saved: Vec<(u8, bool)>,
     frame: u32,
+    /// Direct calls to link: (`bl` offset, callee).
+    calls: Vec<(usize, u32)>,
 }
 
 /// Machine code for `func`, position independent (runtime calls go through the `rt` table).
-pub fn generate(func: &Func) -> Result<Vec<u8>, String> {
+pub fn generate(func: &Func) -> Result<super::Code, String> {
     let alloc = allocate(func, &TARGET);
     let mut saved: Vec<(u8, bool)> = Vec::new();
     for loc in &alloc.loc {
@@ -86,13 +88,14 @@ pub fn generate(func: &Func) -> Result<Vec<u8>, String> {
     }
     saved.sort_unstable();
     let slots = func.classes.len() as u32;
-    let frame = (8 * (slots + saved.len() as u32)).div_ceil(16) * 16;
+    let frame = (8 * (slots + saved.len() as u32) + func.call_buffer).div_ceil(16) * 16;
     let mut g = Gen {
         asm: Asm::new(),
         func,
         alloc,
         saved,
         frame,
+        calls: Vec::new(),
     };
     g.prologue();
     let labels: Vec<Label> = (0..func.blocks.len()).map(|_| g.asm.new_label()).collect();
@@ -140,7 +143,10 @@ pub fn generate(func: &Func) -> Result<Vec<u8>, String> {
             }
         }
     }
-    g.asm.finish()
+    Ok(super::Code {
+        bytes: g.asm.finish()?,
+        calls: g.calls,
+    })
 }
 
 impl<'f> Gen<'f> {
@@ -193,6 +199,11 @@ impl<'f> Gen<'f> {
                 }
             }
         }
+    }
+
+    /// Offset from `sp` of the direct-call register buffer, above the saved registers.
+    fn call_buffer_offset(&self) -> u32 {
+        8 * (self.func.classes.len() as u32 + self.saved.len() as u32)
     }
 
     fn saved_offset(&self, i: usize) -> u32 {
@@ -399,6 +410,46 @@ impl<'f> Gen<'f> {
         }
     }
 
+    /// Before a call: caller-saved registers holding values needed after it, and every
+    /// register-resident argument, go to their home slots. Returns the values to restore.
+    fn save_for_call(&mut self, bi: usize, ii: usize, args: &[VReg]) -> Vec<VReg> {
+        let across: Vec<VReg> = self
+            .alloc
+            .live_across
+            .get(&(bi, ii))
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|v| TARGET.is_caller_saved(self.loc(*v)))
+            .collect();
+        for v in &across {
+            self.save(*v);
+        }
+        for a in args {
+            if !across.contains(a) {
+                self.save(*a);
+            }
+        }
+        across
+    }
+
+    /// Load call arguments from their home slots into `x0..`/`d0..` (leaves `x16` alone).
+    fn load_call_args(&mut self, args: &[VReg]) {
+        let (mut ni, mut nf) = (0u8, 0u8);
+        for a in args {
+            match self.func.class(*a) {
+                Class::Int => {
+                    self.ldr_at(ni, SP, Self::slot(*a));
+                    ni += 1;
+                }
+                Class::Float => {
+                    self.ldr_d_at(nf, SP, Self::slot(*a));
+                    nf += 1;
+                }
+            }
+        }
+    }
+
     fn inst(&mut self, bi: usize, ii: usize, inst: &Inst) {
         match inst {
             Inst::IConst { dst, value } => {
@@ -594,47 +645,41 @@ impl<'f> Gen<'f> {
                     }
                 }
             }
+            Inst::StackPointer { dst } => {
+                let d = self.int_target(*dst, S0);
+                self.asm.add_imm(d, SP, 0, false);
+                self.put_int(*dst, d);
+            }
+            Inst::CallBuffer { dst } => {
+                let d = self.int_target(*dst, S0);
+                let off = self.call_buffer_offset();
+                self.asm.add_imm(d, SP, off & 0xFFF, false);
+                if off >> 12 != 0 {
+                    self.asm.add_imm(d, d, off >> 12, true);
+                }
+                self.put_int(*dst, d);
+            }
+            Inst::CallDirect { func, args, dst } => {
+                let across = self.save_for_call(bi, ii, args);
+                self.load_call_args(args);
+                let at = self.asm.bl_placeholder();
+                self.calls.push((at, *func));
+                self.put_int(*dst, 0);
+                for v in &across {
+                    self.restore(*v);
+                }
+            }
             Inst::Call {
                 target,
                 args,
                 dst,
                 ret32,
             } => {
-                // Caller-saved registers holding values needed after the call, and every
-                // register-resident argument, go to their home slots; arguments are then loaded
-                // from slots so filling one argument register can't clobber another's source.
-                let across: Vec<VReg> = self
-                    .alloc
-                    .live_across
-                    .get(&(bi, ii))
-                    .cloned()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|v| TARGET.is_caller_saved(self.loc(*v)))
-                    .collect();
-                for v in &across {
-                    self.save(*v);
-                }
-                for a in args {
-                    if !across.contains(a) {
-                        self.save(*a);
-                    }
-                }
-                let rt = self.int_in(super::ir::RT, CALL);
-                self.asm.mov(CALL, rt);
-                let (mut ni, mut nf) = (0u8, 0u8);
-                for a in args {
-                    match self.func.class(*a) {
-                        Class::Int => {
-                            self.ldr_at(ni, SP, Self::slot(*a));
-                            ni += 1;
-                        }
-                        Class::Float => {
-                            self.ldr_d_at(nf, SP, Self::slot(*a));
-                            nf += 1;
-                        }
-                    }
-                }
+                let across = self.save_for_call(bi, ii, args);
+                // The runtime table pointer comes from its home slot (the prologue stores it
+                // there): runtime calls read it implicitly, so its register need not be live.
+                self.ldr_at(CALL, SP, Self::slot(super::ir::RT));
+                self.load_call_args(args);
                 self.asm.ldr(CALL, CALL, 8 * (*target as u32));
                 self.asm.blr(CALL);
                 if let Some(d) = dst {

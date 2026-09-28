@@ -90,6 +90,10 @@ pub enum RtFn {
     FloatToIntSat = 9,
     /// The interpreter's shift amount: `f64 as i32`, anything outside `0..=63` → 0.
     ShiftAmount = 10,
+    /// Lowest stack address a direct call may run below.
+    StackLimit = 11,
+    /// Finish a directly called function in the interpreter after it deoptimized.
+    Resume = 12,
 }
 
 #[derive(Clone, Debug)]
@@ -229,6 +233,22 @@ pub enum Inst {
         dst: Option<VReg>,
         ret32: bool,
     },
+    /// Call the direct entry of program function `func` (four pointer-sized arguments, a
+    /// status result), linked when the image is laid out.
+    CallDirect {
+        func: u32,
+        args: Vec<VReg>,
+        dst: VReg,
+    },
+    /// The machine stack pointer.
+    StackPointer {
+        dst: VReg,
+    },
+    /// Address of this function's call buffer (`Func::call_buffer` bytes in its frame), where
+    /// direct calls pass the callee's registers.
+    CallBuffer {
+        dst: VReg,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -258,6 +278,8 @@ pub struct Func {
     pub blocks: Vec<BlockData>,
     /// Blocks on rarely taken paths (deoptimization, errors, leaving the call), laid out last.
     pub cold: Vec<bool>,
+    /// Bytes of frame space for direct calls' register buffers (0: no direct calls).
+    pub call_buffer: u32,
 }
 
 pub const RT: VReg = VReg(0);
@@ -276,7 +298,10 @@ impl Inst {
     pub fn is_pure(&self) -> bool {
         !matches!(
             self,
-            Inst::Store { .. } | Inst::StoreIndex { .. } | Inst::Call { .. }
+            Inst::Store { .. }
+                | Inst::StoreIndex { .. }
+                | Inst::Call { .. }
+                | Inst::CallDirect { .. }
         )
     }
 
@@ -305,7 +330,8 @@ impl Inst {
             Inst::Store { src, base, .. } => vec![*src, *base],
             Inst::LoadIndex { base, index, .. } => vec![*base, *index],
             Inst::StoreIndex { src, base, index } => vec![*src, *base, *index],
-            Inst::Call { args, .. } => args.clone(),
+            Inst::Call { args, .. } | Inst::CallDirect { args, .. } => args.clone(),
+            Inst::StackPointer { .. } | Inst::CallBuffer { .. } => vec![],
         }
     }
 
@@ -334,7 +360,8 @@ impl Inst {
             Inst::Store { src, base, .. } => vec![src, base],
             Inst::LoadIndex { base, index, .. } => vec![base, index],
             Inst::StoreIndex { src, base, index } => vec![src, base, index],
-            Inst::Call { args, .. } => args.iter_mut().collect(),
+            Inst::Call { args, .. } | Inst::CallDirect { args, .. } => args.iter_mut().collect(),
+            Inst::StackPointer { .. } | Inst::CallBuffer { .. } => vec![],
         }
     }
 
@@ -364,6 +391,9 @@ impl Inst {
             Inst::MulOverflow { dst, ovf, .. } => vec![*dst, *ovf],
             Inst::Store { .. } | Inst::StoreIndex { .. } => vec![],
             Inst::Call { dst, .. } => dst.iter().copied().collect(),
+            Inst::CallDirect { dst, .. }
+            | Inst::StackPointer { dst }
+            | Inst::CallBuffer { dst } => vec![*dst],
         }
     }
 }
@@ -496,6 +526,7 @@ impl Builder {
                 classes: Vec::new(),
                 blocks: Vec::new(),
                 cold: Vec::new(),
+                call_buffer: 0,
             },
             current: None,
             insts: Vec::new(),

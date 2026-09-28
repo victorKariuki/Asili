@@ -189,8 +189,11 @@ Next steps are the "Remaining gaps" below.
   `weka`, map/struct literals, enum construction, field access) run entirely on the tree-walker.
   Per-function fallback, then lowering those constructs, would extend the fast path.
   `compile_module_explained` reports the blocking `kazi` and line.
-- Calls between `kazi` from native code go through the interpreter's call path; inlining small
-  numeric functions would let helpers like `sanduku_la(r, c)` cost nothing.
+- Native-to-native calls are direct only for scalar (`Namba`/`Buliani`) functions without
+  lists or generic values; others go through the interpreter's call path. Direct calls pass
+  arguments as `f64` through a memory buffer and save live registers around the call, so
+  `fib(32)` is ~49 ms against C's ~11 ms; typed register arguments and inlining small helpers
+  (`sanduku_la(r, c)`) would close most of that.
 - The native image is mapped by `pata tenda` or the standalone runner, not a standalone
   executable. `pata tenda` itself (the full toolchain binary) starts ~3 ms slower than the
   runner; ship programs with the `dist`-profile static runner.

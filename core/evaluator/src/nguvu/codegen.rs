@@ -108,6 +108,8 @@ struct Gen<'f> {
     abi: &'static Abi,
     /// Callee-saved xmm registers this function uses (Win64), saved below the pushes.
     xmm_saved: Vec<u8>,
+    /// Direct calls to link: (displacement offset, callee).
+    calls: Vec<(usize, u32)>,
 }
 
 fn icond(c: ICond) -> Cond {
@@ -142,7 +144,7 @@ fn negate(c: Cond) -> Cond {
 }
 
 /// Machine code for `func`, position independent (runtime calls go through the `rt` table).
-pub fn generate(func: &Func, abi: &'static Abi) -> Vec<u8> {
+pub fn generate(func: &Func, abi: &'static Abi) -> super::Code {
     let alloc = allocate(func, &abi.target);
     if let Ok(path) = std::env::var("ASILI_NGUVU_IR") {
         use std::io::Write as _;
@@ -170,6 +172,7 @@ pub fn generate(func: &Func, abi: &'static Abi) -> Vec<u8> {
         alloc,
         abi,
         xmm_saved,
+        calls: Vec::new(),
     };
     g.prologue();
     let labels: Vec<_> = (0..func.blocks.len()).map(|_| g.asm.new_label()).collect();
@@ -218,13 +221,26 @@ pub fn generate(func: &Func, abi: &'static Abi) -> Vec<u8> {
             }
         }
     }
-    g.asm.finish()
+    super::Code {
+        bytes: g.asm.finish(),
+        calls: g.calls,
+    }
 }
 
 impl<'f> Gen<'f> {
     /// Bytes between `rbp` and the first home slot: pushed registers and saved xmm registers.
     fn saved_bytes(&self) -> i32 {
         8 * self.abi.pushed.len() as i32 + 16 * self.xmm_saved.len() as i32
+    }
+
+    /// The direct-call register buffer, below the home slots.
+    fn call_buffer(&self) -> Mem {
+        Mem {
+            base: Gpr::Rbp,
+            disp: -self.saved_bytes()
+                - 8 * self.func.classes.len() as i32
+                - self.func.call_buffer as i32,
+        }
     }
 
     fn slot(&self, v: VReg) -> Mem {
@@ -240,7 +256,10 @@ impl<'f> Gen<'f> {
         // At entry `rsp` is 8 mod 16 (the return address); `push rbp` realigns it, so after the
         // pushes it is `8 * pushed` mod 16 and the rest of the frame must restore alignment for
         // calls.
-        let mut frame = 16 * self.xmm_saved.len() as i32 + 8 * slots + self.abi.shadow;
+        let mut frame = 16 * self.xmm_saved.len() as i32
+            + 8 * slots
+            + self.func.call_buffer as i32
+            + self.abi.shadow;
         if (8 * pushed + frame) % 16 != 0 {
             frame += 8;
         }
@@ -624,6 +643,60 @@ impl<'f> Gen<'f> {
         }
     }
 
+    /// Before a call: caller-saved registers holding values needed after it, and every
+    /// register-resident argument, go to their home slots (arguments are then loaded from
+    /// slots, so filling one argument register can't clobber another's source). Returns the
+    /// values to restore afterwards.
+    fn save_for_call(&mut self, bi: usize, ii: usize, args: &[VReg]) -> Vec<VReg> {
+        let across: Vec<VReg> = self
+            .alloc
+            .live_across
+            .get(&(bi, ii))
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|v| {
+                self.abi
+                    .target
+                    .is_caller_saved(self.alloc.loc[v.0 as usize])
+            })
+            .collect();
+        for v in &across {
+            self.save(*v);
+        }
+        for a in args {
+            if !across.contains(a) {
+                self.save(*a);
+            }
+        }
+        across
+    }
+
+    /// Load call arguments from their home slots into the ABI's argument registers (leaves
+    /// `rax` alone).
+    fn load_call_args(&mut self, args: &[VReg]) {
+        let (mut ni, mut nf) = (0usize, 0u8);
+        for (pos, a) in args.iter().enumerate() {
+            // Win64 gives argument `pos` the pos-th register of its class; System V the next
+            // free one.
+            let (i, f) = if self.abi.positional {
+                (pos, pos as u8)
+            } else {
+                (ni, nf)
+            };
+            match self.func.class(*a) {
+                Class::Int => {
+                    self.asm.load(self.abi.args[i], self.slot(*a));
+                    ni += 1;
+                }
+                Class::Float => {
+                    self.asm.movsd_load(Xmm(f), self.slot(*a));
+                    nf += 1;
+                }
+            }
+        }
+    }
+
     fn inst(&mut self, bi: usize, ii: usize, inst: &Inst) {
         use Gpr::*;
         match inst {
@@ -923,59 +996,33 @@ impl<'f> Gen<'f> {
                     }
                 }
             }
+            Inst::StackPointer { dst } => self.put_int(*dst, Rsp),
+            Inst::CallBuffer { dst } => {
+                let d = self.int_target(*dst, Rax);
+                self.asm.lea(d, self.call_buffer());
+                self.put_int(*dst, d);
+            }
+            Inst::CallDirect { func, args, dst } => {
+                let across = self.save_for_call(bi, ii, args);
+                self.load_call_args(args);
+                let at = self.asm.call_rel32();
+                self.calls.push((at, *func));
+                self.put_int(*dst, Rax);
+                for v in &across {
+                    self.restore(*v);
+                }
+            }
             Inst::Call {
                 target,
                 args,
                 dst,
                 ret32,
             } => {
-                // Caller-saved registers holding values needed after the call, and every
-                // register-resident argument, go to their home slots; arguments are then loaded
-                // from slots so filling one argument register can't clobber another's source.
-                let across: Vec<VReg> = self
-                    .alloc
-                    .live_across
-                    .get(&(bi, ii))
-                    .cloned()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|v| {
-                        self.abi
-                            .target
-                            .is_caller_saved(self.alloc.loc[v.0 as usize])
-                    })
-                    .collect();
-                for v in &across {
-                    self.save(*v);
-                }
-                for a in args {
-                    if !across.contains(a) {
-                        self.save(*a);
-                    }
-                }
-                // The runtime table pointer may itself sit in an argument register.
-                let rt = self.int_in(super::ir::RT, Rax);
-                self.asm.mov_rr(Rax, rt);
-                let (mut ni, mut nf) = (0usize, 0u8);
-                for (pos, a) in args.iter().enumerate() {
-                    // Win64 gives argument `pos` the pos-th register of its class; System V the
-                    // next free one.
-                    let (i, f) = if self.abi.positional {
-                        (pos, pos as u8)
-                    } else {
-                        (ni, nf)
-                    };
-                    match self.func.class(*a) {
-                        Class::Int => {
-                            self.asm.load(self.abi.args[i], self.slot(*a));
-                            ni += 1;
-                        }
-                        Class::Float => {
-                            self.asm.movsd_load(Xmm(f), self.slot(*a));
-                            nf += 1;
-                        }
-                    }
-                }
+                let across = self.save_for_call(bi, ii, args);
+                // The runtime table pointer comes from its home slot (the prologue stores it
+                // there): runtime calls read it implicitly, so its register need not be live.
+                self.asm.load(Rax, self.slot(super::ir::RT));
+                self.load_call_args(args);
                 self.asm.call_mem(Mem {
                     base: Rax,
                     disp: 8 * (*target as i32),

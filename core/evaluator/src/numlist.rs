@@ -157,7 +157,7 @@ mod tests {
             f64::INFINITY,
             9.007_199_254_740_993e15,
             1e19,
-            -9.223_372_036_854_775_808e18,
+            i64::MIN as f64,
         ];
         for &v in &tricky {
             let mut ints: NumList = [3.0, 4.0].into_iter().collect();

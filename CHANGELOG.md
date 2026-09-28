@@ -62,6 +62,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   silicon's per-thread JIT write protection) and falls back to the plain mapping. Images record
   the calling convention. Verified under wine for Windows; CI runs the evaluator tests on
   Linux arm64, macOS 14 (Apple silicon) and Windows.
+- **Direct native calls**: a `kazi` whose parameters and result are all `Namba`/`Buliani` and
+  that uses no lists or generic values gets a second native entry that native callers reach
+  with a plain `call`/`bl` (arguments in a per-frame buffer, no interpreter frame). The call
+  depth limit (10,000, `undani mno`) and a stack-headroom check still apply — hitting either
+  falls back to the interpreter at that call — and a deoptimization inside a directly called
+  function resumes it in the interpreter with its registers. `fib(32)`: 1.7 s → 49 ms.
 - **Integer lists**: `Orodha<Namba>` storage (`numlist.rs`) keeps a list's elements as `i64`
   words while every element converts exactly (no `-0.0`, NaN, ±∞ or fraction) and as `f64`
   bits otherwise; reading is unchanged for programs. Native code keeps lists the analysis

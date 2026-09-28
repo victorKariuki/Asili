@@ -147,7 +147,7 @@ pub fn allocate(func: &Func, target: &Target) -> Allocation {
         for (i, inst) in block.insts.iter().enumerate().rev() {
             let p = first + 2 * i as u32;
             let defs = inst.defs();
-            if matches!(inst, Inst::Call { .. }) {
+            if matches!(inst, Inst::Call { .. } | Inst::CallDirect { .. }) {
                 calls.push(p);
                 let across: Vec<VReg> = open
                     .keys()
@@ -338,6 +338,7 @@ fn brief(i: &Inst) -> String {
         Inst::FCmp { cond, .. } => format!("FCmp.{cond:?}"),
         Inst::Float { op, .. } => format!("F{op:?}"),
         Inst::Call { target, .. } => format!("Call {target:?}"),
+        Inst::CallDirect { func, .. } => format!("CallDirect #{func}"),
         Inst::Load { offset, .. } | Inst::Store { offset, .. } => {
             let s = format!("{i:?}");
             format!("{} +{offset}", s.split(' ').next().unwrap_or(""))

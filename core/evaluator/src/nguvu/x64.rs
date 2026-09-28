@@ -386,6 +386,15 @@ impl Asm {
     }
 
     /// `call [m]`.
+    /// `call rel32` with a zero displacement to be linked later; returns the displacement's
+    /// offset.
+    pub fn call_rel32(&mut self) -> usize {
+        self.byte(0xE8);
+        let at = self.code.len();
+        self.bytes(&[0, 0, 0, 0]);
+        at
+    }
+
     pub fn call_mem(&mut self, m: Mem) {
         self.rex(false, 0, 0, m.base as u8, false);
         self.byte(0xFF);

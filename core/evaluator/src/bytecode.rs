@@ -2179,12 +2179,15 @@ pub(crate) enum Ret {
     Val(Value),
 }
 
+// `repr(C)` with `depth` first: native code's direct calls count themselves in it at offset 0
+// (`native::VM_DEPTH_OFFSET`), so the call-depth limit is the same on every tier.
+#[repr(C)]
 struct Vm<'p> {
+    depth: usize,
     program: &'p BytecodeProgram,
     builtins: Vec<BuiltinFn>,
     builtin_index: HashMap<String, usize>,
     pool: Vec<Frame>,
-    depth: usize,
     /// Ahead-of-time compiled functions (`pata jenga`'s LLVM library), used instead of the interpreter.
     #[cfg(not(target_arch = "wasm32"))]
     aot: Option<&'p crate::aot::NativeLibrary>,
@@ -2206,7 +2209,50 @@ pub(crate) static NATIVE_RUNTIME: crate::native::Runtime = crate::native::Runtim
     ceil: crate::native::rt_ceil,
     float_to_int_sat: crate::native::rt_float_to_int_sat,
     shift_amount: crate::native::rt_shift_amount,
+    stack_limit: crate::native::rt_stack_limit,
+    resume: native_resume,
 };
+
+/// A function entered through its direct native entry deoptimized at `pc`: finish the call in
+/// the interpreter from the register values native code left in `nums` (the caller's buffer),
+/// storing a numeric result at `nums[num_regs]`. Returns `STATUS_RETURN`, or `STATUS_FAIL` with
+/// the error pending.
+#[cfg(not(target_arch = "wasm32"))]
+extern "C" fn native_resume(
+    vm: *mut std::ffi::c_void,
+    function: u32,
+    nums: *mut f64,
+    pc: u32,
+) -> u64 {
+    // SAFETY: called by native code with the `Vm` it was handed, whose program is live, and a
+    // buffer of `num_regs + 1` registers for `function`.
+    let vm = unsafe { &mut *(vm as *mut Vm<'static>) };
+    let program = vm.program;
+    let index = function as usize;
+    let f = &program.functions[index];
+    let buf = unsafe { std::slice::from_raw_parts_mut(nums, f.num_regs as usize + 1) };
+    let mut frame = vm.frame_for(f);
+    // Parameters and every register the function writes hold their values in the buffer; the
+    // rest keep their entry values (constants, zeros) from `frame_for`.
+    for r in crate::nguvu::lower::frame_registers(f) {
+        frame.nums[r as usize] = buf[r as usize];
+    }
+    crate::native::note_deopt(index, pc as usize);
+    match vm.run(index, frame, pc as usize) {
+        Ok(Ret::Num(v)) => {
+            buf[f.num_regs as usize] = v;
+            crate::native::STATUS_RETURN << 32
+        }
+        Ok(_) => {
+            vm.pending = Some(Flow::Fail(type_err("aina ya thamani ya kurudi si sahihi")));
+            crate::native::STATUS_FAIL << 32
+        }
+        Err(e) => {
+            vm.pending = Some(Flow::Fail(e));
+            crate::native::STATUS_FAIL << 32
+        }
+    }
+}
 
 /// `exec_slow` entry point for native code: `0` to continue, else a `native::STATUS_*`.
 #[cfg(not(target_arch = "wasm32"))]
@@ -2235,7 +2281,7 @@ extern "C" fn native_exec(
     }
 }
 
-const MAX_CALL_DEPTH: usize = 10_000;
+pub(crate) const MAX_CALL_DEPTH: usize = 10_000;
 
 fn type_err(msg: &str) -> EvalError {
     EvalError::TypeErr(msg.to_string())
@@ -2281,11 +2327,11 @@ impl<'p> Vm<'p> {
     fn new(program: &'p BytecodeProgram) -> Result<Self, EvalError> {
         let table = crate::builtins::BuiltinTable::new();
         Ok(Vm {
+            depth: 0,
             program,
             builtins: table.fns,
             builtin_index: table.index,
             pool: Vec::new(),
-            depth: 0,
             #[cfg(not(target_arch = "wasm32"))]
             aot: None,
             #[cfg(not(target_arch = "wasm32"))]
