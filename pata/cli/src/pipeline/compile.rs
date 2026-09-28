@@ -886,12 +886,27 @@ mod tests {
         let artifact =
             emit_build_artifacts(&root, &compiled, None, BuildProfile::Dev).expect("emit .asb");
         let bytes = fs::read(&artifact).expect("read .asb");
-        let loaded = load_asb(&bytes).expect("load_asb");
+        // Bytecode when the program lowers to it, else the serialized AST.
+        let names: Vec<String> = if parse_format(&bytes).as_deref() == Some("bytecode") {
+            asili_evaluator::load_asb_bytecode(&bytes)
+                .expect("load_asb_bytecode")
+                .functions
+                .into_iter()
+                .map(|f| f.name)
+                .collect()
+        } else {
+            load_asb(&bytes)
+                .expect("load_asb")
+                .functions
+                .into_iter()
+                .map(|f| f.name)
+                .collect()
+        };
         assert!(
-            !loaded.functions.iter().any(|f| f.name == "tu_native"),
+            !names.iter().any(|n| n == "tu_native"),
             "tu_native should be absent from the emitted .asb, not just the in-memory module"
         );
-        assert!(loaded.functions.iter().any(|f| f.name == "kuu"));
+        assert!(names.iter().any(|n| n == "kuu"));
 
         let _ = fs::remove_dir_all(&root);
     }

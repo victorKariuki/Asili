@@ -123,6 +123,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of a hardware divide on x86-64, and for unsigned operands on AArch64: `(s + i * 7 +
   i // 3) % 1000003` over 20 million `i` runs in 70 ms (was 124 ms; gcc `-O2` C: 84 ms). Images
   are rebuilt (`IMAGE_VERSION` 6).
+- **`pata jenga` builds bytecode for every program that lowers to it**: the default (`dev`)
+  profile used to emit bytecode only when some `kazi` contained a loop, so recursive programs
+  ran on the tree-walker; now any program the bytecode compiler accepts gets the VM and native
+  code. `fib(25)` from a plain `pata jenga`: 189 → 2.1 ms.
 - **Faster tree-walker** (still what runs any program the bytecode compiler cannot lower):
   calling a `kazi` no longer deep-copies its whole body (AST) on every call; variables live in
   one flat vector of bindings per run instead of a hash map per block (no allocation to enter

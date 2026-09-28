@@ -100,9 +100,9 @@ fn asb_is_deterministic() {
 
 #[test]
 fn asb_roundtrip() {
-    use asili_evaluator::{emit_asb, load_asb};
+    use asili_evaluator::{emit_asb_ast, load_asb};
     let module = parse_and_check("kazi kuu(hoja: Orodha<Neno>) -> Tupu { }");
-    let bytes = emit_asb(&module, "source");
+    let bytes = emit_asb_ast(&module, "source");
     let loaded = load_asb(&bytes).expect("load_asb");
     assert_eq!(module.functions.len(), loaded.functions.len());
 }

@@ -557,16 +557,17 @@ pub fn run_asb(
     run_main(&module, args).map_err(RunAsbError::Run)
 }
 
+/// The `.asb` for a program: bytecode (run by the VM and native code) whenever the whole
+/// module lowers to it, else the serialized AST for the tree-walker.
 pub fn emit_asb(module: &Module, source: &str) -> Vec<u8> {
-    let vm_candidate = module
-        .functions
-        .iter()
-        .any(|f| bytecode_loop_in_block(&f.body));
-    if vm_candidate {
-        if let Some(program) = bytecode::compile_module(module) {
-            return asb::emit_bytecode_bytes(&program, source);
-        }
+    match bytecode::compile_module(module) {
+        Some(program) => asb::emit_bytecode_bytes(&program, source),
+        None => asb::emit_asb_bytes(module, source),
     }
+}
+
+/// The `.asb` holding the serialized AST (the tree-walker's artifact), whatever the program.
+pub fn emit_asb_ast(module: &Module, source: &str) -> Vec<u8> {
     asb::emit_asb_bytes(module, source)
 }
 
@@ -576,21 +577,4 @@ pub fn emit_asb(module: &Module, source: &str) -> Vec<u8> {
 pub fn emit_asb_bytecode(module: &Module, source: &str) -> Result<Vec<u8>, String> {
     bytecode::compile_module_explained(module)
         .map(|program| asb::emit_bytecode_bytes(&program, source))
-}
-
-fn bytecode_loop_in_block(block: &asili_parser::Block) -> bool {
-    block.statements.iter().any(|stmt| match stmt {
-        asili_parser::Stmt::While { .. } | asili_parser::Stmt::For { .. } => true,
-        asili_parser::Stmt::If {
-            then_block,
-            else_if,
-            else_block,
-            ..
-        } => {
-            bytecode_loop_in_block(then_block)
-                || else_if.iter().any(|(_, b)| bytecode_loop_in_block(b))
-                || else_block.as_ref().is_some_and(bytecode_loop_in_block)
-        }
-        _ => false,
-    })
 }

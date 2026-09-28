@@ -265,11 +265,20 @@ mod tests {
             asb_bytes.starts_with(b"ASB-STUB"),
             "asb should have ASB-STUB header"
         );
-        let module = asili_evaluator::load_asb(&asb_bytes).expect("load_asb");
-        assert!(
-            !module.functions.is_empty(),
-            "asb should contain merged module"
-        );
+        // Bytecode when the program lowers to it, else the serialized AST.
+        let functions = if asili_evaluator::parse_format(&asb_bytes).as_deref() == Some("bytecode")
+        {
+            asili_evaluator::load_asb_bytecode(&asb_bytes)
+                .expect("load_asb_bytecode")
+                .functions
+                .len()
+        } else {
+            asili_evaluator::load_asb(&asb_bytes)
+                .expect("load_asb")
+                .functions
+                .len()
+        };
+        assert!(functions > 0, "asb should contain merged module");
         let manifest =
             fs::read_to_string("kilele/app.build.manifest").expect("per-artifact manifest");
         assert!(
