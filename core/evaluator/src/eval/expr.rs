@@ -293,7 +293,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 }
                 _ => super::eval_expr_impl(right, rt)?,
             };
-            super::ops::binary_value(op, l, r)
+            super::ops::binary_value(op, &l, &r)
         }
         Expr::Cast { expr, ty, .. } => {
             let v = super::eval_expr_impl(expr, rt)?;

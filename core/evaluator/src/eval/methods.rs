@@ -76,7 +76,11 @@ pub(crate) fn index_value(base: &Value, index: &Value) -> Result<Value, EvalErro
 /// except CR LF, which is a single grapheme.
 pub(crate) fn grapheme_count(s: &str) -> usize {
     if s.is_ascii() {
-        s.len() - s.as_bytes().windows(2).filter(|w| w == b"\r\n").count()
+        let b = s.as_bytes();
+        if !b.contains(&b'\r') {
+            return b.len();
+        }
+        b.len() - b.windows(2).filter(|w| w == b"\r\n").count()
     } else {
         s.graphemes(true).count()
     }

@@ -123,6 +123,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of a hardware divide on x86-64, and for unsigned operands on AArch64: `(s + i * 7 +
   i // 3) % 1000003` over 20 million `i` runs in 70 ms (was 124 ms; gcc `-O2` C: 84 ms). Images
   are rebuilt (`IMAGE_VERSION` 6).
+- **Cheaper string building, part two**: `+` on two `Neno` values borrows both and allocates
+  the result once at its final size (operands are no longer copied first, and nothing
+  reallocates); whole numbers are formatted by a direct digit writer; `urefu` of ASCII text
+  without `\r` is its byte length; and the VM skips re-copying a string constant into a
+  register that still holds it. String building (200,000 × `"kipengele " + (i kama Neno)`):
+  29 → 20 ms.
 - **More of the language on the bytecode VM and native code**: `linganisha` (every pattern
   kind, through one matcher shared with the tree-walker), `umbo` literals and field access,
   `jenum` construction, map literals with literal keys, and the predefined names (`Ukomo`,

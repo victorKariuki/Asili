@@ -3060,7 +3060,16 @@ impl<'p> Vm<'p> {
                 frame.vals[*dst as usize] = v;
             }
             Opcode::ConstVal { dst, k } => {
-                frame.vals[*dst as usize] = program
+                let slot = &mut frame.vals[*dst as usize];
+                // A loop reloading a string constant finds it still there: skip the copy.
+                if let (Value::Neno(cur), Some(StoredConstant::Neno(want))) =
+                    (&*slot, program.constants.get(*k as usize))
+                {
+                    if cur == want {
+                        return Flow::Next;
+                    }
+                }
+                *slot = program
                     .constants
                     .get(*k as usize)
                     .map(StoredConstant::to_value)
@@ -3089,11 +3098,7 @@ impl<'p> Vm<'p> {
                 frame.nums[*dst as usize] = flag(ops::truthy(&frame.vals[*src as usize]))
             }
             Opcode::ValBinary { op, dst, a, b } => {
-                let (l, r) = (
-                    frame.vals[*a as usize].clone(),
-                    frame.vals[*b as usize].clone(),
-                );
-                match ops::binary_value(op, l, r) {
+                match ops::binary_value(op, &frame.vals[*a as usize], &frame.vals[*b as usize]) {
                     Ok(v) => frame.vals[*dst as usize] = v,
                     Err(e) => fail!(e),
                 }

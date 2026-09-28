@@ -13,7 +13,7 @@ use crate::value::{
 
 /// `l op r` for already-evaluated operands. `na`/`au` short-circuiting is the caller's job
 /// (it decides whether `r` is evaluated at all); given both values, they are checked here.
-pub(crate) fn binary_value(op: &BinaryOp, l: Value, r: Value) -> Result<Value, EvalError> {
+pub(crate) fn binary_value(op: &BinaryOp, l: &Value, r: &Value) -> Result<Value, EvalError> {
     // Namba_Kuu/Namba_Sahihi arithmetic short-circuits before the plain-f64 path below —
     // a Namba operand mixed with either widens (infallibly) to match, matching the cast
     // direction documented for these types (Namba -> Namba_Kuu/Namba_Sahihi is
@@ -27,12 +27,14 @@ pub(crate) fn binary_value(op: &BinaryOp, l: Value, r: Value) -> Result<Value, E
     }
     match op {
         BinaryOp::Add => match (l, r) {
-            // Owned operands: append in place.
-            (Value::Neno(mut s1), Value::Neno(s2)) => {
-                s1.push_str(&s2);
-                Ok(Value::Neno(s1))
+            // One allocation of exactly the result's size; neither operand is copied first.
+            (Value::Neno(s1), Value::Neno(s2)) => {
+                let mut s = String::with_capacity(s1.len() + s2.len());
+                s.push_str(s1);
+                s.push_str(s2);
+                Ok(Value::Neno(s))
             }
-            (l, r) => binary_f64(&l, &r, "+", |a, b| a + b),
+            (l, r) => binary_f64(l, r, "+", |a, b| a + b),
         },
         BinaryOp::Sub => binary_f64(&l, &r, "-", |a, b| a - b),
         BinaryOp::Mul => binary_f64(&l, &r, "*", |a, b| a * b),

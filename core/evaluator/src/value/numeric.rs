@@ -76,8 +76,25 @@ pub(crate) fn format_namba(n: f64) -> String {
         && n.abs() < 9_007_199_254_740_992.0
         && !(n == 0.0 && n.is_sign_negative())
     {
-        // Whole numbers print as their digits either way; integer formatting is much faster.
-        (n as i64).to_string()
+        // Whole numbers print as their digits either way; writing the digits directly is much
+        // faster than the float (or even the generic integer) formatter.
+        let mut buf = [0u8; 20];
+        let mut i = buf.len();
+        let mut m = n.abs() as u64;
+        loop {
+            i -= 1;
+            buf[i] = b'0' + (m % 10) as u8;
+            m /= 10;
+            if m == 0 {
+                break;
+            }
+        }
+        if n < 0.0 {
+            i -= 1;
+            buf[i] = b'-';
+        }
+        // SAFETY: ASCII digits and an optional '-'.
+        unsafe { std::str::from_utf8_unchecked(&buf[i..]) }.to_string()
     } else {
         n.to_string()
     }
