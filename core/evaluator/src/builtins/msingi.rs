@@ -64,7 +64,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             let err = args
                 .first()
                 .cloned()
-                .unwrap_or(Value::Neno("error".to_string()));
+                .unwrap_or(Value::neno("error".to_string()));
             Ok(Value::Tokeo(Err(Box::new(err))))
         }),
     );

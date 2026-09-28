@@ -372,15 +372,15 @@ fn status_reason(status: u16) -> &'static str {
 fn request_to_value(req: &ParsedRequest) -> Value {
     let mut headers_map: HashMap<MapKey, Value> = HashMap::with_capacity(req.headers.len());
     for (k, v) in &req.headers {
-        headers_map.insert(MapKey::Neno(k.clone()), Value::Neno(v.clone()));
+        headers_map.insert(MapKey::Neno(k.clone()), Value::neno(v.clone()));
     }
     Value::Struct(
         "OmbiHttp".into(),
         vec![
-            ("njia".into(), Value::Neno(req.method.clone())),
-            ("anwani".into(), Value::Neno(req.path.clone())),
+            ("njia".into(), Value::neno(req.method.clone())),
+            ("anwani".into(), Value::neno(req.path.clone())),
             ("vichwa".into(), Value::Kamusi(headers_map)),
-            ("mwili".into(), Value::Neno(req.body.clone())),
+            ("mwili".into(), Value::neno(req.body.clone())),
         ]
         .into(),
     )

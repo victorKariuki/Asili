@@ -65,6 +65,6 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     );
     m.insert(
         "omba".to_string(),
-        Box::new(|_args: &[Value]| platform::read_stdin().map(Value::Neno)),
+        Box::new(|_args: &[Value]| platform::read_stdin().map(Value::neno)),
     );
 }

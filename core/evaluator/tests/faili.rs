@@ -47,7 +47,7 @@ fn write_then_read_round_trips() {
     );
     let module = compile(&src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("habari".to_string()));
+    assert_eq!(result, Value::neno("habari".to_string()));
     let _ = std::fs::remove_file(&path);
 }
 
@@ -113,7 +113,7 @@ fn scope_exit_without_explicit_tupa_still_closes_the_handle() {
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
     assert_eq!(
         result,
-        Value::Neno("pili".to_string()),
+        Value::neno("pili".to_string()),
         "second open+write should succeed cleanly after the first handle's scope exited, \
          proving Drop released the OS handle without needing explicit tupa/funga"
     );

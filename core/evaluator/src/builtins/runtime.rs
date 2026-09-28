@@ -57,7 +57,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
             {
                 for (key, val) in std::env::vars() {
-                    map.insert(MapKey::Neno(key), Value::Neno(val));
+                    map.insert(MapKey::Neno(key), Value::neno(val));
                 }
             }
             Ok(Value::Kamusi(map))

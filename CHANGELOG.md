@@ -146,6 +146,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   bump, and `ongeza`/`badilisha`/`ingiza`/`ondoa` copy the items only while another copy still
   refers to them. The tree-walker's `kwa … katika` moves items out of an unshared list instead
   of copying them.
+- **`Neno` values are shared**: text is never changed in place, so a `Neno` is an `Rc<str>` and
+  copying one (reading a list element, passing an argument, loading a string constant — now
+  materialized once per VM) is a reference-count bump. Concatenation and `kama Neno` write
+  their result straight into its single allocation; `urefu` checks for ASCII without `\r` in
+  one vectorizable pass. Iterating a 1,000-word list 5,000 times: 483 → 384 ms.
 - **Cheaper string building, part two**: `+` on two `Neno` values borrows both and allocates
   the result once at its final size (operands are no longer copied first, and nothing
   reallocates); whole numbers are formatted by a direct digit writer; `urefu` of ASCII text

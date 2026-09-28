@@ -31,7 +31,7 @@ fn njia_na_kikomo_send_and_receive_within_one_function() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("moja".to_string()));
+    assert_eq!(result, Value::neno("moja".to_string()));
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn njia_na_kikomo_send_across_a_real_spawned_thread() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("habari kutoka kwa uzi".to_string()));
+    assert_eq!(result, Value::neno("habari kutoka kwa uzi".to_string()));
 }
 
 /// Proves the bound is actually enforced end-to-end (not just that the constructor accepts a
@@ -106,7 +106,7 @@ fn njia_na_kikomo_delivers_every_item_in_order_under_backpressure() {
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
     assert_eq!(
         result,
-        Value::Neno("123".to_string()),
+        Value::neno("123".to_string()),
         "all 3 items must arrive, in order, exactly once"
     );
 }

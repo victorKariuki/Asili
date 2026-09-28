@@ -40,7 +40,7 @@ fn test_neno_kwa_herufi_ndogo() {
         kazi test() -> Neno { weka s = "HeLLo" rejesha s.kwa_herufi_ndogo() }
     "#;
     let v = parse_and_eval(src);
-    assert_eq!(v, asili_evaluator::Value::Neno("hello".to_string()));
+    assert_eq!(v, asili_evaluator::Value::neno("hello".to_string()));
 }
 
 /// Test 4: kwa_herufi_kubwa (uppercase) method
@@ -51,7 +51,7 @@ fn test_neno_kwa_herufi_kubwa() {
         kazi test() -> Neno { weka s = "HeLLo" rejesha s.kwa_herufi_kubwa() }
     "#;
     let v = parse_and_eval(src);
-    assert_eq!(v, asili_evaluator::Value::Neno("HELLO".to_string()));
+    assert_eq!(v, asili_evaluator::Value::neno("HELLO".to_string()));
 }
 
 /// Test 5: anza_na (starts_with) method
@@ -112,7 +112,7 @@ fn test_neno_badilisha() {
         kazi test() -> Neno { weka s = "hello world" rejesha s.badilisha("world", "asili") }
     "#;
     let v = parse_and_eval(src);
-    assert_eq!(v, asili_evaluator::Value::Neno("hello asili".to_string()));
+    assert_eq!(v, asili_evaluator::Value::neno("hello asili".to_string()));
 }
 
 /// Test 10: kata (slice) method
@@ -123,7 +123,7 @@ fn test_neno_kata() {
         kazi test() -> Neno { weka s = "hello" rejesha s.kata(1, 4) }
     "#;
     let v = parse_and_eval(src);
-    assert_eq!(v, asili_evaluator::Value::Neno("ell".to_string()));
+    assert_eq!(v, asili_evaluator::Value::neno("ell".to_string()));
 }
 
 /// Test 11: tafuta (find) method - found
@@ -225,7 +225,7 @@ fn test_neno_convenience_helpers() {
         }
     "#;
     let v = parse_and_eval(src);
-    assert_eq!(v, asili_evaluator::Value::Neno("xxx".to_string()));
+    assert_eq!(v, asili_evaluator::Value::neno("xxx".to_string()));
 }
 
 #[test]
@@ -248,7 +248,7 @@ fn test_orodha_helpers() {
 
     "#;
     let v = parse_and_eval(src);
-    assert_eq!(v, asili_evaluator::Value::Neno("2,3".to_string()));
+    assert_eq!(v, asili_evaluator::Value::neno("2,3".to_string()));
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn test_orodha_chunks_and_string_pipeline() {
         }
     "#;
     let v = parse_and_eval(src);
-    assert_eq!(v, asili_evaluator::Value::Neno("1 2 3\n4 5 6".to_string()));
+    assert_eq!(v, asili_evaluator::Value::neno("1 2 3\n4 5 6".to_string()));
 }
 
 #[test]
@@ -290,7 +290,7 @@ fn test_if_expression() {
         }
     "#;
     let v = parse_and_eval(src);
-    assert_eq!(v, asili_evaluator::Value::Neno("kubwa".to_string()));
+    assert_eq!(v, asili_evaluator::Value::neno("kubwa".to_string()));
 }
 
 #[test]

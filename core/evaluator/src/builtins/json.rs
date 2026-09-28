@@ -12,7 +12,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         Box::new(|args: &[Value]| {
             let thamani = args.first().unwrap_or(&Value::Hamna);
             match thamani.to_json() {
-                Ok(j) => Ok(Value::sawa(Value::Neno(j.to_string()))),
+                Ok(j) => Ok(Value::sawa(Value::neno(j.to_string()))),
                 Err(e) => Ok(Value::kosa(e.to_string())),
             }
         }),

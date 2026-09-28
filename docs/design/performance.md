@@ -243,11 +243,10 @@ Next steps are the "Remaining gaps" below.
   8-byte elements chosen from the range analysis, so the sieve now moves bytes like C (23 ms
   against 17 ms). The rest of that gap is the VM call that builds the list
   (`orodha_rudia`) and the bounds checks the analysis cannot drop.
-- `Neno` values are owned `String`s: loading a string constant copies it, and every generic
-  value operation runs in the interpreter. The static runner's own allocator and memory
-  primitives (musl's locked on every allocation and copied bytewise) brought string building
-  from 99 to 29 ms; shared or small-string storage would remove most of the remaining
-  allocation (~3× C).
+- `Neno`, `Orodha` and `umbo` values are shared (`Rc`) and copied only when written, and the
+  static runner has its own allocator and memory primitives (musl's locked on every allocation
+  and copied bytewise): string building went from 99 to 17 ms (C: 10 ms). Every generic value
+  operation still runs in the interpreter, one `exec_slow` dispatch per instruction.
 - The native image is mapped by `pata tenda` or the standalone runner, not a standalone
   executable. `pata tenda` itself (the full toolchain binary) starts ~3 ms slower than the
   runner; ship programs with the `dist`-profile static runner.

@@ -81,9 +81,9 @@ fn tls_request_response_round_trips() {
             &module_clone,
             "anza",
             vec![
-                Value::Neno(addr_clone),
-                Value::Neno(cert_arg),
-                Value::Neno(key_arg),
+                Value::neno(addr_clone),
+                Value::neno(cert_arg),
+                Value::neno(key_arg),
             ],
         );
     });
@@ -150,9 +150,9 @@ fn plaintext_connection_to_tls_listener_fails_cleanly_not_by_hanging() {
             &module_clone,
             "anza",
             vec![
-                Value::Neno(addr_clone),
-                Value::Neno(cert_arg),
-                Value::Neno(key_arg),
+                Value::neno(addr_clone),
+                Value::neno(cert_arg),
+                Value::neno(key_arg),
             ],
         );
     });

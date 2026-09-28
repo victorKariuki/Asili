@@ -130,7 +130,7 @@ fn soma_bailisi_reads_a_bounded_chunk_without_waiting_for_eof() {
     );
     let module = compile(&src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("habari".to_string()));
+    assert_eq!(result, Value::neno("habari".to_string()));
     let _ = server.join();
 }
 

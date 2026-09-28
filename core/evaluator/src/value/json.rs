@@ -39,7 +39,7 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
         Value::Namba(n) => serde_json::Number::from_f64(*n)
             .map(J::Number)
             .unwrap_or(J::Null),
-        Value::Neno(s) => J::String(s.clone()),
+        Value::Neno(s) => J::String(s.to_string()),
         Value::Ukweli(b) => J::Bool(*b),
         Value::Tupu | Value::Hamna => J::Null,
         Value::Herufi(c) => J::String(c.to_string()),
@@ -190,7 +190,7 @@ fn from_json_depth(j: &serde_json::Value, depth: usize) -> Value {
         J::Null => Value::Hamna,
         J::Bool(b) => Value::Ukweli(*b),
         J::Number(n) => Value::Namba(n.as_f64().unwrap_or(f64::NAN)),
-        J::String(s) => Value::Neno(s.clone()),
+        J::String(s) => Value::neno(s.clone()),
         J::Array(items) => Value::list(
             items
                 .iter()

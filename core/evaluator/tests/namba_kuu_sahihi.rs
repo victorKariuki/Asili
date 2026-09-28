@@ -28,7 +28,7 @@ fn namba_kuu_kutoka_parses_a_huge_integer() {
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
     assert_eq!(
         result,
-        Value::Neno("123456789012345678901234567890".to_string())
+        Value::neno("123456789012345678901234567890".to_string())
     );
 }
 
@@ -47,7 +47,7 @@ fn namba_kuu_addition_beyond_f64_precision() {
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
     assert_eq!(
         result,
-        Value::Neno("100000000000000000000000000000000".to_string())
+        Value::neno("100000000000000000000000000000000".to_string())
     );
 }
 
@@ -83,7 +83,7 @@ fn namba_kuu_division_is_exact_integer_division() {
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
     assert_eq!(
         result,
-        Value::Neno("33".to_string()),
+        Value::neno("33".to_string()),
         "Namba_Kuu / should truncate, not produce a fraction"
     );
 }
@@ -116,7 +116,7 @@ fn namba_widens_to_namba_kuu_in_mixed_arithmetic() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("1000000000000000000001".to_string()));
+    assert_eq!(result, Value::neno("1000000000000000000001".to_string()));
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn cast_namba_to_namba_kuu_is_infallible() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("42".to_string()));
+    assert_eq!(result, Value::neno("42".to_string()));
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn namba_sahihi_kutoka_preserves_decimal_precision() {
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
     assert_eq!(
         result,
-        Value::Neno("0.123456789012345678901234567890".to_string())
+        Value::neno("0.123456789012345678901234567890".to_string())
     );
 }
 
@@ -183,7 +183,7 @@ fn namba_sahihi_addition() {
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
     assert_eq!(
         result,
-        Value::Neno("0.3".to_string()),
+        Value::neno("0.3".to_string()),
         "Namba_Sahihi's decimal arithmetic must not reproduce f64's 0.1+0.2 rounding artifact"
     );
 }
@@ -201,7 +201,7 @@ fn mixing_namba_kuu_and_namba_sahihi_promotes_to_sahihi() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("2.5".to_string()));
+    assert_eq!(result, Value::neno("2.5".to_string()));
 }
 
 #[test]

@@ -75,7 +75,7 @@ fn test_tokeo_extract_error() {
         }
     "#;
     let v = parse_and_eval(src, "test");
-    assert_eq!(v, asili_evaluator::Value::Neno("failed".to_string()));
+    assert_eq!(v, asili_evaluator::Value::neno("failed".to_string()));
 }
 
 /// Test 6: Get ok value with default

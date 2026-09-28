@@ -47,7 +47,7 @@ fn accept_and_echo_round_trip() {
     let module_clone = module.clone();
     let addr_clone = addr.clone();
     std::thread::spawn(move || {
-        let _ = run_function(&module_clone, "anza", vec![Value::Neno(addr_clone)]);
+        let _ = run_function(&module_clone, "anza", vec![Value::neno(addr_clone)]);
     });
 
     // Give the server a moment to bind and start its worker pool before the client connects.
@@ -86,7 +86,7 @@ fn concurrent_connections_within_pool_size_all_succeed() {
     let module_clone = module.clone();
     let addr_clone = addr.clone();
     std::thread::spawn(move || {
-        let _ = run_function(&module_clone, "anza", vec![Value::Neno(addr_clone)]);
+        let _ = run_function(&module_clone, "anza", vec![Value::neno(addr_clone)]);
     });
 
     // Pool size is 4 — open exactly that many connections concurrently and confirm every one
@@ -142,7 +142,7 @@ fn accepted_connections_have_read_and_write_timeouts_set() {
     let module_clone = module.clone();
     let addr_clone = addr.clone();
     std::thread::spawn(move || {
-        let _ = run_function(&module_clone, "anza", vec![Value::Neno(addr_clone)]);
+        let _ = run_function(&module_clone, "anza", vec![Value::neno(addr_clone)]);
     });
 
     let mut client = connect_with_retry(&addr);

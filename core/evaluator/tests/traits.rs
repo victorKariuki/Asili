@@ -39,7 +39,7 @@ fn kwa_syntax_trait_impl_method_dispatches() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("Paka(Whiskers)".to_string()));
+    assert_eq!(result, Value::neno("Paka(Whiskers)".to_string()));
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn colon_syntax_trait_impl_method_dispatches() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("Paka(Whiskers)".to_string()));
+    assert_eq!(result, Value::neno("Paka(Whiskers)".to_string()));
 }
 
 #[test]
@@ -154,5 +154,5 @@ fn plain_impl_without_trait_still_works() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "jaribu", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("Paka(Whiskers)".to_string()));
+    assert_eq!(result, Value::neno("Paka(Whiskers)".to_string()));
 }

@@ -860,10 +860,10 @@ fn neno_unganisha_kata_tafuta() {
     );
     let v = run_function(&module, "join", vec![]).expect("run");
     // String content is "a", separator "-"; unganisha yields "a" + "-" = "a-"
-    assert_eq!(v, Value::Neno("a-".to_string()));
+    assert_eq!(v, Value::neno("a-".to_string()));
     let v = run_function(&module, "slice", vec![]).expect("run");
     // "hello" content; kata(1, 4) => bytes 1..4 => "ell"
-    assert_eq!(v, Value::Neno("ell".to_string()));
+    assert_eq!(v, Value::neno("ell".to_string()));
     let v = run_function(&module, "find_ok", vec![]).expect("run");
     // "hello".tafuta("hello") finds at index 0
     assert_eq!(v, Value::Namba(0.0));
@@ -894,7 +894,7 @@ fn struct_literal_and_field_access() {
     let v = run_function(&module, "get_x", vec![]).expect("run");
     assert_eq!(v, Value::Namba(3.0));
     let v = run_function(&module, "get_y", vec![]).expect("run");
-    assert_eq!(v, Value::Neno("hi".to_string())); // string literal content is "hi"
+    assert_eq!(v, Value::neno("hi".to_string())); // string literal content is "hi"
 }
 
 #[test]

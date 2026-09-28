@@ -320,8 +320,8 @@ mod tests {
     #[test]
     fn tls_sanidi_missing_cert_file_returns_kosa_not_panic() {
         let result = tls_sanidi(&[
-            Value::Neno("/nonexistent/path/cert.pem".to_string()),
-            Value::Neno("/nonexistent/path/key.pem".to_string()),
+            Value::neno("/nonexistent/path/cert.pem".to_string()),
+            Value::neno("/nonexistent/path/key.pem".to_string()),
         ]);
         match result {
             Ok(Value::Tokeo(Err(_))) => {}
@@ -344,8 +344,8 @@ mod tests {
         std::fs::write(&key_path, "hii sio PEM halali pia").unwrap();
 
         let result = tls_sanidi(&[
-            Value::Neno(cert_path.to_string_lossy().to_string()),
-            Value::Neno(key_path.to_string_lossy().to_string()),
+            Value::neno(cert_path.to_string_lossy().to_string()),
+            Value::neno(key_path.to_string_lossy().to_string()),
         ]);
         match result {
             Ok(Value::Tokeo(Err(_))) => {}

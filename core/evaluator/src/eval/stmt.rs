@@ -61,8 +61,8 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                 .ok_or_else(|| EvalError::UndefinedVar(name.clone()))?;
             let new_val = match op {
                 AssignOp::Assign => rhs,
-                AssignOp::AddAssign => match (value::as_string(&current), value::as_string(&rhs)) {
-                    (Some(s1), Some(s2)) => Value::Neno(format!("{s1}{s2}")),
+                AssignOp::AddAssign => match (&current, &rhs) {
+                    (Value::Neno(s1), Value::Neno(s2)) => Value::Neno(value::concat_text(s1, s2)),
                     _ => assign_f64_op(&current, &rhs, "+=", |a, b| a + b)?,
                 },
                 AssignOp::SubAssign => assign_f64_op(&current, &rhs, "-=", |a, b| a - b)?,

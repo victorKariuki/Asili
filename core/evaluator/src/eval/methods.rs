@@ -18,7 +18,7 @@ pub(crate) fn out_of_bounds(idx: usize, len: usize) -> Value {
         "KosaMipaka".into(),
         vec![(
             "ujumbe".into(),
-            Value::Neno(out_of_bounds_message(idx, len)),
+            Value::neno(out_of_bounds_message(idx, len)),
         )]
         .into(),
     );
@@ -76,11 +76,16 @@ pub(crate) fn index_value(base: &Value, index: &Value) -> Result<Value, EvalErro
 /// User-perceived characters in `s`, as `urefu` counts them. In ASCII every character is one
 /// except CR LF, which is a single grapheme.
 pub(crate) fn grapheme_count(s: &str) -> usize {
+    let b = s.as_bytes();
+    // One branch-free (vectorizable) pass for the common case: ASCII without '\r', where
+    // every byte is one grapheme.
+    if !b
+        .iter()
+        .fold(false, |odd, &c| odd | (c >= 0x80) | (c == b'\r'))
+    {
+        return b.len();
+    }
     if s.is_ascii() {
-        let b = s.as_bytes();
-        if !b.contains(&b'\r') {
-            return b.len();
-        }
         b.len() - b.windows(2).filter(|w| w == b"\r\n").count()
     } else {
         s.graphemes(true).count()
@@ -205,9 +210,9 @@ pub(crate) fn pure_method(
         (Value::Neno(s), "unganisha") => {
             let out = match args_val.first() {
                 Some(Value::Neno(sep)) => format!("{s}{sep}"),
-                _ => s.clone(),
+                _ => s.to_string(),
             };
-            Ok(Value::Neno(out))
+            Ok(Value::neno(out))
         }
         (Value::Neno(s), "kata") => {
             let start = args_val
@@ -223,7 +228,7 @@ pub(crate) fn pure_method(
             let start = start.min(s.len());
             let end = end.min(s.len()).max(start);
             let sub = String::from_utf8_lossy(s.as_bytes()[start..end].into()).into_owned();
-            Ok(Value::Neno(sub))
+            Ok(Value::neno(sub))
         }
         (Value::Neno(s), "tafuta") => {
             let sub = args_val
@@ -235,8 +240,8 @@ pub(crate) fn pure_method(
                 None => Ok(Value::Chaguo(None)),
             }
         }
-        (Value::Neno(s), "kwa_herufi_ndogo") => Ok(Value::Neno(s.to_lowercase())),
-        (Value::Neno(s), "kwa_herufi_kubwa") => Ok(Value::Neno(s.to_uppercase())),
+        (Value::Neno(s), "kwa_herufi_ndogo") => Ok(Value::neno(s.to_lowercase())),
+        (Value::Neno(s), "kwa_herufi_kubwa") => Ok(Value::neno(s.to_uppercase())),
         (Value::Neno(s), "tupu") => Ok(Value::Ukweli(s.is_empty())),
         (Value::Neno(s), "ina") => {
             let sub = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
@@ -259,7 +264,7 @@ pub(crate) fn pure_method(
                 .ok_or_else(|| {
                     EvalError::TypeErr("rudia inahitaji idadi ya Namba kamili isiyo hasi".into())
                 })?;
-            Ok(Value::Neno(s.repeat(count as usize)))
+            Ok(Value::neno(s.repeat(count as usize)))
         }
         (Value::Neno(s), "anza_na") => {
             let prefix = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
@@ -274,7 +279,7 @@ pub(crate) fn pure_method(
         (Value::Neno(s), "gawanya") => {
             let sep = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
                 .ok_or_else(|| EvalError::TypeErr("gawanya inahitaji Neno".into()))?;
-            let parts: Vec<Value> = s.split(&sep).map(|p| Value::Neno(p.to_string())).collect();
+            let parts: Vec<Value> = s.split(&sep).map(|p| Value::neno(p.to_string())).collect();
             Ok(Value::list(parts))
         }
         (Value::Neno(s), "badilisha") => {
@@ -282,7 +287,7 @@ pub(crate) fn pure_method(
                 .ok_or_else(|| EvalError::TypeErr("badilisha inahitaji from na to".into()))?;
             let to = value::as_string(args_val.get(1).unwrap_or(&Value::Hamna))
                 .ok_or_else(|| EvalError::TypeErr("badilisha inahitaji to".into()))?;
-            Ok(Value::Neno(s.replace(&from, &to)))
+            Ok(Value::neno(s.replace(&from, &to)))
         }
         (Value::Orodha(l), "clona") => Ok(Value::Orodha(l.clone())),
         (Value::Orodha(l), "urefu") => Ok(Value::Namba(l.len() as f64)),
@@ -305,7 +310,7 @@ pub(crate) fn pure_method(
                     EvalError::TypeErr("unganisha inahitaji Orodha ya Neno".into())
                 })?);
             }
-            Ok(Value::Neno(parts.join(&sep)))
+            Ok(Value::neno(parts.join(&sep)))
         }
         (Value::Orodha(l), "jiunge") => {
             let sep = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
@@ -320,14 +325,14 @@ pub(crate) fn pure_method(
                     })
                 })
                 .collect::<Result<_, _>>()?;
-            Ok(Value::Neno(parts.join(&sep)))
+            Ok(Value::neno(parts.join(&sep)))
         }
         (Value::Orodha(l), "kwa_neno") => {
             let strings: Vec<Value> = l
                 .iter()
                 .map(|item| {
                     value::to_display_string(item)
-                        .map(Value::Neno)
+                        .map(Value::neno)
                         .ok_or_else(|| {
                             EvalError::TypeErr(
                                 "kwa_neno inahitaji Orodha yenye thamani zinazoweza kuwa Neno"
@@ -449,7 +454,7 @@ pub(crate) fn pure_method(
                 Some(f) => {
                     let mut s = String::new();
                     match f.read_to_string(&mut s) {
-                        Ok(_) => Ok(Value::sawa(Value::Neno(s))),
+                        Ok(_) => Ok(Value::sawa(Value::neno(s))),
                         Err(e) => Ok(Value::kosa(e.to_string())),
                     }
                 }
@@ -480,7 +485,7 @@ pub(crate) fn pure_method(
                 Some(s) => {
                     let mut buf = String::new();
                     match s.read_to_string(&mut buf) {
-                        Ok(_) => Ok(Value::sawa(Value::Neno(buf))),
+                        Ok(_) => Ok(Value::sawa(Value::neno(buf))),
                         Err(e) => Ok(Value::kosa(e.to_string())),
                     }
                 }
@@ -531,7 +536,7 @@ pub(crate) fn pure_method(
                             // method today, a known, documented limitation of this
                             // minimal framing pass (see docs/design/http-framing-design.md).
                             let text = String::from_utf8_lossy(&buf[..n]).into_owned();
-                            Ok(Value::sawa(Value::Neno(text)))
+                            Ok(Value::sawa(Value::neno(text)))
                         }
                         Err(e) => Ok(Value::kosa(e.to_string())),
                     }
@@ -862,6 +867,10 @@ pub(crate) fn callback_method(
 
 /// `expr kama ty` conversion, shared by the evaluator and the bytecode VM.
 pub(crate) fn cast_value(v: Value, ty: &str) -> Result<Value, EvalError> {
+    // The common `n kama Neno`, before any type-name handling.
+    if let (Value::Namba(n), "Neno") = (&v, ty) {
+        return Ok(Value::Neno(value::namba_text(*n)));
+    }
     let t: std::borrow::Cow<str> = if ty.contains(' ') {
         ty.replace(' ', "").into()
     } else {
@@ -920,11 +929,15 @@ pub(crate) fn cast_value(v: Value, ty: &str) -> Result<Value, EvalError> {
         };
         Ok(Value::NambaSahihi(dec))
     } else if t == "Neno" {
-        Ok(Value::Neno(match &v {
+        match v {
+            Value::Neno(_) => return Ok(v),
+            Value::Namba(n) => return Ok(Value::Neno(value::namba_text(n))),
+            _ => {}
+        }
+        Ok(Value::neno(match &v {
             Value::Namba(n) => value::format_namba(*n),
             Value::Ukweli(true) => "kweli".into(),
             Value::Ukweli(false) => "si_kweli".into(),
-            Value::Neno(s) => s.clone(),
             Value::Herufi(c) => c.to_string(),
             Value::Wakati(secs) => secs.to_string(),
             Value::Anuani(a) => a.to_string(),
@@ -997,7 +1010,7 @@ pub(crate) fn iter_items(v: Value) -> Result<Rc<Vec<Value>>, EvalError> {
 pub(crate) fn is_shared_method_name(method: &str) -> bool {
     use std::collections::{HashMap, HashSet};
     let probes = [
-        Value::Neno(String::new()),
+        Value::neno(String::new()),
         Value::list(Vec::new()),
         Value::Kamusi(HashMap::new()),
         Value::Seti(HashSet::new()),

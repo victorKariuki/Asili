@@ -77,7 +77,7 @@ pub(crate) fn match_pattern(pat: &Pattern, v: &Value, bind: &mut dyn FnMut(&str,
                 false
             }
         }
-        Pattern::Literal(Expr::String(s)) => matches!(v, Value::Neno(x) if x == s),
+        Pattern::Literal(Expr::String(s)) => matches!(v, Value::Neno(x) if **x == **s),
         Pattern::Literal(Expr::Bool(b)) => matches!(v, Value::Ukweli(x) if *x == *b),
         Pattern::Literal(Expr::Hamna) => matches!(v, Value::Hamna | Value::Chaguo(None)),
         Pattern::Literal(Expr::Char(c)) => matches!(v, Value::Herufi(x) if *x == *c),
@@ -164,7 +164,7 @@ pub(crate) fn match_pattern(pat: &Pattern, v: &Value, bind: &mut dyn FnMut(&str,
 pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value, EvalError> {
     match expr {
         Expr::Number(s) => Ok(Value::Namba(parse_number(s))),
-        Expr::String(s) => Ok(Value::Neno(s.clone())),
+        Expr::String(s) => Ok(Value::neno(s.clone())),
         Expr::Bool(b) => Ok(Value::Ukweli(*b)),
         Expr::Char(c) => Ok(Value::Herufi(*c)),
         Expr::Hamna => Ok(Value::Hamna),

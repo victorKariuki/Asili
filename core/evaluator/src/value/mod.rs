@@ -13,8 +13,8 @@ pub use num_bigint::BigInt;
 
 pub(crate) use numeric::{
     arg_f64, args_f64_2, as_char, as_f64, as_string, as_u64, assign_f64_op, big_numeric_binary_op,
-    binary_cmp_neno, binary_f64, binary_f64_cmp, format_namba, handle_loop_out, parse_number,
-    to_display_string,
+    binary_cmp_neno, binary_f64, binary_f64_cmp, concat_text, format_namba, handle_loop_out,
+    namba_text, parse_number, to_display_string,
 };
 
 /// Hashable key for Kamusi. Only Neno, Namba, Ukweli, Herufi are allowed as map keys.
@@ -30,7 +30,7 @@ pub enum MapKey {
 impl MapKey {
     pub fn to_value(&self) -> Value {
         match self {
-            MapKey::Neno(s) => Value::Neno(s.clone()),
+            MapKey::Neno(s) => Value::neno(s.clone()),
             MapKey::Namba(b) => Value::Namba(f64::from_bits(*b)),
             MapKey::Ukweli(b) => Value::Ukweli(*b),
             MapKey::Herufi(c) => Value::Herufi(*c),
@@ -39,7 +39,7 @@ impl MapKey {
 
     pub fn try_from_value(v: &Value) -> Result<MapKey, EvalError> {
         match v {
-            Value::Neno(s) => Ok(MapKey::Neno(s.clone())),
+            Value::Neno(s) => Ok(MapKey::Neno(s.to_string())),
             Value::Namba(n) => Ok(MapKey::Namba(n.to_bits())),
             Value::Ukweli(b) => Ok(MapKey::Ukweli(*b)),
             Value::Herufi(c) => Ok(MapKey::Herufi(*c)),
@@ -67,7 +67,8 @@ pub type Name = std::rc::Rc<str>;
 #[derive(Clone)]
 pub enum Value {
     Namba(f64),
-    Neno(String),
+    /// Text; never changed in place, so copies share it.
+    Neno(Rc<str>),
     Ukweli(bool),
     Tupu,
     Hamna,
@@ -271,6 +272,11 @@ impl Value {
         Value::Tokeo(Ok(Box::new(v)))
     }
 
+    /// A `Neno` holding `text`.
+    pub fn neno(text: impl Into<Rc<str>>) -> Value {
+        Value::Neno(text.into())
+    }
+
     /// An `Orodha` holding `items`.
     pub fn list(items: Vec<Value>) -> Value {
         Value::Orodha(Rc::new(items))
@@ -279,7 +285,7 @@ impl Value {
     /// `KOSA(ujumbe)` — a failed `Tokeo` carrying a `Neno` message, the error shape every
     /// builtin uses.
     pub fn kosa(ujumbe: impl Into<String>) -> Value {
-        Value::Tokeo(Err(Box::new(Value::Neno(ujumbe.into()))))
+        Value::Tokeo(Err(Box::new(Value::neno(ujumbe.into()))))
     }
 
     /// `None` if `self` is (or transitively contains) a non-`Send` variant
@@ -287,7 +293,7 @@ impl Value {
     pub fn try_into_send(&self) -> Option<SendValue> {
         Some(match self {
             Value::Namba(n) => SendValue::Namba(*n),
-            Value::Neno(s) => SendValue::Neno(s.clone()),
+            Value::Neno(s) => SendValue::Neno(s.to_string()),
             Value::Ukweli(b) => SendValue::Ukweli(*b),
             Value::Tupu => SendValue::Tupu,
             Value::Hamna => SendValue::Hamna,
@@ -362,7 +368,7 @@ impl SendValue {
     pub fn into_value(self) -> Value {
         match self {
             SendValue::Namba(n) => Value::Namba(n),
-            SendValue::Neno(s) => Value::Neno(s),
+            SendValue::Neno(s) => Value::neno(s),
             SendValue::Ukweli(b) => Value::Ukweli(b),
             SendValue::Tupu => Value::Tupu,
             SendValue::Hamna => Value::Hamna,

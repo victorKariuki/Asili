@@ -11,7 +11,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         "vigezo".to_string(),
         Box::new(|_args: &[Value]| {
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
-            let args_vec: Vec<Value> = std::env::args().map(Value::Neno).collect();
+            let args_vec: Vec<Value> = std::env::args().map(Value::neno).collect();
             #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
             let args_vec: Vec<Value> = Vec::new();
             Ok(Value::list(args_vec))
@@ -23,7 +23,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
             let val = {
                 let name = super::arg_str(args, 0);
-                std::env::var(&name).ok().map(|s| Box::new(Value::Neno(s)))
+                std::env::var(&name).ok().map(|s| Box::new(Value::neno(s)))
             };
             #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
             let val = None::<Box<Value>>;

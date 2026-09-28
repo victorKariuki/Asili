@@ -92,7 +92,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             };
             #[cfg(target_arch = "wasm32")]
             let s = secs.to_string();
-            Ok(Value::Neno(s))
+            Ok(Value::neno(s))
         }),
     );
     m.insert(

@@ -221,7 +221,7 @@ pub(crate) fn global_constants() -> Vec<(&'static str, Value)> {
         ("MWANZO_WA_ZAMANI", Value::Namba(0.0)),
         (
             "NJIA_SEPARATOR",
-            Value::Neno(std::path::MAIN_SEPARATOR.to_string()),
+            Value::neno(std::path::MAIN_SEPARATOR.to_string()),
         ),
         ("PI", Value::Namba(std::f64::consts::PI)),
         ("E", Value::Namba(std::f64::consts::E)),

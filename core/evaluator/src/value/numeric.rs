@@ -59,21 +59,32 @@ pub(crate) fn as_u64(v: &Value) -> Option<u64> {
 
 pub(crate) fn as_string(v: &Value) -> Option<String> {
     match v {
-        Value::Neno(s) => Some(s.clone()),
+        Value::Neno(s) => Some(s.to_string()),
         _ => None,
     }
 }
 
 /// Text of a `Namba`, as `kama Neno`, `jiunge`, `kwa_neno` and string building show it.
 pub(crate) fn format_namba(n: f64) -> String {
+    with_namba_text(n, |s| s.to_string())
+}
+
+/// `n kama Neno` as a shared `Neno`: one allocation for whole numbers.
+pub(crate) fn namba_text(n: f64) -> std::rc::Rc<str> {
+    with_namba_text(n, |s| std::rc::Rc::from(s))
+}
+
+/// Call `f` with `n`'s text (whole numbers are written on the stack, not allocated).
+fn with_namba_text<R>(n: f64, f: impl FnOnce(&str) -> R) -> R {
     if n.is_nan() {
-        "Siyo_Namba".to_string()
+        f("Siyo_Namba")
     } else if n.is_infinite() && n > 0.0 {
-        "Ukomo".to_string()
+        f("Ukomo")
     } else if n.is_infinite() {
-        "-Ukomo".to_string()
-    } else if n.fract() == 0.0
-        && n.abs() < 9_007_199_254_740_992.0
+        f("-Ukomo")
+    } else if n.abs() < 9_007_199_254_740_992.0
+        // Whole (`fract() == 0`, without its libm call on targets lacking `roundsd`).
+        && (n as i64) as f64 == n
         && !(n == 0.0 && n.is_sign_negative())
     {
         // Whole numbers print as their digits either way; writing the digits directly is much
@@ -94,15 +105,32 @@ pub(crate) fn format_namba(n: f64) -> String {
             buf[i] = b'-';
         }
         // SAFETY: ASCII digits and an optional '-'.
-        unsafe { std::str::from_utf8_unchecked(&buf[i..]) }.to_string()
+        f(unsafe { std::str::from_utf8_unchecked(&buf[i..]) })
     } else {
-        n.to_string()
+        f(&n.to_string())
+    }
+}
+
+/// `a` followed by `b` as a shared `Neno`, written straight into its one allocation.
+pub(crate) fn concat_text(a: &str, b: &str) -> std::rc::Rc<str> {
+    let mut buf = std::rc::Rc::<[u8]>::new_uninit_slice(a.len() + b.len());
+    let dst = std::rc::Rc::get_mut(&mut buf)
+        .expect("fresh allocation")
+        .as_mut_ptr()
+        .cast::<u8>();
+    // SAFETY: `dst` has room for both; every byte is written before `assume_init`, and the
+    // bytes are two `str`s back to back, so valid UTF-8 (`Rc<[u8]>` and `Rc<str>` share a
+    // layout, as `Rc<str>: From<&str>` itself relies on).
+    unsafe {
+        std::ptr::copy_nonoverlapping(a.as_ptr(), dst, a.len());
+        std::ptr::copy_nonoverlapping(b.as_ptr(), dst.add(a.len()), b.len());
+        std::rc::Rc::from_raw(std::rc::Rc::into_raw(buf.assume_init()) as *const str)
     }
 }
 
 pub(crate) fn to_display_string(v: &Value) -> Option<String> {
     match v {
-        Value::Neno(s) => Some(s.clone()),
+        Value::Neno(s) => Some(s.to_string()),
         Value::Namba(n) => Some(format_namba(*n)),
         Value::Ukweli(b) => Some(if *b { "kweli" } else { "si_kweli" }.to_string()),
         Value::Herufi(c) => Some(c.to_string()),

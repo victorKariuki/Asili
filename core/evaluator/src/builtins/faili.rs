@@ -19,7 +19,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
             {
                 match fs::read_to_string(&path) {
-                    Ok(s) => Ok(Value::sawa(Value::Neno(s))),
+                    Ok(s) => Ok(Value::sawa(Value::neno(s))),
                     Err(e) => Ok(Value::kosa(e.to_string())),
                 }
             }

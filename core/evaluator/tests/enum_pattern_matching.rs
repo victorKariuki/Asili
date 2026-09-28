@@ -120,7 +120,7 @@ fn test_enum_pattern_result_err() {
         }
     "#;
     let v = parse_and_eval(src, "test");
-    assert_eq!(v, asili_evaluator::Value::Neno("error".to_string()));
+    assert_eq!(v, asili_evaluator::Value::neno("error".to_string()));
 }
 
 /// Test 6: Wildcard pattern on enum
@@ -167,7 +167,7 @@ fn test_enum_pattern_mixed_variants() {
         }
     "#;
     let v = parse_and_eval(src, "test");
-    assert_eq!(v, asili_evaluator::Value::Neno("hello".to_string()));
+    assert_eq!(v, asili_evaluator::Value::neno("hello".to_string()));
 }
 
 /// Test 8: Pattern matching with standard Chaguo enum

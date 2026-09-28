@@ -481,7 +481,7 @@ pub enum StoredConstant {
 impl StoredConstant {
     fn to_value(&self) -> Value {
         match self {
-            StoredConstant::Neno(s) => Value::Neno(s.clone()),
+            StoredConstant::Neno(s) => Value::neno(s.clone()),
             StoredConstant::Namba(n) => Value::Namba(*n),
             StoredConstant::Ukweli(b) => Value::Ukweli(*b),
             StoredConstant::Herufi(c) => Value::Herufi(*c),
@@ -788,7 +788,7 @@ fn method_result_type(receiver: &str, method: &str) -> Option<&'static str> {
 fn probe_value(type_name: &str) -> Option<Value> {
     let base = type_name.split('<').next().unwrap_or(type_name).trim();
     Some(match base {
-        "Neno" => Value::Neno(String::new()),
+        "Neno" => Value::neno(String::new()),
         "Orodha" => Value::list(Vec::new()),
         "Kamusi" => Value::Kamusi(Default::default()),
         "Seti" => Value::Seti(Default::default()),
@@ -1713,7 +1713,7 @@ impl<'a> FunctionCompiler<'a> {
                         .and_then(|(_, v)| match v {
                             Value::Namba(n) => Some((Ty::Num, StoredConstant::Namba(n))),
                             Value::Ukweli(b) => Some((Ty::Bool, StoredConstant::Ukweli(b))),
-                            Value::Neno(s) => Some((Ty::Val, StoredConstant::Neno(s))),
+                            Value::Neno(s) => Some((Ty::Val, StoredConstant::Neno(s.to_string()))),
                             Value::Tupu => Some((Ty::Val, StoredConstant::Tupu)),
                             _ => None,
                         })?,
@@ -2462,7 +2462,7 @@ pub fn run_bytecode(program: &BytecodeProgram, args: Vec<String>) -> Result<(), 
         .iter()
         .position(|f| f.name == program.entry)
         .ok_or_else(|| EvalError::Unknown(format!("kazi '{}' haikupatikana", program.entry)))?;
-    let hoja = Value::list(args.into_iter().map(Value::Neno).collect());
+    let hoja = Value::list(args.into_iter().map(Value::neno).collect());
     let mut vm = Vm::new(program)?;
     vm.call_values(index, vec![hoja])?;
     Ok(())
@@ -2481,7 +2481,7 @@ pub fn run_bytecode_native(
         .iter()
         .position(|f| f.name == program.entry)
         .ok_or_else(|| EvalError::Unknown(format!("kazi '{}' haikupatikana", program.entry)))?;
-    let hoja = Value::list(args.into_iter().map(Value::Neno).collect());
+    let hoja = Value::list(args.into_iter().map(Value::neno).collect());
     let mut vm = match library {
         Some(lib) => Vm::with_aot(program, lib)?,
         None => Vm::new(program)?,
@@ -2572,6 +2572,9 @@ struct Vm<'p> {
     builtins: Vec<BuiltinFn>,
     builtin_index: HashMap<String, usize>,
     pool: Vec<Frame>,
+    /// `program.constants` as values, built once: loading one (a shared `Neno` included) is a
+    /// reference-count bump.
+    consts: Vec<Value>,
     /// Tree-walkers for mixed mode, reused across calls (a nested tree → VM → tree call takes a
     /// second one).
     trees: Vec<crate::TreeContext>,
@@ -2719,6 +2722,11 @@ impl<'p> Vm<'p> {
             builtins: table.fns,
             builtin_index: table.index,
             pool: Vec::new(),
+            consts: program
+                .constants
+                .iter()
+                .map(StoredConstant::to_value)
+                .collect(),
             trees: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             aot: None,
@@ -3200,20 +3208,7 @@ impl<'p> Vm<'p> {
                 frame.vals[*dst as usize] = v;
             }
             Opcode::ConstVal { dst, k } => {
-                let slot = &mut frame.vals[*dst as usize];
-                // A loop reloading a string constant finds it still there: skip the copy.
-                if let (Value::Neno(cur), Some(StoredConstant::Neno(want))) =
-                    (&*slot, program.constants.get(*k as usize))
-                {
-                    if cur == want {
-                        return Flow::Next;
-                    }
-                }
-                *slot = program
-                    .constants
-                    .get(*k as usize)
-                    .map(StoredConstant::to_value)
-                    .unwrap_or(Value::Hamna)
+                frame.vals[*dst as usize] = self.consts[*k as usize].clone();
             }
             Opcode::ValMov { dst, src } => {
                 frame.vals[*dst as usize] = frame.vals[*src as usize].clone()

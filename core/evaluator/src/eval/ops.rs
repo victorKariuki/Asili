@@ -28,12 +28,7 @@ pub(crate) fn binary_value(op: &BinaryOp, l: &Value, r: &Value) -> Result<Value,
     match op {
         BinaryOp::Add => match (l, r) {
             // One allocation of exactly the result's size; neither operand is copied first.
-            (Value::Neno(s1), Value::Neno(s2)) => {
-                let mut s = String::with_capacity(s1.len() + s2.len());
-                s.push_str(s1);
-                s.push_str(s2);
-                Ok(Value::Neno(s))
-            }
+            (Value::Neno(s1), Value::Neno(s2)) => Ok(Value::Neno(value::concat_text(s1, s2))),
             (l, r) => binary_f64(l, r, "+", |a, b| a + b),
         },
         BinaryOp::Sub => binary_f64(&l, &r, "-", |a, b| a - b),

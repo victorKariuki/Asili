@@ -25,7 +25,7 @@ fn kwa_json_encodes_a_number() {
     "#;
     let module = compile(src);
     let result = run_function(&module, "thamani", vec![]).expect("runs");
-    assert_eq!(result, Value::Neno("42.0".to_string()));
+    assert_eq!(result, Value::neno("42.0".to_string()));
 }
 
 #[test]

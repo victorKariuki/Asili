@@ -52,7 +52,7 @@ fn start_server(kazi_and_umbo_src: &str, idadi_ya_nyuzi: f64) -> String {
 
     let addr_clone = addr.clone();
     std::thread::spawn(move || {
-        let _ = run_function(&module, "anza", vec![Value::Neno(addr_clone)]);
+        let _ = run_function(&module, "anza", vec![Value::neno(addr_clone)]);
     });
     addr
 }
