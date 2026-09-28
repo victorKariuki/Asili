@@ -2759,10 +2759,7 @@ impl<'p> Vm<'p> {
             Opcode::ValLen { dst, src } => {
                 let len = match &frame.vals[*src as usize] {
                     Value::Orodha(items) => items.len(),
-                    Value::Neno(s) => {
-                        unicode_segmentation::UnicodeSegmentation::graphemes(s.as_str(), true)
-                            .count()
-                    }
+                    Value::Neno(s) => methods::grapheme_count(s),
                     _ => fail!(type_err("urefu inahitaji Orodha au Neno")),
                 };
                 frame.nums[*dst as usize] = len as f64;
@@ -2867,13 +2864,20 @@ impl<'p> Vm<'p> {
                 }
             }
             Opcode::CallMethod(call) => {
-                let recv = frame.vals[call.recv as usize].clone();
                 let args: Vec<Value> = call
                     .args
                     .iter()
                     .map(|r| frame.vals[*r as usize].clone())
                     .collect();
-                match self.call_method(recv, &call.method, args) {
+                let recv = &frame.vals[call.recv as usize];
+                // A state-free method reads the receiver in place (no copy of a string or list).
+                let result = if methods::is_pure_method(recv, &call.method) {
+                    methods::pure_method(recv, &call.method, &args)
+                } else {
+                    let recv = recv.clone();
+                    self.call_method(recv, &call.method, args)
+                };
+                match result {
                     Ok(v) => frame.vals[call.dst as usize] = v,
                     Err(e) => fail!(e),
                 }

@@ -66,6 +66,12 @@ pub(crate) fn format_namba(n: f64) -> String {
         "Ukomo".to_string()
     } else if n.is_infinite() {
         "-Ukomo".to_string()
+    } else if n.fract() == 0.0
+        && n.abs() < 9_007_199_254_740_992.0
+        && !(n == 0.0 && n.is_sign_negative())
+    {
+        // Whole numbers print as their digits either way; integer formatting is much faster.
+        (n as i64).to_string()
     } else {
         n.to_string()
     }

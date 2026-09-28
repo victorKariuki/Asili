@@ -72,6 +72,16 @@ pub(crate) fn index_value(base: &Value, index: &Value) -> Result<Value, EvalErro
     }
 }
 
+/// User-perceived characters in `s`, as `urefu` counts them. In ASCII every character is one
+/// except CR LF, which is a single grapheme.
+pub(crate) fn grapheme_count(s: &str) -> usize {
+    if s.is_ascii() {
+        s.len() - s.as_bytes().windows(2).filter(|w| w == b"\r\n").count()
+    } else {
+        s.graphemes(true).count()
+    }
+}
+
 /// Whether `method` on `recv` is implemented by [`pure_method`].
 pub(crate) fn is_pure_method(recv: &Value, method: &str) -> bool {
     match recv {
@@ -131,7 +141,7 @@ pub(crate) fn pure_method(
 ) -> Result<Value, EvalError> {
     match (recv, method) {
         (Value::Neno(s), "clona") => Ok(Value::Neno(s.clone())),
-        (Value::Neno(s), "urefu") => Ok(Value::Namba(s.graphemes(true).count() as f64)),
+        (Value::Neno(s), "urefu") => Ok(Value::Namba(grapheme_count(s) as f64)),
         (Value::Neno(s), "herufi_kwa") => {
             // Grapheme-indexed, matching .urefu()'s existing counting convention (not
             // byte or codepoint index) — a tokenizer walking "what's at position N"
@@ -811,7 +821,11 @@ pub(crate) fn callback_method(
 
 /// `expr kama ty` conversion, shared by the evaluator and the bytecode VM.
 pub(crate) fn cast_value(v: Value, ty: &str) -> Result<Value, EvalError> {
-    let t = ty.replace(' ', "");
+    let t: std::borrow::Cow<str> = if ty.contains(' ') {
+        ty.replace(' ', "").into()
+    } else {
+        ty.into()
+    };
     if t == "Namba" && !matches!(v, Value::NambaKuu(_) | Value::NambaSahihi(_)) {
         let n = value::as_f64(&v)
             .or_else(|| match &v {
@@ -899,7 +913,7 @@ pub(crate) fn cast_value(v: Value, ty: &str) -> Result<Value, EvalError> {
     } else if t.starts_with("Biti") || t.starts_with("uBiti") {
         let n = value::as_f64(&v).unwrap_or(0.0);
         let n_i = n as i64;
-        let fits = match t.as_str() {
+        let fits = match &*t {
             "Biti8" => n_i >= i8::MIN as i64 && n_i <= i8::MAX as i64,
             "Biti16" => n_i >= i16::MIN as i64 && n_i <= i16::MAX as i64,
             "Biti32" => n_i >= i32::MIN as i64 && n_i <= i32::MAX as i64,
@@ -956,4 +970,65 @@ pub(crate) fn is_shared_method_name(method: &str) -> bool {
         method,
         "shirikisha" | "imarisha" | "soma_bailisi" | "tuma" | "pokea" | "funga" | "fungua" | "weka"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ascii_grapheme_count_matches_segmentation() {
+        for s in [
+            "",
+            "a",
+            "kipengele 123",
+            "\r\n",
+            "\r\r\n",
+            "\n\r",
+            "a\r\nb\r\n\r\n",
+            "\r",
+            "\t\0",
+            "héllo",
+            "👍🏽x",
+            "e\u{301}",
+        ] {
+            assert_eq!(grapheme_count(s), s.graphemes(true).count(), "{s:?}");
+        }
+    }
+
+    #[test]
+    fn whole_numbers_format_like_floats() {
+        let limit = 9_007_199_254_740_992.0f64;
+        let mut samples = vec![
+            0.0,
+            -0.0,
+            1.0,
+            -1.0,
+            7.0,
+            1e15,
+            -1e15,
+            limit - 1.0,
+            1.0 - limit,
+        ];
+        samples.extend([
+            limit,
+            -limit,
+            2.0 * limit,
+            1e21,
+            0.5,
+            -2.5,
+            1e-7,
+            123456.789,
+        ]);
+        let mut x: u64 = 0x2545_F491_4F6C_DD1D;
+        for _ in 0..10_000 {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            samples.push((x % (1 << 54)) as f64 - limit);
+        }
+        for n in samples {
+            assert_eq!(value::format_namba(n), n.to_string(), "{n:?}");
+        }
+    }
 }

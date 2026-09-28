@@ -26,9 +26,13 @@ pub(crate) fn binary_value(op: &BinaryOp, l: Value, r: Value) -> Result<Value, E
         }
     }
     match op {
-        BinaryOp::Add => match (value::as_string(&l), value::as_string(&r)) {
-            (Some(s1), Some(s2)) => Ok(Value::Neno(format!("{s1}{s2}"))),
-            _ => binary_f64(&l, &r, "+", |a, b| a + b),
+        BinaryOp::Add => match (l, r) {
+            // Owned operands: append in place.
+            (Value::Neno(mut s1), Value::Neno(s2)) => {
+                s1.push_str(&s2);
+                Ok(Value::Neno(s1))
+            }
+            (l, r) => binary_f64(&l, &r, "+", |a, b| a + b),
         },
         BinaryOp::Sub => binary_f64(&l, &r, "-", |a, b| a - b),
         BinaryOp::Mul => binary_f64(&l, &r, "*", |a, b| a * b),

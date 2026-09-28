@@ -123,6 +123,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of a hardware divide on x86-64, and for unsigned operands on AArch64: `(s + i * 7 +
   i // 3) % 1000003` over 20 million `i` runs in 70 ms (was 124 ms; gcc `-O2` C: 84 ms). Images
   are rebuilt (`IMAGE_VERSION` 6).
+- **Faster strings on every engine**: `Neno + Neno` appends to the left operand instead of
+  copying both into a new string, whole numbers format as integers (`kama Neno`, printing and
+  string building; same text), `urefu` counts ASCII text without Unicode segmentation (CR LF
+  still counts as one), `kama` no longer allocates for the target type's name, and the VM calls
+  state-free methods on the receiver in place instead of copying it. The VM's `urefu` opcode
+  now shares the method's counting instead of its own copy. Building 200,000 strings of the form
+  `"kipengele " + (i kama Neno)` and summing their lengths: 233 → 92 ms.
 - **Indexing an `Orodha` returns the element**: `a[i]` is now the element itself and an
   out-of-range index stops the program with `paparika: fahirisi nje ya mipaka: i (urefu n)`,
   instead of yielding a `Tokeo` that every read had to unwrap with `?`. `a[i]?` and `jaribu a[i]`
