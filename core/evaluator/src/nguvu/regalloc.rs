@@ -52,6 +52,10 @@ pub struct Allocation {
     pub uses: Vec<u32>,
     /// Estimated loop nesting depth of each block.
     pub depth: Vec<u32>,
+    /// Each register's home slot index (`u32::MAX`: it never needs one).
+    pub slot: Vec<u32>,
+    /// Number of home slots.
+    pub slots: u32,
 }
 
 /// Reverse postorder from block 0, cold blocks (and anything only reachable through them)
@@ -295,12 +299,39 @@ pub fn allocate(func: &Func, target: &Target) -> Allocation {
         let l = find(&mut leader, v);
         loc[v] = loc[l];
     }
+    // Home slots only for registers that can be read from one: the incoming arguments (parked
+    // by the prologue), anything not given a register, and values saved around calls.
+    let mut needs_slot: Vec<bool> = (0..n).map(|v| v < 4 || loc[v] == Loc::Slot).collect();
+    for v in live_across.values().flatten() {
+        needs_slot[v.0 as usize] = true;
+    }
+    for inst in func.blocks.iter().flat_map(|b| &b.insts) {
+        if let Inst::Call { args, .. } | Inst::CallDirect { args, .. } = inst {
+            for a in args {
+                needs_slot[a.0 as usize] = true;
+            }
+        }
+    }
+    let mut slots = 0;
+    let slot = needs_slot
+        .iter()
+        .map(|&needed| {
+            slots += needed as u32;
+            if needed {
+                slots - 1
+            } else {
+                u32::MAX
+            }
+        })
+        .collect();
     Allocation {
         loc,
         order,
         live_across,
         uses,
         depth,
+        slot,
+        slots,
     }
 }
 

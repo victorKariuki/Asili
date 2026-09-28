@@ -553,3 +553,64 @@ fn direct_native_calls_keep_interpreter_semantics() {
         &["t", "mno", "ukingoni"],
     );
 }
+
+#[test]
+fn reused_values_and_forwarded_list_elements() {
+    check(
+        "reuse",
+        r#"
+        kazi panga(a: Orodha<Namba>) -> Orodha<Namba> {
+            weka n: Namba = a.urefu()
+            kwa i kutoka 0 hadi n {
+                kwa j kutoka 0 hadi n - 1 - i {
+                    ikiwa a[j] > a[j + 1] {
+                        weka t = a[j]
+                        a[j] = a[j + 1]
+                        a[j + 1] = t
+                    }
+                }
+            }
+            rejesha a
+        }
+        kazi t() -> Orodha<Namba> {
+            weka a: Orodha<Namba> = [5, -0.5, 3, 9, 1, 2.25, 7, 0, 4, 8]
+            rejesha panga(a)
+        }
+        kazi fahirisi_sawa() -> Orodha<Namba> {
+            # different index registers holding the same index: a store through one is seen
+            # through the other
+            weka a: Orodha<Namba> = [1, 2, 3, 4]
+            weka r: Orodha<Namba> = []
+            kwa i kutoka 0 hadi 4 {
+                weka j = 3 - i
+                weka k = i
+                weka x = a[k]
+                a[i] = x * 10 + 1
+                ikiwa a[k] > 20 {
+                    a[j] = a[k] + 0.5
+                }
+                r.ongeza(a[k])
+                r.ongeza(a[i])
+                r.ongeza(a[j])
+            }
+            rejesha r
+        }
+        kazi orodha_mbili() -> Orodha<Namba> {
+            # two list variables, writes through one then reads through the other
+            weka a: Orodha<Namba> = [1, 2, 3]
+            weka b = a
+            weka r: Orodha<Namba> = []
+            kwa i kutoka 0 hadi 3 {
+                weka x = a[i]
+                b[i] = x + 100
+                r.ongeza(a[i])
+                r.ongeza(b[i])
+                a.ongeza(x)
+                r.ongeza(a[i])
+            }
+            rejesha r
+        }
+        "#,
+        &["t", "fahirisi_sawa", "orodha_mbili"],
+    );
+}

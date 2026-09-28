@@ -396,24 +396,32 @@ impl<'a> Lower<'a> {
             offset: crate::native::VM_DEPTH_OFFSET,
         });
         let max = self.b.iconst(crate::bytecode::MAX_CALL_DEPTH as i64);
+        let done = self.b.block();
+        // Two compare-and-branch pairs (each fuses), not one branch on their conjunction.
+        let interp = (!self.ctx.entry_direct).then(|| self.b.cold_block());
+        let check = |l: &mut Self, ok: VReg| match interp {
+            // No interpreter frame here: deoptimize, and the caller finishes this function in
+            // the interpreter — which makes the call through its own path.
+            None => l.guard(ok),
+            Some(interp) => {
+                let next = l.b.block();
+                l.b.terminate(Term::Branch {
+                    cond: ok,
+                    then_: next,
+                    else_: interp,
+                });
+                l.b.switch_to(next);
+            }
+        };
         let shallow = self.icmp(ICond::Lt, depth, max);
+        check(self, shallow);
         let sp = self.vreg(Class::Int);
         self.push(Inst::StackPointer { dst: sp });
         let roomy = self.icmp(ICond::Ult, limit, sp);
-        let ok = self.int_op(IntOp::And, shallow, roomy);
-        let done = self.b.block();
-        if self.ctx.entry_direct {
-            // No interpreter frame here: deoptimize, and the caller finishes this function in
-            // the interpreter — which makes the call through its own path.
-            self.guard(ok);
-        } else {
+        check(self, roomy);
+        if let Some(interp) = interp {
             let fast = self.b.block();
-            let interp = self.b.cold_block();
-            self.b.terminate(Term::Branch {
-                cond: ok,
-                then_: fast,
-                else_: interp,
-            });
+            self.b.terminate(Term::Jump(fast));
             self.b.switch_to(interp);
             self.slow(pc, op);
             self.b.terminate(Term::Jump(done));

@@ -67,7 +67,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with a plain `call`/`bl` (arguments in a per-frame buffer, no interpreter frame). The call
   depth limit (10,000, `undani mno`) and a stack-headroom check still apply — hitting either
   falls back to the interpreter at that call — and a deoptimization inside a directly called
-  function resumes it in the interpreter with its registers. `fib(32)`: 1.7 s → 49 ms.
+  function resumes it in the interpreter with its registers. `fib(32)`: 1.7 s → 39 ms.
 - **Integer lists**: `Orodha<Namba>` storage (`numlist.rs`) keeps a list's elements as `i64`
   words while every element converts exactly (no `-0.0`, NaN, ±∞ or fraction) and as `f64`
   bits otherwise; reading is unchanged for programs. Native code keeps lists the analysis
@@ -113,6 +113,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Leaner `nguvu` code**: arithmetic results and list elements computed before a branch are
+  reused in its arms (with loads after a store to the same element forwarded from the stored
+  register); calls no longer spill arguments that are already in their stack slots and
+  rematerialize constants instead of saving them; frames hold slots only for values that can
+  need one; memory operands use 8-bit or no displacements where they fit. Bubble sort of 3,000
+  elements: 6.1 → 5.6 ms (C: 5.1 ms). Images are rebuilt (`IMAGE_VERSION` 5).
 - **Indexing an `Orodha` returns the element**: `a[i]` is now the element itself and an
   out-of-range index stops the program with `paparika: fahirisi nje ya mipaka: i (urefu n)`,
   instead of yielding a `Tokeo` that every read had to unwrap with `?`. `a[i]?` and `jaribu a[i]`

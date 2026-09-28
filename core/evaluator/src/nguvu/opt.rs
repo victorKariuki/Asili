@@ -288,54 +288,152 @@ fn fold_immediates(func: &mut Func) {
     }
 }
 
+/// Values already computed on the way into a block: `IntImm` results and list elements.
+#[derive(Clone, Default)]
+struct Available {
+    /// (op, operand, immediate) → register currently holding that value.
+    arith: HashMap<(IntOp, VReg, i32), VReg>,
+    /// (list data, index, class) → register holding that element.
+    elements: HashMap<(VReg, VReg, Class), VReg>,
+    /// Register → the register it is a copy of (keys above use the original).
+    copies: HashMap<VReg, VReg>,
+}
+
+impl Available {
+    /// `d` was redefined: forget everything computed from it or held in it.
+    fn kill(&mut self, d: VReg) {
+        self.arith.retain(|(_, a, _), v| *a != d && *v != d);
+        self.elements
+            .retain(|(b, i, _), v| *b != d && *i != d && *v != d);
+        self.copies.retain(|c, o| *c != d && *o != d);
+    }
+
+    fn original(&self, v: VReg) -> VReg {
+        self.copies.get(&v).copied().unwrap_or(v)
+    }
+}
+
+/// Reuse a value instead of recomputing it: an `IntImm` whose result a register still holds (or,
+/// for a remainder, the matching quotient), and a list element loaded or stored earlier with no
+/// store or call in between. Blocks with a single predecessor start from what it ends with, so
+/// the arms of a branch reuse what the test computed.
 fn reuse_values(func: &mut Func) {
-    for bi in 0..func.blocks.len() {
-        // (op, operand, immediate) → register currently holding that value.
-        let mut avail: HashMap<(IntOp, VReg, i32), VReg> = HashMap::new();
+    let nb = func.blocks.len();
+    let mut preds = vec![0u32; nb];
+    let mut pred_of = vec![usize::MAX; nb];
+    for (b, block) in func.blocks.iter().enumerate() {
+        for s in block.term.successors() {
+            preds[s.0 as usize] += 1;
+            pred_of[s.0 as usize] = b;
+        }
+    }
+    // Reverse postorder, so a single predecessor is processed before its successor (unless
+    // the edge is a back edge, whose target then starts empty).
+    let mut order = Vec::with_capacity(nb);
+    let mut seen = vec![false; nb];
+    let mut stack = vec![(0usize, 0usize)];
+    seen[0] = true;
+    while let Some(&mut (b, ref mut next)) = stack.last_mut() {
+        let succ = func.blocks[b].term.successors();
+        if let Some(s) = succ.get(*next) {
+            *next += 1;
+            let s = s.0 as usize;
+            if !seen[s] {
+                seen[s] = true;
+                stack.push((s, 0));
+            }
+        } else {
+            order.push(b);
+            stack.pop();
+        }
+    }
+    order.reverse();
+    let mut at_end: Vec<Option<Available>> = vec![None; nb];
+    for bi in order {
+        let mut avail = if preds[bi] == 1 && pred_of[bi] != bi {
+            at_end[pred_of[bi]].clone().unwrap_or_default()
+        } else {
+            Available::default()
+        };
         let insts = std::mem::take(&mut func.blocks[bi].insts);
         let mut out = Vec::with_capacity(insts.len());
         for inst in insts {
             let mut emitted = vec![inst.clone()];
-            if let Inst::IntImm { op, dst, a, imm } = inst {
-                let divide = match op {
-                    IntOp::SRem => Some(IntOp::SDiv),
-                    IntOp::URem => Some(IntOp::UDiv),
-                    _ => None,
-                };
-                if let Some(&p) = avail.get(&(op, a, imm)) {
-                    emitted = vec![Inst::Mov { dst, src: p }];
-                } else if let Some(&q) = divide.and_then(|d| avail.get(&(d, a, imm))) {
-                    func.classes.push(Class::Int);
-                    let t = VReg(func.classes.len() as u32 - 1);
-                    emitted = vec![
-                        Inst::IntImm {
-                            op: IntOp::Mul,
-                            dst: t,
-                            a: q,
-                            imm,
-                        },
-                        Inst::Int {
-                            op: IntOp::Sub,
-                            dst,
-                            a,
-                            b: t,
-                        },
-                    ];
+            match inst {
+                Inst::IntImm { op, dst, a, imm } => {
+                    let divide = match op {
+                        IntOp::SRem => Some(IntOp::SDiv),
+                        IntOp::URem => Some(IntOp::UDiv),
+                        _ => None,
+                    };
+                    let a = avail.original(a);
+                    if let Some(&p) = avail.arith.get(&(op, a, imm)) {
+                        emitted = vec![Inst::Mov { dst, src: p }];
+                    } else if let Some(&q) = divide.and_then(|d| avail.arith.get(&(d, a, imm))) {
+                        func.classes.push(Class::Int);
+                        let t = VReg(func.classes.len() as u32 - 1);
+                        emitted = vec![
+                            Inst::IntImm {
+                                op: IntOp::Mul,
+                                dst: t,
+                                a: q,
+                                imm,
+                            },
+                            Inst::Int {
+                                op: IntOp::Sub,
+                                dst,
+                                a,
+                                b: t,
+                            },
+                        ];
+                    }
                 }
+                Inst::LoadIndex { dst, base, index } => {
+                    let key = (avail.original(base), avail.original(index), func.class(dst));
+                    if let Some(&p) = avail.elements.get(&key) {
+                        emitted = vec![Inst::Mov { dst, src: p }];
+                    }
+                }
+                // Memory may have changed (any list may share storage with another).
+                Inst::Store { .. }
+                | Inst::StoreIndex { .. }
+                | Inst::Call { .. }
+                | Inst::CallDirect { .. } => avail.elements.clear(),
+                _ => {}
             }
             for e in &emitted {
                 for d in e.defs() {
-                    avail.retain(|(_, a, _), v| *a != d && *v != d);
+                    avail.kill(d);
                 }
             }
-            if let Inst::IntImm { op, dst, a, imm } = inst {
-                if dst != a {
-                    avail.insert((op, a, imm), dst);
+            match inst {
+                Inst::IntImm { op, dst, a, imm } if dst != a => {
+                    let a = avail.original(a);
+                    avail.arith.insert((op, a, imm), dst);
+                }
+                Inst::LoadIndex { dst, base, index } if dst != base && dst != index => {
+                    let key = (avail.original(base), avail.original(index), func.class(dst));
+                    avail.elements.insert(key, dst);
+                }
+                Inst::StoreIndex { src, base, index } => {
+                    let key = (avail.original(base), avail.original(index), func.class(src));
+                    avail.elements.insert(key, src);
+                }
+                _ => {}
+            }
+            // Copies made here or found in the code: later keys look through them.
+            for e in &emitted {
+                if let Inst::Mov { dst, src } = e {
+                    let src = avail.original(*src);
+                    if src != *dst {
+                        avail.copies.insert(*dst, src);
+                    }
                 }
             }
             out.extend(emitted);
         }
         func.blocks[bi].insts = out;
+        at_end[bi] = Some(avail);
     }
 }
 

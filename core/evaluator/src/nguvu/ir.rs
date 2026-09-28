@@ -287,9 +287,46 @@ pub const VM: VReg = VReg(1);
 pub const FRAME: VReg = VReg(2);
 pub const NUMS: VReg = VReg(3);
 
+/// What a call site may assume about a register's home slot without storing it first.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Home {
+    /// Nothing: save it before the call to find it there.
+    Unknown,
+    /// Always holds the value (an incoming argument the prologue parks and nothing redefines).
+    Current,
+    /// Never needs storing: the register's only definition is this constant (as bits), so it
+    /// is rematerialized instead.
+    Const(i64),
+}
+
 impl Func {
     pub fn class(&self, v: VReg) -> Class {
         self.classes[v.0 as usize]
+    }
+
+    /// `Home` for every register.
+    pub fn homes(&self) -> Vec<Home> {
+        let mut defs = vec![0u32; self.classes.len()];
+        let mut constant = vec![None; self.classes.len()];
+        for inst in self.blocks.iter().flat_map(|b| &b.insts) {
+            for d in inst.defs() {
+                defs[d.0 as usize] += 1;
+            }
+            match inst {
+                Inst::IConst { dst, value } => constant[dst.0 as usize] = Some(*value),
+                Inst::FConst { dst, value } => {
+                    constant[dst.0 as usize] = Some(value.to_bits() as i64)
+                }
+                _ => {}
+            }
+        }
+        (0..self.classes.len())
+            .map(|i| match (defs[i], constant[i]) {
+                (0, _) if i < 4 => Home::Current,
+                (1, Some(bits)) => Home::Const(bits),
+                _ => Home::Unknown,
+            })
+            .collect()
     }
 }
 

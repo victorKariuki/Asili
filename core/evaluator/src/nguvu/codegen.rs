@@ -7,7 +7,7 @@
 //! are used in place when they sit in a register, and `rax`/`rcx`/`rdx`, `xmm0`/`xmm1` are
 //! scratch. A comparison feeding the block's branch is fused into `cmp` + `jcc`.
 
-use super::ir::{Class, FCond, FloatOp, Func, ICond, Inst, IntOp, Term, VReg};
+use super::ir::{Class, FCond, FloatOp, Func, Home, ICond, Inst, IntOp, Term, VReg};
 use super::regalloc::{allocate, Allocation, Target};
 use super::schedule::Step;
 
@@ -110,6 +110,8 @@ struct Gen<'f> {
     xmm_saved: Vec<u8>,
     /// Direct calls to link: (displacement offset, callee).
     calls: Vec<(usize, u32)>,
+    /// What each register's home slot holds at a call (see `Func::homes`).
+    homes: Vec<Home>,
 }
 
 fn icond(c: ICond) -> Cond {
@@ -173,6 +175,7 @@ pub fn generate(func: &Func, abi: &'static Abi) -> super::Code {
         abi,
         xmm_saved,
         calls: Vec::new(),
+        homes: func.homes(),
     };
     g.prologue();
     let labels: Vec<_> = (0..func.blocks.len()).map(|_| g.asm.new_label()).collect();
@@ -237,21 +240,25 @@ impl<'f> Gen<'f> {
     fn call_buffer(&self) -> Mem {
         Mem {
             base: Gpr::Rbp,
-            disp: -self.saved_bytes()
-                - 8 * self.func.classes.len() as i32
-                - self.func.call_buffer as i32,
+            disp: -self.saved_bytes() - 8 * self.alloc.slots as i32 - self.func.call_buffer as i32,
         }
+    }
+
+    fn slot_index(&self, v: VReg) -> u32 {
+        let i = self.alloc.slot[v.0 as usize];
+        debug_assert!(i != u32::MAX, "{v:?} has no home slot");
+        i
     }
 
     fn slot(&self, v: VReg) -> Mem {
         Mem {
             base: Gpr::Rbp,
-            disp: -self.saved_bytes() - 8 * (v.0 as i32 + 1),
+            disp: -self.saved_bytes() - 8 * (self.slot_index(v) as i32 + 1),
         }
     }
 
     fn prologue(&mut self) {
-        let slots = self.func.classes.len() as i32;
+        let slots = self.alloc.slots as i32;
         let pushed = self.abi.pushed.len() as i32;
         // At entry `rsp` is 8 mod 16 (the return address); `push rbp` realigns it, so after the
         // pushes it is `8 * pushed` mod 16 and the rest of the frame must restore alignment for
@@ -529,7 +536,12 @@ impl<'f> Gen<'f> {
     }
 
     /// Store `v` to its home slot if it lives in a register.
+    /// Make `v`'s home slot current (a no-op when it already is, or `v` is a constant that
+    /// `restore` and `load_call_args` rematerialize).
     fn save(&mut self, v: VReg) {
+        if self.homes[v.0 as usize] != Home::Unknown {
+            return;
+        }
         match self.loc(v) {
             Loc::Gpr(r) => self.asm.store(self.slot(v), r),
             Loc::Xmm(x) => self.asm.movsd_store(self.slot(v), x),
@@ -537,7 +549,19 @@ impl<'f> Gen<'f> {
         }
     }
 
+    /// Reload `v` after a call (clobbers `rax` for a float constant).
     fn restore(&mut self, v: VReg) {
+        if let Home::Const(bits) = self.homes[v.0 as usize] {
+            match self.loc(v) {
+                Loc::Gpr(r) => self.asm.mov_ri(r, bits),
+                Loc::Xmm(x) => {
+                    self.asm.mov_ri(Gpr::Rax, bits);
+                    self.asm.movq_xr(x, Gpr::Rax);
+                }
+                Loc::Slot => {}
+            }
+            return;
+        }
         match self.loc(v) {
             Loc::Gpr(r) => self.asm.load(r, self.slot(v)),
             Loc::Xmm(x) => self.asm.movsd_load(x, self.slot(v)),
@@ -684,15 +708,23 @@ impl<'f> Gen<'f> {
             } else {
                 (ni, nf)
             };
+            let constant = match self.homes[a.0 as usize] {
+                Home::Const(bits) if self.loc(*a) != Loc::Slot => Some(bits),
+                _ => None,
+            };
+            match (self.func.class(*a), constant) {
+                (Class::Int, Some(bits)) => self.asm.mov_ri(self.abi.args[i], bits),
+                (Class::Int, None) => self.asm.load(self.abi.args[i], self.slot(*a)),
+                // `r11` is caller-saved and never an argument register.
+                (Class::Float, Some(bits)) => {
+                    self.asm.mov_ri(Gpr::R11, bits);
+                    self.asm.movq_xr(Xmm(f), Gpr::R11);
+                }
+                (Class::Float, None) => self.asm.movsd_load(Xmm(f), self.slot(*a)),
+            }
             match self.func.class(*a) {
-                Class::Int => {
-                    self.asm.load(self.abi.args[i], self.slot(*a));
-                    ni += 1;
-                }
-                Class::Float => {
-                    self.asm.movsd_load(Xmm(f), self.slot(*a));
-                    nf += 1;
-                }
+                Class::Int => ni += 1,
+                Class::Float => nf += 1,
             }
         }
     }

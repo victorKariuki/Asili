@@ -11,7 +11,7 @@
 //! slots.
 
 use super::a64::{Alu, Asm, Cond, Fop, Label, SP, ZR};
-use super::ir::{Class, FCond, FloatOp, Func, ICond, Inst, IntOp, Term, VReg};
+use super::ir::{Class, FCond, FloatOp, Func, Home, ICond, Inst, IntOp, Term, VReg};
 use super::regalloc::{allocate, Allocation, Loc, Target};
 use super::schedule::Step;
 
@@ -70,6 +70,8 @@ struct Gen<'f> {
     frame: u32,
     /// Direct calls to link: (`bl` offset, callee).
     calls: Vec<(usize, u32)>,
+    /// What each register's home slot holds at a call (see `Func::homes`).
+    homes: Vec<Home>,
 }
 
 /// Machine code for `func`, position independent (runtime calls go through the `rt` table).
@@ -87,7 +89,7 @@ pub fn generate(func: &Func) -> Result<super::Code, String> {
         }
     }
     saved.sort_unstable();
-    let slots = func.classes.len() as u32;
+    let slots = alloc.slots;
     let frame = (8 * (slots + saved.len() as u32) + func.call_buffer).div_ceil(16) * 16;
     let mut g = Gen {
         asm: Asm::new(),
@@ -96,6 +98,7 @@ pub fn generate(func: &Func) -> Result<super::Code, String> {
         saved,
         frame,
         calls: Vec::new(),
+        homes: func.homes(),
     };
     g.prologue();
     let labels: Vec<Label> = (0..func.blocks.len()).map(|_| g.asm.new_label()).collect();
@@ -154,8 +157,10 @@ impl<'f> Gen<'f> {
         self.alloc.loc[v.0 as usize]
     }
 
-    fn slot(v: VReg) -> u32 {
-        8 * v.0
+    fn slot(&self, v: VReg) -> u32 {
+        let i = self.alloc.slot[v.0 as usize];
+        debug_assert!(i != u32::MAX, "{v:?} has no home slot");
+        8 * i
     }
 
     /// `[base + off]` as a base register and a scaled-immediate offset.
@@ -203,11 +208,11 @@ impl<'f> Gen<'f> {
 
     /// Offset from `sp` of the direct-call register buffer, above the saved registers.
     fn call_buffer_offset(&self) -> u32 {
-        8 * (self.func.classes.len() as u32 + self.saved.len() as u32)
+        8 * (self.alloc.slots + self.saved.len() as u32)
     }
 
     fn saved_offset(&self, i: usize) -> u32 {
-        8 * (self.func.classes.len() as u32 + i as u32)
+        8 * (self.alloc.slots + i as u32)
     }
 
     fn prologue(&mut self) {
@@ -225,12 +230,12 @@ impl<'f> Gen<'f> {
         // Incoming `rt, vm, frame, nums` (x0–x3): park them in their home slots first (their
         // allocated registers may be other argument registers), then load each where it lives.
         for i in 0..4u32 {
-            self.str_at(i as u8, SP, Self::slot(VReg(i)));
+            self.str_at(i as u8, SP, self.slot(VReg(i)));
         }
         for i in 0..4u32 {
             let v = VReg(i);
             if let Loc::Int(r) = self.loc(v) {
-                self.ldr_at(r, SP, Self::slot(v));
+                self.ldr_at(r, SP, self.slot(v));
             }
         }
     }
@@ -266,7 +271,7 @@ impl<'f> Gen<'f> {
         match self.loc(v) {
             Loc::Int(r) => r,
             Loc::Slot => {
-                self.ldr_at(scratch, SP, Self::slot(v));
+                self.ldr_at(scratch, SP, self.slot(v));
                 scratch
             }
             Loc::Float(_) => unreachable!("integer value in a float register"),
@@ -277,7 +282,7 @@ impl<'f> Gen<'f> {
         match self.loc(v) {
             Loc::Float(d) => d,
             Loc::Slot => {
-                self.ldr_d_at(scratch, SP, Self::slot(v));
+                self.ldr_d_at(scratch, SP, self.slot(v));
                 scratch
             }
             Loc::Int(_) => unreachable!("float value in a general register"),
@@ -302,7 +307,7 @@ impl<'f> Gen<'f> {
         match self.loc(v) {
             Loc::Int(r) => self.asm.mov(r, src),
             Loc::Float(d) => self.asm.fmov_from_x(d, src),
-            Loc::Slot => self.str_at(src, SP, Self::slot(v)),
+            Loc::Slot => self.str_at(src, SP, self.slot(v)),
         }
     }
 
@@ -310,23 +315,39 @@ impl<'f> Gen<'f> {
         match self.loc(v) {
             Loc::Float(d) => self.asm.fmov(d, src),
             Loc::Int(r) => self.asm.fmov_to_x(r, src),
-            Loc::Slot => self.str_d_at(src, SP, Self::slot(v)),
+            Loc::Slot => self.str_d_at(src, SP, self.slot(v)),
         }
     }
 
     /// Store `v` to its home slot if it lives in a register.
+    /// Make `v`'s home slot current (a no-op when it already is, or `v` is a constant that
+    /// `restore` and `load_call_args` rematerialize).
     fn save(&mut self, v: VReg) {
+        if self.homes[v.0 as usize] != Home::Unknown {
+            return;
+        }
         match self.loc(v) {
-            Loc::Int(r) => self.str_at(r, SP, Self::slot(v)),
-            Loc::Float(d) => self.str_d_at(d, SP, Self::slot(v)),
+            Loc::Int(r) => self.str_at(r, SP, self.slot(v)),
+            Loc::Float(d) => self.str_d_at(d, SP, self.slot(v)),
             Loc::Slot => {}
         }
     }
 
     fn restore(&mut self, v: VReg) {
+        if let Home::Const(bits) = self.homes[v.0 as usize] {
+            match self.loc(v) {
+                Loc::Int(r) => self.asm.mov_imm(r, bits),
+                Loc::Float(d) => {
+                    self.asm.mov_imm(S0, bits);
+                    self.asm.fmov_from_x(d, S0);
+                }
+                Loc::Slot => {}
+            }
+            return;
+        }
         match self.loc(v) {
-            Loc::Int(r) => self.ldr_at(r, SP, Self::slot(v)),
-            Loc::Float(d) => self.ldr_d_at(d, SP, Self::slot(v)),
+            Loc::Int(r) => self.ldr_at(r, SP, self.slot(v)),
+            Loc::Float(d) => self.ldr_d_at(d, SP, self.slot(v)),
             Loc::Slot => {}
         }
     }
@@ -437,15 +458,22 @@ impl<'f> Gen<'f> {
     fn load_call_args(&mut self, args: &[VReg]) {
         let (mut ni, mut nf) = (0u8, 0u8);
         for a in args {
+            let constant = match self.homes[a.0 as usize] {
+                Home::Const(bits) if self.loc(*a) != Loc::Slot => Some(bits),
+                _ => None,
+            };
+            match (self.func.class(*a), constant) {
+                (Class::Int, Some(bits)) => self.asm.mov_imm(ni, bits),
+                (Class::Int, None) => self.ldr_at(ni, SP, self.slot(*a)),
+                (Class::Float, Some(bits)) => {
+                    self.asm.mov_imm(S0, bits);
+                    self.asm.fmov_from_x(nf, S0);
+                }
+                (Class::Float, None) => self.ldr_d_at(nf, SP, self.slot(*a)),
+            }
             match self.func.class(*a) {
-                Class::Int => {
-                    self.ldr_at(ni, SP, Self::slot(*a));
-                    ni += 1;
-                }
-                Class::Float => {
-                    self.ldr_d_at(nf, SP, Self::slot(*a));
-                    nf += 1;
-                }
+                Class::Int => ni += 1,
+                Class::Float => nf += 1,
             }
         }
     }
@@ -678,7 +706,7 @@ impl<'f> Gen<'f> {
                 let across = self.save_for_call(bi, ii, args);
                 // The runtime table pointer comes from its home slot (the prologue stores it
                 // there): runtime calls read it implicitly, so its register need not be live.
-                self.ldr_at(CALL, SP, Self::slot(super::ir::RT));
+                self.ldr_at(CALL, SP, self.slot(super::ir::RT));
                 self.load_call_args(args);
                 self.asm.ldr(CALL, CALL, 8 * (*target as u32));
                 self.asm.blr(CALL);

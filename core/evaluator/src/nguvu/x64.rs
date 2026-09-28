@@ -139,22 +139,44 @@ impl Asm {
         }
     }
 
-    /// ModRM (+SIB) + disp32 for `[base + disp]` with `reg` in the reg field.
+    /// The ModRM `mod` field for `disp` off `base`: none, 8 or 32 bits (`rbp`/`r13` have no
+    /// displacement-free form).
+    fn disp_mode(base: u8, disp: i32) -> u8 {
+        if disp == 0 && low(base) != 5 {
+            0x00
+        } else if i8::try_from(disp).is_ok() {
+            0x40
+        } else {
+            0x80
+        }
+    }
+
+    fn disp(&mut self, mode: u8, disp: i32) {
+        match mode {
+            0x00 => {}
+            0x40 => self.byte(disp as u8),
+            _ => self.bytes(&disp.to_le_bytes()),
+        }
+    }
+
+    /// ModRM (+SIB) + displacement for `[base + disp]` with `reg` in the reg field.
     fn modrm_mem(&mut self, reg: u8, m: Mem) {
         let base = m.base as u8;
-        self.byte(0x80 | (low(reg) << 3) | low(base));
+        let mode = Self::disp_mode(base, m.disp);
+        self.byte(mode | (low(reg) << 3) | low(base));
         if low(base) == 4 {
             // rsp/r12 as a base always needs a SIB byte.
             self.byte(0x24);
         }
-        self.bytes(&m.disp.to_le_bytes());
+        self.disp(mode, m.disp);
     }
 
     fn modrm_idx(&mut self, reg: u8, m: MemIdx) {
-        self.byte(0x80 | (low(reg) << 3) | 4);
+        let mode = Self::disp_mode(m.base as u8, m.disp);
+        self.byte(mode | (low(reg) << 3) | 4);
         // scale 8 = 0b11
         self.byte(0xC0 | (low(m.index as u8) << 3) | low(m.base as u8));
-        self.bytes(&m.disp.to_le_bytes());
+        self.disp(mode, m.disp);
     }
 
     fn modrm_rr(&mut self, reg: u8, rm: u8) {
@@ -536,7 +558,7 @@ mod tests {
                     disp: -8
                 }
             )),
-            [0x48, 0x8B, 0x85, 0xF8, 0xFF, 0xFF, 0xFF]
+            [0x48, 0x8B, 0x45, 0xF8]
         );
         assert_eq!(
             enc(|a| a.load(
@@ -546,7 +568,7 @@ mod tests {
                     disp: 8
                 }
             )),
-            [0x49, 0x8B, 0x8C, 0x24, 0x08, 0x00, 0x00, 0x00]
+            [0x49, 0x8B, 0x4C, 0x24, 0x08]
         );
         assert_eq!(
             enc(|a| a.load_idx(
@@ -557,7 +579,34 @@ mod tests {
                     disp: 0
                 }
             )),
-            [0x48, 0x8B, 0x84, 0xD1, 0, 0, 0, 0]
+            [0x48, 0x8B, 0x04, 0xD1]
+        );
+        // Displacement sizes: none, 8 and 32 bits; `rbp`/`r13` bases always carry one.
+        let idx = |base, disp| MemIdx {
+            base,
+            index: Gpr::Rdx,
+            disp,
+        };
+        assert_eq!(
+            enc(|a| a.load_idx(Gpr::Rax, idx(Gpr::R13, 0))),
+            [0x49, 0x8B, 0x44, 0xD5, 0x00]
+        );
+        assert_eq!(
+            enc(|a| a.load_idx(Gpr::Rax, idx(Gpr::Rcx, 4096))),
+            [0x48, 0x8B, 0x84, 0xD1, 0x00, 0x10, 0x00, 0x00]
+        );
+        let mem = |base, disp| Mem { base, disp };
+        assert_eq!(
+            enc(|a| a.load(Gpr::Rax, mem(Gpr::R13, 0))),
+            [0x49, 0x8B, 0x45, 0x00]
+        );
+        assert_eq!(
+            enc(|a| a.load(Gpr::Rax, mem(Gpr::Rbx, 0))),
+            [0x48, 0x8B, 0x03]
+        );
+        assert_eq!(
+            enc(|a| a.load(Gpr::Rax, mem(Gpr::Rbx, -1024))),
+            [0x48, 0x8B, 0x83, 0x00, 0xFC, 0xFF, 0xFF]
         );
         assert_eq!(
             enc(|a| a.alu_rr(Alu::Add, Gpr::Rax, Gpr::Rcx)),
@@ -587,7 +636,7 @@ mod tests {
                 base: Gpr::R12,
                 disp: 16
             })),
-            [0x41, 0xFF, 0x94, 0x24, 0x10, 0, 0, 0]
+            [0x41, 0xFF, 0x54, 0x24, 0x10]
         );
         assert_eq!(
             enc(|a| a.sse(Sse::Add, Xmm(0), Xmm(1))),
@@ -622,7 +671,7 @@ mod tests {
                     disp: -16
                 }
             )),
-            [0xF2, 0x0F, 0x10, 0x85, 0xF0, 0xFF, 0xFF, 0xFF]
+            [0xF2, 0x0F, 0x10, 0x45, 0xF0]
         );
         assert_eq!(enc(|a| a.mov_ri(Gpr::Rax, 5)), [0xB8, 5, 0, 0, 0]);
         assert_eq!(

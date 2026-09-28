@@ -192,7 +192,7 @@ Next steps are the "Remaining gaps" below.
 - Native-to-native calls are direct only for scalar (`Namba`/`Buliani`) functions without
   lists or generic values; others go through the interpreter's call path. Direct calls pass
   arguments as `f64` through a memory buffer and save live registers around the call, so
-  `fib(32)` is ~49 ms against C's ~11 ms; typed register arguments and inlining small helpers
+  `fib(32)` is ~39 ms against C's ~11 ms; typed register arguments and inlining small helpers
   (`sanduku_la(r, c)`) would close most of that.
 - The native image is mapped by `pata tenda` or the standalone runner, not a standalone
   executable. `pata tenda` itself (the full toolchain binary) starts ~3 ms slower than the
