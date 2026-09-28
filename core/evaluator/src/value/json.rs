@@ -96,7 +96,7 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
         // extension point if that's ever needed.
         Value::Struct(_name, fields) => {
             let mut out = serde_json::Map::with_capacity(fields.len());
-            for (fname, v) in fields {
+            for (fname, v) in fields.iter() {
                 out.insert(fname.to_string(), to_json_depth(v, depth + 1)?);
             }
             J::Object(out)
@@ -306,7 +306,8 @@ mod tests {
             vec![
                 ("x".into(), Value::Namba(1.0)),
                 ("y".into(), Value::Neno("hi".into())),
-            ],
+            ]
+            .into(),
         );
         let j = v.to_json().unwrap();
         assert_eq!(j, serde_json::json!({"x": 1.0, "y": "hi"}));

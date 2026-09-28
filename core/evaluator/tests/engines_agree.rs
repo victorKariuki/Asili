@@ -382,9 +382,8 @@ fn mixed_programs_agree() {
             y: Namba,
         }
         kazi urefu_wa(p: Nukta) -> Namba {
-            # `tupa`: left to the tree-walker
-            weka a = p.x
-            tupa a
+            # a pattern `weka`: left to the tree-walker
+            weka (a, b) = jozi(p.x, p.y)
             rejesha mraba(p.x) + mraba(p.y)
         }
         kazi mraba(n: Namba) -> Namba {
@@ -687,10 +686,10 @@ fn methods_dispatch_like_the_tree_walker() {
             "{METHODS}{}",
             r#"
             kazi t() -> Orodha<Namba> {
-                # `tupa` keeps this kazi on the tree-walker, which calls compiled methods
+                # a pattern `weka` keeps this kazi on the tree-walker, which calls compiled
+                # methods
                 weka m = Mstatili { upana: 3, urefu_wake: 4 }
-                weka tupu = 0
-                tupa tupu
+                weka (a, b) = jozi(1, 2)
                 weka r: Orodha<Namba> = []
                 r.ongeza(m.eneo())
                 r.ongeza(m.jumla_ya_hatua(5))
@@ -699,5 +698,74 @@ fn methods_dispatch_like_the_tree_walker() {
             "#
         ),
         &["t"],
+    );
+}
+
+#[test]
+fn tupa_releases_bindings() {
+    agree(
+        "tupa",
+        r#"
+        kazi achilia() -> Namba {
+            weka x: Namba = 1
+            weka jumla: Namba = 0
+            kwa i kutoka 0 hadi 4 {
+                weka b: Orodha<Namba> = [i, i * 2]
+                weka n: Namba = b[1]
+                weka s = "neno" + (i kama Neno)
+                jumla = jumla + n + s.urefu()
+                tupa b
+                tupa n
+                tupa s
+            }
+            ikiwa kweli {
+                weka x: Namba = 40
+                jumla = jumla + x
+                tupa x
+                jumla = jumla + x
+            }
+            rejesha jumla
+        }
+        "#,
+        &["achilia"],
+    );
+}
+
+#[test]
+fn typed_struct_fields() {
+    agree(
+        "fields",
+        r#"
+        umbo Nukta {
+            jina: Neno,
+            x: Namba,
+            y: Namba,
+        }
+        umbo Sanduku {
+            ndani: Nukta,
+            upana: Namba,
+        }
+        kazi songa(p: Nukta, dx: Namba) -> Nukta {
+            weka x = p.x + dx
+            ikiwa x > 10 {
+                x = x - 20
+            }
+            rejesha Nukta { jina: p.jina + "'", x: x, y: p.y * 2 }
+        }
+        kazi hesabu() -> Orodha<Namba> {
+            weka s = Sanduku { ndani: Nukta { jina: "a", x: 1.5, y: -2 }, upana: 3 }
+            weka r: Orodha<Namba> = []
+            weka p: Nukta = s.ndani
+            kwa i kutoka 0 hadi 5 {
+                p = songa(p, s.upana + i)
+                r.ongeza(p.x)
+                r.ongeza(p.y % 7)
+                r.ongeza(p.jina.urefu())
+            }
+            r.ongeza(s.ndani.x * s.upana)
+            rejesha r
+        }
+        "#,
+        &["hesabu"],
     );
 }

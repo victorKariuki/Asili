@@ -236,6 +236,7 @@ pub(crate) fn num_writes(op: &Opcode) -> Vec<Reg> {
         | Opcode::ListGet { dst, .. }
         | Opcode::ListLen { dst, .. }
         | Opcode::UnboxNum { dst, .. }
+        | Opcode::FieldNum { dst, .. }
         | Opcode::UnboxBool { dst, .. }
         | Opcode::ValLen { dst, .. }
         | Opcode::MatchPattern { dst, .. } => vec![*dst],

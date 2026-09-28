@@ -381,7 +381,8 @@ fn request_to_value(req: &ParsedRequest) -> Value {
             ("anwani".into(), Value::Neno(req.path.clone())),
             ("vichwa".into(), Value::Kamusi(headers_map)),
             ("mwili".into(), Value::Neno(req.body.clone())),
-        ],
+        ]
+        .into(),
     )
 }
 

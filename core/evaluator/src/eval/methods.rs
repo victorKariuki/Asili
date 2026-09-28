@@ -19,7 +19,8 @@ pub(crate) fn out_of_bounds(idx: usize, len: usize) -> Value {
         vec![(
             "ujumbe".into(),
             Value::Neno(out_of_bounds_message(idx, len)),
-        )],
+        )]
+        .into(),
     );
     Value::Tokeo(Err(Box::new(kosa)))
 }
@@ -88,11 +89,33 @@ pub(crate) fn grapheme_count(s: &str) -> usize {
 
 /// `recv.field`: the named field of a `umbo` value.
 pub(crate) fn field_of(recv: &Value, field: &str) -> Result<Value, EvalError> {
+    field_ref(recv, field).cloned()
+}
+
+/// [`field_ref`], trying position `slot` first (where the field is declared).
+#[inline]
+pub(crate) fn field_at<'v>(
+    recv: &'v Value,
+    field: &str,
+    slot: u32,
+) -> Result<&'v Value, EvalError> {
+    if let Value::Struct(_, flds) = recv {
+        if let Some((n, v)) = flds.get(slot as usize) {
+            if **n == *field {
+                return Ok(v);
+            }
+        }
+    }
+    field_ref(recv, field)
+}
+
+/// [`field_of`] without the copy.
+pub(crate) fn field_ref<'v>(recv: &'v Value, field: &str) -> Result<&'v Value, EvalError> {
     match recv {
         Value::Struct(_, flds) => flds
             .iter()
             .find(|(n, _)| &**n == field)
-            .map(|(_, v)| v.clone())
+            .map(|(_, v)| v)
             .ok_or_else(|| EvalError::TypeErr(format!("uga haijulikani: {}", field))),
         _ => Err(EvalError::TypeErr(
             "uga unahitaji kitu cha aina ya umbo".into(),

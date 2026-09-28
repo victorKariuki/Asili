@@ -232,7 +232,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     .ok_or_else(|| EvalError::TypeErr(format!("umbo linahitaji uga: {}", fname)))?;
                 flds.push((fname.as_str().into(), super::eval_expr_impl(fexpr, rt)?));
             }
-            Ok(Value::Struct(struct_name.as_str().into(), flds))
+            Ok(Value::Struct(struct_name.as_str().into(), flds.into()))
         }
         Expr::EnumConstruct {
             enum_name,

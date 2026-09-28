@@ -415,11 +415,20 @@ pub enum Opcode {
         name: crate::value::Name,
         fields: Box<[(crate::value::Name, Reg)]>,
     },
-    /// `vals[dst] = vals[src].field`.
+    /// `vals[dst] = vals[src].field`; `slot` is where the field sits when the receiver's
+    /// `umbo` is statically known (`u32::MAX` otherwise) — a hint, checked against the name.
     Field {
         dst: Reg,
         src: Reg,
         field: String,
+        slot: u32,
+    },
+    /// `nums[dst] = vals[src].field`, a field declared `Namba`.
+    FieldNum {
+        dst: Reg,
+        src: Reg,
+        field: String,
+        slot: u32,
     },
     /// `vals[dst] = Enum::Variant(vals[data])` (no data when `None`).
     MakeEnum {
@@ -531,7 +540,10 @@ fn compile_module_inner(
             .map(|s| {
                 (
                     s.name.clone(),
-                    s.fields.iter().map(|(f, _)| f.clone()).collect(),
+                    s.fields
+                        .iter()
+                        .map(|(f, t)| (f.clone(), t.as_ref().map(|t| t.name.replace(' ', ""))))
+                        .collect(),
                 )
             })
             .collect(),
@@ -679,7 +691,7 @@ struct ProgramCompiler {
     module_consts: HashMap<String, (Ty, StoredConstant, String)>,
     builtins: HashMap<String, u32>,
     /// `umbo` name -> field names in declaration order.
-    structs: HashMap<String, Vec<String>>,
+    structs: HashMap<String, Vec<(String, Option<String>)>>,
     /// Declared `jenum` names.
     enums: std::collections::HashSet<String>,
     /// Method names some `impl` block defines (a call may reach a user method even where a
@@ -1014,6 +1026,9 @@ impl<'a> FunctionCompiler<'a> {
                 method_name, args, ..
             } if method_name == "urefu" && args.is_empty() => Ty::Num,
             Expr::Index { base, .. } if self.infer(base) == Ty::List => Ty::Num,
+            Expr::FieldAccess {
+                receiver, field, ..
+            } if self.field_type(receiver, field).as_deref() == Some("Namba") => Ty::Num,
             Expr::Propagate { expr, .. } => match &**expr {
                 Expr::Index { base, .. } if self.infer(base) == Ty::List => Ty::Num,
                 _ => Ty::Val,
@@ -1039,6 +1054,19 @@ impl<'a> FunctionCompiler<'a> {
         }
     }
 
+    /// Position and declared type of `receiver.field`, when the receiver's `umbo` is
+    /// statically known.
+    fn field_decl(&self, receiver: &Expr, field: &str) -> Option<(u32, Option<String>)> {
+        let umbo = self.type_name(receiver)?;
+        let fields = self.program.structs.get(&umbo)?;
+        let slot = fields.iter().position(|(f, _)| f == field)?;
+        Some((slot as u32, fields[slot].1.clone()))
+    }
+
+    fn field_type(&self, receiver: &Expr, field: &str) -> Option<String> {
+        self.field_decl(receiver, field)?.1
+    }
+
     /// Static type name of a generic expression, where known.
     fn type_name(&self, expr: &Expr) -> Option<String> {
         match expr {
@@ -1056,6 +1084,9 @@ impl<'a> FunctionCompiler<'a> {
                     .map(|(_, _, t)| t.clone()),
             },
             Expr::Cast { ty, .. } if ty.name == "Neno" => Some("Neno".into()),
+            Expr::FieldAccess {
+                receiver, field, ..
+            } => self.field_type(receiver, field),
             Expr::Binary {
                 left,
                 op: BinaryOp::Add,
@@ -1270,7 +1301,26 @@ impl<'a> FunctionCompiler<'a> {
                     self.patch(j, end);
                 }
             }
-            Stmt::Drop { .. } | Stmt::LetPattern { .. } => return None,
+            Stmt::Drop { name, .. } => {
+                // Only a binding of the innermost scope: the drop then runs at most once per
+                // declaration, so the tree-walker's "already dropped" error cannot arise.
+                let local = self.scopes.last_mut()?.remove(name.as_str())?;
+                let reg = local.op.reg;
+                match local.op.ty {
+                    Ty::Num | Ty::Bool => {}
+                    Ty::List => {
+                        self.emit(Opcode::MakeNumList {
+                            dst: reg,
+                            items: Vec::new(),
+                        });
+                    }
+                    Ty::Val => {
+                        let k = self.program.constant(StoredConstant::Tupu);
+                        self.emit(Opcode::ConstVal { dst: reg, k });
+                    }
+                }
+            }
+            Stmt::LetPattern { .. } => return None,
         }
         Some(())
     }
@@ -1695,7 +1745,7 @@ impl<'a> FunctionCompiler<'a> {
                 // runs, so leave the `kazi` to it.
                 let declared = self.program.structs.get(struct_name)?.clone();
                 let mut regs = Vec::with_capacity(declared.len());
-                for fname in declared {
+                for (fname, _) in declared {
                     let (_, fexpr) = fields.iter().find(|(n, _)| *n == fname)?;
                     regs.push((fname.as_str().into(), self.expr_as(fexpr, Ty::Val)?.reg));
                 }
@@ -1710,12 +1760,24 @@ impl<'a> FunctionCompiler<'a> {
             Expr::FieldAccess {
                 receiver, field, ..
             } => {
+                let slot = self.field_decl(receiver, field).map_or(u32::MAX, |d| d.0);
                 let src = self.expr_as(receiver, Ty::Val)?;
+                if self.infer(expr) == Ty::Num {
+                    let out = self.dst_or_temp(dst, Ty::Num);
+                    self.emit(Opcode::FieldNum {
+                        dst: out.reg,
+                        src: src.reg,
+                        field: field.clone(),
+                        slot,
+                    });
+                    return Some(out);
+                }
                 let out = self.dst_or_temp(dst, Ty::Val);
                 self.emit(Opcode::Field {
                     dst: out.reg,
                     src: src.reg,
                     field: field.clone(),
+                    slot,
                 });
                 Some(out)
             }
@@ -2685,7 +2747,7 @@ impl<'p> Vm<'p> {
             .lists
             .resize_with(f.list_regs as usize, NumList::default);
         frame.vals.clear();
-        frame.vals.resize(f.val_regs as usize, Value::Hamna);
+        frame.vals.resize_with(f.val_regs as usize, || Value::Hamna);
         for (reg, n) in &f.num_consts {
             frame.nums[*reg as usize] = *n;
         }
@@ -2961,12 +3023,34 @@ impl<'p> Vm<'p> {
                 frame.vals[*dst as usize] = Value::Struct(name.clone(), flds);
                 return Flow::Next;
             }
-            Opcode::Field { dst, src, field } => {
-                return match methods::field_of(&frame.vals[*src as usize], field) {
+            Opcode::Field {
+                dst,
+                src,
+                field,
+                slot,
+            } => {
+                return match methods::field_at(&frame.vals[*src as usize], field, *slot) {
                     Ok(v) => {
-                        frame.vals[*dst as usize] = v;
+                        frame.vals[*dst as usize] = v.clone();
                         Flow::Next
                     }
+                    Err(e) => Flow::Fail(e),
+                };
+            }
+            Opcode::FieldNum {
+                dst,
+                src,
+                field,
+                slot,
+            } => {
+                return match methods::field_at(&frame.vals[*src as usize], field, *slot) {
+                    Ok(Value::Namba(v)) => {
+                        frame.nums[*dst as usize] = *v;
+                        Flow::Next
+                    }
+                    Ok(other) => Flow::Fail(EvalError::TypeErr(format!(
+                        "operesheni inahitaji Namba, ilipata {other:?}"
+                    ))),
                     Err(e) => Flow::Fail(e),
                 };
             }
@@ -3332,6 +3416,7 @@ impl<'p> Vm<'p> {
             Opcode::Interpreted { .. }
             | Opcode::MakeStruct { .. }
             | Opcode::Field { .. }
+            | Opcode::FieldNum { .. }
             | Opcode::MakeEnum { .. }
             | Opcode::MakeMap { .. }
             | Opcode::MatchPattern { .. }

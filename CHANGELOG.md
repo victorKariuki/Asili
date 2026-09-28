@@ -134,6 +134,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `shughuli ya` method on the tree-walker no longer deep-copies the method's syntax tree. A
   particle simulation over 100 `umbo` values × 2,000 steps: 4.9 s (tree-walker, before
   structs lowered to bytecode) → 354 ms (bytecode) → 275 ms.
+- **`umbo` copies are a reference-count bump**: fields are never assigned in place, so a struct's
+  fields are shared (`Rc<[…]>`) instead of copied with it; a field declared `Namba` on a
+  receiver whose `umbo` is known where it is compiled loads straight into a numeric register
+  (`Opcode::FieldNum`, no boxed arithmetic afterwards), and field loads try the declared
+  position before searching by name. `tupa` on a binding of the innermost scope compiles to
+  bytecode (it releases the register's value). The particle simulation above: 275 → 106 ms.
+  `.asb` bytecode version 8.
 - **Cheaper string building, part two**: `+` on two `Neno` values borrows both and allocates
   the result once at its final size (operands are no longer copied first, and nothing
   reallocates); whole numbers are formatted by a direct digit writer; `urefu` of ASCII text

@@ -74,9 +74,10 @@ pub enum Value {
     Chaguo(Option<Box<Value>>),
     Tokeo(Result<Box<Value>, Box<Value>>),
     Orodha(Vec<Value>),
-    /// A `umbo` value: its name and fields in declaration order. Names are shared (`Rc`), so
-    /// copying a struct copies its field values, not its field names.
-    Struct(Name, Vec<(Name, Value)>),
+    /// A `umbo` value: its name and fields in declaration order. `umbo` fields are never
+    /// assigned in place, so the fields are shared (`Rc`): copying a struct is a reference-count
+    /// bump, not a copy of its fields.
+    Struct(Name, Rc<[(Name, Value)]>),
     Enum(String, String, Option<Box<Value>>), // enum_name, variant_name, optional_data
     Herufi(char),
     Jozi(Box<Value>, Box<Value>),
@@ -315,7 +316,7 @@ impl Value {
             Value::Seti(s) => SendValue::Seti(s.clone()),
             Value::Struct(name, fields) => {
                 let mut out = Vec::with_capacity(fields.len());
-                for (fname, v) in fields {
+                for (fname, v) in fields.iter() {
                     out.push((fname.to_string(), v.try_into_send()?));
                 }
                 SendValue::Struct(name.to_string(), out)
