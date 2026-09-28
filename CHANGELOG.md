@@ -12,7 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   using the exact MRV algorithm from `examples/sudoku/src/kuu.as`, plus `run.sh`, which builds
   everything and reports the best wall time per implementation after checking that every
   solver reports the same attempt count (90,665).
-- **Ahead-of-time native code** (`core/evaluator/src/aot.rs`): `pata jenga` lowers bytecode
+- **Ahead-of-time native code** (`core/evaluator/src/aot.rs`; the LLVM backend described here
+  has since been replaced by `nguvu`, above): `pata jenga` lowers bytecode
   artifacts to LLVM IR (no C source involved), optimizes and links it with `clang -O2` into
   `kilele/<name>.so` (`.dylib`/`.dll`), and `pata tenda`, `pata jenga --tenda` and the
   standalone runner load it when it was built from exactly the same bytecode (hash-checked);
@@ -24,26 +25,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   non-negative integers becomes an integer division, and list accesses whose index is proven
   in range drop their bounds check. The Inkala Sudoku solve runs in about 4.8 ms (gcc `-O2` C:
   4.4 ms; clang `-O2` C: 3.2 ms). `ASILI_AOT=0` disables it, `ASILI_CLANG` picks the compiler.
-- **In-house native backend `nguvu`** (`core/evaluator/src/nguvu/`), now the default native
-  tier: compiles register bytecode straight to x86-64 machine code with no external compiler,
+- **In-house native backend `nguvu`** (`core/evaluator/src/nguvu/`), the only native tier:
+  compiles register bytecode straight to x86-64 machine code with no external compiler,
   assembler or linker — lowering to a typed IR (same range analysis, speculation and
-  deoptimization protocol as the LLVM backend) with full unrolling of small constant-bound
-  `kwa` loops; then constant folding, an IR interval analysis that deletes guards and
-  comparisons it proves (a count bumped at most once per unrolled copy never needs its ±2^53
-  check), if-conversion of small branches to `cmov`/flag arithmetic (compares feeding
-  selects set the flags once), bit-test fusion, recognition of summed single-bit tests as
-  `popcnt` (only where the CPU has it; images record the extensions they need), local value
-  reuse, constant hoisting, liveness-based dead-code elimination, a priority register
-  allocator with copy coalescing and precise live ranges, and division by constants as
-  reciprocal multiplication. `pata jenga` writes the position-independent code to
-  `kilele/<name>.nguvu` (hash-checked like the `.so`), so `--namna release` no longer needs
-  `clang` on x86-64 Unix. `pata tenda` and the standalone runner load the image first, then
-  the LLVM library; `ASILI_NGUVU=0` prefers LLVM, `ASILI_NGUVU=1` uses only `nguvu`
-  (compiling in memory when no image was built), and `ASILI_NATIVE_TRACE=1` prints every
-  deoptimization. Sudoku solve (process time minus an empty run): nguvu 3.0 ms, clang `-O2`
-  C 3.1 ms, gcc `-O2` C 4.7 ms; whole process on the standalone runner 7.3 ms (LLVM tier
-  9.1 ms, gcc C 7.8 ms, clang C 6.4 ms). `examples/sudoku/bench/run.sh` now times the
-  runner, both native tiers and both C compilers at 0.1 ms resolution.
+  deoptimization protocol as before) with full unrolling of small constant-bound `kwa` loops;
+  then constant folding, an IR interval analysis (widening at loop heads, then narrowing) that
+  deletes guards and comparisons it proves, if-conversion of small branches to `cmov`/flag
+  arithmetic, bit-test fusion, summed single-bit tests as `popcnt` (only where the CPU has
+  it; images record the extensions they need), division by constants over proven small
+  ranges as multiply-and-shift (`p // 9` is `(p * 57) >> 9`), local value reuse, constant
+  hoisting, liveness-based dead-code elimination, and a priority register allocator with
+  copy coalescing. `pata jenga` writes the position-independent code to
+  `kilele/<name>.nguvu` (hash-, ABI-, architecture- and CPU-feature-checked); `pata tenda` and
+  the standalone runner map it (`ASILI_NGUVU=1` compiles in memory when it is missing,
+  `ASILI_NATIVE_TRACE=1` prints every deoptimization). Sudoku solve (process time minus an
+  empty run): nguvu ≈ 2.6 ms, clang `-O2` C ≈ 3.1 ms, gcc `-O2` C ≈ 4.7 ms; whole process on
+  the standalone runner 7.2 ms (clang C 6.5 ms, gcc C 8.1 ms — the difference is the
+  runner's start-up). `examples/sudoku/bench/run.sh` times the runner and both C compilers at
+  0.1 ms resolution.
+- **Integer lists**: `Orodha<Namba>` storage (`numlist.rs`) keeps a list's elements as `i64`
+  words while every element converts exactly (no `-0.0`, NaN, ±∞ or fraction) and as `f64`
+  bits otherwise; reading is unchanged for programs. Native code keeps lists the analysis
+  proves integer-valued in integer words and reads them with plain loads — no
+  float/integer conversions in the Sudoku hot loop.
 - **Cross-tier differential tests** (`tests/native_tiers.rs`): every snippet must give
   bit-identical results on the VM interpreter and the AOT native code (signed zeros,
   NaN/infinities, values past 2^53, negative remainders, out-of-range shifts, out-of-bounds

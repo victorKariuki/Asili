@@ -5,7 +5,7 @@
 //!
 //! * `nums`: unboxed `f64`s, holding every `Namba` and `Ukweli` (as `0.0`/`1.0`) local and
 //!   temporary whose type is statically known;
-//! * `lists`: unboxed `Vec<f64>`s for `Orodha<Namba>` locals;
+//! * `lists`: unboxed [`NumList`]s (integer or `f64` words) for `Orodha<Namba>` locals;
 //! * `vals`: generic [`Value`]s for everything else.
 //!
 //! Numeric code therefore never touches the `Value` enum: `a + b` is one `Add` instruction on two
@@ -20,6 +20,7 @@
 
 use crate::builtins::{builtin_names, BuiltinFn, MODULE_BUILTINS};
 use crate::eval::{methods, ops};
+use crate::numlist::NumList;
 use crate::value::{self, EvalError, Value};
 use asili_parser::{AssignOp, BinaryOp, Block, Expr, ForMode, Function, Module, Stmt, UnaryOp};
 use serde::{Deserialize, Serialize};
@@ -2162,7 +2163,7 @@ pub fn run_bytecode_function(
 #[derive(Default)]
 pub(crate) struct Frame {
     pub(crate) nums: Vec<f64>,
-    pub(crate) lists: Vec<Vec<f64>>,
+    pub(crate) lists: Vec<NumList>,
     pub(crate) vals: Vec<Value>,
 }
 
@@ -2174,7 +2175,7 @@ pub(crate) enum Flow {
 
 pub(crate) enum Ret {
     Num(f64),
-    List(Vec<f64>),
+    List(NumList),
     Val(Value),
 }
 
@@ -2308,7 +2309,9 @@ impl<'p> Vm<'p> {
         frame.nums.clear();
         frame.nums.resize(f.num_regs as usize, 0.0);
         frame.lists.clear();
-        frame.lists.resize_with(f.list_regs as usize, Vec::new);
+        frame
+            .lists
+            .resize_with(f.list_regs as usize, NumList::default);
         frame.vals.clear();
         frame.vals.resize(f.val_regs as usize, Value::Hamna);
         for (reg, n) in &f.num_consts {
@@ -2335,7 +2338,7 @@ impl<'p> Vm<'p> {
         Ok(match self.invoke(index, frame)? {
             Ret::Num(n) if f.ret == Ty::Bool => Value::Ukweli(n != 0.0),
             Ret::Num(n) => Value::Namba(n),
-            Ret::List(l) => Value::Orodha(l.into_iter().map(Value::Namba).collect()),
+            Ret::List(l) => Value::Orodha(l.iter().map(Value::Namba).collect()),
             Ret::Val(v) => v,
         })
     }
@@ -2493,14 +2496,13 @@ impl<'p> Vm<'p> {
                 Opcode::ListGet { dst, list, idx, .. } => {
                     let i = to_index(n[*idx as usize]);
                     if let Some(v) = frame.lists[*list as usize].get(i) {
-                        frame.nums[*dst as usize] = *v;
+                        frame.nums[*dst as usize] = v;
                         continue;
                     }
                 }
                 Opcode::ListSet { list, idx, src } => {
                     let (i, v) = (to_index(n[*idx as usize]), n[*src as usize]);
-                    if let Some(slot) = frame.lists[*list as usize].get_mut(i) {
-                        *slot = v;
+                    if frame.lists[*list as usize].set(i, v) {
                         continue;
                     }
                 }
@@ -2557,10 +2559,10 @@ impl<'p> Vm<'p> {
                     ));
                 }
                 let v = n[*value as usize];
-                frame.lists[*dst as usize] = vec![v; count as usize];
+                frame.lists[*dst as usize] = NumList::repeat(v, count as usize);
             }
             Opcode::MakeNumList { dst, items } => {
-                let list: Vec<f64> = items.iter().map(|r| n[*r as usize]).collect();
+                let list: NumList = items.iter().map(|r| n[*r as usize]).collect();
                 frame.lists[*dst as usize] = list;
             }
             Opcode::ListGet {
@@ -2572,7 +2574,7 @@ impl<'p> Vm<'p> {
                 let i = to_index(n[*idx as usize]);
                 let l = &frame.lists[*list as usize];
                 match (l.get(i), mode) {
-                    (Some(v), _) => frame.nums[*dst as usize] = *v,
+                    (Some(v), _) => frame.nums[*dst as usize] = v,
                     (None, IndexMode::Element) => fail!(methods::out_of_bounds_error(i, l.len())),
                     (None, IndexMode::Tokeo) => {
                         finish!(Ret::Val(methods::out_of_bounds(i, l.len())))
@@ -2583,7 +2585,7 @@ impl<'p> Vm<'p> {
                 let i = to_index(n[*idx as usize]);
                 let l = &frame.lists[*list as usize];
                 let v = match l.get(i) {
-                    Some(v) => Value::sawa(Value::Namba(*v)),
+                    Some(v) => Value::sawa(Value::Namba(v)),
                     None => methods::out_of_bounds(i, l.len()),
                 };
                 frame.vals[*dst as usize] = v;
@@ -2591,9 +2593,8 @@ impl<'p> Vm<'p> {
             Opcode::ListSet { list, idx, src } => {
                 let i = to_index(n[*idx as usize]);
                 let v = n[*src as usize];
-                match frame.lists[*list as usize].get_mut(i) {
-                    Some(slot) => *slot = v,
-                    None => fail!(type_err("ingiza: index nje ya mipaka")),
+                if !frame.lists[*list as usize].set(i, v) {
+                    fail!(type_err("ingiza: index nje ya mipaka"));
                 }
             }
             Opcode::ListPush { list, src } => {
@@ -2631,7 +2632,7 @@ impl<'p> Vm<'p> {
                 let v = Value::Orodha(
                     frame.lists[*src as usize]
                         .iter()
-                        .map(|n| Value::Namba(*n))
+                        .map(Value::Namba)
                         .collect(),
                 );
                 frame.vals[*dst as usize] = v;
@@ -2726,7 +2727,7 @@ impl<'p> Vm<'p> {
                     .map(|r| frame.vals[*r as usize].clone())
                     .collect();
                 let list = std::mem::take(&mut frame.lists[call.recv as usize]);
-                let mut value = Value::Orodha(list.into_iter().map(Value::Namba).collect());
+                let mut value = Value::Orodha(list.iter().map(Value::Namba).collect());
                 let result = methods::mutate(&mut value, &call.method, &args);
                 match list_from_value(&value) {
                     Ok(list) => frame.lists[call.recv as usize] = list,
@@ -2794,7 +2795,7 @@ impl<'p> Vm<'p> {
                     }
                     (Ret::List(l), Ty::Val) => {
                         frame.vals[dst.reg as usize] =
-                            Value::Orodha(l.into_iter().map(Value::Namba).collect())
+                            Value::Orodha(l.iter().map(Value::Namba).collect())
                     }
                     _ => fail!(type_err("aina ya thamani ya kurudi si sahihi")),
                 }
@@ -2918,7 +2919,7 @@ fn copy_operand(from: &Frame, src: Operand, to: &mut Frame, dst: Operand) {
     }
 }
 
-fn list_from_value(v: &Value) -> Result<Vec<f64>, EvalError> {
+fn list_from_value(v: &Value) -> Result<NumList, EvalError> {
     match v {
         Value::Orodha(items) => items
             .iter()

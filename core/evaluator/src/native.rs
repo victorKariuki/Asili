@@ -18,21 +18,20 @@ pub(crate) const STATUS_RETURN: u64 = 3;
 /// to the frame, and the interpreter continues the call from `pc` (deoptimization).
 pub(crate) const STATUS_DEOPT: u64 = 4;
 
-/// Entry points native code calls, passed as the first argument. Field order is ABI: the AOT
-/// backend loads them by offset.
+/// Entry points native code calls, passed as the first argument. Field order is ABI: generated
+/// code loads them by offset (`nguvu::ir::RtFn`).
 #[repr(C)]
 pub(crate) struct Runtime {
     /// `(vm, frame, function, pc) -> 0 | STATUS_FINISH | STATUS_FAIL`: run one instruction in
     /// the interpreter.
     pub exec: extern "C" fn(*mut c_void, *mut Frame, u32, u32) -> u32,
-    pub list_ptr: extern "C" fn(*mut Frame, u32) -> *mut f64,
+    pub list_ptr: extern "C" fn(*mut Frame, u32, u32) -> *mut u64,
     pub list_len: extern "C" fn(*mut Frame, u32) -> i64,
     /// Append; returns the (possibly moved) data pointer.
-    pub list_push: extern "C" fn(*mut Frame, u32, f64) -> *mut f64,
+    pub list_push: extern "C" fn(*mut Frame, u32, f64) -> *mut u64,
     /// Remove at an in-range index; returns the new length.
     pub list_remove: extern "C" fn(*mut Frame, u32, i64) -> i64,
-    // Math helpers for the in-house backend (`nguvu`), appended so the LLVM backend's field
-    // offsets above are unchanged.
+    // Math helpers.
     pub fmod: extern "C" fn(f64, f64) -> f64,
     pub pow: extern "C" fn(f64, f64) -> f64,
     pub floor: extern "C" fn(f64) -> f64,
@@ -72,11 +71,14 @@ pub(crate) extern "C" fn rt_shift_amount(a: f64) -> i64 {
     }
 }
 
-pub(crate) extern "C" fn list_ptr(frame: *mut Frame, reg: u32) -> *mut f64 {
+/// Data pointer of list register `reg`, switched to integer words when `ints` is nonzero
+/// (native code proved every element integral) or `f64` words otherwise; null if integers were
+/// asked for and the list holds a non-integer (the caller deoptimizes).
+pub(crate) extern "C" fn list_ptr(frame: *mut Frame, reg: u32, ints: u32) -> *mut u64 {
     // SAFETY: called by native code with the frame it was handed; `reg` was checked at compile
     // time to be below the function's `list_regs`.
     let frame = unsafe { &mut *frame };
-    frame.lists[reg as usize].as_mut_ptr()
+    frame.lists[reg as usize].ensure(ints != 0)
 }
 
 pub(crate) extern "C" fn list_len(frame: *mut Frame, reg: u32) -> i64 {
@@ -85,7 +87,9 @@ pub(crate) extern "C" fn list_len(frame: *mut Frame, reg: u32) -> i64 {
     frame.lists[reg as usize].len() as i64
 }
 
-pub(crate) extern "C" fn list_push(frame: *mut Frame, reg: u32, value: f64) -> *mut f64 {
+/// Append `value` (keeping the list's representation: native code only pushes integers onto
+/// integer lists) and return the possibly moved data pointer.
+pub(crate) extern "C" fn list_push(frame: *mut Frame, reg: u32, value: f64) -> *mut u64 {
     // SAFETY: as in `list_ptr`.
     let frame = unsafe { &mut *frame };
     let list = &mut frame.lists[reg as usize];
@@ -360,6 +364,9 @@ pub(crate) struct NumAnalysis {
     pub regs: Vec<NumFact>,
     /// `ListGet`/`ListSet` instructions whose index is proven in bounds.
     pub safe_index: std::collections::HashSet<usize>,
+    /// Per list register: every element it can ever hold is an exact integer (within ±2^53),
+    /// so native code keeps it in integer words (see `NumList`).
+    pub int_lists: Vec<bool>,
 }
 
 pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis {
@@ -369,6 +376,7 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
     let give_up = || NumAnalysis {
         regs: vec![NumFact::TOP; nregs],
         safe_index: Default::default(),
+        int_lists: vec![false; f.list_regs as usize],
     };
     let code = &f.code;
     let Some(leaders) = leaders(code) else {
@@ -594,6 +602,10 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
             return NumAnalysis {
                 regs: defs,
                 safe_index,
+                int_lists: lists
+                    .iter()
+                    .map(|l| l.is_none_or(|f| f.is_bottom() || f.exact_int()))
+                    .collect(),
             };
         }
     }

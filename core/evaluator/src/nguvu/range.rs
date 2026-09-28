@@ -21,6 +21,22 @@ fn fit(lo: i128, hi: i128) -> Option<Range> {
     Some((i64::try_from(lo).ok()?, i64::try_from(hi).ok()?))
 }
 
+/// Bounds from exact sums, where a side derived from an unbounded operand stays unbounded
+/// (instead of the whole range being dropped); any other overflow gives up.
+fn sat((lo, lo_inf): (i128, bool), (hi, hi_inf): (i128, bool)) -> Option<Range> {
+    let lo = if lo_inf {
+        i64::MIN
+    } else {
+        i64::try_from(lo).ok()?
+    };
+    let hi = if hi_inf {
+        i64::MAX
+    } else {
+        i64::try_from(hi).ok()?
+    };
+    Some((lo, hi))
+}
+
 fn hull(a: Range, b: Range) -> Range {
     (a.0.min(b.0), a.1.max(b.1))
 }
@@ -29,8 +45,15 @@ fn arith(op: IntOp, a: Option<Range>, b: Option<Range>) -> Option<Range> {
     let (a, b) = (a?, b?);
     let (al, ah, bl, bh) = (a.0 as i128, a.1 as i128, b.0 as i128, b.1 as i128);
     match op {
-        IntOp::Add => fit(al + bl, ah + bh),
-        IntOp::Sub => fit(al - bh, ah - bl),
+        // `i64::MIN`/`MAX` bounds mean "unbounded" and stay so.
+        IntOp::Add => sat(
+            (al + bl, a.0 == i64::MIN || b.0 == i64::MIN),
+            (ah + bh, a.1 == i64::MAX || b.1 == i64::MAX),
+        ),
+        IntOp::Sub => sat(
+            (al - bh, a.0 == i64::MIN || b.1 == i64::MAX),
+            (ah - bl, a.1 == i64::MAX || b.0 == i64::MIN),
+        ),
         IntOp::Mul => {
             let p = [al * bl, al * bh, ah * bl, ah * bh];
             fit(*p.iter().min()?, *p.iter().max()?)
@@ -212,10 +235,74 @@ impl Ctx<'_> {
     }
 }
 
-/// Replace comparisons the ranges decide with constants; whether anything changed.
-pub fn fold_ranges(func: &mut Func, consts: &HashMap<VReg, i64>) -> bool {
-    let ctx = Ctx { consts };
+/// States flowing out of block `b` along each successor edge, from entry state `s`.
+fn successors_out(ctx: &Ctx, func: &Func, b: usize, mut s: State) -> Vec<(usize, State)> {
+    for inst in &func.blocks[b].insts {
+        ctx.step(&mut s, inst);
+    }
+    match func.blocks[b].term {
+        Term::Jump(t) => vec![(t.0 as usize, s)],
+        Term::Branch { cond, then_, else_ } => {
+            let (t, f) = ctx.edge_states(&s, &func.blocks[b].insts, cond);
+            vec![(then_.0 as usize, t), (else_.0 as usize, f)]
+        }
+        Term::Return(_) => vec![],
+    }
+}
+
+/// Registers known in both states, over the hull of their ranges.
+fn join(a: &State, b: &State) -> State {
+    a.iter()
+        .filter_map(|(v, r)| b.get(v).map(|o| (*v, hull(*r, *o))))
+        .collect()
+}
+
+/// Block entry states of the analysis (`None`: unreachable), or `None` if it did not settle.
+///
+/// Iterates to a fixpoint widening only at loop heads (targets of retreating edges in reverse
+/// postorder), then runs a few narrowing passes — recomputing each entry from its
+/// predecessors without widening — which recovers bounds widening overshot (a loop counter
+/// widened to `[0, ∞)` narrows back to `[0, 80]` from its exit test).
+fn analyze(func: &Func, ctx: &Ctx) -> Option<Vec<Option<State>>> {
     let nb = func.blocks.len();
+    // Reverse postorder and loop heads.
+    let mut rpo_index = vec![usize::MAX; nb];
+    let order = {
+        let mut seen = vec![false; nb];
+        let mut stack = vec![(0usize, 0usize)];
+        seen[0] = true;
+        let mut post = Vec::new();
+        while let Some(&mut (b, ref mut i)) = stack.last_mut() {
+            let succ = func.blocks[b].term.successors();
+            if *i < succ.len() {
+                let s = succ[*i].0 as usize;
+                *i += 1;
+                if !seen[s] {
+                    seen[s] = true;
+                    stack.push((s, 0));
+                }
+            } else {
+                post.push(b);
+                stack.pop();
+            }
+        }
+        post.reverse();
+        for (i, &b) in post.iter().enumerate() {
+            rpo_index[b] = i;
+        }
+        post
+    };
+    let mut head = vec![false; nb];
+    let mut preds: Vec<Vec<usize>> = vec![Vec::new(); nb];
+    for &b in &order {
+        for s in func.blocks[b].term.successors() {
+            let s = s.0 as usize;
+            preds[s].push(b);
+            if rpo_index[s] <= rpo_index[b] {
+                head[s] = true;
+            }
+        }
+    }
     let mut ins: Vec<Option<State>> = vec![None; nb];
     let mut visits = vec![0u32; nb];
     ins[0] = Some(State::new());
@@ -224,41 +311,26 @@ pub fn fold_ranges(func: &mut Func, consts: &HashMap<VReg, i64>) -> bool {
     while let Some(b) = work.pop_first() {
         steps += 1;
         if steps > 50 * nb + 1000 {
-            return false; // give up rather than spend unbounded time
+            return None; // give up rather than spend unbounded time
         }
-        let mut s = ins[b].clone().expect("queued");
-        for inst in &func.blocks[b].insts {
-            ctx.step(&mut s, inst);
-        }
-        let outs: Vec<(usize, State)> = match func.blocks[b].term {
-            Term::Jump(t) => vec![(t.0 as usize, s)],
-            Term::Branch { cond, then_, else_ } => {
-                let (t, f) = ctx.edge_states(&s, &func.blocks[b].insts, cond);
-                vec![(then_.0 as usize, t), (else_.0 as usize, f)]
-            }
-            Term::Return(_) => vec![],
-        };
-        for (succ, out) in outs {
+        let s = ins[b].clone().expect("queued");
+        for (succ, out) in successors_out(ctx, func, b, s) {
             let merged = match &ins[succ] {
                 None => out,
                 Some(old) => {
-                    let mut m = State::new();
-                    for (v, r) in old {
-                        if let Some(o) = out.get(v) {
-                            let mut h = hull(*r, *o);
-                            if visits[succ] >= WIDEN_AFTER {
-                                if h.0 < r.0 {
-                                    h.0 = i64::MIN;
-                                }
-                                if h.1 > r.1 {
-                                    h.1 = i64::MAX;
-                                }
+                    let mut m = join(old, &out);
+                    if head[succ] && visits[succ] >= WIDEN_AFTER {
+                        for (v, h) in m.iter_mut() {
+                            let r = old[v];
+                            if h.0 < r.0 {
+                                h.0 = i64::MIN;
                             }
-                            if h != (i64::MIN, i64::MAX) {
-                                m.insert(*v, h);
+                            if h.1 > r.1 {
+                                h.1 = i64::MAX;
                             }
                         }
                     }
+                    m.retain(|_, h| *h != (i64::MIN, i64::MAX));
                     m
                 }
             };
@@ -269,6 +341,44 @@ pub fn fold_ranges(func: &mut Func, consts: &HashMap<VReg, i64>) -> bool {
             }
         }
     }
+    // Narrowing: every entry state is re-derived from its predecessors' current states. Each
+    // pass keeps the states sound (it applies the transfer to sound inputs) and never wider.
+    for _ in 0..NARROW_PASSES {
+        for &b in order.iter().skip(1) {
+            let mut acc: Option<State> = None;
+            for &p in &preds[b] {
+                let Some(ps) = ins[p].clone() else { continue };
+                for (succ, out) in successors_out(ctx, func, p, ps) {
+                    if succ == b {
+                        acc = Some(match acc {
+                            None => out,
+                            Some(a) => join(&a, &out),
+                        });
+                    }
+                }
+            }
+            if let (Some(mut new), Some(old)) = (acc, ins[b].as_ref()) {
+                // Keep only facts at least as tight as before (monotone descent).
+                new.retain(|v, r| old.get(v).is_none_or(|o| r.0 >= o.0 && r.1 <= o.1));
+                for (v, r) in old {
+                    new.entry(*v).or_insert(*r);
+                }
+                ins[b] = Some(new);
+            }
+        }
+    }
+    Some(ins)
+}
+
+/// Rounds of narrowing after the widened fixpoint.
+const NARROW_PASSES: usize = 2;
+
+/// Replace comparisons the ranges decide with constants; whether anything changed.
+pub fn fold_ranges(func: &mut Func, consts: &HashMap<VReg, i64>) -> bool {
+    let ctx = Ctx { consts };
+    let Some(ins) = analyze(func, &ctx) else {
+        return false;
+    };
     let mut changed = false;
     for (b, entry) in ins.iter().enumerate() {
         let Some(mut s) = entry.clone() else {
@@ -296,6 +406,100 @@ pub fn fold_ranges(func: &mut Func, consts: &HashMap<VReg, i64>) -> bool {
             }
             ctx.step(&mut s, &func.blocks[b].insts[i]);
         }
+    }
+    changed
+}
+
+/// Largest dividend range checked exhaustively when choosing a small multiplier.
+const SMALL_DIVIDEND: i64 = 1 << 16;
+
+/// `(m, s)` with `(a * m) >> s == a / d` for every `a` in `0..=hi`, `m` fitting an `i32`
+/// immediate — verified for each `a`, not derived.
+fn small_reciprocal(d: i64, hi: i64) -> Option<(i32, u8)> {
+    (1u8..=31).find_map(|s| {
+        let m = ((1i64 << s) + d - 1) / d;
+        let fits = i32::try_from(m).is_ok() && m.checked_mul(hi).is_some();
+        (fits && (0..=hi).all(|a| (a * m) >> s == a / d)).then_some((m as i32, s))
+    })
+}
+
+/// Division and remainder by a constant of a dividend proven small and non-negative become a
+/// multiply and shift (`p / 9` for `p` in `0..81` is `(p * 57) >> 9`), like a C compiler's
+/// range-aware lowering; whether anything changed.
+pub fn narrow_divisions(func: &mut Func, consts: &HashMap<VReg, i64>) -> bool {
+    let ctx = Ctx { consts };
+    let Some(ins) = analyze(func, &ctx) else {
+        return false;
+    };
+    let mut changed = false;
+    for (b, entry) in ins.iter().enumerate() {
+        let Some(mut s) = entry.clone() else {
+            continue;
+        };
+        let insts = std::mem::take(&mut func.blocks[b].insts);
+        let mut out = Vec::with_capacity(insts.len());
+        for inst in insts {
+            let small = match inst {
+                Inst::IntImm { op, dst, a, imm }
+                    if imm > 1
+                        && matches!(op, IntOp::UDiv | IntOp::URem | IntOp::SDiv | IntOp::SRem) =>
+                {
+                    ctx.get(&s, a)
+                        .filter(|r| r.0 >= 0 && r.1 <= SMALL_DIVIDEND)
+                        .and_then(|r| small_reciprocal(imm as i64, r.1))
+                        .map(|(m, sh)| (op, dst, a, imm, m, sh))
+                }
+                _ => None,
+            };
+            ctx.step(&mut s, &inst);
+            let Some((op, dst, a, d, m, sh)) = small else {
+                out.push(inst);
+                continue;
+            };
+            let mut fresh = || {
+                func.classes.push(super::ir::Class::Int);
+                VReg(func.classes.len() as u32 - 1)
+            };
+            let t = fresh();
+            out.push(Inst::IntImm {
+                op: IntOp::Mul,
+                dst: t,
+                a,
+                imm: m,
+            });
+            if matches!(op, IntOp::UDiv | IntOp::SDiv) {
+                out.push(Inst::IntImm {
+                    op: IntOp::Sar,
+                    dst,
+                    a: t,
+                    imm: sh as i32,
+                });
+            } else {
+                let (q, qd) = (fresh(), fresh());
+                out.extend([
+                    Inst::IntImm {
+                        op: IntOp::Sar,
+                        dst: q,
+                        a: t,
+                        imm: sh as i32,
+                    },
+                    Inst::IntImm {
+                        op: IntOp::Mul,
+                        dst: qd,
+                        a: q,
+                        imm: d,
+                    },
+                    Inst::Int {
+                        op: IntOp::Sub,
+                        dst,
+                        a,
+                        b: qd,
+                    },
+                ]);
+            }
+            changed = true;
+        }
+        func.blocks[b].insts = out;
     }
     changed
 }

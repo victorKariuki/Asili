@@ -293,3 +293,58 @@ fn indexing_without_question_mark() {
         ],
     );
 }
+
+#[test]
+fn number_list_representations_match_the_tree_walker() {
+    // Lists switch between integer and float words; values (including -0.0 and huge
+    // integers) must read back exactly as the evaluator's `Orodha` holds them.
+    agree(
+        "numlist",
+        r#"
+        kazi kusanya_zote(l: Orodha<Namba>) -> Namba {
+            weka s: Namba = 0
+            kwa i kutoka 0 hadi l.urefu() {
+                s = s + l[i]
+            }
+            rejesha s
+        }
+        kazi t() -> Orodha<Namba> {
+            # built from integers, read and written as integers in native code
+            weka a: Orodha<Namba> = orodha_rudia(0, 16)
+            kwa i kutoka 0 hadi 16 {
+                a[i] = i * i - 7
+            }
+            weka r: Orodha<Namba> = []
+            kwa i kutoka 0 hadi 16 {
+                r.ongeza(a[15 - i] // 2)
+            }
+            # -0.0 into a list still held as integers: the sign must survive
+            weka z: Orodha<Namba> = [1, 2]
+            z[0] = -0.0
+            z.ongeza(-0.0)
+            r.ongeza(1 / z[0])
+            r.ongeza(1 / z[2])
+            # a list that turns into floats part-way
+            weka b: Orodha<Namba> = [1, 2, 3]
+            b.ongeza(0.5)
+            b.ongeza(-0.0)
+            b.ongeza(9007199254740993)
+            b.ongeza(10 ** 300)
+            b[0] = -0.0
+            kwa i kutoka 0 hadi b.urefu() {
+                r.ongeza(b[i])
+            }
+            # passed to another function and back
+            r.ongeza(kusanya_zote(a))
+            r.ongeza(kusanya_zote(b))
+            weka c: Orodha<Namba> = [4, 5, 6]
+            c.ondoa(1)
+            c.ongeza(-3)
+            r.ongeza(kusanya_zote(c))
+            r.ongeza(c[1])
+            rejesha r
+        }
+        "#,
+        &["t"],
+    );
+}

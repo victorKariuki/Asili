@@ -36,6 +36,11 @@ struct Lower<'a> {
     /// Bounds known for the integer result being stored (set by `arith` for the next
     /// `set_i`): a side that cannot pass ±2^53 needs no check.
     result_range: (f64, f64),
+    /// List registers kept in integer words (`NumAnalysis::int_lists`).
+    int_lists: Vec<bool>,
+    /// While reloading after an instruction the interpreter ran: where a failing guard resumes
+    /// (the next instruction) and the registers already current in the frame.
+    resume: Option<(usize, Vec<Reg>)>,
     /// Shared deoptimization exit and the register carrying the resume pc into it.
     deopt: Option<(Block, VReg)>,
     /// Numeric registers live on entry to each instruction (bytecode liveness).
@@ -145,6 +150,8 @@ pub fn lower(index: usize, function: &BytecodeFunc) -> Option<super::ir::Func> {
         leaders: leaders.clone(),
         cur_pc: 0,
         result_range: (f64::NEG_INFINITY, f64::INFINITY),
+        int_lists: analysis.int_lists,
+        resume: None,
         deopt: None,
         live_in: liveness(code),
         written,
@@ -452,13 +459,17 @@ impl<'a> Lower<'a> {
             else_: site,
         });
         self.b.switch_to(site);
-        // The interpreter resumes at this instruction and only reads registers live there;
-        // registers native code never writes already hold their value in the frame.
-        let pc = self.cur_pc;
+        // The interpreter resumes at this instruction (or after one it just ran) and only reads
+        // registers live there; registers native code never writes, and those the interpreter
+        // just wrote, already hold their value in the frame.
+        let (pc, fresh) = match &self.resume {
+            Some((pc, fresh)) => (*pc, fresh.clone()),
+            None => (self.cur_pc, Vec::new()),
+        };
         let need: Vec<Reg> = self.live_in[pc]
             .iter()
             .copied()
-            .filter(|r| self.written.contains(r))
+            .filter(|r| self.written.contains(r) && !fresh.contains(r))
             .collect();
         for r in need {
             self.spill(r);
@@ -564,12 +575,20 @@ impl<'a> Lower<'a> {
     fn refresh_list(&mut self, r: Reg) {
         let (p, l) = self.lists[r as usize];
         let reg = self.b.iconst(r as i64);
+        let ints = self.int_lists[r as usize];
+        let want = self.b.iconst(ints as i64);
         self.push(Inst::Call {
             target: RtFn::ListPtr,
-            args: vec![FRAME, reg],
+            args: vec![FRAME, reg, want],
             dst: Some(p),
             ret32: false,
         });
+        if ints {
+            // Null: the list holds a non-integer after all — continue in the interpreter.
+            let z = self.b.iconst(0);
+            let ok = self.icmp(ICond::Ne, p, z);
+            self.guard(ok);
+        }
         self.push(Inst::Call {
             target: RtFn::ListLen,
             args: vec![FRAME, reg],
@@ -661,12 +680,16 @@ impl<'a> Lower<'a> {
         let ret = self.int_op(IntOp::Or, hi, pcv);
         self.b.terminate(Term::Return(ret));
         self.b.switch_to(cont);
+        // The instruction has run: a guard failing while reading its results back resumes
+        // after it, without overwriting what it wrote.
+        self.resume = Some((pc + 1, num_writes(op)));
         for r in num_writes(op) {
             self.reload(r);
         }
         for r in list_writes(op) {
             self.refresh_list(r);
         }
+        self.resume = None;
     }
 
     /// Bounds-checked element index into `list` (out of range: the interpreter raises the
@@ -1090,17 +1113,42 @@ impl<'a> Lower<'a> {
             Opcode::ListGet { dst, list, idx, .. } => {
                 let i = self.element(*list, *idx, pc, op);
                 let (base, _) = self.lists[*list as usize];
-                let v = self.float_dst(*dst);
-                self.push(Inst::LoadIndex {
-                    dst: v,
-                    base,
-                    index: i,
-                });
-                self.finish_f(*dst, v);
+                if self.int_lists[*list as usize] {
+                    // Integer words: exact integers within ±2^53, read without conversion.
+                    let v = if self.int(*dst) {
+                        self.int_dst(*dst)
+                    } else {
+                        self.vreg(Class::Int)
+                    };
+                    self.push(Inst::LoadIndex {
+                        dst: v,
+                        base,
+                        index: i,
+                    });
+                    self.finish_i(*dst, v);
+                } else {
+                    let v = self.float_dst(*dst);
+                    self.push(Inst::LoadIndex {
+                        dst: v,
+                        base,
+                        index: i,
+                    });
+                    self.finish_f(*dst, v);
+                }
             }
             Opcode::ListSet { list, idx, src } => {
                 let i = self.element(*list, *idx, pc, op);
-                let v = self.get_f(*src);
+                let v = if !self.int_lists[*list as usize] {
+                    self.get_f(*src)
+                } else if self.int(*src) {
+                    self.get_i(*src)
+                } else {
+                    // The analysis proved the value an exact integer: truncation is exact.
+                    let f = self.get_f(*src);
+                    let t = self.vreg(Class::Int);
+                    self.push(Inst::FloatToInt { dst: t, src: f });
+                    t
+                };
                 let (base, _) = self.lists[*list as usize];
                 self.push(Inst::StoreIndex {
                     src: v,

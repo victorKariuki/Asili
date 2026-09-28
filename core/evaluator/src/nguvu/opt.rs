@@ -29,6 +29,7 @@ pub fn optimize(func: &mut Func) {
     if_convert(func);
     merge_blocks(func); // converted triangles leave straight chains behind
     fold_immediates(func);
+    super::range::narrow_divisions(func, &constants(func));
     select_to_arith(func);
     eliminate_dead_code(func); // so an `and` sits right before the test reading it
     fuse_bit_tests(func);
@@ -36,6 +37,7 @@ pub fn optimize(func: &mut Func) {
     if super::features::popcnt() {
         recognize_popcount(func);
     }
+    fold_all_constants(func); // `n = 0; n += popcnt(…)` is a copy
     reuse_values(func);
     hoist_wide_constants(func);
     eliminate_dead_code(func);
@@ -128,6 +130,18 @@ fn fold_constants(func: &mut Func) -> bool {
         for inst in &mut block.insts {
             let folded = match *inst {
                 Inst::Mov { dst, src } => k.get(&src).map(|v| (dst, v)),
+                // x + 0, 0 + x: a copy.
+                Inst::Int {
+                    op: IntOp::Add | IntOp::Or | IntOp::Xor,
+                    dst,
+                    a,
+                    b,
+                } if (k.get(&a) == Some(0)) != (k.get(&b) == Some(0)) => {
+                    let src = if k.get(&a) == Some(0) { b } else { a };
+                    *inst = Inst::Mov { dst, src };
+                    changed = true;
+                    None
+                }
                 Inst::Int { op, dst, a, b } => match (k.get(&a), k.get(&b)) {
                     (Some(x), Some(y)) => eval_int(op, x, y).map(|v| (dst, v)),
                     _ => None,

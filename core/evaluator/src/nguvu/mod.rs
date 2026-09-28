@@ -142,7 +142,7 @@ impl Image {
 const MAGIC: &[u8; 8] = b"NGUVU\0\0\0";
 /// Bumped whenever generated code changes, so images from an older toolchain are rebuilt
 /// rather than run.
-const IMAGE_VERSION: u32 = 2;
+const IMAGE_VERSION: u32 = 3;
 /// Instruction set of the image (1 = x86-64 System V).
 const ARCH: u32 = 1;
 

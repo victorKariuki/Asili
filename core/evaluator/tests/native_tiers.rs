@@ -412,3 +412,85 @@ fn unrolled_loops_if_conversion_and_bit_tests() {
         &["t"],
     );
 }
+
+#[test]
+fn division_by_constants_over_small_ranges() {
+    check(
+        "smalldiv",
+        r#"
+        kazi t() -> Orodha<Namba> {
+            weka r: Orodha<Namba> = []
+            weka s: Namba = 0
+            kwa i kutoka 0 hadi 300 {
+                weka a = i // 9
+                weka b = i % 9
+                weka c = (i // 3) * 3 + b // 3
+                weka d = i // 7 + i % 11 + i // 100
+                s = s + a * 1000 + b * 100 + c * 10 + d
+                ikiwa i % 37 == 0 {
+                    r.ongeza(a)
+                    r.ongeza(b)
+                    r.ongeza(c)
+                    r.ongeza(d)
+                }
+            }
+            r.ongeza(s)
+            rejesha r
+        }
+        "#,
+        &["t"],
+    );
+}
+
+#[test]
+fn integer_and_float_list_representations() {
+    check(
+        "numlist",
+        r#"
+        kazi kusanya_zote(l: Orodha<Namba>) -> Namba {
+            weka s: Namba = 0
+            kwa i kutoka 0 hadi l.urefu() {
+                s = s + l[i]
+            }
+            rejesha s
+        }
+        kazi t() -> Orodha<Namba> {
+            # built from integers, read and written as integers in native code
+            weka a: Orodha<Namba> = orodha_rudia(0, 16)
+            kwa i kutoka 0 hadi 16 {
+                a[i] = i * i - 7
+            }
+            weka r: Orodha<Namba> = []
+            kwa i kutoka 0 hadi 16 {
+                r.ongeza(a[15 - i] // 2)
+            }
+            # -0.0 into a list still held as integers: the sign must survive
+            weka z: Orodha<Namba> = [1, 2]
+            z[0] = -0.0
+            z.ongeza(-0.0)
+            r.ongeza(1 / z[0])
+            r.ongeza(1 / z[2])
+            # a list that turns into floats part-way
+            weka b: Orodha<Namba> = [1, 2, 3]
+            b.ongeza(0.5)
+            b.ongeza(-0.0)
+            b.ongeza(9007199254740993)
+            b.ongeza(10 ** 300)
+            b[0] = -0.0
+            kwa i kutoka 0 hadi b.urefu() {
+                r.ongeza(b[i])
+            }
+            # passed to another function and back
+            r.ongeza(kusanya_zote(a))
+            r.ongeza(kusanya_zote(b))
+            weka c: Orodha<Namba> = [4, 5, 6]
+            c.ondoa(1)
+            c.ongeza(-3)
+            r.ongeza(kusanya_zote(c))
+            r.ongeza(c[1])
+            rejesha r
+        }
+        "#,
+        &["t"],
+    );
+}

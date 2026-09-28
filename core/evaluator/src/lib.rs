@@ -12,6 +12,7 @@ mod eval;
 mod native;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod nguvu;
+mod numlist;
 mod platform;
 pub mod runtime;
 mod signal;
