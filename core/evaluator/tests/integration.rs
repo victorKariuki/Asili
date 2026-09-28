@@ -943,7 +943,7 @@ fn orodha_index_returns_element_and_question_mark_returns_tokeo() {
     let v = run_function(&module, "propagated", vec![]).expect("run");
     assert!(matches!(v, Value::Tokeo(Err(_))));
     if let Value::Tokeo(Err(inner)) = v {
-        assert!(matches!(*inner, Value::Struct(ref n, _) if n == "KosaMipaka"));
+        assert!(matches!(*inner, Value::Struct(ref n, _) if &**n == "KosaMipaka"));
     }
 }
 

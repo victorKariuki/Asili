@@ -61,6 +61,9 @@ impl MapKey {
 // Faili/Mkondo/Kumbukumbu<T> (resource handles) landed below — see docs/design/
 // faili-mkondo-design.md.
 
+/// A shared identifier (struct and field names in values).
+pub type Name = std::rc::Rc<str>;
+
 #[derive(Clone)]
 pub enum Value {
     Namba(f64),
@@ -71,7 +74,9 @@ pub enum Value {
     Chaguo(Option<Box<Value>>),
     Tokeo(Result<Box<Value>, Box<Value>>),
     Orodha(Vec<Value>),
-    Struct(String, Vec<(String, Value)>),
+    /// A `umbo` value: its name and fields in declaration order. Names are shared (`Rc`), so
+    /// copying a struct copies its field values, not its field names.
+    Struct(Name, Vec<(Name, Value)>),
     Enum(String, String, Option<Box<Value>>), // enum_name, variant_name, optional_data
     Herufi(char),
     Jozi(Box<Value>, Box<Value>),
@@ -311,9 +316,9 @@ impl Value {
             Value::Struct(name, fields) => {
                 let mut out = Vec::with_capacity(fields.len());
                 for (fname, v) in fields {
-                    out.push((fname.clone(), v.try_into_send()?));
+                    out.push((fname.to_string(), v.try_into_send()?));
                 }
-                SendValue::Struct(name.clone(), out)
+                SendValue::Struct(name.to_string(), out)
             }
             Value::Enum(en, vn, data) => SendValue::Enum(
                 en.clone(),
@@ -374,10 +379,10 @@ impl SendValue {
             }
             SendValue::Seti(s) => Value::Seti(s),
             SendValue::Struct(name, fields) => Value::Struct(
-                name,
+                name.into(),
                 fields
                     .into_iter()
-                    .map(|(n, v)| (n, v.into_value()))
+                    .map(|(n, v)| (n.into(), v.into_value()))
                     .collect(),
             ),
             SendValue::Enum(en, vn, data) => {

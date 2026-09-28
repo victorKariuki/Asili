@@ -97,7 +97,7 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
         Value::Struct(_name, fields) => {
             let mut out = serde_json::Map::with_capacity(fields.len());
             for (fname, v) in fields {
-                out.insert(fname.clone(), to_json_depth(v, depth + 1)?);
+                out.insert(fname.to_string(), to_json_depth(v, depth + 1)?);
             }
             J::Object(out)
         }
@@ -302,10 +302,10 @@ mod tests {
     #[test]
     fn struct_encodes_as_flat_object_reflectively() {
         let v = Value::Struct(
-            "Pika".to_string(),
+            "Pika".into(),
             vec![
-                ("x".to_string(), Value::Namba(1.0)),
-                ("y".to_string(), Value::Neno("hi".into())),
+                ("x".into(), Value::Namba(1.0)),
+                ("y".into(), Value::Neno("hi".into())),
             ],
         );
         let j = v.to_json().unwrap();

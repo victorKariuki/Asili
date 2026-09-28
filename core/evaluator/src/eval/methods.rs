@@ -15,9 +15,9 @@ fn out_of_bounds_message(idx: usize, len: usize) -> String {
 /// `Tokeo` error value of an out-of-bounds `b[i]?` / `jaribu b[i]`.
 pub(crate) fn out_of_bounds(idx: usize, len: usize) -> Value {
     let kosa = Value::Struct(
-        "KosaMipaka".to_string(),
+        "KosaMipaka".into(),
         vec![(
-            "ujumbe".to_string(),
+            "ujumbe".into(),
             Value::Neno(out_of_bounds_message(idx, len)),
         )],
     );
@@ -91,7 +91,7 @@ pub(crate) fn field_of(recv: &Value, field: &str) -> Result<Value, EvalError> {
     match recv {
         Value::Struct(_, flds) => flds
             .iter()
-            .find(|(n, _)| n == field)
+            .find(|(n, _)| &**n == field)
             .map(|(_, v)| v.clone())
             .ok_or_else(|| EvalError::TypeErr(format!("uga haijulikani: {}", field))),
         _ => Err(EvalError::TypeErr(

@@ -375,12 +375,12 @@ fn request_to_value(req: &ParsedRequest) -> Value {
         headers_map.insert(MapKey::Neno(k.clone()), Value::Neno(v.clone()));
     }
     Value::Struct(
-        "OmbiHttp".to_string(),
+        "OmbiHttp".into(),
         vec![
-            ("njia".to_string(), Value::Neno(req.method.clone())),
-            ("anwani".to_string(), Value::Neno(req.path.clone())),
-            ("vichwa".to_string(), Value::Kamusi(headers_map)),
-            ("mwili".to_string(), Value::Neno(req.body.clone())),
+            ("njia".into(), Value::Neno(req.method.clone())),
+            ("anwani".into(), Value::Neno(req.path.clone())),
+            ("vichwa".into(), Value::Kamusi(headers_map)),
+            ("mwili".into(), Value::Neno(req.body.clone())),
         ],
     )
 }
@@ -395,16 +395,16 @@ fn value_to_response(v: &Value) -> Option<(u16, Vec<(String, String)>, String)> 
     };
     let hali = fields
         .iter()
-        .find(|(n, _)| n == "hali")
+        .find(|(n, _)| &**n == "hali")
         .and_then(|(_, v)| value::as_f64(v))?;
     let mwili = fields
         .iter()
-        .find(|(n, _)| n == "mwili")
+        .find(|(n, _)| &**n == "mwili")
         .and_then(|(_, v)| value::as_string(v))
         .unwrap_or_default();
     let vichwa = fields
         .iter()
-        .find(|(n, _)| n == "vichwa")
+        .find(|(n, _)| &**n == "vichwa")
         .map(|(_, v)| match v {
             Value::Kamusi(m) => m
                 .iter()

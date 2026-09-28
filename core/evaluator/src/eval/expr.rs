@@ -93,11 +93,11 @@ pub(crate) fn match_pattern(pat: &Pattern, v: &Value, bind: &mut dyn FnMut(&str,
             let Value::Struct(name, flds) = v else {
                 return false;
             };
-            if name != struct_name {
+            if **name != **struct_name {
                 return false;
             }
             for (fname, subpat) in fields {
-                let Some((_, fval)) = flds.iter().find(|(n, _)| n == fname) else {
+                let Some((_, fval)) = flds.iter().find(|(n, _)| **n == **fname) else {
                     return false;
                 };
                 if !match_pattern(subpat, fval, bind) {
@@ -224,15 +224,15 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 .iter()
                 .find(|s| s.name == *struct_name)
                 .ok_or_else(|| EvalError::TypeErr(format!("umbo haijulikani: {}", struct_name)))?;
-            let mut flds: Vec<(String, Value)> = Vec::with_capacity(st.fields.len());
+            let mut flds: Vec<(crate::value::Name, Value)> = Vec::with_capacity(st.fields.len());
             for (fname, _) in &st.fields {
                 let (_, fexpr) = fields
                     .iter()
                     .find(|(n, _)| n == fname)
                     .ok_or_else(|| EvalError::TypeErr(format!("umbo linahitaji uga: {}", fname)))?;
-                flds.push((fname.clone(), super::eval_expr_impl(fexpr, rt)?));
+                flds.push((fname.as_str().into(), super::eval_expr_impl(fexpr, rt)?));
             }
-            Ok(Value::Struct(struct_name.clone(), flds))
+            Ok(Value::Struct(struct_name.as_str().into(), flds))
         }
         Expr::EnumConstruct {
             enum_name,
@@ -431,25 +431,26 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     // Search inherent impls first (no trait_name), then trait impls.
                     // This allows `shughuli ya Foo { }` and `shughuli ya Foo: Sifa { }`
                     // to coexist; methods from both blocks are callable on the same receiver.
-                    let method = rt
-                        .module
+                    // Borrowed through a copy of the module reference: no clone of the
+                    // method's AST per call.
+                    let module = rt.module;
+                    let struct_name: &str = struct_name;
+                    let method = module
                         .impls
                         .iter()
-                        .filter(|i| i.target == *struct_name && i.trait_name.is_none())
+                        .filter(|i| i.target == struct_name && i.trait_name.is_none())
                         .flat_map(|i| i.body.iter())
                         .find(|mf| mf.name == *method_name)
                         .or_else(|| {
-                            rt.module
+                            module
                                 .impls
                                 .iter()
-                                .filter(|i| i.target == *struct_name && i.trait_name.is_some())
+                                .filter(|i| i.target == struct_name && i.trait_name.is_some())
                                 .flat_map(|i| i.body.iter())
                                 .find(|mf| mf.name == *method_name)
                         })
-                        .cloned()
                         .ok_or_else(|| {
-                            let has_any_impl =
-                                rt.module.impls.iter().any(|i| i.target == *struct_name);
+                            let has_any_impl = module.impls.iter().any(|i| i.target == struct_name);
                             if has_any_impl {
                                 EvalError::TypeErr(format!(
                                     "njia '{}' haijulikani kwa umbo '{}'",

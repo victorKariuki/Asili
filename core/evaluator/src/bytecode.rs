@@ -411,8 +411,9 @@ pub enum Opcode {
     /// `vals[dst] = Name { field: vals[reg], … }`, fields in declaration order.
     MakeStruct {
         dst: Reg,
-        name: String,
-        fields: Box<[(String, Reg)]>,
+        /// Shared names: building the value only bumps reference counts.
+        name: crate::value::Name,
+        fields: Box<[(crate::value::Name, Reg)]>,
     },
     /// `vals[dst] = vals[src].field`.
     Field {
@@ -1652,12 +1653,12 @@ impl<'a> FunctionCompiler<'a> {
                 let mut regs = Vec::with_capacity(declared.len());
                 for fname in declared {
                     let (_, fexpr) = fields.iter().find(|(n, _)| *n == fname)?;
-                    regs.push((fname, self.expr_as(fexpr, Ty::Val)?.reg));
+                    regs.push((fname.as_str().into(), self.expr_as(fexpr, Ty::Val)?.reg));
                 }
                 let out = self.dst_or_temp(dst, Ty::Val);
                 self.emit(Opcode::MakeStruct {
                     dst: out.reg,
-                    name: struct_name.clone(),
+                    name: struct_name.as_str().into(),
                     fields: regs.into_boxed_slice(),
                 });
                 Some(out)

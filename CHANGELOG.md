@@ -123,6 +123,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of a hardware divide on x86-64, and for unsigned operands on AArch64: `(s + i * 7 +
   i // 3) % 1000003` over 20 million `i` runs in 70 ms (was 124 ms; gcc `-O2` C: 84 ms). Images
   are rebuilt (`IMAGE_VERSION` 6).
+- **Cheaper `umbo` values**: a struct's name and field names are shared (`Rc<str>`) instead of
+  copied into every value, so copying a struct copies only its field values; calling a
+  `shughuli ya` method on the tree-walker no longer deep-copies the method's syntax tree. A
+  particle simulation over 100 `umbo` values × 2,000 steps: 4.9 s (tree-walker, before
+  structs lowered to bytecode) → 354 ms (bytecode) → 275 ms.
 - **Cheaper string building, part two**: `+` on two `Neno` values borrows both and allocates
   the result once at its final size (operands are no longer copied first, and nothing
   reallocates); whole numbers are formatted by a direct digit writer; `urefu` of ASCII text
