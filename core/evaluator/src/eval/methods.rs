@@ -1008,12 +1008,11 @@ pub(crate) fn iter_items(v: Value) -> Result<Rc<Vec<Value>>, EvalError> {
 /// Whether any receiver type has a shared method called `method` (used by the bytecode VM to
 /// dispatch at run time when a receiver's type is not known statically).
 pub(crate) fn is_shared_method_name(method: &str) -> bool {
-    use std::collections::{HashMap, HashSet};
     let probes = [
         Value::neno(String::new()),
         Value::list(Vec::new()),
-        Value::Kamusi(HashMap::new()),
-        Value::Seti(HashSet::new()),
+        Value::Kamusi(Default::default()),
+        Value::Seti(Default::default()),
         Value::Chaguo(None),
         Value::sawa(Value::Tupu),
         Value::Jozi(Box::new(Value::Tupu), Box::new(Value::Tupu)),

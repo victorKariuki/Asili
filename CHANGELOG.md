@@ -156,6 +156,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   spaces (`Orodha < Neno >`) now reach the typed fast paths (`w.urefu()` is `ValLen`, not a
   by-name method call). The 1,000-word loop: 384 → 125 ms. `.asb` bytecode version 9.
   `ASILI_BYTECODE_DUMP=1 pata jenga` prints each compiled `kazi`'s instructions.
+- **`Kamusi` and `Seti` hash with `foldhash`** instead of std's SipHash: several times faster on
+  short keys and, like SipHash, seeded per process, so maps of untrusted keys (HTTP headers)
+  stay resistant to collision flooding. Counting words in a `Kamusi`: 64 → 56 ms.
 - **Cheaper string building, part two**: `+` on two `Neno` values borrows both and allocates
   the result once at its final size (operands are no longer copied first, and nothing
   reallocates); whole numbers are formatted by a direct digit writer; `urefu` of ASCII text

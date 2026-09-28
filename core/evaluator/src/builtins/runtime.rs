@@ -53,7 +53,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     m.insert(
         "mazingira".to_string(),
         Box::new(|_args: &[Value]| {
-            let mut map = HashMap::new();
+            let mut map = crate::value::Kamusi::default();
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
             {
                 for (key, val) in std::env::vars() {

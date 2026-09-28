@@ -3127,7 +3127,10 @@ impl<'p> Vm<'p> {
                 return Flow::Next;
             }
             Opcode::MakeMap { dst, entries } => {
-                let mut m = std::collections::HashMap::with_capacity(entries.len());
+                let mut m = crate::value::Kamusi::with_capacity_and_hasher(
+                    entries.len(),
+                    Default::default(),
+                );
                 for (k, v) in entries.iter() {
                     match value::MapKey::try_from_value(&frame.vals[*k as usize]) {
                         Ok(key) => {

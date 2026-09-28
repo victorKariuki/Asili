@@ -12,7 +12,6 @@
 //! raw-bytes `mkondo_tumikia` contract (examples/mkondo_server/) is completely untouched by this
 //! module.
 
-use std::collections::HashMap;
 use std::io::{Read, Write};
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
@@ -370,7 +369,8 @@ fn status_reason(status: u16) -> &'static str {
 /// already established by the JSON codec (`Value::Struct` is name+field-list, no new runtime
 /// type needed) — `httparse`'s parsed method/path/headers map onto it directly.
 fn request_to_value(req: &ParsedRequest) -> Value {
-    let mut headers_map: HashMap<MapKey, Value> = HashMap::with_capacity(req.headers.len());
+    let mut headers_map =
+        crate::value::Kamusi::with_capacity_and_hasher(req.headers.len(), Default::default());
     for (k, v) in &req.headers {
         headers_map.insert(MapKey::Neno(k.clone()), Value::neno(v.clone()));
     }

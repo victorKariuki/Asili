@@ -203,8 +203,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             Ok(Value::list(vals))
         }
         Expr::Map { entries, .. } => {
-            use std::collections::HashMap;
-            let mut m: HashMap<MapKey, Value> = HashMap::new();
+            let mut m = crate::value::Kamusi::default();
             for (k, v) in entries {
                 let kval = super::eval_expr_impl(k, rt)?;
                 let vval = super::eval_expr_impl(v, rt)?;

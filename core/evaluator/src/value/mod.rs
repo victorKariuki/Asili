@@ -64,6 +64,13 @@ impl MapKey {
 /// A shared identifier (struct and field names in values).
 pub type Name = std::rc::Rc<str>;
 
+/// A `Kamusi`'s storage. `foldhash` is several times faster than std's SipHash on short keys and,
+/// like it, seeded per process, so maps built from untrusted keys (HTTP headers) stay resistant
+/// to collision flooding. Iteration order was never stable across runs, and still is not.
+pub type Kamusi = HashMap<MapKey, Value, foldhash::fast::RandomState>;
+/// A `Seti`'s storage (see [`Kamusi`]).
+pub type Seti = HashSet<MapKey, foldhash::fast::RandomState>;
+
 #[derive(Clone)]
 pub enum Value {
     Namba(f64),
@@ -84,7 +91,7 @@ pub enum Value {
     Enum(String, String, Option<Box<Value>>), // enum_name, variant_name, optional_data
     Herufi(char),
     Jozi(Box<Value>, Box<Value>),
-    Kamusi(HashMap<MapKey, Value>),
+    Kamusi(Kamusi),
     /// Time: seconds since Unix epoch (majira module).
     Wakati(f64),
     /// Raw memory address (syscall, kiungo).
@@ -131,7 +138,7 @@ pub enum Value {
     Kumbukumbu(Box<Value>),
     /// Ordered-by-nothing set (`Seti<T>`); reuses the MapKey hashable-key type Kamusi already
     /// uses. Iteration order is HashSet's (unspecified), same tradeoff Kamusi already accepts.
-    Seti(HashSet<MapKey>),
+    Seti(Seti),
     /// Arbitrary-precision integer (Namba_Kuu). No literal syntax — constructed only via
     /// `namba_kuu_kutoka(neno)` parsing a decimal-digit string, or infallibly cast from `Namba`.
     NambaKuu(BigInt),
@@ -326,7 +333,7 @@ impl Value {
                 }
                 SendValue::Kamusi(out)
             }
-            Value::Seti(s) => SendValue::Seti(s.clone()),
+            Value::Seti(s) => SendValue::Seti(s.iter().cloned().collect()),
             Value::Struct(name, fields) => {
                 let mut out = Vec::with_capacity(fields.len());
                 for (fname, v) in fields.iter() {
@@ -391,7 +398,7 @@ impl SendValue {
             SendValue::Kamusi(m) => {
                 Value::Kamusi(m.into_iter().map(|(k, v)| (k, v.into_value())).collect())
             }
-            SendValue::Seti(s) => Value::Seti(s),
+            SendValue::Seti(s) => Value::Seti(s.into_iter().collect()),
             SendValue::Struct(name, fields) => Value::Struct(
                 name.into(),
                 fields

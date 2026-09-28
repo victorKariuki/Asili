@@ -19,6 +19,7 @@ bigdecimal = "0.4"
 num-traits = "0.2"
 parking_lot = "0.12"
 lock_api = "0.4"
+foldhash = "0.2"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.4"

@@ -29,11 +29,11 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     );
     m.insert(
         "kamusi".to_string(),
-        Box::new(|_args: &[Value]| Ok(Value::Kamusi(HashMap::new()))),
+        Box::new(|_args: &[Value]| Ok(Value::Kamusi(Default::default()))),
     );
     m.insert(
         "kamusi_tupu".to_string(),
-        Box::new(|_args: &[Value]| Ok(Value::Kamusi(HashMap::new()))),
+        Box::new(|_args: &[Value]| Ok(Value::Kamusi(Default::default()))),
     );
     m.insert(
         "jozi".to_string(),

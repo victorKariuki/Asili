@@ -2,8 +2,6 @@
 //! rationale (deliberately stricter than, and independent from, `SendValue`/`try_into_send` —
 //! see that type's own doc comment in `value/mod.rs`).
 
-use std::collections::HashMap;
-
 use super::{ErrorKind, EvalError, MapKey, Value};
 
 /// Recursion depth cap for `to_json`/`from_json`. Guards against a stack overflow on
@@ -199,7 +197,8 @@ fn from_json_depth(j: &serde_json::Value, depth: usize) -> Value {
         ),
         J::Object(map) => {
             let mut fields: Vec<(String, Value)> = Vec::with_capacity(map.len());
-            let mut out: HashMap<MapKey, Value> = HashMap::with_capacity(map.len());
+            let mut out =
+                crate::value::Kamusi::with_capacity_and_hasher(map.len(), Default::default());
             for (k, v) in map {
                 let value = from_json_depth(v, depth + 1);
                 fields.push((k.clone(), value.clone()));
@@ -367,7 +366,7 @@ mod tests {
 
     #[test]
     fn kamusi_round_trips_through_neno_keys() {
-        let mut map = HashMap::new();
+        let mut map = crate::value::Kamusi::default();
         map.insert(MapKey::Neno("a".into()), Value::Namba(1.0));
         let v = Value::Kamusi(map);
         let j = v.to_json().unwrap();
