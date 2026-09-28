@@ -406,6 +406,12 @@ pub enum Opcode {
         src: Operand,
     },
     ReturnTupu,
+    /// The whole body of a `kazi` the bytecode compiler could not lower: run it on the
+    /// tree-walker (from `BytecodeProgram::ast`) with this frame's parameters, and return its
+    /// result.
+    Interpreted {
+        function: u32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -413,6 +419,9 @@ pub struct BytecodeProgram {
     pub constants: Vec<StoredConstant>,
     pub functions: Vec<BytecodeFunc>,
     pub entry: String,
+    /// The module's syntax tree, when some `kazi` could not be lowered (mixed mode): those run
+    /// on the tree-walker (`Opcode::Interpreted`), and everything else stays bytecode.
+    pub ast: Option<asili_parser::Module>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -448,20 +457,23 @@ impl BytecodeProgram {
 // Compiler
 // ---------------------------------------------------------------------------------------------
 
-/// Lower the supported subset. `None` means the caller must emit the serialized AST artifact.
+/// Lower the module to bytecode, leaving any `kazi` the compiler cannot lower to the
+/// tree-walker (mixed mode). `None` only when the module-level constants cannot be lowered
+/// (the caller then emits the serialized AST artifact).
 pub fn compile_module(module: &Module) -> Option<BytecodeProgram> {
-    compile_module_explained(module).ok()
+    compile_module_inner(module, &mut None)
 }
 
-/// Like [`compile_module`], but on failure names the first `kazi` and source line the VM does
-/// not support (the program then runs on the tree-walking evaluator).
+/// Every `kazi` lowered to bytecode, or the first `kazi` and source line that could not be
+/// (`pata jenga --namna release`).
 pub fn compile_module_explained(module: &Module) -> Result<BytecodeProgram, String> {
     let mut failed_line = None;
     let program = compile_module_inner(module, &mut failed_line);
-    program.ok_or_else(|| match failed_line {
-        Some((function, line)) => format!("kazi '{function}', mstari {line}"),
-        None => "thabiti za moduli".to_string(),
-    })
+    match (program, failed_line) {
+        (Some(program), None) => Ok(program),
+        (_, Some((function, line))) => Err(format!("kazi '{function}', mstari {line}")),
+        (None, None) => Err("thabiti za moduli".to_string()),
+    }
 }
 
 fn compile_module_inner(
@@ -507,14 +519,20 @@ fn compile_module_inner(
         );
     }
     let mut functions = Vec::with_capacity(module.functions.len());
-    for function in &module.functions {
+    let mut interpreted = false;
+    for (index, function) in module.functions.iter().enumerate() {
         match FunctionCompiler::compile(&mut program, function) {
             Some(f) => functions.push(f),
             None => {
-                *failed_line = program
-                    .failed_line
-                    .map(|line| (function.name.clone(), line));
-                return None;
+                if failed_line.is_none() {
+                    *failed_line = Some((
+                        function.name.clone(),
+                        program.failed_line.unwrap_or(function.line),
+                    ));
+                }
+                program.failed_line = None;
+                functions.push(FunctionCompiler::interpreted(&mut program, function, index));
+                interpreted = true;
             }
         }
     }
@@ -522,6 +540,7 @@ fn compile_module_inner(
         constants: program.constants,
         functions,
         entry: "kuu".to_string(),
+        ast: interpreted.then(|| module.clone()),
     })
 }
 
@@ -713,6 +732,45 @@ impl<'a> FunctionCompiler<'a> {
             num_consts: f.num_consts,
             code: f.code,
         })
+    }
+
+    /// A `kazi` left to the tree-walker: its parameters in registers as the compiled calling
+    /// convention expects, and one instruction that runs its body there.
+    fn interpreted(
+        program: &'a mut ProgramCompiler,
+        function: &Function,
+        index: usize,
+    ) -> BytecodeFunc {
+        let ret = Ty::from_type_name(&function.return_type.name);
+        let mut f = FunctionCompiler {
+            program,
+            scopes: vec![HashMap::new()],
+            code: Vec::new(),
+            num_regs: 0,
+            list_regs: 0,
+            val_regs: 0,
+            num_consts: Vec::new(),
+            const_regs: HashMap::new(),
+            loops: Vec::new(),
+            ret,
+        };
+        let params = function
+            .params
+            .iter()
+            .map(|p| f.declare(&p.name, Ty::from_type_name(&p.ty.name), None))
+            .collect();
+        BytecodeFunc {
+            name: function.name.clone(),
+            params,
+            ret,
+            num_regs: f.num_regs,
+            list_regs: f.list_regs,
+            val_regs: f.val_regs,
+            num_consts: Vec::new(),
+            code: vec![Opcode::Interpreted {
+                function: index as u32,
+            }],
+        }
     }
 
     // -- registers and scopes -----------------------------------------------------------------
@@ -2188,6 +2246,9 @@ struct Vm<'p> {
     builtins: Vec<BuiltinFn>,
     builtin_index: HashMap<String, usize>,
     pool: Vec<Frame>,
+    /// Tree-walkers for mixed mode, reused across calls (a nested tree → VM → tree call takes a
+    /// second one).
+    trees: Vec<crate::TreeContext>,
     /// Ahead-of-time compiled functions (`pata jenga`'s LLVM library), used instead of the interpreter.
     #[cfg(not(target_arch = "wasm32"))]
     aot: Option<&'p crate::aot::NativeLibrary>,
@@ -2332,6 +2393,7 @@ impl<'p> Vm<'p> {
             builtins: table.fns,
             builtin_index: table.index,
             pool: Vec::new(),
+            trees: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             aot: None,
             #[cfg(not(target_arch = "wasm32"))]
@@ -2368,6 +2430,32 @@ impl<'p> Vm<'p> {
 
     fn release(&mut self, frame: Frame) {
         self.pool.push(frame);
+    }
+
+    /// Run function `index` — one the compiler left to the tree-walker — on it.
+    fn tree_call(&mut self, index: usize, args: Vec<Value>) -> Result<Value, EvalError> {
+        let program = self.program;
+        let module = program
+            .ast
+            .as_ref()
+            .ok_or_else(|| EvalError::Unknown("kilele hakina mti wa programu".into()))?;
+        let name = &program.functions[index].name;
+        let f = module
+            .functions
+            .iter()
+            .find(|f| &f.name == name)
+            .ok_or_else(|| EvalError::UndefinedVar(name.clone()))?;
+        let mut tree = match self.trees.pop() {
+            Some(tree) => tree,
+            None => crate::TreeContext::new(module)?,
+        };
+        let hook = crate::runtime::VmHook {
+            vm: self as *mut Vm<'p> as *mut std::ffi::c_void,
+            call: tree_to_vm,
+        };
+        let result = tree.call(module, f, args, hook);
+        self.trees.push(tree);
+        result
     }
 
     /// Call a function with generic arguments, converting to and from its typed registers.
@@ -2603,6 +2691,14 @@ impl<'p> Vm<'p> {
         }
         if numeric_op(op, &mut frame.nums) {
             return Flow::Next;
+        }
+        if let Opcode::Interpreted { function } = op {
+            let f = &program.functions[*function as usize];
+            let args = f.params.iter().map(|p| operand_value(frame, *p)).collect();
+            return match self.tree_call(*function as usize, args) {
+                Ok(v) => Flow::Finish(ret_of(f.ret, v)),
+                Err(e) => Flow::Fail(e),
+            };
         }
         let n = &mut frame.nums;
         match op {
@@ -2900,8 +2996,9 @@ impl<'p> Vm<'p> {
                     Err(e) => fail!(e),
                 }
             }
-            // Handled by `numeric_op` above.
-            Opcode::Mov { .. }
+            // Handled above.
+            Opcode::Interpreted { .. }
+            | Opcode::Mov { .. }
             | Opcode::Add { .. }
             | Opcode::Sub { .. }
             | Opcode::Mul { .. }
@@ -2968,6 +3065,55 @@ fn numeric_op(op: &Opcode, n: &mut [f64]) -> bool {
         _ => return false,
     }
     true
+}
+
+/// A register's value as a generic value.
+fn operand_value(frame: &Frame, op: Operand) -> Value {
+    match op.ty {
+        Ty::Num => Value::Namba(frame.nums[op.reg as usize]),
+        Ty::Bool => Value::Ukweli(frame.nums[op.reg as usize] != 0.0),
+        Ty::List => Value::Orodha(
+            frame.lists[op.reg as usize]
+                .iter()
+                .map(Value::Namba)
+                .collect(),
+        ),
+        Ty::Val => frame.vals[op.reg as usize].clone(),
+    }
+}
+
+/// A generic result as a function declared to return `ty` returns it.
+fn ret_of(ty: Ty, v: Value) -> Ret {
+    match (ty, v) {
+        (Ty::Num, Value::Namba(n)) => Ret::Num(n),
+        (Ty::Bool, Value::Ukweli(b)) => Ret::Num(flag(b)),
+        (Ty::List, v @ Value::Orodha(_)) => match list_from_value(&v) {
+            Ok(l) => Ret::List(l),
+            Err(_) => Ret::Val(v),
+        },
+        (_, v) => Ret::Val(v),
+    }
+}
+
+/// The tree-walker calling `name`: the VM runs it (and its native code) unless it is one of the
+/// tree-walker's own.
+fn tree_to_vm(
+    vm: *mut std::ffi::c_void,
+    name: &str,
+    args: &[Value],
+) -> Option<Result<Value, EvalError>> {
+    // SAFETY: the pointer is the `Vm` whose `tree_call` is running this tree-walker, alive and
+    // between instructions for the whole call (the same re-entry native code makes through
+    // `native_exec`).
+    let vm = unsafe { &mut *(vm as *mut Vm<'static>) };
+    let index = vm.program.functions.iter().position(|f| f.name == name)?;
+    if matches!(
+        vm.program.functions[index].code.first(),
+        Some(Opcode::Interpreted { .. })
+    ) {
+        return None;
+    }
+    Some(vm.call_values(index, args.to_vec()))
 }
 
 fn copy_operand(from: &Frame, src: Operand, to: &mut Frame, dst: Operand) {

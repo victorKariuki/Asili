@@ -225,10 +225,13 @@ Next steps are the "Remaining gaps" below.
 
 ## Remaining gaps
 
-- Programs using a construct the bytecode compiler does not lower (`linganisha`, `tupa`, pattern
-  `weka`, map/struct literals, enum construction, field access) run entirely on the tree-walker.
-  Per-function fallback, then lowering those constructs, would extend the fast path.
-  `compile_module_explained` reports the blocking `kazi` and line.
+- A `kazi` using a construct the bytecode compiler does not lower (`linganisha`, `tupa`,
+  pattern `weka`, map/struct literals, enum construction, field access) runs on the
+  tree-walker; the rest of the program stays bytecode and native code (mixed mode:
+  `Opcode::Interpreted` stubs, `BytecodeProgram::ast`, and a `VmHook` that sends the
+  tree-walker's calls to compiled `kazi` back to the VM). Lowering those constructs would move
+  the remaining functions onto the fast path; `compile_module_explained` reports the first one
+  and its line.
 - Native-to-native calls are direct only for scalar (`Namba`/`Buliani`) functions without
   lists or generic values; others go through the interpreter's call path. Direct calls pass
   arguments as `f64` through a memory buffer, so `fib(32)` is ~40 ms against C's ~11 ms;

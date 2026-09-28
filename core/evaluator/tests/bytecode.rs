@@ -245,7 +245,17 @@ fn unsupported_methods_fall_back_to_the_evaluator() {
     )
     .expect("tokenize");
     let module = parse_tokens(&tokens).expect("parse");
-    assert!(compile_module(&module).is_none());
+    // Mixed mode: the program still compiles, `soma` is left to the tree-walker, and the
+    // strict variant names it.
+    let program = compile_module(&module).expect("mixed program");
+    let soma = program.find_function("soma").expect("soma");
+    assert!(matches!(
+        soma.code.as_slice(),
+        [asili_evaluator::Opcode::Interpreted { .. }]
+    ));
+    assert!(program.ast.is_some());
+    let err = asili_evaluator::compile_module_explained(&module).expect_err("strict");
+    assert!(err.contains("soma"), "{err}");
 }
 
 #[test]

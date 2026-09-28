@@ -4,7 +4,7 @@
 //! semantics are shared code (`eval::ops`, `eval::methods`), and these tests keep it that way.
 
 use asili_evaluator::{
-    compile_module_explained, run_bytecode_function_on, run_function, Engine, Value,
+    compile_module, compile_module_explained, run_bytecode_function_on, run_function, Engine, Value,
 };
 use asili_lexer::tokenize;
 use asili_parser::parse_tokens;
@@ -26,16 +26,39 @@ fn agree(name: &str, source: &str, functions: &[&str]) {
     let module = parse_tokens(&tokens).unwrap_or_else(|e| panic!("{name}: parse: {e:?}"));
     let program = compile_module_explained(&module)
         .unwrap_or_else(|why| panic!("{name}: expected bytecode lowering, blocked at {why}"));
+    agree_program(name, &module, &program, functions);
+}
+
+/// Like `agree`, for a program whose `kazi` are only partly lowered (mixed mode: the rest run
+/// on the tree-walker, called from and calling into bytecode).
+fn agree_mixed(name: &str, source: &str, functions: &[&str]) {
+    let tokens = tokenize(source).expect("tokenize");
+    let module = parse_tokens(&tokens).unwrap_or_else(|e| panic!("{name}: parse: {e:?}"));
+    let program = compile_module(&module).expect("mixed program");
+    assert!(
+        program.ast.is_some(),
+        "{name}: expected some kazi left to the tree-walker"
+    );
+    agree_program(name, &module, &program, functions);
+}
+
+fn agree_program(
+    name: &str,
+    module: &asili_parser::Module,
+    program: &asili_evaluator::BytecodeProgram,
+    functions: &[&str],
+) {
+    let (module, program) = (module, program);
     // The in-house native backend, where the host supports it.
     let own = asili_evaluator::nguvu::supported()
-        .then(|| asili_evaluator::nguvu::compile(&program).expect("nguvu compile"));
+        .then(|| asili_evaluator::nguvu::compile(program).expect("nguvu compile"));
     let show = |r: Result<Value, asili_evaluator::EvalError>| match r {
         Ok(v) => canon(&v),
         Err(e) => format!("ERR {e}"),
     };
     for function in functions {
-        let tree = show(run_function(&module, function, vec![]));
-        let vm = |engine| show(run_bytecode_function_on(engine, &program, function, vec![]));
+        let tree = show(run_function(module, function, vec![]));
+        let vm = |engine| show(run_bytecode_function_on(engine, program, function, vec![]));
         assert_eq!(
             vm(Engine::Interpreter),
             tree,
@@ -346,5 +369,67 @@ fn number_list_representations_match_the_tree_walker() {
         }
         "#,
         &["t"],
+    );
+}
+
+#[test]
+fn mixed_programs_agree() {
+    agree_mixed(
+        "mixed",
+        r#"
+        umbo Nukta {
+            x: Namba,
+            y: Namba,
+        }
+        kazi urefu_wa(p: Nukta) -> Namba {
+            # field access: left to the tree-walker
+            rejesha mraba(p.x) + mraba(p.y)
+        }
+        kazi mraba(n: Namba) -> Namba {
+            # compiled, called from the tree-walker
+            weka s: Namba = 0
+            kwa i kutoka 0 hadi n {
+                s += n
+            }
+            rejesha s
+        }
+        kazi aina(n: Namba) -> Neno {
+            linganisha n {
+                0 => { rejesha "sifuri" }
+                1 => { rejesha "moja" }
+                _ => { rejesha "nyingi" }
+            }
+            rejesha ""
+        }
+        kazi jumla_ya_aina(k: Namba) -> Neno {
+            # compiled, calling the tree-walker in a loop
+            weka r: Neno = ""
+            kwa i kutoka 0 hadi k {
+                r = r + aina(i)
+            }
+            rejesha r
+        }
+        kazi fib(n: Namba) -> Namba {
+            ikiwa n < 2 {
+                rejesha n
+            }
+            rejesha fib(n - 1) + fib(n - 2)
+        }
+        kazi t() -> Orodha<Namba> {
+            weka r: Orodha<Namba> = []
+            weka p = Nukta { x: 3, y: 4 }
+            r.ongeza(urefu_wa(p))
+            r.ongeza(fib(15))
+            rejesha r
+        }
+        kazi aina_tano() -> Neno {
+            rejesha jumla_ya_aina(5)
+        }
+        kazi kosa() -> Namba {
+            weka p = Nukta { x: 1, y: 2 }
+            rejesha urefu_wa(p) + (1 / 0) * 0
+        }
+        "#,
+        &["t", "aina_tano", "kosa"],
     );
 }

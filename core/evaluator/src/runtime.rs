@@ -43,6 +43,21 @@ pub(crate) struct Runtime<'a> {
     /// resumes it.
     pub debug_hook: Option<Arc<dyn DebugHook>>,
     pub metrics: Option<EvalMetrics>,
+    /// The bytecode VM running this program, when the tree-walker runs only some of its `kazi`
+    /// (mixed mode): calls to the others go back to the VM and native code.
+    pub vm: Option<VmHook>,
+}
+
+/// A call from the tree-walker into the VM that started it. `call` returns `None` when the VM
+/// does not run that `kazi` itself (it is one of the tree-walker's own).
+#[derive(Clone, Copy)]
+pub(crate) struct VmHook {
+    pub vm: *mut std::ffi::c_void,
+    pub call: fn(
+        *mut std::ffi::c_void,
+        &str,
+        &[crate::value::Value],
+    ) -> Option<Result<crate::value::Value, crate::value::EvalError>>,
 }
 
 impl<'a> Runtime<'a> {
@@ -56,6 +71,7 @@ impl<'a> Runtime<'a> {
             executed_lines: None,
             debug_hook: None,
             metrics: None,
+            vm: None,
         }
     }
 
@@ -73,6 +89,7 @@ impl<'a> Runtime<'a> {
             executed_lines: None,
             debug_hook: None,
             metrics: None,
+            vm: None,
         }
     }
 

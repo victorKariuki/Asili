@@ -123,6 +123,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of a hardware divide on x86-64, and for unsigned operands on AArch64: `(s + i * 7 +
   i // 3) % 1000003` over 20 million `i` runs in 70 ms (was 124 ms; gcc `-O2` C: 84 ms). Images
   are rebuilt (`IMAGE_VERSION` 6).
+- **Mixed-mode execution**: a `kazi` the bytecode compiler cannot lower no longer sends the whole
+  program to the tree-walker. It becomes a stub (`Opcode::Interpreted`) that runs its body on
+  a reusable tree-walker (`BytecodeProgram` now carries the module's syntax tree for them),
+  and the tree-walker's calls to compiled `kazi` go back to the VM and native code. All 15
+  runnable examples now build to bytecode (2 did before) with unchanged output;
+  `pata jenga --namna release` still requires every `kazi` to lower. `.asb` bytecode version 6.
 - **`pata jenga` builds bytecode for every program that lowers to it**: the default (`dev`)
   profile used to emit bytecode only when some `kazi` contained a loop, so recursive programs
   ran on the tree-walker; now any program the bytecode compiler accepts gets the VM and native

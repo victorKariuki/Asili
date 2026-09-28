@@ -169,8 +169,8 @@ Researched, decided, not built.
       and `tests/native_tiers.rs` check that the tree-walker, VM and native code agree
       bit-for-bit. The Arto Inkala Sudoku (90,665 attempts, 10,041 backtracks) solves in
       ~2.6 ms native (clang `-O2` C: ~3.1 ms, gcc `-O2` C: ~4.7 ms), ~110 ms VM, vs. 3.4 s on
-      the tree-walker and 0.3 s in CPython. See [performance.md](performance.md). Remaining: programs using the constructs
-      above still fall back to the tree-walker wholesale (per-function fallback would be finer),
+      the tree-walker and 0.3 s in CPython. See [performance.md](performance.md). Remaining: a `kazi` using the constructs
+      above runs on the tree-walker (per function — the rest of the program stays bytecode),
       `kazi` calls from native code go through the interpreter's call path (no inlining yet),
       and there is no standalone native executable (the library is loaded by `pata tenda`).
 

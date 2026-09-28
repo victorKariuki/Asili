@@ -8,8 +8,9 @@ Flags:
 - `--pato <path>`: Output directory (default `kilele/`)
 - `--lengo <lengo>`: Build target (default `native`); overrides `pata.toml`'s `[jenga] lengo`
 - `--namna <dev|release>`: Build profile. `dev` (default) is best effort: bytecode whenever
-  the whole program lowers to it (whether or not it has loops), native code where the platform has a native backend, otherwise the VM (or
-  tree-walker) with a note. `release` requires both: every program is compiled to bytecode (a
+  the whole program lowers to it (whether or not it has loops), native code where the platform has a native backend, otherwise the VM with a note; a `kazi`
+  using a construct the VM can't lower yet runs on the tree-walker while the rest of the
+  program stays bytecode. `release` requires both: every program is compiled to bytecode (a
   construct the VM can't lower yet fails the build, naming the `kazi` and line) and its native
   code must be built (a platform without a backend fails the build); release never uses the
   build cache. `embedded` is

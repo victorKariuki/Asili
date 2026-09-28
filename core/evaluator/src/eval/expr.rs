@@ -34,6 +34,11 @@ fn invoke_named_callback(
     if let Some(f) = rt.builtins.get(name) {
         return f(args);
     }
+    if let Some(hook) = rt.vm {
+        if let Some(result) = (hook.call)(hook.vm, name, args) {
+            return result;
+        }
+    }
     let module = rt.module;
     let Some(f) = module.functions.iter().find(|x| x.name == name) else {
         return Err(EvalError::TypeErr(format!("kazi haijulikani: {name}")));
@@ -320,6 +325,12 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 }
                 if let Some(f) = rt.builtins.get(name) {
                     return f(&args_val);
+                }
+                // Mixed mode: a `kazi` the VM runs goes back to it (and its native code).
+                if let Some(hook) = rt.vm {
+                    if let Some(result) = (hook.call)(hook.vm, name, &args_val) {
+                        return result;
+                    }
                 }
                 // Borrow through a copy of the module reference (not `rt`), so `rt` stays free
                 // for the body — no clone of the function's AST per call.

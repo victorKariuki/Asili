@@ -89,6 +89,51 @@ pub fn run_function(
 /// pata/cli) were previously type-checked and exported but never actually bound at runtime, so
 /// referencing one by name failed with UndefinedVar. Call once per fresh Env, before pushing the
 /// function's own scope, so constants act as globals for the rest of execution.
+/// A reusable tree-walker for the `kazi` a bytecode program leaves to it (mixed mode): the
+/// environment (global and module constants) and builtin table are built once, and each call
+/// only pushes a scope for its parameters.
+pub(crate) struct TreeContext {
+    env: Env,
+    builtins: HashMap<String, BuiltinFn>,
+}
+
+impl TreeContext {
+    pub(crate) fn new(module: &Module) -> Result<Self, EvalError> {
+        let mut env = Env::new();
+        env.seed_global_constants();
+        let mut rt = runtime::Runtime::new(&mut env, module);
+        seed_module_constants(module, &mut rt)?;
+        let builtins = std::mem::take(&mut rt.builtins);
+        drop(rt);
+        Ok(TreeContext { env, builtins })
+    }
+
+    /// Run `f` (a function of `module`) on the tree-walker; its calls to `kazi` the VM runs go
+    /// through `hook`.
+    pub(crate) fn call(
+        &mut self,
+        module: &Module,
+        f: &Function,
+        args: Vec<Value>,
+        hook: runtime::VmHook,
+    ) -> Result<Value, EvalError> {
+        let builtins = std::mem::take(&mut self.builtins);
+        let mut rt = runtime::Runtime::with_builtins(&mut self.env, module, builtins);
+        rt.vm = Some(hook);
+        rt.env.push_scope();
+        for (p, val) in f.params.iter().zip(args) {
+            rt.env.define(&p.name, val);
+        }
+        let out = eval::eval_block_impl(&f.body, &mut rt);
+        rt.env.pop_scope();
+        self.builtins = std::mem::take(&mut rt.builtins);
+        match out? {
+            EvalOut::Return(v) => Ok(v),
+            _ => Ok(Value::Tupu),
+        }
+    }
+}
+
 fn seed_module_constants(module: &Module, rt: &mut runtime::Runtime) -> Result<(), EvalError> {
     for c in &module.constants {
         let val = eval::eval_expr_impl(&c.value, rt)?;
