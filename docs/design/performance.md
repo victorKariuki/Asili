@@ -24,9 +24,13 @@ this container is ~3.3 ms for anything).
 | Asili tree-walker (before) | 3.4 s | — |
 | Asili stack VM (before) | 1.5 s | — |
 
-The Asili solve is faster than clang-compiled C; its whole-process figure is slightly higher
-because the standalone runner (`tenda`, a Rust binary with the full evaluator) takes ~0.9 ms
-longer to start than a C program. By callgrind instruction count the Asili run executes 24.0M
+The Asili solve is faster than clang-compiled C. Whole-process figures depend on how the
+runner is built: the default dynamically linked release build starts ~0.9 ms slower than a C
+program, but the shipping build (`cargo build --profile dist -p asili-runner --target
+x86_64-unknown-linux-musl`: fat LTO, `panic = "abort"`, static non-PIE, no dynamic loader)
+starts in ~0.7 ms — faster than an empty dynamically linked C program (1.2 ms) — and runs the
+whole Sudoku in 6.0 ms against 6.5 ms for clang C, static or dynamic (`run.sh`, which builds it
+that way when the musl target is installed). By callgrind instruction count the Asili run executes 24.0M
 instructions in total (22.8M in native code and the runtime helpers it calls) against 27.0M
 for the clang C program and 43.8M for gcc's. The Asili figures need no C compiler anywhere:
 `pata jenga` writes the machine code itself.
@@ -188,8 +192,8 @@ Next steps are the "Remaining gaps" below.
 - Calls between `kazi` from native code go through the interpreter's call path; inlining small
   numeric functions would let helpers like `sanduku_la(r, c)` cost nothing.
 - The native image is mapped by `pata tenda` or the standalone runner, not a standalone
-  executable; the runner's start-up (~0.9 ms more than a C program) is the whole-process gap
-  to clang C. A statically linked runner cut ~0.4 ms in a trial.
+  executable. `pata tenda` itself (the full toolchain binary) starts ~3 ms slower than the
+  runner; ship programs with the `dist`-profile static runner.
 - `list_push`/`list_remove` are runtime calls (~1M instructions on the benchmark); inlining the
   common case needs a list layout native code may write directly.
 - Platforms: x86-64 (System V and Windows x64) and AArch64 (Linux, macOS) are supported;

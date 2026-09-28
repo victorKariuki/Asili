@@ -49,6 +49,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   register allocator and block scheduling are shared between targets; images record their
   architecture. The engine differential tests pass on arm64 (CI runs them on
   `ubuntu-24.04-arm`).
+- **`dist` build profile** (fat LTO, one codegen unit, `panic = "abort"`) for shipped binaries,
+  and non-PIE static builds for the musl targets (`.cargo/config.toml`). The standalone runner
+  built with `--profile dist --target x86_64-unknown-linux-musl` starts in ~0.7 ms (the
+  dynamically linked release build: ~2 ms), which makes the whole Sudoku run faster than
+  clang-compiled C: 6.0 ms vs 6.5 ms in `run.sh` (which now builds the runner that way and also
+  times statically linked C).
 - **Windows and macOS native code**: `nguvu` generates x86-64 code for the Microsoft x64
   calling convention on Windows (positional argument registers, 32-byte shadow space,
   `rsi`/`rdi`/`xmm6`–`xmm15` preserved in full, stack probes for frames over a page) and maps it
