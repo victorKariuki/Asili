@@ -59,6 +59,8 @@ pub struct MemIdx {
     pub base: Gpr,
     pub index: Gpr,
     pub disp: i32,
+    /// Index scale: 1, 2, 4 or 8.
+    pub scale: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -174,8 +176,8 @@ impl Asm {
     fn modrm_idx(&mut self, reg: u8, m: MemIdx) {
         let mode = Self::disp_mode(m.base as u8, m.disp);
         self.byte(mode | (low(reg) << 3) | 4);
-        // scale 8 = 0b11
-        self.byte(0xC0 | (low(m.index as u8) << 3) | low(m.base as u8));
+        let ss = m.scale.trailing_zeros() as u8;
+        self.byte(ss << 6 | (low(m.index as u8) << 3) | low(m.base as u8));
         self.disp(mode, m.disp);
     }
 
@@ -480,6 +482,33 @@ impl Asm {
         self.modrm_mem(src.0, m);
     }
 
+    /// `dst = base[index]` extended to 64 bits for 1-, 2- or 4-byte elements: `movsx`/`movsxd`
+    /// when `signed`, else `movzx` or a 32-bit `mov` (both zero the upper bits).
+    pub fn load_idx_ext(&mut self, dst: Gpr, m: MemIdx, width: u8, signed: bool) {
+        self.rex(signed, dst as u8, m.index as u8, m.base as u8, false);
+        match (width, signed) {
+            (1, true) => self.bytes(&[0x0F, 0xBE]),
+            (2, true) => self.bytes(&[0x0F, 0xBF]),
+            (_, true) => self.byte(0x63),
+            (1, false) => self.bytes(&[0x0F, 0xB6]),
+            (2, false) => self.bytes(&[0x0F, 0xB7]),
+            (_, false) => self.byte(0x8B),
+        }
+        self.modrm_idx(dst as u8, m);
+    }
+
+    /// `base[index] = low bytes of src` for 1-, 2- or 4-byte elements.
+    pub fn store_idx_narrow(&mut self, m: MemIdx, src: Gpr, width: u8) {
+        if width == 2 {
+            self.byte(0x66);
+        }
+        // A byte store from `spl`/`bpl`/`sil`/`dil` needs a REX prefix to name them.
+        let force = width == 1 && (4..8).contains(&(src as u8));
+        self.rex(false, src as u8, m.index as u8, m.base as u8, force);
+        self.byte(if width == 1 { 0x88 } else { 0x89 });
+        self.modrm_idx(src as u8, m);
+    }
+
     pub fn movsd_load_idx(&mut self, dst: Xmm, m: MemIdx) {
         self.byte(0xF2);
         self.rex(false, dst.0, m.index as u8, m.base as u8, false);
@@ -576,7 +605,8 @@ mod tests {
                 MemIdx {
                     base: Gpr::Rcx,
                     index: Gpr::Rdx,
-                    disp: 0
+                    disp: 0,
+                    scale: 8
                 }
             )),
             [0x48, 0x8B, 0x04, 0xD1]
@@ -586,6 +616,7 @@ mod tests {
             base,
             index: Gpr::Rdx,
             disp,
+            scale: 8,
         };
         assert_eq!(
             enc(|a| a.load_idx(Gpr::Rax, idx(Gpr::R13, 0))),
@@ -594,6 +625,53 @@ mod tests {
         assert_eq!(
             enc(|a| a.load_idx(Gpr::Rax, idx(Gpr::Rcx, 4096))),
             [0x48, 0x8B, 0x84, 0xD1, 0x00, 0x10, 0x00, 0x00]
+        );
+        // Narrow list elements (reference: GNU as).
+        let w = |base, index, scale| MemIdx {
+            base,
+            index,
+            disp: 0,
+            scale,
+        };
+        assert_eq!(
+            enc(|a| a.load_idx_ext(Gpr::Rax, w(Gpr::Rcx, Gpr::Rdx, 1), 1, true)),
+            [0x48, 0x0F, 0xBE, 0x04, 0x11]
+        );
+        assert_eq!(
+            enc(|a| a.load_idx_ext(Gpr::R9, w(Gpr::Rbx, Gpr::R8, 2), 2, true)),
+            [0x4E, 0x0F, 0xBF, 0x0C, 0x43]
+        );
+        assert_eq!(
+            enc(|a| a.load_idx_ext(Gpr::Rsi, w(Gpr::R13, Gpr::Rdx, 4), 4, true)),
+            [0x49, 0x63, 0x74, 0x95, 0x00]
+        );
+        assert_eq!(
+            enc(|a| a.load_idx_ext(Gpr::Rax, w(Gpr::Rcx, Gpr::Rdx, 1), 1, false)),
+            [0x0F, 0xB6, 0x04, 0x11]
+        );
+        assert_eq!(
+            enc(|a| a.load_idx_ext(Gpr::R9, w(Gpr::Rbx, Gpr::R8, 2), 2, false)),
+            [0x46, 0x0F, 0xB7, 0x0C, 0x43]
+        );
+        assert_eq!(
+            enc(|a| a.load_idx_ext(Gpr::Rsi, w(Gpr::R13, Gpr::Rdx, 4), 4, false)),
+            [0x41, 0x8B, 0x74, 0x95, 0x00]
+        );
+        assert_eq!(
+            enc(|a| a.store_idx_narrow(w(Gpr::Rcx, Gpr::Rdx, 1), Gpr::Rsi, 1)),
+            [0x40, 0x88, 0x34, 0x11]
+        );
+        assert_eq!(
+            enc(|a| a.store_idx_narrow(w(Gpr::R12, Gpr::R9, 1), Gpr::Rax, 1)),
+            [0x43, 0x88, 0x04, 0x0C]
+        );
+        assert_eq!(
+            enc(|a| a.store_idx_narrow(w(Gpr::Rbx, Gpr::R8, 2), Gpr::R10, 2)),
+            [0x66, 0x46, 0x89, 0x14, 0x43]
+        );
+        assert_eq!(
+            enc(|a| a.store_idx_narrow(w(Gpr::Rcx, Gpr::Rdx, 4), Gpr::Rdi, 4)),
+            [0x89, 0x3C, 0x91]
         );
         let mem = |base, disp| Mem { base, disp };
         assert_eq!(

@@ -658,13 +658,23 @@ impl<'f> Gen<'f> {
                     }
                 }
             }
-            Inst::LoadIndex { dst, base, index } => {
+            Inst::LoadIndex {
+                dst,
+                base,
+                index,
+                kind,
+            } => {
+                let width = kind.width() as u8;
                 let rb = self.int_in(*base, S1);
                 let ri = self.int_in(*index, S2);
                 match self.func.class(*dst) {
                     Class::Int => {
                         let d = self.int_target(*dst, S0);
-                        self.asm.ldr_idx(d, rb, ri);
+                        if width == 8 {
+                            self.asm.ldr_idx(d, rb, ri);
+                        } else {
+                            self.asm.ldr_idx_ext(d, rb, ri, width, kind.signed());
+                        }
                         self.put_int(*dst, d);
                     }
                     Class::Float => {
@@ -674,13 +684,23 @@ impl<'f> Gen<'f> {
                     }
                 }
             }
-            Inst::StoreIndex { src, base, index } => {
+            Inst::StoreIndex {
+                src,
+                base,
+                index,
+                kind,
+            } => {
+                let width = kind.width() as u8;
                 let rb = self.int_in(*base, S1);
                 let ri = self.int_in(*index, S2);
                 match self.func.class(*src) {
                     Class::Int => {
                         let r = self.int_in(*src, S0);
-                        self.asm.str_idx(r, rb, ri);
+                        if width == 8 {
+                            self.asm.str_idx(r, rb, ri);
+                        } else {
+                            self.asm.str_idx_narrow(r, rb, ri, width);
+                        }
                     }
                     Class::Float => {
                         let d = self.float_in(*src, F0);

@@ -123,6 +123,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of a hardware divide on x86-64, and for unsigned operands on AArch64: `(s + i * 7 +
   i // 3) % 1000003` over 20 million `i` runs in 70 ms (was 124 ms; gcc `-O2` C: 84 ms). Images
   are rebuilt (`IMAGE_VERSION` 6).
+- **Lists as narrow as their numbers**: `Orodha<Namba>` storage keeps integers in 1, 2, 4 or
+  8 bytes — unsigned when no element is negative — and widens the whole list the first time a
+  value does not fit (a fraction, `-0.0`, NaN or ±∞ switches it to `f64`), so a list of flags
+  or digits takes one byte per element on every engine; reads return exactly what was stored.
+  Native code picks a width per list from the range analysis and reads and writes it with
+  narrow loads and stores (never 16-bit ones: a 16-bit store read back soon after measured
+  twice as slow), deoptimizing if a list turns out not to fit. Sieve of Eratosthenes to 5
+  million: 40 MB → one byte per flag, 69 → 23 ms (gcc C with `char` flags: 17 ms); the Sudoku
+  solve 4.1 → 3.4 ms; `ABI_VERSION` 7, `IMAGE_VERSION` 7.
 - **Faster strings on every engine**: `Neno + Neno` appends to the left operand instead of
   copying both into a new string, whole numbers format as integers (`kama Neno`, printing and
   string building; same text), `urefu` counts ASCII text without Unicode segmentation (CR LF

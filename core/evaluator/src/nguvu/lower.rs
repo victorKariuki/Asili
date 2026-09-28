@@ -12,6 +12,7 @@ use crate::native::{
     analyze_numbers, jump_target, leaders, list_writes, num_reads, num_writes, NumFact,
     STATUS_DEOPT, STATUS_FAIL, STATUS_RETURN,
 };
+use crate::numlist::Kind;
 use std::collections::{HashMap, HashSet};
 
 /// What the function being lowered may assume about the rest of the program.
@@ -71,8 +72,8 @@ struct Lower<'a> {
     /// Bounds known for the integer result being stored (set by `arith` for the next
     /// `set_i`): a side that cannot pass ±2^53 needs no check.
     result_range: (f64, f64),
-    /// List registers kept in integer words (`NumAnalysis::int_lists`).
-    int_lists: Vec<bool>,
+    /// How each list register's elements are stored (`NumAnalysis::list_kinds`).
+    list_kinds: Vec<Kind>,
     /// While reloading after an instruction the interpreter ran: where a failing guard resumes
     /// (the next instruction) and the registers already current in the frame.
     resume: Option<(usize, Vec<Reg>)>,
@@ -196,7 +197,7 @@ pub fn lower(index: usize, function: &BytecodeFunc, ctx: &Ctx) -> Option<super::
         leaders: leaders.clone(),
         cur_pc: 0,
         result_range: (f64::NEG_INFINITY, f64::INFINITY),
-        int_lists: analysis.int_lists,
+        list_kinds: analysis.list_kinds,
         resume: None,
         deopt: None,
         live_in: liveness(code),
@@ -829,16 +830,16 @@ impl<'a> Lower<'a> {
     fn refresh_list(&mut self, r: Reg) {
         let (p, l) = self.lists[r as usize];
         let reg = self.b.iconst(r as i64);
-        let ints = self.int_lists[r as usize];
-        let want = self.b.iconst(ints as i64);
+        let kind = self.list_kinds[r as usize];
+        let want = self.b.iconst(kind.code() as i64);
         self.push(Inst::Call {
             target: RtFn::ListPtr,
             args: vec![FRAME, reg, want],
             dst: Some(p),
             ret32: false,
         });
-        if ints {
-            // Null: the list holds a non-integer after all — continue in the interpreter.
+        if kind != Kind::F64 {
+            // Null: some element does not fit after all — continue in the interpreter.
             let z = self.b.iconst(0);
             let ok = self.icmp(ICond::Ne, p, z);
             self.guard(ok);
@@ -1373,8 +1374,9 @@ impl<'a> Lower<'a> {
             Opcode::ListGet { dst, list, idx, .. } => {
                 let i = self.element(*list, *idx, pc, op);
                 let (base, _) = self.lists[*list as usize];
-                if self.int_lists[*list as usize] {
-                    // Integer words: exact integers within ±2^53, read without conversion.
+                let kind = self.list_kinds[*list as usize];
+                if kind != Kind::F64 {
+                    // Integers (exact within ±2^53), read without conversion.
                     let v = if self.int(*dst) {
                         self.int_dst(*dst)
                     } else {
@@ -1384,6 +1386,7 @@ impl<'a> Lower<'a> {
                         dst: v,
                         base,
                         index: i,
+                        kind,
                     });
                     self.finish_i(*dst, v);
                 } else {
@@ -1392,13 +1395,15 @@ impl<'a> Lower<'a> {
                         dst: v,
                         base,
                         index: i,
+                        kind,
                     });
                     self.finish_f(*dst, v);
                 }
             }
             Opcode::ListSet { list, idx, src } => {
                 let i = self.element(*list, *idx, pc, op);
-                let v = if !self.int_lists[*list as usize] {
+                let kind = self.list_kinds[*list as usize];
+                let v = if kind == Kind::F64 {
                     self.get_f(*src)
                 } else if self.int(*src) {
                     self.get_i(*src)
@@ -1414,6 +1419,7 @@ impl<'a> Lower<'a> {
                     src: v,
                     base,
                     index: i,
+                    kind,
                 });
             }
             Opcode::ListPush { list, src } => {

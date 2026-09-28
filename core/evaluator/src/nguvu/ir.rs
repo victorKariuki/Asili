@@ -3,6 +3,8 @@
 //! exactly like the bytecode register it usually stands for — which keeps lowering a direct
 //! translation and lets the register allocator work from liveness alone.
 
+use crate::numlist::Kind;
+
 /// Register class of a virtual register.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Class {
@@ -214,16 +216,20 @@ pub enum Inst {
         base: VReg,
         offset: i32,
     },
-    /// `dst = base[index]` / `base[index] = src` for 8-byte elements.
+    /// `dst = base[index]` / `base[index] = src` for elements stored as `kind`: 8-byte words
+    /// (`I64`, `F64`), or narrower integers, extended by their signedness on load and truncated
+    /// on store.
     LoadIndex {
         dst: VReg,
         base: VReg,
         index: VReg,
+        kind: Kind,
     },
     StoreIndex {
         src: VReg,
         base: VReg,
         index: VReg,
+        kind: Kind,
     },
     /// Call a runtime function; integer arguments and result follow the C ABI by class.
     /// `ret32` marks a `u32` result that must be zero-extended.
@@ -378,7 +384,9 @@ impl Inst {
             Inst::Load { base, .. } => vec![*base],
             Inst::Store { src, base, .. } => vec![*src, *base],
             Inst::LoadIndex { base, index, .. } => vec![*base, *index],
-            Inst::StoreIndex { src, base, index } => vec![*src, *base, *index],
+            Inst::StoreIndex {
+                src, base, index, ..
+            } => vec![*src, *base, *index],
             Inst::Call { args, .. } | Inst::CallDirect { args, .. } => args.clone(),
             Inst::StackPointer { .. } | Inst::CallBuffer { .. } => vec![],
         }
@@ -408,7 +416,9 @@ impl Inst {
             Inst::Load { base, .. } => vec![base],
             Inst::Store { src, base, .. } => vec![src, base],
             Inst::LoadIndex { base, index, .. } => vec![base, index],
-            Inst::StoreIndex { src, base, index } => vec![src, base, index],
+            Inst::StoreIndex {
+                src, base, index, ..
+            } => vec![src, base, index],
             Inst::Call { args, .. } | Inst::CallDirect { args, .. } => args.iter_mut().collect(),
             Inst::StackPointer { .. } | Inst::CallBuffer { .. } => vec![],
         }

@@ -3,6 +3,7 @@
 //! spill/reload around interpreter callbacks, and the integer range analysis.
 
 use crate::bytecode::{CmpOp, Frame, Opcode, Reg, Ty};
+use crate::numlist::Kind;
 use std::ffi::c_void;
 
 /// `fn(runtime, vm, frame, nums) -> status << 32 | pc`.
@@ -95,14 +96,14 @@ pub(crate) extern "C" fn rt_shift_amount(a: f64) -> i64 {
     }
 }
 
-/// Data pointer of list register `reg`, switched to integer words when `ints` is nonzero
-/// (native code proved every element integral) or `f64` words otherwise; null if integers were
-/// asked for and the list holds a non-integer (the caller deoptimizes).
-pub(crate) extern "C" fn list_ptr(frame: *mut Frame, reg: u32, ints: u32) -> *mut u64 {
+/// Data pointer of list register `reg`, switched to the representation `kind` (a
+/// `Kind::code`) that native code chose from the range analysis; null if some element does not
+/// fit it (the caller deoptimizes).
+pub(crate) extern "C" fn list_ptr(frame: *mut Frame, reg: u32, kind: u32) -> *mut u64 {
     // SAFETY: called by native code with the frame it was handed; `reg` was checked at compile
     // time to be below the function's `list_regs`.
     let frame = unsafe { &mut *frame };
-    frame.lists[reg as usize].ensure(ints != 0)
+    frame.lists[reg as usize].ensure(Kind::from_code(kind))
 }
 
 pub(crate) extern "C" fn list_len(frame: *mut Frame, reg: u32) -> i64 {
@@ -388,9 +389,10 @@ pub(crate) struct NumAnalysis {
     pub regs: Vec<NumFact>,
     /// `ListGet`/`ListSet` instructions whose index is proven in bounds.
     pub safe_index: std::collections::HashSet<usize>,
-    /// Per list register: every element it can ever hold is an exact integer (within ±2^53),
-    /// so native code keeps it in integer words (see `NumList`).
-    pub int_lists: Vec<bool>,
+    /// Per list register: how native code stores its elements (see `NumList`) — integers of
+    /// the narrowest width holding every element it can ever hold when all are exact integers
+    /// (within ±2^53), else `f64` bits.
+    pub list_kinds: Vec<Kind>,
 }
 
 pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis {
@@ -400,7 +402,7 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
     let give_up = || NumAnalysis {
         regs: vec![NumFact::TOP; nregs],
         safe_index: Default::default(),
-        int_lists: vec![false; f.list_regs as usize],
+        list_kinds: vec![Kind::F64; f.list_regs as usize],
     };
     let code = &f.code;
     let Some(leaders) = leaders(code) else {
@@ -626,9 +628,14 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
             return NumAnalysis {
                 regs: defs,
                 safe_index,
-                int_lists: lists
+                list_kinds: lists
                     .iter()
-                    .map(|l| l.is_none_or(|f| f.is_bottom() || f.exact_int()))
+                    .map(|l| match l {
+                        Some(f) if f.is_bottom() => Kind::I64,
+                        Some(f) if f.exact_int() => Kind::for_range(f.lo, f.hi),
+                        Some(_) => Kind::F64,
+                        None => Kind::I64,
+                    })
                     .collect(),
             };
         }

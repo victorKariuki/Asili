@@ -388,7 +388,9 @@ fn reuse_values(func: &mut Func) {
                         ];
                     }
                 }
-                Inst::LoadIndex { dst, base, index } => {
+                Inst::LoadIndex {
+                    dst, base, index, ..
+                } => {
                     let key = (avail.original(base), avail.original(index), func.class(dst));
                     if let Some(&p) = avail.elements.get(&key) {
                         emitted = vec![Inst::Mov { dst, src: p }];
@@ -411,11 +413,15 @@ fn reuse_values(func: &mut Func) {
                     let a = avail.original(a);
                     avail.arith.insert((op, a, imm), dst);
                 }
-                Inst::LoadIndex { dst, base, index } if dst != base && dst != index => {
+                Inst::LoadIndex {
+                    dst, base, index, ..
+                } if dst != base && dst != index => {
                     let key = (avail.original(base), avail.original(index), func.class(dst));
                     avail.elements.insert(key, dst);
                 }
-                Inst::StoreIndex { src, base, index } => {
+                Inst::StoreIndex {
+                    src, base, index, ..
+                } => {
                     let key = (avail.original(base), avail.original(index), func.class(src));
                     avail.elements.insert(key, src);
                 }

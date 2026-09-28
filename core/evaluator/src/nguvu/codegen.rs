@@ -984,18 +984,29 @@ impl<'f> Gen<'f> {
                     }
                 }
             }
-            Inst::LoadIndex { dst, base, index } => {
+            Inst::LoadIndex {
+                dst,
+                base,
+                index,
+                kind,
+            } => {
+                let width = kind.width() as u8;
                 let rb = self.int_in(*base, Rax);
                 let ri = self.int_in(*index, Rcx);
                 let m = MemIdx {
                     base: rb,
                     index: ri,
                     disp: 0,
+                    scale: width,
                 };
                 match self.func.class(*dst) {
                     Class::Int => {
                         let d = self.int_target(*dst, Rdx);
-                        self.asm.load_idx(d, m);
+                        if width == 8 {
+                            self.asm.load_idx(d, m);
+                        } else {
+                            self.asm.load_idx_ext(d, m, width, kind.signed());
+                        }
                         self.put_int(*dst, d);
                     }
                     Class::Float => {
@@ -1005,18 +1016,29 @@ impl<'f> Gen<'f> {
                     }
                 }
             }
-            Inst::StoreIndex { src, base, index } => {
+            Inst::StoreIndex {
+                src,
+                base,
+                index,
+                kind,
+            } => {
+                let width = kind.width() as u8;
                 let rb = self.int_in(*base, Rax);
                 let ri = self.int_in(*index, Rcx);
                 let m = MemIdx {
                     base: rb,
                     index: ri,
                     disp: 0,
+                    scale: width,
                 };
                 match self.func.class(*src) {
                     Class::Int => {
                         let r = self.int_in(*src, Rdx);
-                        self.asm.store_idx(m, r);
+                        if width == 8 {
+                            self.asm.store_idx(m, r);
+                        } else {
+                            self.asm.store_idx_narrow(m, r, width);
+                        }
                     }
                     Class::Float => {
                         let x = self.float_in(*src, X0);

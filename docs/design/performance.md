@@ -66,7 +66,7 @@ Six small programs, each with a line-for-line C port (`gcc -O2`), whole-process 
 |---|---|---|---|---|---|---|
 | `fib(32)` | 7M scalar calls | 11 ms | 1706 ms | 40 ms | 376 ms | 3.5× |
 | Mandelbrot 400×300 | float loops | 30 ms | 33 ms | 33 ms | 224 ms | 1.1× |
-| Sieve to 5M | memory bandwidth | 17 ms | 102 ms | 108 ms | 306 ms | 6.4× |
+| Sieve to 5M | memory bandwidth | 17 ms | 102 ms | 23 ms | 252 ms | 1.4× |
 | 20M-step modular loop | integer division | 85 ms | 124 ms | 69 ms | 679 ms | 0.8× |
 | Bubble sort, 3,000 | branchy list code | 5 ms | 6 ms | 5 ms | 174 ms | 1.05× |
 | 200k string builds | generic values | 10 ms | 237 ms | 95 ms | 90 ms | 9.8× |
@@ -234,9 +234,10 @@ Next steps are the "Remaining gaps" below.
   arguments as `f64` through a memory buffer, so `fib(32)` is ~40 ms against C's ~11 ms;
   arguments and results in registers, and inlining small helpers (`sanduku_la(r, c)`), would
   close most of that.
-- List elements are 8-byte words. A byte- or 32-bit representation for lists whose values
-  fit would cut memory traffic up to 8× for sieve-like code (Asili matches C that uses
-  `long` elements).
+- Lists store integers in 1, 2, 4 or 8 bytes (`numlist.rs`), and native code uses 1-, 4- or
+  8-byte elements chosen from the range analysis, so the sieve now moves bytes like C (23 ms
+  against 17 ms). The rest of that gap is the VM call that builds the list
+  (`orodha_rudia`) and the bounds checks the analysis cannot drop.
 - `Neno` values are owned `String`s: loading a string constant copies it, and every generic
   value operation runs in the interpreter. Shared or small-string storage would remove most
   of the remaining allocation in string-building loops (~10× C).

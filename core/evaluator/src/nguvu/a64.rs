@@ -340,6 +340,30 @@ impl Asm {
         self.word(0xF820_7800 | r(rm) << 16 | r(rn) << 5 | r(rt));
     }
 
+    /// `ldrsb`/`ldrsh`/`ldrsw xt` when `signed`, else `ldrb`/`ldrh`/`ldr wt` (zero-extending),
+    /// `[xn, xm, lsl #log2(width)]`, for 1-, 2- or 4-byte elements.
+    pub fn ldr_idx_ext(&mut self, rt: u8, rn: u8, rm: u8, width: u8, signed: bool) {
+        let base = match (width, signed) {
+            (1, true) => 0x38A0_6800,
+            (2, true) => 0x78A0_7800,
+            (_, true) => 0xB8A0_7800,
+            (1, false) => 0x3860_6800,
+            (2, false) => 0x7860_7800,
+            (_, false) => 0xB860_7800,
+        };
+        self.word(base | r(rm) << 16 | r(rn) << 5 | r(rt));
+    }
+
+    /// `strb`/`strh`/`str wt, [xn, xm, lsl #log2(width)]` for 1-, 2- or 4-byte elements.
+    pub fn str_idx_narrow(&mut self, rt: u8, rn: u8, rm: u8, width: u8) {
+        let base = match width {
+            1 => 0x3820_6800,
+            2 => 0x7820_7800,
+            _ => 0xB820_7800,
+        };
+        self.word(base | r(rm) << 16 | r(rn) << 5 | r(rt));
+    }
+
     pub fn ldr_d_idx(&mut self, dt: u8, rn: u8, rm: u8) {
         self.word(0xFC60_7800 | r(rm) << 16 | r(rn) << 5 | r(dt));
     }
@@ -437,6 +461,15 @@ mod tests {
             (words(|a| a.alu(Alu::Mul, 1, 2, 3)), &[0x9b037c41]),
             (words(|a| a.alu(Alu::Smulh, 1, 2, 3)), &[0x9b437c41]),
             (words(|a| a.alu(Alu::Umulh, 1, 2, 3)), &[0x9bc37c41]),
+            (words(|a| a.ldr_idx_ext(1, 2, 3, 1, true)), &[0x38a36841]),
+            (words(|a| a.ldr_idx_ext(1, 2, 3, 2, true)), &[0x78a37841]),
+            (words(|a| a.ldr_idx_ext(1, 2, 3, 4, true)), &[0xb8a37841]),
+            (words(|a| a.ldr_idx_ext(1, 2, 3, 1, false)), &[0x38636841]),
+            (words(|a| a.ldr_idx_ext(1, 2, 3, 2, false)), &[0x78637841]),
+            (words(|a| a.ldr_idx_ext(1, 2, 3, 4, false)), &[0xb8637841]),
+            (words(|a| a.str_idx_narrow(1, 2, 3, 1)), &[0x38236841]),
+            (words(|a| a.str_idx_narrow(1, 2, 3, 2)), &[0x78237841]),
+            (words(|a| a.str_idx_narrow(1, 2, 3, 4)), &[0xb8237841]),
             (words(|a| a.lsr_imm(1, 2, 9)), &[0xd349fc41]),
             (words(|a| a.msub(1, 2, 3, 4)), &[0x9b039041]),
             (words(|a| a.cmp_asr(1, 2, 63)), &[0xeb82fc3f]),

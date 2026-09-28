@@ -695,3 +695,97 @@ fn entry_guards_keep_parameters() {
         &["t"],
     );
 }
+
+#[test]
+fn narrow_list_elements() {
+    check(
+        "narrow",
+        r#"
+        kazi chuja(n: Namba) -> Namba {
+            # a sieve: flags proven 0 or 1, stored as bytes
+            weka p: Orodha<Namba> = orodha_rudia(1, n + 1)
+            p[0] = 0
+            p[1] = 0
+            weka i: Namba = 2
+            wakati i * i <= n {
+                ikiwa p[i] == 1 {
+                    weka j = i * i
+                    wakati j <= n {
+                        p[j] = 0
+                        j += i
+                    }
+                }
+                i += 1
+            }
+            weka s: Namba = 0
+            kwa k kutoka 0 hadi n + 1 {
+                s += p[k]
+            }
+            rejesha s
+        }
+        kazi mipaka() -> Orodha<Namba> {
+            # values at each width's edges, written and read back natively
+            weka a: Orodha<Namba> = orodha_rudia(0, 8)
+            weka b: Orodha<Namba> = orodha_rudia(0, 8)
+            weka c: Orodha<Namba> = orodha_rudia(0, 8)
+            kwa k kutoka 0 hadi 8 {
+                a[k] = k * 36 - 128
+                b[k] = k * 9362 - 32768
+                c[k] = k * 613566756 - 2147483648
+            }
+            # and unsigned edges: up to 255, 65535, 2^32 - 1
+            weka u: Orodha<Namba> = orodha_rudia(0, 8)
+            weka v: Orodha<Namba> = orodha_rudia(0, 8)
+            weka w: Orodha<Namba> = orodha_rudia(0, 8)
+            kwa k kutoka 0 hadi 8 {
+                u[k] = 255 - k * 36
+                v[k] = 65535 - k * 9362
+                w[k] = 4294967295 - k * 613566756
+            }
+            weka r: Orodha<Namba> = []
+            kwa k kutoka 0 hadi 8 {
+                r.ongeza(a[k])
+                r.ongeza(b[k])
+                r.ongeza(c[k])
+                r.ongeza(u[k])
+                r.ongeza(v[k])
+                r.ongeza(w[k])
+            }
+            rejesha r
+        }
+        kazi ongeza_moja(xs: Orodha<Namba>) -> Namba {
+            weka s: Namba = 0
+            kwa k kutoka 0 hadi xs.urefu() {
+                xs[k] = xs[k] + 1
+                s += xs[k]
+            }
+            rejesha s
+        }
+        kazi pana() -> Orodha<Namba> {
+            # a byte list handed to code that widens it, then read again
+            weka d: Orodha<Namba> = orodha_rudia(7, 5)
+            weka r: Orodha<Namba> = []
+            r.ongeza(ongeza_moja(d))
+            d[2] = 1000000
+            d[3] = 0.5
+            r.ongeza(ongeza_moja(d))
+            kwa k kutoka 0 hadi 5 {
+                r.ongeza(d[k])
+            }
+            weka e: Orodha<Namba> = orodha_rudia(0, 3)
+            e[1] = 0 - 0.0
+            r.ongeza(e[1])
+            e.ongeza(70000)
+            r.ongeza(e[3])
+            rejesha r
+        }
+        kazi t() -> Orodha<Namba> {
+            weka r: Orodha<Namba> = []
+            r.ongeza(chuja(100000))
+            r.ongeza(chuja(2))
+            rejesha r
+        }
+        "#,
+        &["t", "mipaka", "pana"],
+    );
+}
