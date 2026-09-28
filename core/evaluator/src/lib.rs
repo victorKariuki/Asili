@@ -570,6 +570,32 @@ pub fn run_asb(
     asb_path: Option<&std::path::Path>,
     args: Vec<String>,
 ) -> Result<(), RunAsbError> {
+    on_known_stack(|| run_asb_here(bytes, asb_path, args))
+}
+
+/// Run `f` on a stack whose size `stacker` knows. Both engines grow the stack on demand
+/// (`stacker::maybe_grow` per call or block); where the remaining stack is unknown — musl's
+/// main thread reports only its committed pages — every call near the edge would map, and on
+/// return unmap, a fresh segment (800,000 times for `fib(32)`). One large, lazily committed
+/// segment up front avoids that.
+fn on_known_stack<R>(f: impl FnOnce() -> R) -> R {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        const SEGMENT: usize = 64 << 20;
+        if stacker::remaining_stack().is_some_and(|r| r >= SEGMENT / 2) {
+            return f();
+        }
+        stacker::grow(SEGMENT, f)
+    }
+    #[cfg(target_arch = "wasm32")]
+    f()
+}
+
+fn run_asb_here(
+    bytes: &[u8],
+    asb_path: Option<&std::path::Path>,
+    args: Vec<String>,
+) -> Result<(), RunAsbError> {
     if parse_format(bytes).as_deref() == Some("bytecode") {
         let program = load_asb_bytecode(bytes).map_err(|e| RunAsbError::Load(e.to_string()))?;
         #[cfg(not(target_arch = "wasm32"))]

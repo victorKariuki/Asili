@@ -261,6 +261,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Calls on the static runner no longer thrash stack segments**: musl's main thread reports
+  only its committed stack, so the VM's (and the tree-walker's) grow-on-demand check mapped and
+  unmapped a fresh stack segment around calls near that edge — 800,000 times for `fib(32)`
+  without native code (5–12 s, now 0.32 s). Programs now start on one large, lazily committed
+  segment.
+
 - **A program's own `kazi` now shadows an ambient builtin of the same name** on every engine,
   as the analyzer and the language docs already assumed; `kazi jumla(…)` used to be ignored
   at run time in favour of the builtin `jumla`.
