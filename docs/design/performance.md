@@ -8,24 +8,31 @@ attempts, 10,041 backtracks), with identical C, Rust and Python ports in
 
 ## Results
 
-Solve time on one core, best of several runs:
+One core, best of 21–61 runs (September 2026, this repository's cloud container). "Solve only"
+is a program's process time minus an empty program started the same way (process start-up in
+this container is ~3.3 ms for anything).
 
 | Engine | Solve only | Whole process |
 |---|---|---|
-| C, clang -O2 | 3.2 ms | — |
-| C, gcc -O2 | 4.4 ms | 7 ms |
-| Rust -O | — | 7 ms |
-| **Asili AOT (LLVM)** | **4.8 ms** | **10 ms** |
-| Asili register VM | ~110 ms | 115 ms |
-| Python 3.11 | — | 306 ms |
+| **Asili native (`nguvu`)** | **≈ 2.6 ms** | **7.2 ms** |
+| C, clang -O2 | ≈ 3.1 ms | 6.5 ms |
+| C, gcc -O2 | ≈ 4.7 ms | 8.1 ms |
+| Rust -O | — | 6.8 ms |
+| Asili register VM | ~110 ms | 118 ms |
+| Python 3 | — | 302 ms |
+| Asili LLVM AOT (retired) | 4.8 ms | 10 ms |
 | Asili tree-walker (before) | 3.4 s | — |
 | Asili stack VM (before) | 1.5 s | — |
 
-By callgrind instruction count, the AOT solve executes ~30M instructions against ~27M for
-clang-compiled C. The remaining whole-process gap is mostly `pata`'s own startup (~3 ms).
+The Asili solve is faster than clang-compiled C; its whole-process figure is slightly higher
+because the standalone runner (`tenda`, a Rust binary with the full evaluator) takes ~0.9 ms
+longer to start than a C program. By callgrind instruction count the Asili run executes 24.0M
+instructions in total (22.8M in native code and the runtime helpers it calls) against 27.0M
+for the clang C program and 43.8M for gcc's. The Asili figures need no C compiler anywhere:
+`pata jenga` writes the machine code itself.
 
-Reproduce with `examples/sudoku/bench/run.sh` (whole-process figures above: best of 7,
-re-measured after the codebase-wide deduplication pass, September 2026).
+Reproduce with `examples/sudoku/bench/run.sh` (standalone runner, both C compilers, 0.1 ms
+resolution).
 
 ## Audit findings (September 2026)
 
@@ -51,7 +58,8 @@ re-measured after the codebase-wide deduplication pass, September 2026).
 **Typed register VM.** Stack VMs spend most of their time moving operands; register VMs (Lua 5,
 Dalvik, wasm3) name operands in the instruction, roughly halving instruction count. Asili goes
 further and types the register files: `nums` (`f64`, also holding `Ukweli` as 0/1), `lists`
-(`Vec<f64>` for `Orodha<Namba>`), `vals` (generic `Value`). Types come from annotations,
+(`NumList` for `Orodha<Namba>`: integer words while every element is an exact integer, `f64`
+bits otherwise), `vals` (generic `Value`). Types come from annotations,
 literals and signatures at compile time, so numeric instructions never inspect a tag.
 Superinstructions fuse the hottest pairs: compare-and-branch (`JumpIfNot`), increment-and-loop
 (`ForStep`), `b[i]?` as one bounds-checked load (`ListGet`). Constants live in preloaded
@@ -64,17 +72,35 @@ that both the tree-walker and the VM call; unboxed numeric opcodes share one
 calls back into). Differential tests (`tests/engines_agree.rs`) run each
 snippet on every engine and require identical values and error text.
 
-**Native code, two tiers.**
-- *AOT through LLVM* (the tier that reaches C speed): `pata jenga` translates each bytecode
-  function to LLVM IR text — no C source involved — and `clang -O2` optimizes and links it into
-  a shared library next to the `.asb`. It embeds a hash of the bytecode, so a stale library is
-  never loaded. Generic-value instructions call back into the interpreter's single-step function
-  (`exec_slow`) through a small runtime table, spilling and reloading only the registers that
-  instruction touches, so native code never changes behaviour.
-- Without `clang` (it is needed only where `pata jenga` runs, not to build `pata` or to run a
-  built program), the bytecode runs on the register VM. A Cranelift JIT prototype (~40 ms here)
-  was removed so there is exactly one native backend to keep correct (recoverable from commit
-  `d77a8c4`).
+**Native code: one in-house backend, `nguvu`.** `pata jenga` compiles each bytecode function
+to machine code itself — no C source, no LLVM, no external compiler, assembler or linker — and
+writes it next to the `.asb` as `<name>.nguvu`, stamped with the bytecode hash, ABI and image
+versions, architecture and the CPU features it relies on, so a stale or foreign image is never
+mapped. Generic-value instructions call back into the interpreter's single-step function
+(`exec_slow`) through a small runtime table, spilling and reloading only the registers that
+instruction touches, so native code never changes behaviour. Without a backend for the platform
+(or with `ASILI_AOT=0`) the bytecode runs on the register VM.
+
+Pipeline (`core/evaluator/src/nguvu/`):
+- `lower.rs`: bytecode → a typed IR of virtual registers (integer or float class, chosen by the
+  range analysis below); small counted loops with constant bounds are fully unrolled so the
+  counter is a constant in each copy.
+- `opt.rs` + `range.rs`: constant folding (with block-local knowledge), an interval analysis
+  over the IR (widening at loop heads, then narrowing) that deletes comparisons and overflow
+  guards it proves, if-conversion of small branches to conditional moves, `select(c, v+1, v)` →
+  `v + c`, bit-test fusion, summed single-bit tests → `popcnt`, division by a constant of a small
+  proven range → multiply-and-shift (`p // 9` → `(p * 57) >> 9`, multiplier verified for every
+  dividend), local value reuse, constant hoisting, liveness-based dead-code elimination.
+- `regalloc.rs` + `schedule.rs` (shared by targets): priority allocation over precise live
+  ranges with copy coalescing and callee-saved preference across calls; compares fused into
+  branches and conditional selects.
+- `codegen.rs`/`x64.rs` (x86-64 System V) and `codegen_a64.rs`/`a64.rs` (AArch64 AAPCS64):
+  instruction selection and encoding; `mem.rs` maps the code executable (never writable and
+  executable at once).
+
+History: a Cranelift JIT prototype (~40 ms) and then an LLVM-IR → clang backend (4.8 ms solve,
+clang required at build time) preceded `nguvu`; both were removed so there is exactly one
+native backend to keep correct (recoverable from commit `d77a8c4` and the history of `aot.rs`).
 
 **Integer range analysis.** `Namba` is an `f64`; C and Rust use integers. Converting every bit
 mask float → int → float, and serializing `n += 1` through 4-cycle `addsd` chains, cost 5× on
@@ -88,7 +114,8 @@ its own. `native.rs` runs a flow-sensitive interval analysis over the register b
   holds masks ≤ 511).
 
 A register whose values are provably whole, never NaN/`-0.0` and within ±2^53 is stored as
-`i64` — bit-identical to the `f64` semantics. `sakafu(a / b)` on non-negative integers becomes
+`i64` — bit-identical to the `f64` semantics. A list register whose elements are all proven such
+integers is kept in integer words and read with plain integer loads. `sakafu(a / b)` on non-negative integers becomes
 `sdiv` (below 2^53 the rounded quotient never crosses the next integer), `%` on integers becomes
 `srem`, and list accesses whose index is proven in range drop their bounds check.
 
@@ -104,13 +131,16 @@ PyPy) use; `tests/native_tiers.rs` includes values crossing 2^53 to exercise it.
 The full checklist — invariants, required tests, benchmark thresholds, how to debug a
 regression — is the `performance-guardrails` skill (`.claude/skills/performance-guardrails/`).
 
-- `tests/engines_agree.rs`: tree-walker vs VM vs AOT, values and error messages.
-- `tests/native_tiers.rs`: interpreter vs AOT bit-for-bit on the numeric edge cases
-  (`-0.0`, NaN, ±∞, 2^53, negative `%` and floor division, shifts outside `0..=63`,
-  out-of-bounds reads and writes, recursion, labelled loops, callbacks, the full Sudoku).
-- NaN *bit patterns* are the one thing not compared: Asili cannot observe them, and Rust and
-  LLVM do not specify them (LLVM constant-folds `∞ − ∞` to a positive NaN, x86 produces a
-  negative one).
+- `tests/engines_agree.rs`: tree-walker vs VM vs native code, values and error messages
+  (including list representations: `-0.0` in an integer list, huge integers, lists switching
+  to floats, lists across calls).
+- `tests/native_tiers.rs`: interpreter vs native code (through the on-disk image) bit-for-bit
+  on the numeric edge cases (`-0.0`, NaN, ±∞, 2^53, negative `%` and floor division, shifts
+  outside `0..=63`, out-of-bounds reads and writes, recursion, labelled loops, callbacks,
+  unrolled loops with `vunja`/`endelea`, popcount, small-range division, the full Sudoku).
+  Every optimization has been checked by breaking it on purpose and watching a test fail.
+- Both run on x86-64 and on AArch64 (CI's `native-arm64` job).
+- NaN *bit patterns* are the one thing not compared: Asili cannot observe them.
 
 ## Plan and status
 
@@ -121,9 +151,9 @@ The plan this work followed, in order, and where each step stands:
 3. One implementation of the language's semantics shared by every engine, with differential
    tests (`engines_agree.rs`, `native_tiers.rs`). Done.
 4. Native code without a C step: LLVM IR text → clang, AOT at `pata jenga`, hash-checked at load.
-   Done; the Cranelift JIT prototype was removed to keep one native backend.
+   Done, then superseded by step 9; the Cranelift JIT prototype was removed earlier.
 5. Integer range analysis, speculation with deoptimization, bounds-check elimination. Done
-   (4.8 ms solve vs 4.4 ms for gcc C).
+   (4.8 ms solve vs 4.4 ms for gcc C with the LLVM backend).
 6. Terse syntax that lowers to the fast forms: `//`, `%= &= |= ^= //=`, compound assignment on
    list elements, bitwise-before-comparison precedence, `a[i]` returning the element. Done.
 7. Codebase-wide deduplication so nothing is implemented twice (compile front end, keyword list,
@@ -132,12 +162,21 @@ The plan this work followed, in order, and where each step stands:
 8. Guardrails: the `performance-guardrails` skill and `CLAUDE.md` rules make the invariants,
    tests and benchmark thresholds part of finishing any engine change. Done.
 
+9. An in-house backend, `nguvu` (x86-64), replacing clang: register allocation, then loop
+   unrolling, interval analysis, if-conversion and popcount, integer lists and range-aware
+   division. Done — solve ≈ 2.6 ms vs clang C ≈ 3.1 ms; `pata jenga --namna release` needs no
+   external tool.
+10. The LLVM/clang backend removed; `nguvu` for AArch64. Done.
+
 Next steps are the "Remaining gaps" below.
 
 ## Knobs
 
-- `ASILI_AOT=0` — don't build (at `pata jenga`) or load (at run time) the native library.
-- `ASILI_CLANG=/path/to/clang` — compiler used for AOT.
+- `ASILI_AOT=0` — don't build (at `pata jenga`) or load (at run time) native code.
+- `ASILI_NGUVU=1` — compile in memory at load time when no `.nguvu` image was built.
+- `ASILI_NATIVE_TRACE=1` — print every deoptimization (function and bytecode pc).
+- `ASILI_NGUVU_IR=<file>` / `ASILI_NGUVU_DUMP=<file>` — dump the optimized IR with register
+  locations / the machine code, function offsets and load address (in-memory compiles).
 
 ## Remaining gaps
 
@@ -147,7 +186,10 @@ Next steps are the "Remaining gaps" below.
   `compile_module_explained` reports the blocking `kazi` and line.
 - Calls between `kazi` from native code go through the interpreter's call path; inlining small
   numeric functions would let helpers like `sanduku_la(r, c)` cost nothing.
-- The AOT artifact is a library loaded by `pata tenda`, not a standalone executable; that would
-  need the runtime shipped as a static library.
-- Values in `Orodha<Namba>` stay `f64` in memory (shared with the interpreter), so native code
-  converts on load/store even when elements are proven integers.
+- The native image is mapped by `pata tenda` or the standalone runner, not a standalone
+  executable; the runner's start-up (~0.9 ms more than a C program) is the whole-process gap
+  to clang C. A statically linked runner cut ~0.4 ms in a trial.
+- `list_push`/`list_remove` are runtime calls (~1M instructions on the benchmark); inlining the
+  common case needs a list layout native code may write directly.
+- Windows is not supported by `nguvu` yet (the code generators are System V/AAPCS64 only), and
+  macOS arm64 may refuse to map the image under a hardened runtime (it then runs on the VM).

@@ -155,20 +155,21 @@ Researched, decided, not built.
 - [ ] `kiungo` (FFI) is a documented stub: `core/evaluator/src/builtins/kiungo.rs`
       unconditionally returns `Err` from both exported functions, with a `TODO(Phase IV)`
       comment about `libloading`. Correctly scoped to this phase, not a surprise gap.
-- [x] **Bytecode VM and ahead-of-time native code (LLVM)** — `core/evaluator/src/bytecode.rs`
+- [x] **Bytecode VM and ahead-of-time native code (`nguvu`)** — `core/evaluator/src/bytecode.rs`
       lowers most of the language (everything except `linganisha`, `tupa`, pattern `weka`, map
       and struct literals, enum construction and field access) to a typed register VM with
-      separate `f64`, `Vec<f64>` and `Value` register files. `pata jenga` then compiles the
-      bytecode ahead of time to native code through LLVM IR and `clang -O2` (`aot.rs`); without
-      `clang` the bytecode runs on the VM. A flow-sensitive integer
+      separate `f64`, number-list and `Value` register files. `pata jenga` then compiles the
+      bytecode ahead of time to x86-64 or AArch64 machine code with Asili's own backend
+      (`core/evaluator/src/nguvu/`, no external compiler) into `<name>.nguvu`; on other
+      platforms the bytecode runs on the VM. A flow-sensitive integer
       range analysis (`native.rs`) keeps provably whole-number `Namba` registers in `i64`,
       speculating on unbounded counters with a bound check that deoptimizes back into the VM,
       and drops provably in-range list bounds checks. All engines share one implementation of
       the language's value semantics (`eval/ops.rs`, `eval/methods.rs`); `tests/engines_agree.rs`
-      and `tests/native_tiers.rs` check that the tree-walker, VM and AOT agree bit-for-bit.
-      The Arto Inkala Sudoku (90,665 attempts, 10,041 backtracks) solves in ~4.8 ms native
-      (gcc `-O2` C: 4.4 ms), ~110 ms VM, vs. 3.4 s on the tree-walker and 0.33 s in
-      CPython. See [performance.md](performance.md). Remaining: programs using the constructs
+      and `tests/native_tiers.rs` check that the tree-walker, VM and native code agree
+      bit-for-bit. The Arto Inkala Sudoku (90,665 attempts, 10,041 backtracks) solves in
+      ~2.6 ms native (clang `-O2` C: ~3.1 ms, gcc `-O2` C: ~4.7 ms), ~110 ms VM, vs. 3.4 s on
+      the tree-walker and 0.3 s in CPython. See [performance.md](performance.md). Remaining: programs using the constructs
       above still fall back to the tree-walker wholesale (per-function fallback would be finer),
       `kazi` calls from native code go through the interpreter's call path (no inlining yet),
       and there is no standalone native executable (the library is loaded by `pata tenda`).

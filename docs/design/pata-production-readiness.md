@@ -264,7 +264,8 @@ of the formatter and package-manager work that would otherwise need to be built 
 **The bytecode VM is a `core/evaluator` subsystem, not a `pata/` one.** When this doc was
 written the VM was a skeleton nothing emitted, so it was called out as externally blocked.
 **Update (September 2026): done.** `pata jenga` now emits register bytecode for most programs
-and compiles it ahead of time to native code through LLVM; `pata tenda`, `jenga --tenda` and the
+and compiles it ahead of time to native code with Asili's own backend (`nguvu`); `pata tenda`,
+`jenga --tenda` and the
 runner share `asili_evaluator::run_artifact` (see [performance.md](performance.md)).
 
 ### Dependency graph
@@ -421,7 +422,7 @@ projects, dogfooding the CI work already merged to this repo.
 ### Called out, not sequenced: `core/evaluator` bytecode VM completion — done
 
 Originally out of this doc's `pata/`-toolchain scope and the reason `pata jenga` couldn't emit real
-bytecode. Shipped since: a typed register VM plus LLVM ahead-of-time native code, with
+bytecode. Shipped since: a typed register VM plus in-house ahead-of-time native code, with
 `pata jenga` emitting bytecode by default — see [performance.md](performance.md).
 
 ---

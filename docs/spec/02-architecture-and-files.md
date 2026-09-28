@@ -43,9 +43,9 @@ The repository follows a Linux-kernel–style modular layout. Each directory is 
 - **parser/** — Generates the AST; split into cursor (token stream), parse (statements/expressions), and semantic (types + analyzer). Integration tests live in `tests/`.
 - **evaluator/** — Executes `.asb` artifacts. Programs the bytecode compiler can lower run on a
   typed register VM (`bytecode.rs`); `pata jenga` additionally compiles that bytecode ahead of
-  time to native code through LLVM IR and `clang` (`aot.rs`, a `<name>.so`/`.dylib`/`.dll` next
-  to the `.asb`), run instead of the interpreter when present; without `clang` the program runs
-  on the VM. `native.rs` holds the runtime ABI, the integer range analysis and deoptimization
+  time to x86-64 or AArch64 machine code with Asili's own backend (`nguvu/`, no external
+  compiler; a `<name>.nguvu` next to the `.asb`), run instead of the interpreter when present;
+  on other platforms the program runs on the VM. `native.rs` holds the runtime ABI, the integer range analysis and deoptimization
   back into the VM. Programs using constructs the VM does not lower keep the serialized-AST artifact and
   the tree-walking evaluator. All engines share one implementation of operators, methods, casts
   and iteration (`eval/ops.rs`, `eval/methods.rs`). Integration tests live in `tests/`.

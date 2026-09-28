@@ -37,7 +37,7 @@ To build it locally:
 ## Project structure
 
 - **core/** — Language core: `diagnostics` (shared error/diagnostic types), `lexer`, `parser`
-  (includes the semantic analyzer), `evaluator` (tree-walking interpreter, register VM and LLVM ahead-of-time native code sharing
+  (includes the semantic analyzer), `evaluator` (tree-walking interpreter, register VM and the in-house `nguvu` native backend sharing
   one implementation of the semantics, plus built-ins). Add or
   extend built-ins under `core/evaluator/src/builtins/`. `core/` never depends on `pata/` — a
   type `core/` needs to expose to `pata/` (e.g. the `DebugHook` trait `pata-dap` drives) is
@@ -76,9 +76,11 @@ To build it locally:
   to confirm it builds and runs.
 - **Engines agree** (any change to the evaluator, VM, native code or operator/method semantics):  
   `cargo test -p asili-evaluator --test engines_agree --test native_tiers`  
-  (the native-code checks need `clang`; they skip themselves without it)
-- **Performance** (same scope): `examples/sudoku/bench/run.sh` — Asili's native code should stay
-  within ~1.6× of the C solver and report 90,665 attempts. See
+  (on x86-64 or AArch64; changes to `nguvu` code generation should also be run for the other
+  architecture — CI runs arm64 natively, or locally under qemu as the `performance-guardrails`
+  skill describes)
+- **Performance** (same scope): `examples/sudoku/bench/run.sh` — Asili's native solve should stay
+  at or below clang `-O2` C and report 90,665 attempts. See
   [docs/design/performance.md](docs/design/performance.md).
 
 New behavior should be covered by tests where practical (parser, semantic, evaluator, or CLI tests as appropriate).

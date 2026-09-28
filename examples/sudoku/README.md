@@ -32,15 +32,18 @@ reports 90,665 attempts:
 ./bench/run.sh 10
 ```
 
-`pata jenga` compiles the bytecode ahead of time to native code through LLVM when `clang` is
-installed (`asili-aot`); otherwise, or with `ASILI_AOT=0`, it runs on the register-VM
-interpreter (`asili-vm`). `clang` is needed only where `pata jenga` runs.
-Typical results on one core (whole process, including startup):
+`pata jenga` compiles the bytecode ahead of time to native machine code with Asili's own
+backend (`asili-nguvu`, no C compiler involved); with `ASILI_AOT=0` it runs on the register-VM
+interpreter (`asili-vm`). The Asili tiers run on the standalone runner.
+Typical results on one core (whole process, including ~3.3 ms of process start-up):
 
 | Implementation | Time |
 |---|---|
-| C (gcc -O2) | 8 ms |
-| Rust (-O) | 7 ms |
-| Asili, AOT (LLVM) | 11 ms |
-| Asili, VM interpreter | 110 ms |
-| Python 3.11 | 305 ms |
+| C (clang -O2) | 6.5 ms |
+| C (gcc -O2) | 8.1 ms |
+| Rust (-O) | 6.8 ms |
+| Asili, native (`nguvu`) | 7.2 ms |
+| Asili, VM interpreter | 118 ms |
+| Python 3 | 302 ms |
+
+Solve only (minus an empty program's time): Asili ≈ 2.6 ms, clang C ≈ 3.1 ms, gcc C ≈ 4.7 ms.

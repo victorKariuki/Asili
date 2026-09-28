@@ -4,6 +4,11 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Architecture and roadmap ([02-architecture-and-files.md](02-architecture-and-files.md),
+  [07-execution-and-roadmap.md](07-execution-and-roadmap.md)): native code comes from Asili's
+  own backend (`nguvu`, x86-64 and AArch64, a `<name>.nguvu` image beside the `.asb`) instead of
+  LLVM IR compiled by `clang`; Phase IV's "LLVM backend" is now "native backend".
+
 - Tooling ([06-tooling-and-ecosystem.md](06-tooling-and-ecosystem.md)): `[jumla] asili = "X.Y"` is
   now enforced — a project needing a newer minor version, or a different major version, than the
   toolchain implements fails with a clear error.
