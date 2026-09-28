@@ -73,6 +73,7 @@ pub enum Alu {
     /// `madd rd, rn, rm, xzr`.
     Mul = 0x9B00_7C00,
     Smulh = 0x9B40_7C00,
+    Umulh = 0x9BC0_7C00,
 }
 
 /// Scalar double-precision operations.
@@ -246,6 +247,11 @@ impl Asm {
         let immr = (64 - s) & 63;
         let imms = 63 - s;
         self.word(0xD340_0000 | immr << 16 | imms << 10 | r(rn) << 5 | r(rd));
+    }
+
+    /// `lsr rd, rn, #s` (`ubfm rd, rn, #s, #63`).
+    pub fn lsr_imm(&mut self, rd: u8, rn: u8, s: u8) {
+        self.word(0xD340_FC00 | (s as u32 & 63) << 16 | r(rn) << 5 | r(rd));
     }
 
     /// `asr rd, rn, #s` (`sbfm rd, rn, #s, #63`).
@@ -430,6 +436,8 @@ mod tests {
             (words(|a| a.alu(Alu::Udiv, 1, 2, 3)), &[0x9ac30841]),
             (words(|a| a.alu(Alu::Mul, 1, 2, 3)), &[0x9b037c41]),
             (words(|a| a.alu(Alu::Smulh, 1, 2, 3)), &[0x9b437c41]),
+            (words(|a| a.alu(Alu::Umulh, 1, 2, 3)), &[0x9bc37c41]),
+            (words(|a| a.lsr_imm(1, 2, 9)), &[0xd349fc41]),
             (words(|a| a.msub(1, 2, 3, 4)), &[0x9b039041]),
             (words(|a| a.cmp_asr(1, 2, 63)), &[0xeb82fc3f]),
             (words(|a| a.mov(3, 17)), &[0xaa1103e3]),

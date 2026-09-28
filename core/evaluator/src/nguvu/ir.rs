@@ -282,6 +282,18 @@ pub struct Func {
     pub call_buffer: u32,
 }
 
+/// Division by a constant `d > 1` as a multiply: for every integer register value (all are
+/// within ±2^53), `a / d == (a * magic) >> (64 + shift)` on `|a|`. With
+/// `s = max(64, 53 + ceil(log2 d))` and `magic = ceil(2^s / d)`, the error `e = magic * d - 2^s`
+/// is below `d`, so `|a| * e < 2^53 * d <= 2^s` keeps the quotient exact; `magic < 2^55`.
+pub fn div_magic(d: u32) -> (u64, u8) {
+    debug_assert!(d > 1);
+    let bits = 32 - (d - 1).leading_zeros(); // ceil(log2 d)
+    let s = 64.max(53 + bits);
+    let magic = ((1u128 << s) - 1) / d as u128 + 1;
+    (magic as u64, (s - 64) as u8)
+}
+
 pub const RT: VReg = VReg(0);
 pub const VM: VReg = VReg(1);
 pub const FRAME: VReg = VReg(2);
@@ -639,5 +651,37 @@ impl Builder {
 impl Default for Builder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::div_magic;
+
+    #[test]
+    fn division_magic_is_exact_up_to_two_pow_53() {
+        let mut divisors: Vec<u32> = vec![2, 3, 5, 7, 9, 10, 641, 2047, 2048, 2049, 65_537];
+        divisors.extend([1_000_003, 999_999_937, (1 << 30) + 1, i32::MAX as u32]);
+        divisors.extend((1..31).map(|k| 1u32 << k));
+        let limit = 1u64 << 53;
+        let mut values: Vec<u64> = (0..2000).collect();
+        values.extend((0..2000).map(|k| limit - k));
+        let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+        for _ in 0..20_000 {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            values.push(x % (limit + 1));
+        }
+        for &d in &divisors {
+            let (magic, shift) = div_magic(d);
+            for &a in values
+                .iter()
+                .chain(&[d as u64 - 1, d as u64, d as u64 + 1, 2 * d as u64])
+            {
+                let q = ((a as u128 * magic as u128) >> 64) as u64 >> shift;
+                assert_eq!(q, a / d as u64, "{a} / {d}");
+            }
+        }
     }
 }

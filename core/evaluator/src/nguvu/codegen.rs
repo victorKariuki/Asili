@@ -629,20 +629,13 @@ impl<'f> Gen<'f> {
             self.put_int(dst, Rax);
             return;
         }
-        if d >= 2048 {
-            self.asm.mov_ri(Rcx, d as i64);
-            if unsigned {
-                self.asm.zero_div(Rcx);
-            } else {
-                self.asm.cqo_idiv(Rcx);
-            }
-            self.put_int(dst, if quotient { Rax } else { Rdx });
-            return;
-        }
-        let magic = (u64::MAX / d as u64).wrapping_add(1); // floor(2^64/d) + 1 for d > 1
+        let (magic, shift) = super::ir::div_magic(d as u32);
         if unsigned {
             self.asm.mov_ri(Rdx, magic as i64);
-            self.asm.mul(Rdx); // rdx = a / d
+            self.asm.mul(Rdx);
+            if shift > 0 {
+                self.asm.shift_ri(false, Rdx, shift); // rdx = a / d
+            }
         } else {
             // m = a >> 63 (all ones if negative); |a| = (a ^ m) - m
             self.asm.mov_rr(Rcx, Rax);
@@ -651,7 +644,10 @@ impl<'f> Gen<'f> {
             self.asm.alu_rr(Alu::Sub, Rax, Rcx);
             self.asm.mov_ri(Rdx, magic as i64);
             self.asm.mul(Rdx); // rdx = |a| / d
-                               // Restore the sign: q = (q ^ m) - m
+            if shift > 0 {
+                self.asm.shift_ri(false, Rdx, shift);
+            }
+            // Restore the sign: q = (q ^ m) - m
             self.asm.alu_rr(Alu::Xor, Rdx, Rcx);
             self.asm.alu_rr(Alu::Sub, Rdx, Rcx);
         }

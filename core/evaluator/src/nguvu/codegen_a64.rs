@@ -536,6 +536,21 @@ impl<'f> Gen<'f> {
                     }
                     IntOp::Shl => self.asm.lsl_imm(d, ra, imm as u8),
                     IntOp::Sar => self.asm.asr_imm(d, ra, imm as u8),
+                    // Unsigned division by a constant: a multiply by its reciprocal.
+                    IntOp::UDiv | IntOp::URem if imm > 1 => {
+                        let (magic, shift) = super::ir::div_magic(imm as u32);
+                        self.asm.mov_imm(S1, magic as i64);
+                        self.asm.alu(Alu::Umulh, S2, ra, S1);
+                        if shift > 0 {
+                            self.asm.lsr_imm(S2, S2, shift);
+                        }
+                        if *op == IntOp::UDiv {
+                            self.asm.mov(d, S2);
+                        } else {
+                            self.asm.mov_imm(S1, imm as i64);
+                            self.asm.msub(d, S2, S1, ra); // a - (a / imm) * imm
+                        }
+                    }
                     _ => {
                         self.asm.mov_imm(S1, imm as i64);
                         self.int_op(*op, d, ra, S1);

@@ -118,7 +118,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   register); calls no longer spill arguments that are already in their stack slots and
   rematerialize constants instead of saving them; frames hold slots only for values that can
   need one; memory operands use 8-bit or no displacements where they fit. Bubble sort of 3,000
-  elements: 6.1 → 5.6 ms (C: 5.1 ms). Images are rebuilt (`IMAGE_VERSION` 5).
+  elements: 6.1 → 5.6 ms (C: 5.1 ms). Division and remainder by any constant are a multiply
+  by a rounded reciprocal and a shift (exact for every integer the native tier holds, |a| ≤ 2^53)
+  instead of a hardware divide on x86-64, and for unsigned operands on AArch64: `(s + i * 7 +
+  i // 3) % 1000003` over 20 million `i` runs in 70 ms (was 124 ms; gcc `-O2` C: 84 ms). Images
+  are rebuilt (`IMAGE_VERSION` 6).
 - **Indexing an `Orodha` returns the element**: `a[i]` is now the element itself and an
   out-of-range index stops the program with `paparika: fahirisi nje ya mipaka: i (urefu n)`,
   instead of yielding a `Tokeo` that every read had to unwrap with `?`. `a[i]?` and `jaribu a[i]`

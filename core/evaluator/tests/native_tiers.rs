@@ -443,6 +443,59 @@ fn division_by_constants_over_small_ranges() {
 }
 
 #[test]
+fn division_by_large_constants() {
+    check(
+        "bigdiv",
+        r#"
+        kazi t() -> Orodha<Namba> {
+            weka r: Orodha<Namba> = []
+            weka s: Namba = 0
+            kwa i kutoka 0 hadi 200000 {
+                s = (s + i * 7 + i // 3) % 1000003
+            }
+            r.ongeza(s)
+            # both signs, up to 2^53, with remainder d - 1 (the worst case for a multiply by a
+            # rounded reciprocal), through quotients and remainders by large divisors
+            kwa k kutoka 0 hadi 40 {
+                weka y1000003 = 9007199254516698 - k * 1000003
+                r.ongeza(y1000003 // 1000003)
+                r.ongeza(y1000003 % 1000003)
+                weka z1000003 = 0 - y1000003
+                r.ongeza(z1000003 // 1000003)
+                r.ongeza(z1000003 % 1000003)
+                weka y2147483647 = 9007199250546687 - k * 2147483647
+                r.ongeza(y2147483647 // 2147483647)
+                r.ongeza(y2147483647 % 2147483647)
+                weka z2147483647 = 0 - y2147483647
+                r.ongeza(z2147483647 // 2147483647)
+                r.ongeza(z2147483647 % 2147483647)
+                weka y2049 = 9007199254740479 - k * 2049
+                r.ongeza(y2049 // 2049)
+                r.ongeza(y2049 % 2049)
+                weka z2049 = 0 - y2049
+                r.ongeza(z2049 // 2049)
+                r.ongeza(z2049 % 2049)
+                weka y65537 = 9007199254675486 - k * 65537
+                r.ongeza(y65537 // 65537)
+                r.ongeza(y65537 % 65537)
+                weka z65537 = 0 - y65537
+                r.ongeza(z65537 // 65537)
+                r.ongeza(z65537 % 65537)
+                weka y999999937 = 9007198432546462 - k * 999999937
+                r.ongeza(y999999937 // 999999937)
+                r.ongeza(y999999937 % 999999937)
+                weka z999999937 = 0 - y999999937
+                r.ongeza(z999999937 // 999999937)
+                r.ongeza(z999999937 % 999999937)
+            }
+            rejesha r
+        }
+        "#,
+        &["t"],
+    );
+}
+
+#[test]
 fn integer_and_float_list_representations() {
     check(
         "numlist",
