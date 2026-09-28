@@ -667,3 +667,31 @@ fn reused_values_and_forwarded_list_elements() {
         &["t", "fahirisi_sawa", "orodha_mbili"],
     );
 }
+
+#[test]
+fn entry_guards_keep_parameters() {
+    check(
+        "entryguard",
+        r#"
+        kazi shuka(n: Namba, m: Namba) -> Namba {
+            weka s: Namba = 0
+            wakati n > 0 {
+                s += n * m
+                n -= 1
+                m += 1
+            }
+            rejesha s
+        }
+        kazi t() -> Orodha<Namba> {
+            weka r: Orodha<Namba> = []
+            r.ongeza(shuka(5, 2))
+            r.ongeza(shuka(4.5, 2))
+            r.ongeza(shuka(3, 0.25))
+            r.ongeza(shuka(0 - 1.5, 3))
+            r.ongeza(shuka(2.5, 1.5))
+            rejesha r
+        }
+        "#,
+        &["t"],
+    );
+}
