@@ -64,12 +64,23 @@ Six small programs, each with a line-for-line C port (`gcc -O2`), whole-process 
 
 | Program | What it stresses | C | Before | Asili native | VM | Native / C |
 |---|---|---|---|---|---|---|
-| `fib(32)` | 7M scalar calls | 11 ms | 1706 ms | 40 ms | 376 ms | 3.5× |
-| Mandelbrot 400×300 | float loops | 30 ms | 33 ms | 33 ms | 224 ms | 1.1× |
-| Sieve to 5M | memory bandwidth | 17 ms | 102 ms | 23 ms | 252 ms | 1.4× |
-| 20M-step modular loop | integer division | 85 ms | 124 ms | 69 ms | 679 ms | 0.8× |
-| Bubble sort, 3,000 | branchy list code | 5 ms | 6 ms | 5 ms | 174 ms | 1.05× |
-| 200k string builds | generic values | 10 ms | 237 ms | 29 ms | 90 ms | 2.9× |
+| `fib(32)` | 7M scalar calls | 12 ms | 1706 ms | 26 ms | 306 ms | 2.2× |
+| Mandelbrot 400×300 | float loops | 21 ms | 33 ms | 27 ms | 280 ms | 1.3× |
+| Sieve to 5M | memory bandwidth | 18 ms | 102 ms | 20 ms | 187 ms | 1.1× |
+| 20M-step modular loop | integer division | 84 ms | 124 ms | 69 ms | 644 ms | 0.8× |
+| Bubble sort, 3,000 | branchy list code | 4 ms | 6 ms | 5 ms | 158 ms | 1.3× |
+| 200k string builds | generic values | 8 ms | 237 ms | 17 ms | 16 ms | 2.0× |
+
+("Before" is the first measurement of this audit; the other columns were re-measured together
+on one machine after the later work below.)
+
+Generic-value workloads (no C port; whole process, native / VM):
+
+| Program | What it stresses | Before | Now |
+|---|---|---|---|
+| 100 `umbo` particles × 2,000 steps | struct values, field access | 4,945 ms (tree-walker) | 81 / 86 ms |
+| 1,000-word `Orodha<Neno>` summed 5,000× | `kwa … katika`, `Neno` copies | 743 ms | 130 / 128 ms |
+| `Kamusi` build and lookups | maps with computed keys | 577 ms | 67 / 69 ms |
 
 What it found and what changed:
 
@@ -92,10 +103,13 @@ What it found and what changed:
 6. x86-64 memory operands always carried 32-bit displacements. Loop-head alignment was tried
    and rejected: it slowed the Sudoku run by 3 %.
 
-What is left: the sieve is memory-bound on 8-byte list elements against C's bytes (C with
-`long` elements takes 89 ms, the same as Asili); `fib` still passes arguments and results
-through memory and checks depth and stack on every call; strings are owned `String`s that are
-cloned whenever a constant is loaded. See *Remaining gaps*.
+Later rounds made `Neno`, `Orodha` and `umbo` values shared (`Rc`, copied only when written),
+loaded typed `umbo` fields into numeric registers, gave `kwa … katika` a one-instruction item
+read, and fixed the static runner's stack handling (the VM's `fib(32)` spent 5–12 s mapping
+stack segments on musl's main thread). What is left: `fib` still passes arguments and results
+through memory and keeps the VM's depth count on every call (an experiment passing them in
+registers measured slower; dropping the depth traffic entirely would gain only ~7 %); every
+generic-value instruction runs in the interpreter. See *Remaining gaps*.
 
 ## Techniques, and how Asili uses them
 
