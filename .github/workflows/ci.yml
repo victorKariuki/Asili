@@ -28,6 +28,23 @@ jobs:
       - name: cargo test --workspace
         run: cargo test --workspace
 
+  native-arm64:
+    # The AArch64 native backend (nguvu codegen_a64) on real hardware: the engine
+    # differential tests compare its code against the interpreter and the tree-walker.
+    name: Native code on arm64
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo test -p asili-evaluator
+        run: cargo test -p asili-evaluator
+
   examples:
     name: Lint, build, and test examples
     runs-on: ubuntu-latest

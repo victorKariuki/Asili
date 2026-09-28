@@ -32,6 +32,7 @@ impl ExecMem {
         // SAFETY: `ptr` is a fresh writable mapping of at least `len >= code.len()` bytes.
         unsafe {
             std::ptr::copy_nonoverlapping(code.as_ptr(), ptr, code.len());
+            sync_instruction_cache(ptr, code.len());
             if libc::mprotect(ptr as *mut _, len, libc::PROT_READ | libc::PROT_EXEC) != 0 {
                 libc::munmap(ptr as *mut _, len);
                 return Err("mprotect imeshindwa".into());
@@ -62,3 +63,34 @@ impl Drop for ExecMem {
         }
     }
 }
+
+/// Make freshly written code visible to instruction fetch. x86-64 keeps its caches coherent;
+/// AArch64 does not: clean the data cache to the point of unification, invalidate the
+/// instruction cache, then synchronize.
+///
+/// # Safety
+/// `ptr..ptr + len` must be mapped.
+#[cfg(target_arch = "aarch64")]
+unsafe fn sync_instruction_cache(ptr: *mut u8, len: usize) {
+    use std::arch::asm;
+    let ctr: u64;
+    asm!("mrs {}, ctr_el0", out(reg) ctr, options(nomem, nostack));
+    let dline = 4usize << ((ctr >> 16) & 0xF);
+    let iline = 4usize << (ctr & 0xF);
+    let (start, end) = (ptr as usize, ptr as usize + len);
+    let mut a = start & !(dline - 1);
+    while a < end {
+        asm!("dc cvau, {}", in(reg) a, options(nostack));
+        a += dline;
+    }
+    asm!("dsb ish", options(nostack));
+    let mut a = start & !(iline - 1);
+    while a < end {
+        asm!("ic ivau, {}", in(reg) a, options(nostack));
+        a += iline;
+    }
+    asm!("dsb ish", "isb", options(nostack));
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+unsafe fn sync_instruction_cache(_ptr: *mut u8, _len: usize) {}

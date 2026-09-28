@@ -26,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   in range drop their bounds check. The Inkala Sudoku solve runs in about 4.8 ms (gcc `-O2` C:
   4.4 ms; clang `-O2` C: 3.2 ms). `ASILI_AOT=0` disables it, `ASILI_CLANG` picks the compiler.
 - **In-house native backend `nguvu`** (`core/evaluator/src/nguvu/`), the only native tier:
-  compiles register bytecode straight to x86-64 machine code with no external compiler,
+  compiles register bytecode straight to x86-64 or AArch64 machine code with no external compiler,
   assembler or linker — lowering to a typed IR (same range analysis, speculation and
   deoptimization protocol as before) with full unrolling of small constant-bound `kwa` loops;
   then constant folding, an IR interval analysis (widening at loop heads, then narrowing) that
@@ -43,6 +43,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the standalone runner 7.2 ms (clang C 6.5 ms, gcc C 8.1 ms — the difference is the
   runner's start-up). `examples/sudoku/bench/run.sh` times the runner and both C compilers at
   0.1 ms resolution.
+- **AArch64 native code**: `nguvu` also targets arm64 (`a64.rs` encoder, verified word for word
+  against GNU `as`; `codegen_a64.rs`, AAPCS64 with 23 allocatable integer and 29 float
+  registers, `cnt` for population counts, instruction-cache maintenance after mapping). The
+  register allocator and block scheduling are shared between targets; images record their
+  architecture. The engine differential tests pass on arm64 (CI runs them on
+  `ubuntu-24.04-arm`).
 - **Integer lists**: `Orodha<Namba>` storage (`numlist.rs`) keeps a list's elements as `i64`
   words while every element converts exactly (no `-0.0`, NaN, ±∞ or fraction) and as `f64`
   bits otherwise; reading is unchanged for programs. Native code keeps lists the analysis

@@ -1,12 +1,15 @@
 //! Nguvu: Asili's own native code generator. Compiles register bytecode straight to machine
-//! code in memory — no external compiler, assembler, linker or file — with the same calling
-//! convention, deoptimization protocol and analysis as the LLVM backend (`aot.rs`), so the VM
-//! runs either through the same [`crate::aot::NativeLibrary`] interface.
+//! code — no external compiler, assembler or linker — which the VM runs through
+//! [`crate::aot::NativeLibrary`].
 //!
-//! Pipeline: [`lower`] (bytecode → [`ir`]) → [`codegen`] (IR → x86-64 via [`x64`]) → [`mem`]
-//! (executable mapping). Supported on x86-64 Unix today.
+//! Pipeline: [`lower`] (bytecode → [`ir`]) → [`opt`] (with [`range`]) → [`regalloc`] and
+//! [`schedule`] (shared by every target) → [`codegen`] (x86-64 via [`x64`]) or
+//! [`codegen_a64`] (AArch64 via [`a64`]) → [`mem`] (executable mapping). Supported on x86-64
+//! and AArch64 Unix.
 
+pub mod a64;
 pub mod codegen;
+pub mod codegen_a64;
 pub mod features;
 pub mod ir;
 pub mod lower;
@@ -21,7 +24,10 @@ use crate::bytecode::BytecodeProgram;
 
 /// Whether this build can generate native code for the host.
 pub fn supported() -> bool {
-    cfg!(all(target_arch = "x86_64", unix))
+    cfg!(all(
+        any(target_arch = "x86_64", target_arch = "aarch64"),
+        unix
+    ))
 }
 
 /// Machine code for a whole program: function `i` starts at `offsets[i]` of `code`. The code is
@@ -46,9 +52,17 @@ pub fn generate(program: &BytecodeProgram) -> Result<Image, String> {
             .ok_or_else(|| format!("nguvu: kazi '{}' haikuweza kutafsiriwa", function.name))?;
         opt::optimize(&mut func);
         while code.len() % 16 != 0 {
-            code.push(0xCC); // int3 padding between functions
+            // Trap padding between functions: `int3` on x86-64, `udf #0` words on AArch64.
+            code.push(if cfg!(target_arch = "aarch64") {
+                0x00
+            } else {
+                0xCC
+            });
         }
         offsets.push(code.len());
+        #[cfg(target_arch = "aarch64")]
+        code.extend(codegen_a64::generate(&func)?);
+        #[cfg(not(target_arch = "aarch64"))]
         code.extend(codegen::generate(&func));
     }
     if let Ok(path) = std::env::var("ASILI_NGUVU_DUMP") {
@@ -144,8 +158,8 @@ const MAGIC: &[u8; 8] = b"NGUVU\0\0\0";
 /// Bumped whenever generated code changes, so images from an older toolchain are rebuilt
 /// rather than run.
 const IMAGE_VERSION: u32 = 3;
-/// Instruction set of the image (1 = x86-64 System V).
-const ARCH: u32 = 1;
+/// Instruction set of the image (1 = x86-64 System V, 2 = AArch64 AAPCS64).
+const ARCH: u32 = if cfg!(target_arch = "aarch64") { 2 } else { 1 };
 
 struct Reader<'a> {
     bytes: &'a [u8],

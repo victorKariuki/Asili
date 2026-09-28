@@ -23,8 +23,13 @@ No external tool is involved anywhere: not to build `pata`, not in `pata jenga`,
 
 `nguvu` pipeline: `lower.rs` (bytecode → typed IR; unrolls small constant-bound loops) →
 `opt.rs` (constant folding, `range.rs` interval analysis, if-conversion, bit-test/popcount
-fusion, value reuse, constant hoisting, liveness DCE) → `regalloc.rs` → `codegen.rs` with
-`x64.rs` (x86-64 encoder) → `mem.rs` (executable mapping).
+fusion, value reuse, constant hoisting, liveness DCE) → `regalloc.rs` + `schedule.rs` (shared
+by targets) → `codegen.rs`/`x64.rs` (x86-64) or `codegen_a64.rs`/`a64.rs` (AArch64) →
+`mem.rs` (executable mapping). A change to IR semantics or a new IR instruction needs both
+code generators; run the differential tests on arm64 too (CI's `native-arm64` job, or locally:
+`CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER="qemu-aarch64-static -L /usr/aarch64-linux-gnu"
+cargo test -p asili-evaluator --target aarch64-unknown-linux-gnu`).
 
 ## Invariants — never break these
 
