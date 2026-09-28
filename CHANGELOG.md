@@ -123,6 +123,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of a hardware divide on x86-64, and for unsigned operands on AArch64: `(s + i * 7 +
   i // 3) % 1000003` over 20 million `i` runs in 70 ms (was 124 ms; gcc `-O2` C: 84 ms). Images
   are rebuilt (`IMAGE_VERSION` 6).
+- **More of the language on the bytecode VM and native code**: `linganisha` (every pattern
+  kind, through one matcher shared with the tree-walker), `umbo` literals and field access,
+  `jenum` construction, map literals with literal keys, and the predefined names (`Ukomo`,
+  `Siyo_Namba`, `PI`, … — now one table for both engines) lower to bytecode. Across the
+  examples, `kazi` left to the tree-walker went from 44 to 10 (what remains: `tupa`,
+  `shughuli ya` method calls, and the builtins that start tree-walker threads).
+  `ASILI_BYTECODE_REPORT=1` lists the `kazi` a build leaves to the tree-walker. `.asb`
+  bytecode version 7.
 - **Mixed-mode execution**: a `kazi` the bytecode compiler cannot lower no longer sends the whole
   program to the tree-walker. It becomes a stub (`Opcode::Interpreted`) that runs its body on
   a reusable tree-walker (`BytecodeProgram` now carries the module's syntax tree for them),

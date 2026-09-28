@@ -1,6 +1,6 @@
 //! Expression and statement evaluation.
 
-mod expr;
+pub(crate) mod expr;
 pub(crate) mod methods;
 pub(crate) mod ops;
 mod stmt;

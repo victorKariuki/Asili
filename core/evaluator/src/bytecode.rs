@@ -22,7 +22,9 @@ use crate::builtins::{builtin_names, BuiltinFn, MODULE_BUILTINS};
 use crate::eval::{methods, ops};
 use crate::numlist::NumList;
 use crate::value::{self, EvalError, Value};
-use asili_parser::{AssignOp, BinaryOp, Block, Expr, ForMode, Function, Module, Stmt, UnaryOp};
+use asili_parser::{
+    AssignOp, BinaryOp, Block, Expr, ForMode, Function, Module, Pattern, Stmt, UnaryOp,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -406,6 +408,38 @@ pub enum Opcode {
         src: Operand,
     },
     ReturnTupu,
+    /// `vals[dst] = Name { field: vals[reg], … }`, fields in declaration order.
+    MakeStruct {
+        dst: Reg,
+        name: String,
+        fields: Box<[(String, Reg)]>,
+    },
+    /// `vals[dst] = vals[src].field`.
+    Field {
+        dst: Reg,
+        src: Reg,
+        field: String,
+    },
+    /// `vals[dst] = Enum::Variant(vals[data])` (no data when `None`).
+    MakeEnum {
+        dst: Reg,
+        enum_name: String,
+        variant: String,
+        data: Option<Reg>,
+    },
+    /// `nums[dst] = vals[src]` matches `pattern` (a `linganisha` arm); on a match the names it
+    /// binds are stored in their `vals` registers.
+    MatchPattern {
+        dst: Reg,
+        src: Reg,
+        pattern: Box<Pattern>,
+        binds: Box<[(String, Reg)]>,
+    },
+    /// `vals[dst] = { vals[k]: vals[v], … }`.
+    MakeMap {
+        dst: Reg,
+        entries: Box<[(Reg, Reg)]>,
+    },
     /// The whole body of a `kazi` the bytecode compiler could not lower: run it on the
     /// tree-walker (from `BytecodeProgram::ast`) with this frame's parameters, and return its
     /// result.
@@ -490,6 +524,22 @@ fn compile_module_inner(
             .enumerate()
             .map(|(i, name)| (name, i as u32))
             .collect(),
+        structs: module
+            .structs
+            .iter()
+            .map(|s| {
+                (
+                    s.name.clone(),
+                    s.fields.iter().map(|(f, _)| f.clone()).collect(),
+                )
+            })
+            .collect(),
+        enums: module.enums.iter().map(|e| e.name.clone()).collect(),
+        impl_methods: module
+            .impls
+            .iter()
+            .flat_map(|i| i.body.iter().map(|f| f.name.clone()))
+            .collect(),
     };
     for (i, function) in module.functions.iter().enumerate() {
         program.functions.insert(
@@ -529,6 +579,14 @@ fn compile_module_inner(
                         function.name.clone(),
                         program.failed_line.unwrap_or(function.line),
                     ));
+                }
+                if std::env::var_os("ASILI_BYTECODE_REPORT").is_some() {
+                    // Debugging aid: every `kazi` left to the tree-walker, with the line.
+                    eprintln!(
+                        "mti: kazi '{}' mstari {}",
+                        function.name,
+                        program.failed_line.unwrap_or(function.line)
+                    );
                 }
                 program.failed_line = None;
                 functions.push(FunctionCompiler::interpreted(&mut program, function, index));
@@ -579,6 +637,13 @@ struct ProgramCompiler {
     /// name -> (type, value, declared type name)
     module_consts: HashMap<String, (Ty, StoredConstant, String)>,
     builtins: HashMap<String, u32>,
+    /// `umbo` name -> field names in declaration order.
+    structs: HashMap<String, Vec<String>>,
+    /// Declared `jenum` names.
+    enums: std::collections::HashSet<String>,
+    /// Method names some `impl` block defines: only the tree-walker dispatches those (a call may
+    /// reach a user method even where a builtin method of the same name exists).
+    impl_methods: std::collections::HashSet<String>,
 }
 
 impl ProgramCompiler {
@@ -844,12 +909,17 @@ impl<'a> FunctionCompiler<'a> {
             Expr::Bool(_) => Ty::Bool,
             Expr::Ident { name, .. } => match self.lookup(name) {
                 Some(local) => local.op.ty,
-                None => self
-                    .program
-                    .module_consts
-                    .get(name)
-                    .map(|(ty, _, _)| *ty)
-                    .unwrap_or(Ty::Val),
+                None => match self.program.module_consts.get(name) {
+                    Some((ty, _, _)) => *ty,
+                    None => match crate::env::global_constants()
+                        .into_iter()
+                        .find(|(n, _)| n == name)
+                    {
+                        Some((_, Value::Namba(_))) => Ty::Num,
+                        Some((_, Value::Ukweli(_))) => Ty::Bool,
+                        _ => Ty::Val,
+                    },
+                },
             },
             Expr::Group(e) => self.infer(e),
             Expr::Unary { op, expr, .. } => match op {
@@ -1117,7 +1187,45 @@ impl<'a> FunctionCompiler<'a> {
                 let jump = self.emit(Opcode::Jump { target: 0 });
                 self.find_loop(label)?.continues.push(jump);
             }
-            Stmt::Match { .. } | Stmt::Drop { .. } | Stmt::LetPattern { .. } => return None,
+            Stmt::Match { expr, arms, .. } => {
+                // The scrutinee is evaluated once; arms are tried in order and the first match
+                // runs with the pattern's names bound (no arm matching does nothing).
+                let src = self.expr_as(expr, Ty::Val)?;
+                let mut ends = Vec::new();
+                for arm in arms {
+                    self.scopes.push(HashMap::new());
+                    let mut names = Vec::new();
+                    pattern_names(&arm.pattern, &mut names);
+                    let binds: Vec<(String, Reg)> = names
+                        .into_iter()
+                        .map(|n| {
+                            let reg = self.declare(&n, Ty::Val, None).reg;
+                            (n, reg)
+                        })
+                        .collect();
+                    let flag = self.temp(Ty::Bool);
+                    self.emit(Opcode::MatchPattern {
+                        dst: flag.reg,
+                        src: src.reg,
+                        pattern: Box::new(arm.pattern.clone()),
+                        binds: binds.into_boxed_slice(),
+                    });
+                    let skip = self.emit(Opcode::JumpIfFalse {
+                        cond: flag.reg,
+                        target: 0,
+                    });
+                    self.block(&arm.body)?;
+                    ends.push(self.emit(Opcode::Jump { target: 0 }));
+                    self.scopes.pop();
+                    let next = self.here();
+                    self.patch(skip, next);
+                }
+                let end = self.here();
+                for j in ends {
+                    self.patch(j, end);
+                }
+            }
+            Stmt::Drop { .. } | Stmt::LetPattern { .. } => return None,
         }
         Some(())
     }
@@ -1325,6 +1433,9 @@ impl<'a> FunctionCompiler<'a> {
             ..
         } = expr
         {
+            if self.program.impl_methods.contains(method_name) {
+                return None; // possibly a user method: the tree-walker's
+            }
             if let Expr::Ident { name, .. } = &**receiver {
                 if let Some(local) = self.lookup(name).cloned() {
                     // Statement-level numeric-list mutations: no `Tupu`/`Chaguo` result.
@@ -1497,7 +1608,21 @@ impl<'a> FunctionCompiler<'a> {
                 if let Some(local) = self.lookup(name) {
                     return Some(local.op);
                 }
-                let (ty, constant, _) = self.program.module_consts.get(name)?.clone();
+                let (ty, constant) = match self.program.module_consts.get(name) {
+                    Some((ty, constant, _)) => (*ty, constant.clone()),
+                    // The predefined names (`Ukomo`, `PI`, …), as the tree-walker's outermost
+                    // scope holds them.
+                    None => crate::env::global_constants()
+                        .into_iter()
+                        .find(|(n, _)| n == name)
+                        .and_then(|(_, v)| match v {
+                            Value::Namba(n) => Some((Ty::Num, StoredConstant::Namba(n))),
+                            Value::Ukweli(b) => Some((Ty::Bool, StoredConstant::Ukweli(b))),
+                            Value::Neno(s) => Some((Ty::Val, StoredConstant::Neno(s))),
+                            Value::Tupu => Some((Ty::Val, StoredConstant::Tupu)),
+                            _ => None,
+                        })?,
+                };
                 match (ty, constant) {
                     (Ty::Num, StoredConstant::Namba(n)) => Some(Operand {
                         ty,
@@ -1516,6 +1641,84 @@ impl<'a> FunctionCompiler<'a> {
                 }
             }
             Expr::Group(e) => self.expr_to(e, dst),
+            Expr::StructLiteral {
+                struct_name,
+                fields,
+                ..
+            } => {
+                // Unknown `umbo` or a missing field: the tree-walker reports it when (if) this
+                // runs, so leave the `kazi` to it.
+                let declared = self.program.structs.get(struct_name)?.clone();
+                let mut regs = Vec::with_capacity(declared.len());
+                for fname in declared {
+                    let (_, fexpr) = fields.iter().find(|(n, _)| *n == fname)?;
+                    regs.push((fname, self.expr_as(fexpr, Ty::Val)?.reg));
+                }
+                let out = self.dst_or_temp(dst, Ty::Val);
+                self.emit(Opcode::MakeStruct {
+                    dst: out.reg,
+                    name: struct_name.clone(),
+                    fields: regs.into_boxed_slice(),
+                });
+                Some(out)
+            }
+            Expr::FieldAccess {
+                receiver, field, ..
+            } => {
+                let src = self.expr_as(receiver, Ty::Val)?;
+                let out = self.dst_or_temp(dst, Ty::Val);
+                self.emit(Opcode::Field {
+                    dst: out.reg,
+                    src: src.reg,
+                    field: field.clone(),
+                });
+                Some(out)
+            }
+            Expr::EnumConstruct {
+                enum_name,
+                variant_name,
+                data,
+                ..
+            } => {
+                if !self.program.enums.contains(enum_name) {
+                    return None;
+                }
+                let data = match data {
+                    Some(d) => Some(self.expr_as(d, Ty::Val)?.reg),
+                    None => None,
+                };
+                let out = self.dst_or_temp(dst, Ty::Val);
+                self.emit(Opcode::MakeEnum {
+                    dst: out.reg,
+                    enum_name: enum_name.clone(),
+                    variant: variant_name.clone(),
+                    data,
+                });
+                Some(out)
+            }
+            // Literal keys only: they cannot fail to be keys, so building the map after every
+            // entry is evaluated is indistinguishable from the tree-walker's pair-by-pair order.
+            Expr::Map { entries, .. }
+                if entries.iter().all(|(k, _)| {
+                    matches!(
+                        k,
+                        Expr::String(_) | Expr::Number(_) | Expr::Char(_) | Expr::Bool(_)
+                    )
+                }) =>
+            {
+                let mut regs = Vec::with_capacity(entries.len());
+                for (k, v) in entries {
+                    let k = self.expr_as(k, Ty::Val)?.reg;
+                    let v = self.expr_as(v, Ty::Val)?.reg;
+                    regs.push((k, v));
+                }
+                let out = self.dst_or_temp(dst, Ty::Val);
+                self.emit(Opcode::MakeMap {
+                    dst: out.reg,
+                    entries: regs.into_boxed_slice(),
+                });
+                Some(out)
+            }
             Expr::List { elements, .. } => {
                 if dst.is_some_and(|d| d.ty == Ty::List)
                     && elements.iter().all(|e| self.infer(e) == Ty::Num)
@@ -1727,10 +1930,8 @@ impl<'a> FunctionCompiler<'a> {
                 args,
                 ..
             } => self.method_call(receiver, method_name, args, dst),
-            Expr::Map { .. }
-            | Expr::StructLiteral { .. }
-            | Expr::EnumConstruct { .. }
-            | Expr::FieldAccess { .. } => None,
+            // A map with computed keys (see the literal-key case above).
+            Expr::Map { .. } => None,
         }
     }
 
@@ -1953,6 +2154,9 @@ impl<'a> FunctionCompiler<'a> {
         args: &[Expr],
         dst: Option<Operand>,
     ) -> Option<Operand> {
+        if self.program.impl_methods.contains(method) {
+            return None;
+        }
         let recv_ty = self.infer(receiver);
         // Numeric-list fast paths.
         if recv_ty == Ty::List {
@@ -2692,6 +2896,73 @@ impl<'p> Vm<'p> {
         if numeric_op(op, &mut frame.nums) {
             return Flow::Next;
         }
+        match op {
+            Opcode::MakeStruct { dst, name, fields } => {
+                let flds = fields
+                    .iter()
+                    .map(|(f, r)| (f.clone(), frame.vals[*r as usize].clone()))
+                    .collect();
+                frame.vals[*dst as usize] = Value::Struct(name.clone(), flds);
+                return Flow::Next;
+            }
+            Opcode::Field { dst, src, field } => {
+                return match methods::field_of(&frame.vals[*src as usize], field) {
+                    Ok(v) => {
+                        frame.vals[*dst as usize] = v;
+                        Flow::Next
+                    }
+                    Err(e) => Flow::Fail(e),
+                };
+            }
+            Opcode::MakeEnum {
+                dst,
+                enum_name,
+                variant,
+                data,
+            } => {
+                let data = data.map(|r| Box::new(frame.vals[r as usize].clone()));
+                frame.vals[*dst as usize] = Value::Enum(enum_name.clone(), variant.clone(), data);
+                return Flow::Next;
+            }
+            Opcode::MatchPattern {
+                dst,
+                src,
+                pattern,
+                binds,
+            } => {
+                let mut bound: Vec<(Reg, Value)> = Vec::new();
+                let matched = crate::eval::expr::match_pattern(
+                    pattern,
+                    &frame.vals[*src as usize],
+                    &mut |name, v| {
+                        if let Some((_, reg)) = binds.iter().find(|(n, _)| n == name) {
+                            bound.push((*reg, v.clone()));
+                        }
+                    },
+                );
+                if matched {
+                    for (reg, v) in bound {
+                        frame.vals[reg as usize] = v;
+                    }
+                }
+                frame.nums[*dst as usize] = flag(matched);
+                return Flow::Next;
+            }
+            Opcode::MakeMap { dst, entries } => {
+                let mut m = std::collections::HashMap::with_capacity(entries.len());
+                for (k, v) in entries.iter() {
+                    match value::MapKey::try_from_value(&frame.vals[*k as usize]) {
+                        Ok(key) => {
+                            m.insert(key, frame.vals[*v as usize].clone());
+                        }
+                        Err(e) => return Flow::Fail(e),
+                    }
+                }
+                frame.vals[*dst as usize] = Value::Kamusi(m);
+                return Flow::Next;
+            }
+            _ => {}
+        }
         if let Opcode::Interpreted { function } = op {
             let f = &program.functions[*function as usize];
             let args = f.params.iter().map(|p| operand_value(frame, *p)).collect();
@@ -2998,6 +3269,11 @@ impl<'p> Vm<'p> {
             }
             // Handled above.
             Opcode::Interpreted { .. }
+            | Opcode::MakeStruct { .. }
+            | Opcode::Field { .. }
+            | Opcode::MakeEnum { .. }
+            | Opcode::MakeMap { .. }
+            | Opcode::MatchPattern { .. }
             | Opcode::Mov { .. }
             | Opcode::Add { .. }
             | Opcode::Sub { .. }
@@ -3065,6 +3341,28 @@ fn numeric_op(op: &Opcode, n: &mut [f64]) -> bool {
         _ => return false,
     }
     true
+}
+
+/// The names a pattern binds, each once, in first-bound order.
+fn pattern_names(pat: &Pattern, out: &mut Vec<String>) {
+    match pat {
+        Pattern::Ident { name, .. } => {
+            if !out.contains(name) {
+                out.push(name.clone());
+            }
+        }
+        Pattern::Struct { fields, .. } => {
+            for (_, p) in fields {
+                pattern_names(p, out);
+            }
+        }
+        Pattern::Enum { data: Some(p), .. } => pattern_names(p, out),
+        Pattern::Jozi(a, b) => {
+            pattern_names(a, out);
+            pattern_names(b, out);
+        }
+        Pattern::Wildcard | Pattern::Literal(_) | Pattern::Enum { data: None, .. } => {}
+    }
 }
 
 /// A register's value as a generic value.

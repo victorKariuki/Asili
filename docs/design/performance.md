@@ -225,9 +225,10 @@ Next steps are the "Remaining gaps" below.
 
 ## Remaining gaps
 
-- A `kazi` using a construct the bytecode compiler does not lower (`linganisha`, `tupa`,
-  pattern `weka`, map/struct literals, enum construction, field access) runs on the
-  tree-walker; the rest of the program stays bytecode and native code (mixed mode:
+- A `kazi` using a construct the bytecode compiler does not lower (`tupa`, pattern `weka`,
+  maps with computed keys, calls to `shughuli ya` methods, and the builtins that start
+  tree-walker threads: `tenda`, `mkondo_tumikia`, `mkondo_tumikia_http`) runs on the
+  tree-walker; `ASILI_BYTECODE_REPORT=1 pata jenga` lists each such `kazi` and line; the rest of the program stays bytecode and native code (mixed mode:
   `Opcode::Interpreted` stubs, `BytecodeProgram::ast`, and a `VmHook` that sends the
   tree-walker's calls to compiled `kazi` back to the VM). Lowering those constructs would move
   the remaining functions onto the fast path; `compile_module_explained` reports the first one

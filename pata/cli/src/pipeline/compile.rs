@@ -684,10 +684,10 @@ mod tests {
         let root = temp_dir("release-ast");
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(root.join("pata.toml"), crate::test_support::MANIFEST).unwrap();
-        // `linganisha` isn't lowered to bytecode yet.
+        // `tupa` isn't lowered to bytecode yet.
         fs::write(
             root.join("src/kuu.as"),
-            "kazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    linganisha 1 {\n        _ => { chapisha(\"x\") }\n    }\n}\n",
+            "kazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    weka a = 1\n    tupa a\n}\n",
         )
         .unwrap();
         let compiled = compile_project(&root, None).expect("compiles");

@@ -57,7 +57,17 @@ fn invoke_named_callback(
     }
 }
 
+/// Whether `v` matches `pat`, binding the pattern's names in the tree-walker's current scope.
 pub(crate) fn match_and_bind_pattern(pat: &Pattern, v: &Value, rt: &mut Runtime<'_>) -> bool {
+    match_pattern(pat, v, &mut |name, value| {
+        rt.env.define(name, value.clone())
+    })
+}
+
+/// Whether `v` matches `pat`, calling `bind` for each name the pattern binds, in order (a later
+/// binding of the same name wins). The single implementation of `linganisha` patterns: the
+/// tree-walker binds into its scope, the VM into registers.
+pub(crate) fn match_pattern(pat: &Pattern, v: &Value, bind: &mut dyn FnMut(&str, &Value)) -> bool {
     match pat {
         Pattern::Wildcard => true,
         Pattern::Literal(Expr::Number(s)) => {
@@ -72,7 +82,7 @@ pub(crate) fn match_and_bind_pattern(pat: &Pattern, v: &Value, rt: &mut Runtime<
         Pattern::Literal(Expr::Hamna) => matches!(v, Value::Hamna | Value::Chaguo(None)),
         Pattern::Literal(Expr::Char(c)) => matches!(v, Value::Herufi(x) if *x == *c),
         Pattern::Ident { name, .. } => {
-            rt.env.define(name, v.clone());
+            bind(name, v);
             true
         }
         Pattern::Struct {
@@ -90,7 +100,7 @@ pub(crate) fn match_and_bind_pattern(pat: &Pattern, v: &Value, rt: &mut Runtime<
                 let Some((_, fval)) = flds.iter().find(|(n, _)| n == fname) else {
                     return false;
                 };
-                if !match_and_bind_pattern(subpat, fval, rt) {
+                if !match_pattern(subpat, fval, bind) {
                     return false;
                 }
             }
@@ -100,7 +110,7 @@ pub(crate) fn match_and_bind_pattern(pat: &Pattern, v: &Value, rt: &mut Runtime<
             let Value::Jozi(a, b) = v else {
                 return false;
             };
-            match_and_bind_pattern(p1, a, rt) && match_and_bind_pattern(p2, b, rt)
+            match_pattern(p1, a, bind) && match_pattern(p2, b, bind)
         }
         Pattern::Enum {
             enum_name,
@@ -117,9 +127,9 @@ pub(crate) fn match_and_bind_pattern(pat: &Pattern, v: &Value, rt: &mut Runtime<
             if enum_name == "Tokeo" {
                 if let Value::Tokeo(res) = v {
                     return match (variant_name.as_str(), data, res) {
-                        ("Sawa", Some(dpat), Ok(dval)) => match_and_bind_pattern(dpat, dval, rt),
+                        ("Sawa", Some(dpat), Ok(dval)) => match_pattern(dpat, dval, bind),
                         ("Sawa", None, Ok(_)) => true,
-                        ("Kosa", Some(dpat), Err(dval)) => match_and_bind_pattern(dpat, dval, rt),
+                        ("Kosa", Some(dpat), Err(dval)) => match_pattern(dpat, dval, bind),
                         ("Kosa", None, Err(_)) => true,
                         _ => false,
                     };
@@ -128,7 +138,7 @@ pub(crate) fn match_and_bind_pattern(pat: &Pattern, v: &Value, rt: &mut Runtime<
             if enum_name == "Chaguo" {
                 if let Value::Chaguo(opt) = v {
                     return match (variant_name.as_str(), data, opt) {
-                        ("Kuna", Some(dpat), Some(dval)) => match_and_bind_pattern(dpat, dval, rt),
+                        ("Kuna", Some(dpat), Some(dval)) => match_pattern(dpat, dval, bind),
                         ("Kuna", None, Some(_)) => true,
                         ("Hamna", None, None) => true,
                         _ => false,
@@ -143,7 +153,7 @@ pub(crate) fn match_and_bind_pattern(pat: &Pattern, v: &Value, rt: &mut Runtime<
             }
             match (data, en_data) {
                 (None, None) => true,
-                (Some(dpat), Some(dval)) => match_and_bind_pattern(dpat, dval, rt),
+                (Some(dpat), Some(dval)) => match_pattern(dpat, dval, bind),
                 _ => false,
             }
         }
@@ -251,16 +261,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             receiver, field, ..
         } => {
             let recv = super::eval_expr_impl(receiver, rt)?;
-            match &recv {
-                Value::Struct(_, flds) => flds
-                    .iter()
-                    .find(|(n, _)| n == field)
-                    .map(|(_, v)| v.clone())
-                    .ok_or_else(|| EvalError::TypeErr(format!("uga haijulikani: {}", field))),
-                _ => Err(EvalError::TypeErr(
-                    "uga unahitaji kitu cha aina ya umbo".into(),
-                )),
-            }
+            super::methods::field_of(&recv, field)
         }
         Expr::Index { base, index, .. } => eval_index(base, index, rt, false),
         Expr::Unary { op, expr, .. } => {

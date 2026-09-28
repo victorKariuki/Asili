@@ -82,6 +82,20 @@ pub(crate) fn grapheme_count(s: &str) -> usize {
     }
 }
 
+/// `recv.field`: the named field of a `umbo` value.
+pub(crate) fn field_of(recv: &Value, field: &str) -> Result<Value, EvalError> {
+    match recv {
+        Value::Struct(_, flds) => flds
+            .iter()
+            .find(|(n, _)| n == field)
+            .map(|(_, v)| v.clone())
+            .ok_or_else(|| EvalError::TypeErr(format!("uga haijulikani: {}", field))),
+        _ => Err(EvalError::TypeErr(
+            "uga unahitaji kitu cha aina ya umbo".into(),
+        )),
+    }
+}
+
 /// Whether `method` on `recv` is implemented by [`pure_method`].
 pub(crate) fn is_pure_method(recv: &Value, method: &str) -> bool {
     match recv {

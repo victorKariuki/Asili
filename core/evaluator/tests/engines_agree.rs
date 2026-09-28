@@ -382,7 +382,9 @@ fn mixed_programs_agree() {
             y: Namba,
         }
         kazi urefu_wa(p: Nukta) -> Namba {
-            # field access: left to the tree-walker
+            # `tupa`: left to the tree-walker
+            weka a = p.x
+            tupa a
             rejesha mraba(p.x) + mraba(p.y)
         }
         kazi mraba(n: Namba) -> Namba {
@@ -431,5 +433,188 @@ fn mixed_programs_agree() {
         }
         "#,
         &["t", "aina_tano", "kosa"],
+    );
+}
+
+#[test]
+fn structs_enums_maps_and_global_constants() {
+    agree(
+        "values",
+        r#"
+        umbo Nukta {
+            x: Namba,
+            y: Namba,
+            jina: Neno,
+        }
+        jenum Rangi {
+            Nyekundu,
+            Kijani(Namba),
+        }
+        kazi mraba(p: Nukta) -> Namba {
+            rejesha p.x * p.x + p.y * p.y
+        }
+        kazi t() -> Orodha<Namba> {
+            weka r: Orodha<Namba> = []
+            # fields given out of declaration order
+            weka p = Nukta { jina: "a", y: 4, x: 3 }
+            r.ongeza(mraba(p))
+            r.ongeza(p.x + p.y)
+            r.ongeza(Ukomo)
+            r.ongeza(- Ukomo)
+            r.ongeza(PI)
+            ikiwa Siyo_Namba == Siyo_Namba {
+                r.ongeza(1)
+            }
+            rejesha r
+        }
+        kazi maandishi() -> Neno {
+            weka p = Nukta { x: 1, y: 2, jina: "nukta" }
+            weka k = Rangi::Kijani(7)
+            weka m = { "a": 1, "b": p.jina, "a": 3 }
+            # (not the whole map: its iteration order is unspecified)
+            rejesha (p kama Neno) + " " + p.jina + " " + (k kama Neno) + " " + (Rangi::Nyekundu kama Neno) + " " + (m.idadi() kama Neno) + " " + (m.pata("a") kama Neno) + " " + (m.pata("b") kama Neno)
+        }
+        kazi uga_mbaya() -> Namba {
+            weka p = Nukta { x: 1, y: 2, jina: "n" }
+            rejesha p.z
+        }
+        kazi si_umbo() -> Namba {
+            weka n = 5
+            rejesha n.x
+        }
+        "#,
+        &["t", "maandishi", "uga_mbaya", "si_umbo"],
+    );
+}
+
+#[test]
+fn linganisha_patterns() {
+    agree(
+        "match",
+        r#"
+        umbo Sanduku {
+            upana: Namba,
+            ndani: Nukta,
+        }
+        umbo Nukta {
+            x: Namba,
+            y: Namba,
+        }
+        jenum Umbo {
+            Duara(Namba),
+            Mraba(Namba),
+            Tupu,
+        }
+        kazi aina(v: Namba) -> Neno {
+            linganisha v {
+                0 => { rejesha "sifuri" }
+                1 => { rejesha "moja" }
+                n => { rejesha "nyingine " + (n kama Neno) }
+            }
+            rejesha "hakuna"
+        }
+        kazi eneo(u: Umbo) -> Namba {
+            linganisha u {
+                Umbo::Duara(r) => { rejesha r * r * 3 }
+                Umbo::Mraba(s) => { rejesha s * s }
+                Umbo::Tupu => { rejesha 0 }
+            }
+            rejesha - 1
+        }
+        kazi t() -> Orodha<Neno> {
+            weka r: Orodha<Neno> = []
+            kwa i kutoka 0 hadi 4 {
+                r.ongeza(aina(i))
+            }
+            r.ongeza(aina(0.30000000000000004))
+            r.ongeza(eneo(Umbo::Duara(2)) kama Neno)
+            r.ongeza(eneo(Umbo::Mraba(3)) kama Neno)
+            r.ongeza(eneo(Umbo::Tupu) kama Neno)
+            # strings, chars, booleans, Hamna, and no arm matching
+            kwa neno katika ["a", "b", "c"] {
+                linganisha neno {
+                    "a" => { r.ongeza("ni a") }
+                    "b" => { r.ongeza("ni b") }
+                }
+            }
+            linganisha 'x' {
+                'y' => { r.ongeza("y") }
+                'x' => { r.ongeza("x") }
+            }
+            linganisha kweli {
+                si_kweli => { r.ongeza("uongo") }
+                kweli => { r.ongeza("kweli") }
+            }
+            weka h = Hamna
+            linganisha h {
+                Hamna => { r.ongeza("hamna") }
+            }
+            # nested struct patterns, pairs, and a binding that shadows an outer name
+            weka x = "nje"
+            weka s = Sanduku { upana: 5, ndani: Nukta { x: 1, y: 2 } }
+            linganisha s {
+                Sanduku { upana: 4, ndani: Nukta { x: x, y: _ } } => { r.ongeza("nne " + (x kama Neno)) }
+                Sanduku { upana: w, ndani: Nukta { x: x, y: y } } => {
+                    r.ongeza((w + x + y) kama Neno)
+                }
+            }
+            r.ongeza(x)
+            linganisha jozi(1, "b") {
+                (1, b) => { r.ongeza(b) }
+                _ => { r.ongeza("?") }
+            }
+            # Chaguo from a builtin (not a constructor)
+            weka m = { "k": 9 }
+            linganisha m.pata("k") {
+                Chaguo::Kuna(v) => { r.ongeza("kuna " + (v kama Neno)) }
+                Chaguo::Hamna => { r.ongeza("hamna") }
+            }
+            linganisha m.pata("z") {
+                Chaguo::Kuna(v) => { r.ongeza("kuna " + (v kama Neno)) }
+                Chaguo::Hamna => { r.ongeza("hamna z") }
+            }
+            # vunja out of a loop from inside an arm
+            weka k = 0
+            wakati kweli {
+                linganisha k {
+                    3 => { vunja }
+                    _ => { k += 1 }
+                }
+            }
+            r.ongeza(k kama Neno)
+            rejesha r
+        }
+        "#,
+        &["t"],
+    );
+}
+
+#[test]
+fn user_methods_named_like_builtins_stay_user_methods() {
+    // `ongeza`/`urefu` are also builtin method names: a call on a `umbo` value must reach the
+    // user's `shughuli ya` method on every tier.
+    agree_mixed(
+        "impl_clash",
+        r#"
+        umbo Mfuko {
+            vitu: Namba,
+        }
+        shughuli ya Mfuko {
+            kazi ongeza(self: Mfuko, n: Namba) -> Namba {
+                rejesha self.vitu + n * 10
+            }
+            kazi urefu(self: Mfuko) -> Namba {
+                rejesha self.vitu * 2
+            }
+        }
+        kazi t() -> Orodha<Namba> {
+            weka m = Mfuko { vitu: 3 }
+            weka r: Orodha<Namba> = []
+            r.ongeza(m.ongeza(4))
+            r.ongeza(m.urefu())
+            rejesha r
+        }
+        "#,
+        &["t"],
     );
 }

@@ -237,7 +237,8 @@ pub(crate) fn num_writes(op: &Opcode) -> Vec<Reg> {
         | Opcode::ListLen { dst, .. }
         | Opcode::UnboxNum { dst, .. }
         | Opcode::UnboxBool { dst, .. }
-        | Opcode::ValLen { dst, .. } => vec![*dst],
+        | Opcode::ValLen { dst, .. }
+        | Opcode::MatchPattern { dst, .. } => vec![*dst],
         Opcode::Call(call) if matches!(call.dst.ty, Ty::Num | Ty::Bool) => vec![call.dst.reg],
         _ => Vec::new(),
     }
