@@ -372,7 +372,7 @@ fn request_to_value(req: &ParsedRequest) -> Value {
     let mut headers_map =
         crate::value::Kamusi::with_capacity_and_hasher(req.headers.len(), Default::default());
     for (k, v) in &req.headers {
-        headers_map.insert(MapKey::Neno(k.clone()), Value::neno(v.clone()));
+        headers_map.insert(MapKey::Neno(k.as_str().into()), Value::neno(v.clone()));
     }
     Value::Struct(
         "OmbiHttp".into(),
@@ -410,7 +410,7 @@ fn value_to_response(v: &Value) -> Option<(u16, Vec<(String, String)>, String)> 
             Value::Kamusi(m) => m
                 .iter()
                 .filter_map(|(k, v)| match (k, value::as_string(v)) {
-                    (MapKey::Neno(k), Some(v)) => Some((k.clone(), v)),
+                    (MapKey::Neno(k), Some(v)) => Some((k.to_string(), v)),
                     _ => None,
                 })
                 .collect(),

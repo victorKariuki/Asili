@@ -24,7 +24,10 @@ fn run(asb: &std::path::Path, args: &[&str]) -> (i32, String) {
         .stderr(file)
         .status()
         .unwrap();
-    (status.code().unwrap_or(-1), std::fs::read_to_string(&log).unwrap())
+    (
+        status.code().unwrap_or(-1),
+        std::fs::read_to_string(&log).unwrap(),
+    )
 }
 
 #[test]
@@ -54,8 +57,16 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     let (code, out) = run(&asb, &[]);
     assert_ne!(code, 0);
     let printed = format!("{numbers}onyo\nbaada\n");
-    assert!(out.starts_with(&printed), "{}", &out[out.len().saturating_sub(200)..]);
-    assert!(out[printed.len()..].contains("fahirisi"), "{}", &out[printed.len()..]);
+    assert!(
+        out.starts_with(&printed),
+        "{}",
+        &out[out.len().saturating_sub(200)..]
+    );
+    assert!(
+        out[printed.len()..].contains("fahirisi"),
+        "{}",
+        &out[printed.len()..]
+    );
 
     // `toka`: the output is flushed before the process exits.
     let (code, out) = run(&asb, &["x"]);

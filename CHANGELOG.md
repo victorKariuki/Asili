@@ -166,7 +166,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ASILI_BYTECODE_DUMP=1 pata jenga` prints each compiled `kazi`'s instructions.
 - **`Kamusi` and `Seti` hash with `foldhash`** instead of std's SipHash: several times faster on
   short keys and, like SipHash, seeded per process, so maps of untrusted keys (HTTP headers)
-  stay resistant to collision flooding. Counting words in a `Kamusi`: 64 → 56 ms.
+  stay resistant to collision flooding. `Neno` keys share their text with the value they came
+  from, so looking a key up, inserting one or listing `funguo` copies no text (only values sent
+  to another thread own theirs). Counting words in a `Kamusi`: 64 → 56 ms (instructions −8 %
+  from the keys alone).
 - **More receivers typed where they are compiled**: a list literal whose items share a type is an
   `Orodha<T>` (`["a", "b"]` is `Orodha<Neno>`), indexing an `Orodha<T>` gives a `T`, and a call
   of the program's own `kazi` has its declared return type even when a builtin shares its name;

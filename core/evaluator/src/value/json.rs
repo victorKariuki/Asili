@@ -153,7 +153,7 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
 /// matching how JSON.stringify(Map) and most JSON-object-from-map codecs behave elsewhere.
 fn map_key_to_json_field(k: &MapKey) -> String {
     match k {
-        MapKey::Neno(s) => s.clone(),
+        MapKey::Neno(s) => s.to_string(),
         MapKey::Namba(bits) => f64::from_bits(*bits).to_string(),
         MapKey::Ukweli(b) => b.to_string(),
         MapKey::Herufi(c) => c.to_string(),
@@ -202,7 +202,7 @@ fn from_json_depth(j: &serde_json::Value, depth: usize) -> Value {
             for (k, v) in map {
                 let value = from_json_depth(v, depth + 1);
                 fields.push((k.clone(), value.clone()));
-                out.insert(MapKey::Neno(k.clone()), value);
+                out.insert(MapKey::Neno(k.as_str().into()), value);
             }
             // A JSON object has no distinction between "this was an Asili Struct/Tokeo/Enum"
             // and "this was a Kamusi" — decode as Kamusi<Neno, _>, the structurally accurate

@@ -18,10 +18,11 @@ pub(crate) use numeric::{
 };
 
 /// Hashable key for Kamusi. Only Neno, Namba, Ukweli, Herufi are allowed as map keys.
-/// Namba uses f64::to_bits() for canonical hashing (NaN is supported).
+/// Namba uses f64::to_bits() for canonical hashing (NaN is supported). A `Neno` key shares its
+/// text with the value it came from, so looking a key up or listing keys allocates nothing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum MapKey {
-    Neno(String),
+    Neno(Rc<str>),
     Namba(u64),
     Ukweli(bool),
     Herufi(char),
@@ -39,13 +40,42 @@ impl MapKey {
 
     pub fn try_from_value(v: &Value) -> Result<MapKey, EvalError> {
         match v {
-            Value::Neno(s) => Ok(MapKey::Neno(s.to_string())),
+            Value::Neno(s) => Ok(MapKey::Neno(s.clone())),
             Value::Namba(n) => Ok(MapKey::Namba(n.to_bits())),
             Value::Ukweli(b) => Ok(MapKey::Ukweli(*b)),
             Value::Herufi(c) => Ok(MapKey::Herufi(*c)),
             _ => Err(EvalError::TypeErr(
                 "kamusi: ufunguo lazima uwe Neno, Namba, Ukweli au Herufi".into(),
             )),
+        }
+    }
+
+    fn to_send(&self) -> SendKey {
+        match self {
+            MapKey::Neno(s) => SendKey::Neno(s.to_string()),
+            MapKey::Namba(b) => SendKey::Namba(*b),
+            MapKey::Ukweli(b) => SendKey::Ukweli(*b),
+            MapKey::Herufi(c) => SendKey::Herufi(*c),
+        }
+    }
+}
+
+/// [`MapKey`] owning its text, to cross into another thread inside a [`SendValue`].
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum SendKey {
+    Neno(String),
+    Namba(u64),
+    Ukweli(bool),
+    Herufi(char),
+}
+
+impl SendKey {
+    fn into_key(self) -> MapKey {
+        match self {
+            SendKey::Neno(s) => MapKey::Neno(s.into()),
+            SendKey::Namba(b) => MapKey::Namba(b),
+            SendKey::Ukweli(b) => MapKey::Ukweli(b),
+            SendKey::Herufi(c) => MapKey::Herufi(c),
         }
     }
 }
@@ -260,8 +290,8 @@ pub enum SendValue {
     Tokeo(Result<Box<SendValue>, Box<SendValue>>),
     Orodha(Vec<SendValue>),
     Jozi(Box<SendValue>, Box<SendValue>),
-    Kamusi(HashMap<MapKey, SendValue>),
-    Seti(HashSet<MapKey>),
+    Kamusi(HashMap<SendKey, SendValue>),
+    Seti(HashSet<SendKey>),
     Struct(String, Vec<(String, SendValue)>),
     Enum(String, String, Option<Box<SendValue>>),
     /// `Value`'s `NjiaTx`/`NjiaRx`/`Fungo` already carry `SendValue` payloads (see their own
@@ -329,11 +359,11 @@ impl Value {
             Value::Kamusi(m) => {
                 let mut out = HashMap::with_capacity(m.len());
                 for (k, v) in m {
-                    out.insert(k.clone(), v.try_into_send()?);
+                    out.insert(k.to_send(), v.try_into_send()?);
                 }
                 SendValue::Kamusi(out)
             }
-            Value::Seti(s) => SendValue::Seti(s.iter().cloned().collect()),
+            Value::Seti(s) => SendValue::Seti(s.iter().map(MapKey::to_send).collect()),
             Value::Struct(name, fields) => {
                 let mut out = Vec::with_capacity(fields.len());
                 for (fname, v) in fields.iter() {
@@ -395,10 +425,12 @@ impl SendValue {
             SendValue::Jozi(a, b) => {
                 Value::Jozi(Box::new(a.into_value()), Box::new(b.into_value()))
             }
-            SendValue::Kamusi(m) => {
-                Value::Kamusi(m.into_iter().map(|(k, v)| (k, v.into_value())).collect())
-            }
-            SendValue::Seti(s) => Value::Seti(s.into_iter().collect()),
+            SendValue::Kamusi(m) => Value::Kamusi(
+                m.into_iter()
+                    .map(|(k, v)| (k.into_key(), v.into_value()))
+                    .collect(),
+            ),
+            SendValue::Seti(s) => Value::Seti(s.into_iter().map(SendKey::into_key).collect()),
             SendValue::Struct(name, fields) => Value::Struct(
                 name.into(),
                 fields
