@@ -58,6 +58,9 @@ pub(crate) struct VmHook {
         &str,
         &[crate::value::Value],
     ) -> Option<Result<crate::value::Value, crate::value::EvalError>>,
+    /// The VM's program as its threads receive it (so `tenda` and the server loops called
+    /// from tree-walked code still run their `kazi` on bytecode and native code).
+    pub shared: fn(*mut std::ffi::c_void) -> crate::spawn::Shared,
 }
 
 /// `builtins` without the names `module` defines as its own `kazi`: a program's `kazi` shadows

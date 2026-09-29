@@ -244,12 +244,14 @@ Next steps are the "Remaining gaps" below.
 - A `kazi` using a construct the bytecode compiler does not lower (`tupa` of a binding from an
   enclosing scope, pattern `weka`,
   maps with computed keys, `shughuli ya` method calls on a receiver whose `umbo` is not known
-  where the call is compiled, and the builtins that start tree-walker threads: `tenda`, `mkondo_tumikia`, `mkondo_tumikia_http`) runs on the
-  tree-walker; `ASILI_BYTECODE_REPORT=1 pata jenga` lists each such `kazi` and line; the rest of the program stays bytecode and native code (mixed mode:
+  where the call is compiled) runs on the tree-walker; `ASILI_BYTECODE_REPORT=1 pata jenga` lists each such `kazi` and line; the rest of the program stays bytecode and native code (mixed mode:
   `Opcode::Interpreted` stubs, `BytecodeProgram::ast`, and a `VmHook` that sends the
   tree-walker's calls to compiled `kazi` back to the VM). Lowering those constructs would move
   the remaining functions onto the fast path; `compile_module_explained` reports the first one
   and its line.
+- Threads (`tenda`) and server workers (`mkondo_tumikia`, `mkondo_tumikia_http`) share the
+  bytecode program and its native code (`spawn::Shared`) and build one VM per thread; only a
+  program built as a syntax-tree artifact still runs them on the tree-walker.
 - Native-to-native calls are direct only for scalar (`Namba`/`Buliani`) functions without
   lists or generic values; others go through the interpreter's call path. Direct calls pass
   arguments as `f64` through a memory buffer, so `fib(32)` is ~40 ms against C's ~11 ms;

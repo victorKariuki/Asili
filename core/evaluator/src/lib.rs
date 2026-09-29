@@ -17,6 +17,7 @@ mod numlist;
 mod platform;
 pub mod runtime;
 mod signal;
+mod spawn;
 mod tir;
 mod value;
 
@@ -109,17 +110,17 @@ impl TreeContext {
     }
 
     /// Run `f` (a function of `module`) on the tree-walker; its calls to `kazi` the VM runs go
-    /// through `hook`.
+    /// through `hook` (none: every `kazi` runs here).
     pub(crate) fn call(
         &mut self,
         module: &Module,
         f: &Function,
         args: Vec<Value>,
-        hook: runtime::VmHook,
+        hook: Option<runtime::VmHook>,
     ) -> Result<Value, EvalError> {
         let builtins = std::mem::take(&mut self.builtins);
         let mut rt = runtime::Runtime::with_builtins(&mut self.env, module, builtins);
-        rt.vm = Some(hook);
+        rt.vm = hook;
         rt.env.push_scope();
         for (p, val) in f.params.iter().zip(args) {
             rt.env.define(&p.name, val);
@@ -620,7 +621,12 @@ fn run_asb_here(
             } else {
                 image()
             };
-            return run_bytecode_native(&program, library.as_ref(), args).map_err(RunAsbError::Run);
+            return bytecode::run_shared_program(
+                std::sync::Arc::new(program),
+                library.map(std::sync::Arc::new),
+                args,
+            )
+            .map_err(RunAsbError::Run);
         }
         #[cfg(target_arch = "wasm32")]
         {

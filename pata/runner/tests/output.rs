@@ -74,3 +74,62 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     assert_eq!(out, format!("{numbers}onyo\nbaada\n"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `tenda` threads run the program's compiled `kazi` (bytecode and native code) and report back
+/// over `njia`, whether the spawning `kazi` is compiled or left to the tree-walker.
+#[test]
+fn threads_run_compiled_kazi() {
+    let dir = std::env::temp_dir().join(format!("asili-runner-threads-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let asb = artifact(
+        &dir,
+        r#"
+leta sambamba
+leta matumizi
+
+umbo Kazi { n: Namba }
+
+kazi fib(n: Namba) -> Namba {
+    ikiwa n < 2 {
+        rejesha n
+    }
+    rejesha fib(n - 1) + fib(n - 2)
+}
+
+kazi mfanyakazi(tx: NjiaTx<Namba>, n: Namba) -> Tupu {
+    weka k = Kazi { n: n }
+    jaribu (tx.tuma(fib(k.n)))
+}
+
+kazi kuu(hoja: Orodha<Neno>) -> Tupu {
+    weka p = njia()
+    weka tx = p.kwanza()
+    weka rx = p.pili()
+    kwa i kutoka 0 hadi 4 {
+        jaribu (tenda("mfanyakazi", tx, 20 + i))
+    }
+    weka jumla: Namba = 0
+    kwa i kutoka 0 hadi 4 {
+        weka x: Namba = jaribu (rx.pokea())
+        jumla += x
+    }
+    chapisha(jumla kama Neno)
+}
+"#,
+    );
+    for aot in ["0", "1"] {
+        let out = Command::new(env!("CARGO_BIN_EXE_tenda"))
+            .arg(&asb)
+            .env("ASILI_AOT", aot)
+            .env("ASILI_NGUVU", "1")
+            .output()
+            .unwrap();
+        // fib(20) + fib(21) + fib(22) + fib(23)
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "64079\n",
+            "ASILI_AOT={aot}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

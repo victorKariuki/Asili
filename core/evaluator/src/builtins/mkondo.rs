@@ -136,10 +136,10 @@ pub(crate) const CONNECTION_TIMEOUT: std::time::Duration = std::time::Duration::
 /// Not registered as an ordinary `BuiltinFn` — like `tenda`, it needs the current `Module` to
 /// find `kazi_jina`, so it's special-cased in `eval/expr.rs`'s `Expr::Call` handling.
 pub(crate) fn mkondo_tumikia(
-    module: &asili_parser::Module,
+    program: &crate::spawn::Shared,
     args: &[Value],
 ) -> Result<Value, value::EvalError> {
-    serve_pool("mkondo_tumikia", module, args, worker_loop)
+    serve_pool("mkondo_tumikia", program, args, worker_loop)
 }
 
 /// TLS configuration handed to each server worker (`()` where TLS is unavailable).
@@ -150,12 +150,13 @@ pub(super) type ServerTls = ();
 
 /// The worker pool shared by `mkondo_tumikia` and `mkondo_tumikia_http`: validate
 /// `(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls)`, then run `worker` on that many threads, each
-/// accepting connections from the same listener, and wait for them.
+/// accepting connections from the same listener, and wait for them. Each worker builds its
+/// engine for `program` once and calls `kazi_jina` on it for every connection.
 pub(super) fn serve_pool(
     name: &str,
-    module: &asili_parser::Module,
+    program: &crate::spawn::Shared,
     args: &[Value],
-    worker: fn(&std::net::TcpListener, &asili_parser::Module, &str, ServerTls),
+    worker: fn(&std::net::TcpListener, &mut crate::spawn::Caller<'_>, &str, ServerTls),
 ) -> Result<Value, value::EvalError> {
     let listener = match args.first() {
         Some(Value::MkondoSikilizaji(l)) => Arc::clone(l),
@@ -166,7 +167,7 @@ pub(super) fn serve_pool(
         }
     };
     let kazi_name = super::arg_str(args, 1);
-    if !module.functions.iter().any(|f| f.name == kazi_name) {
+    if !program.has_kazi(&kazi_name) {
         return Ok(Value::kosa(format!(
             "{name}: kazi haijulikani: {kazi_name}"
         )));
@@ -212,11 +213,11 @@ pub(super) fn serve_pool(
     let mut handles = Vec::with_capacity(idadi_ya_nyuzi);
     for _ in 0..idadi_ya_nyuzi {
         let listener = Arc::clone(&listener);
-        let module_owned = module.clone();
+        let program = program.clone();
         let kazi_name = kazi_name.clone();
         let tls_config = tls_config.clone();
         handles.push(std::thread::spawn(move || {
-            worker(&listener, &module_owned, &kazi_name, tls_config)
+            program.with_caller(|call| worker(&listener, call, &kazi_name, tls_config))
         }));
     }
     for h in handles {
@@ -234,7 +235,7 @@ pub(super) fn serve_pool(
 /// are just `Mkondo` handles wrapping a `MkondoStream`.
 fn worker_loop(
     listener: &std::net::TcpListener,
-    module: &asili_parser::Module,
+    call: &mut crate::spawn::Caller<'_>,
     kazi_name: &str,
     #[cfg_attr(target_arch = "wasm32", allow(unused_variables))] tls_config: ServerTls,
 ) {
@@ -270,7 +271,7 @@ fn worker_loop(
         // thread (and silently shrink the pool) — log-and-continue is the only reasonable
         // behavior for a long-lived server loop; there's no caller left to propagate the error
         // to once we're this deep inside a spawned worker thread.
-        let _ = crate::run_function(module, kazi_name, vec![mkondo]);
+        let _ = call(kazi_name, vec![mkondo]);
     }
 }
 

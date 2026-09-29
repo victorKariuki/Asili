@@ -428,15 +428,15 @@ fn value_to_response(v: &Value) -> Option<(u16, Vec<(String, String)>, String)> 
 /// loops to parse the *next* request on the same connection when the client asked for
 /// keep-alive, closing only on `Connection: close`, a parse error, or the peer disconnecting.
 pub(crate) fn mkondo_tumikia_http(
-    module: &asili_parser::Module,
+    program: &crate::spawn::Shared,
     args: &[Value],
 ) -> Result<Value, EvalError> {
-    serve_pool("mkondo_tumikia_http", module, args, http_worker_loop)
+    serve_pool("mkondo_tumikia_http", program, args, http_worker_loop)
 }
 
 fn http_worker_loop(
     listener: &std::net::TcpListener,
-    module: &asili_parser::Module,
+    call: &mut crate::spawn::Caller<'_>,
     kazi_name: &str,
     #[cfg_attr(target_arch = "wasm32", allow(unused_variables))] tls_config: ServerTls,
 ) {
@@ -479,7 +479,7 @@ fn http_worker_loop(
             };
 
             let ombi = request_to_value(&parsed);
-            let jibu_result = crate::run_function(module, kazi_name, vec![ombi]);
+            let jibu_result = call(kazi_name, vec![ombi]);
             let write_ok = match jibu_result {
                 Ok(jibu_val) => match value_to_response(&jibu_val) {
                     Some((status, headers, body)) => {

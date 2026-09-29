@@ -31,15 +31,25 @@ pub fn enabled() -> bool {
 /// Native code whose functions correspond 1:1 to a program's functions.
 pub struct NativeLibrary {
     // Keeps the code mapped for as long as the function pointers are used.
-    _owner: Box<dyn std::any::Any>,
+    _owner: Box<dyn std::any::Any + Send + Sync>,
     pub(crate) funcs: Vec<NativeFn>,
 }
 
 impl NativeLibrary {
-    pub(crate) fn from_parts(owner: Box<dyn std::any::Any>, funcs: Vec<NativeFn>) -> Self {
+    pub(crate) fn from_parts(
+        owner: Box<dyn std::any::Any + Send + Sync>,
+        funcs: Vec<NativeFn>,
+    ) -> Self {
         NativeLibrary {
             _owner: owner,
             funcs,
         }
     }
 }
+
+// Threads started by `tenda` and the server workers share one program and its native code.
+const _: fn() = || {
+    fn shareable<T: Send + Sync>() {}
+    shareable::<NativeLibrary>();
+    shareable::<crate::BytecodeProgram>();
+};

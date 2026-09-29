@@ -32,8 +32,6 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
 
-use asili_parser::Module;
-
 use super::BuiltinFn;
 use crate::value::{self, EvalError, Value};
 
@@ -44,13 +42,11 @@ fn handles() -> &'static Mutex<HashMap<u64, JoinHandle<Result<(), String>>>> {
     HANDLES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// `tenda(kazi_jina, hoja...) -> Tokeo<Namba, Neno>` — spawns `kazi_jina` (a module-level `kazi`
-/// found in `module`) on a new OS thread with a `.clone()` of `module` (Module is plain owned
-/// data — Send — so this is a cheap, correct way to give the thread its own copy rather than
-/// trying to share the caller's borrowed Runtime). Returns a handle id on success. The spawned
-/// function's own return value is discarded (see module doc comment) — communicate results back
-/// via `njia`.
-pub(crate) fn tenda(module: &Module, args: &[Value]) -> Result<Value, EvalError> {
+/// `tenda(kazi_jina, hoja...) -> Tokeo<Namba, Neno>` — runs `kazi_jina` (a module-level `kazi`
+/// of `program`) on a new OS thread, on the same engine as the caller (bytecode and native code
+/// for a bytecode program). Returns a handle id on success. The spawned function's own return
+/// value is discarded (see module doc comment) — communicate results back via `njia`.
+pub(crate) fn tenda(program: &crate::spawn::Shared, args: &[Value]) -> Result<Value, EvalError> {
     let kazi_name = super::arg_str(args, 0);
     let raw_args = args.get(1..).unwrap_or(&[]);
     let call_args: Vec<value::SendValue> = match raw_args.iter().map(Value::try_into_send).collect()
@@ -62,18 +58,20 @@ pub(crate) fn tenda(module: &Module, args: &[Value]) -> Result<Value, EvalError>
             ));
         }
     };
-    if !module.functions.iter().any(|f| f.name == kazi_name) {
+    if !program.has_kazi(&kazi_name) {
         return Ok(Value::kosa(format!("tenda: kazi haijulikani: {kazi_name}")));
     }
-    let module_owned = module.clone();
+    let program = program.clone();
     let handle = std::thread::spawn(move || {
         let call_args: Vec<Value> = call_args
             .into_iter()
             .map(value::SendValue::into_value)
             .collect();
-        crate::run_function(&module_owned, &kazi_name, call_args)
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+        program.with_caller(|call| {
+            call(&kazi_name, call_args)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        })
     });
     let id = NEXT_HANDLE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     handles().lock().unwrap().insert(id, handle);
@@ -86,14 +84,13 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         Box::new(|args: &[Value]| {
             let id = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0) as u64;
             let handle = handles().lock().unwrap().remove(&id);
+            // About to block: show what was printed so far.
+            crate::platform::flush_stdout();
             match handle {
                 None => Ok(Value::kosa(format!(
                     "subiri_tenda: uzi haujulikani au tayari umesubiriwa: {id}"
                 ))),
-                Some(h) => match {
-                    crate::platform::flush_stdout();
-                    h.join()
-                } {
+                Some(h) => match h.join() {
                     Ok(Ok(())) => Ok(Value::sawa(Value::Tupu)),
                     Ok(Err(msg)) => Ok(Value::kosa(msg)),
                     Err(_) => Ok(Value::kosa(

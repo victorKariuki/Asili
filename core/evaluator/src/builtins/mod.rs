@@ -23,10 +23,10 @@ use crate::value::{EvalError, Value};
 
 pub type BuiltinFn = Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>;
 
-/// Builtins that need the running `Module` (they spawn named `kazi` on other threads), so they
-/// are dispatched by the evaluator itself rather than through the plain builtin table, and the
-/// bytecode VM (which carries no `Module`) leaves programs using them to the evaluator.
-pub const MODULE_BUILTINS: &[&str] = &["tenda", "mkondo_tumikia", "mkondo_tumikia_http"];
+/// Builtins that need the running program (they run its named `kazi` on other threads), so each
+/// engine dispatches them itself, passing the program as a `spawn::Shared`, rather than through
+/// the plain builtin table. The bytecode VM hands threads its own bytecode and native code.
+pub const MODULE_BUILTINS: [&str; 3] = ["tenda", "mkondo_tumikia", "mkondo_tumikia_http"];
 
 /// Every builtin module's registrations: the single list of what exists.
 /// Argument `i` as a `Neno` (empty when missing or not text) — the lenient string-argument

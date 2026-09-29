@@ -305,23 +305,24 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 .map(|a| super::eval_expr_impl(a, rt))
                 .collect::<Result<_, _>>()?;
             if let Expr::Ident { name, .. } = &**callee {
-                // tenda needs the current Module to spawn a thread running a named kazi from
-                // it — unlike every other builtin, which is a plain Fn(&[Value]) with no
-                // access to rt. Intercepted here, before the generic builtins dispatch, rather
-                // than trying to thread Module access through BuiltinFn's signature for this
-                // one function.
-                if name == "tenda" {
-                    return crate::builtins::sambamba::tenda(rt.module, &args_val);
-                }
-                // mkondo_tumikia needs the current Module for the same reason tenda does — its
-                // worker threads look up and invoke a named kazi per accepted connection.
-                if name == "mkondo_tumikia" {
-                    return crate::builtins::mkondo::mkondo_tumikia(rt.module, &args_val);
-                }
-                // mkondo_tumikia_http: the HTTP/1.1-framed counterpart, same Module-access
-                // reason. See core/evaluator/src/builtins/http.rs.
-                if name == "mkondo_tumikia_http" {
-                    return crate::builtins::http::mkondo_tumikia_http(rt.module, &args_val);
+                // `tenda` and the server loops run named `kazi` on other threads, so they need
+                // the program itself (see `builtins::MODULE_BUILTINS`); a tree-walked program
+                // gives its threads a copy of its syntax tree.
+                if let Some(which) = crate::builtins::MODULE_BUILTINS
+                    .iter()
+                    .position(|b| b == name)
+                    .filter(|_| !rt.module.functions.iter().any(|f| f.name == *name))
+                {
+                    let shared = match rt.vm {
+                        // Mixed mode: the VM's program, bytecode and native code.
+                        Some(hook) => (hook.shared)(hook.vm),
+                        None => crate::spawn::Shared::Tree(std::sync::Arc::new(rt.module.clone())),
+                    };
+                    return match which {
+                        0 => crate::builtins::sambamba::tenda(&shared, &args_val),
+                        1 => crate::builtins::mkondo::mkondo_tumikia(&shared, &args_val),
+                        _ => crate::builtins::http::mkondo_tumikia_http(&shared, &args_val),
+                    };
                 }
                 if let Some(f) = rt.builtins.get(name) {
                     return f(&args_val);

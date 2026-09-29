@@ -18,7 +18,7 @@
 //! Programs containing syntax that is not represented here make [`compile_module`] return
 //! `None`, and the caller keeps emitting the serialized-AST artifact instead.
 
-use crate::builtins::{builtin_names, BuiltinFn, MODULE_BUILTINS};
+use crate::builtins::{builtin_names, BuiltinFn};
 use crate::eval::{methods, ops};
 use crate::numlist::NumList;
 use crate::value::{self, EvalError, Value};
@@ -408,12 +408,14 @@ pub enum Opcode {
         src: Operand,
     },
     ReturnTupu,
-    /// `vals[dst] = Name { field: vals[reg], … }`, fields in declaration order.
+    /// `vals[dst] = Name { field: vals[reg], … }`, fields in declaration order. The struct and
+    /// field names are `Neno` constants (indices into `constants`), which the VM holds as shared
+    /// text: building the value only bumps reference counts, and the program itself stays plain
+    /// data that threads can share.
     MakeStruct {
         dst: Reg,
-        /// Shared names: building the value only bumps reference counts.
-        name: crate::value::Name,
-        fields: Box<[(crate::value::Name, Reg)]>,
+        name: u32,
+        fields: Box<[(u32, Reg)]>,
     },
     /// `vals[dst] = vals[src].field`; `slot` is where the field sits when the receiver's
     /// `umbo` is statically known (`u32::MAX` otherwise) — a hint, checked against the name.
@@ -1787,12 +1789,16 @@ impl<'a> FunctionCompiler<'a> {
                 let mut regs = Vec::with_capacity(declared.len());
                 for (fname, _) in declared {
                     let (_, fexpr) = fields.iter().find(|(n, _)| *n == fname)?;
-                    regs.push((fname.as_str().into(), self.expr_as(fexpr, Ty::Val)?.reg));
+                    let reg = self.expr_as(fexpr, Ty::Val)?.reg;
+                    regs.push((self.program.constant(StoredConstant::Neno(fname)), reg));
                 }
                 let out = self.dst_or_temp(dst, Ty::Val);
+                let name = self
+                    .program
+                    .constant(StoredConstant::Neno(struct_name.clone()));
                 self.emit(Opcode::MakeStruct {
                     dst: out.reg,
-                    name: struct_name.as_str().into(),
+                    name,
                     fields: regs.into_boxed_slice(),
                 });
                 Some(out)
@@ -2235,9 +2241,6 @@ impl<'a> FunctionCompiler<'a> {
         }
         // The program's own `kazi` shadows a builtin of the same name.
         let own = self.program.functions.contains_key(name);
-        if !own && MODULE_BUILTINS.contains(&name.as_str()) {
-            return None;
-        }
         if let Some(builtin) = self.program.builtins.get(name).copied().filter(|_| !own) {
             if let (Some(out), "orodha_rudia", 2) = (dst, name.as_str(), args.len()) {
                 if out.ty == Ty::List && self.infer(&args[0]) == Ty::Num {
@@ -2545,6 +2548,24 @@ pub fn run_bytecode_native(
     Ok(())
 }
 
+/// Run `kuu` of a program other threads may share (`tenda`, server workers run its `kazi` on
+/// the same bytecode and native code).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn run_shared_program(
+    program: std::sync::Arc<BytecodeProgram>,
+    library: Option<std::sync::Arc<crate::aot::NativeLibrary>>,
+    args: Vec<String>,
+) -> Result<(), EvalError> {
+    let shared = crate::spawn::Shared::Code {
+        program: program.clone(),
+        native: library.clone(),
+    };
+    let hoja = Value::list(args.into_iter().map(Value::neno).collect());
+    let entry = program.entry.clone();
+    Vm::shared(&program, library.as_deref(), shared).call_by_name(&entry, vec![hoja])?;
+    Ok(())
+}
+
 /// Which execution engine runs bytecode, for differential testing of the native tiers.
 #[derive(Clone, Copy)]
 pub enum Engine<'l> {
@@ -2621,7 +2642,7 @@ pub(crate) enum Ret {
 // `repr(C)` with `depth` first: native code's direct calls count themselves in it at offset 0
 // (`native::VM_DEPTH_OFFSET`), so the call-depth limit is the same on every tier.
 #[repr(C)]
-struct Vm<'p> {
+pub(crate) struct Vm<'p> {
     depth: usize,
     program: &'p BytecodeProgram,
     builtins: Vec<BuiltinFn>,
@@ -2630,6 +2651,12 @@ struct Vm<'p> {
     /// `program.constants` as values, built once: loading one (a shared `Neno` included) is a
     /// reference-count bump.
     consts: Vec<Value>,
+    /// This program as other threads receive it (`tenda`, server workers); made on first use
+    /// when the VM was not started from a shared program.
+    shared: Option<crate::spawn::Shared>,
+    /// Builtin indices of `tenda`, `mkondo_tumikia` and `mkondo_tumikia_http`, which need the
+    /// program itself.
+    spawners: [usize; 3],
     /// Tree-walkers for mixed mode, reused across calls (a nested tree → VM → tree call takes a
     /// second one).
     trees: Vec<crate::TreeContext>,
@@ -2774,8 +2801,11 @@ impl<'p> Vm<'p> {
         Ok(Vm {
             depth: 0,
             program,
+            spawners: crate::builtins::MODULE_BUILTINS
+                .map(|name| table.index.get(name).copied().unwrap_or(usize::MAX)),
             builtins: table.fns,
             builtin_index: table.index,
+            shared: None,
             pool: Vec::new(),
             consts: program
                 .constants
@@ -2790,6 +2820,50 @@ impl<'p> Vm<'p> {
         })
     }
 
+    /// A VM for a program shared with other threads (`shared` describes it to them), running
+    /// its native code where there is some.
+    pub(crate) fn shared(
+        program: &'p BytecodeProgram,
+        #[cfg(not(target_arch = "wasm32"))] library: Option<&'p crate::aot::NativeLibrary>,
+        shared: crate::spawn::Shared,
+    ) -> Self {
+        let mut vm = Self::new(program).expect("builtin table");
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            vm.aot = library;
+        }
+        vm.shared = Some(shared);
+        vm
+    }
+
+    /// Call the program's `kazi` called `name`.
+    pub(crate) fn call_by_name(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, EvalError> {
+        let index = self
+            .program
+            .functions
+            .iter()
+            .position(|f| f.name == name)
+            .ok_or_else(|| EvalError::UndefinedVar(name.to_string()))?;
+        self.call_values(index, args)
+    }
+
+    /// This program as other threads receive it: the one the VM was started from, or else a
+    /// copy of the bytecode (without native code), made once.
+    fn shared_program(&mut self) -> crate::spawn::Shared {
+        let program = self.program;
+        self.shared
+            .get_or_insert_with(|| crate::spawn::Shared::Code {
+                program: std::sync::Arc::new(program.clone()),
+                #[cfg(not(target_arch = "wasm32"))]
+                native: None,
+            })
+            .clone()
+    }
+
     /// A VM running `library`'s ahead-of-time compiled machine code.
     #[cfg(not(target_arch = "wasm32"))]
     fn with_aot(
@@ -2799,6 +2873,14 @@ impl<'p> Vm<'p> {
         let mut vm = Self::new(program)?;
         vm.aot = Some(library);
         Ok(vm)
+    }
+
+    /// The shared text of `Neno` constant `k` (a struct or field name).
+    fn name(&self, k: u32) -> crate::value::Name {
+        match &self.consts[k as usize] {
+            Value::Neno(text) => text.clone(),
+            _ => unreachable!("names are Neno constants"),
+        }
     }
 
     fn frame_for(&mut self, f: &BytecodeFunc) -> Frame {
@@ -2837,8 +2919,9 @@ impl<'p> Vm<'p> {
         let hook = crate::runtime::VmHook {
             vm: self as *mut Vm<'p> as *mut std::ffi::c_void,
             call: tree_to_vm,
+            shared: vm_shared,
         };
-        let result = tree.call(module, f, args, hook);
+        let result = tree.call(module, f, args, Some(hook));
         self.trees.push(tree);
         result
     }
@@ -3081,9 +3164,9 @@ impl<'p> Vm<'p> {
             Opcode::MakeStruct { dst, name, fields } => {
                 let flds = fields
                     .iter()
-                    .map(|(f, r)| (f.clone(), frame.vals[*r as usize].clone()))
+                    .map(|(f, r)| (self.name(*f), frame.vals[*r as usize].clone()))
                     .collect();
-                frame.vals[*dst as usize] = Value::Struct(name.clone(), flds);
+                frame.vals[*dst as usize] = Value::Struct(self.name(*name), flds);
                 return Flow::Next;
             }
             Opcode::Field {
@@ -3430,7 +3513,20 @@ impl<'p> Vm<'p> {
                     .iter()
                     .map(|r| frame.vals[*r as usize].clone())
                     .collect();
-                match (self.builtins[call.builtin as usize])(&args) {
+                let builtin = call.builtin as usize;
+                let result = match self.spawners.iter().position(|s| *s == builtin) {
+                    // Threads that run this program's `kazi` on this engine.
+                    Some(which) => {
+                        let shared = self.shared_program();
+                        match which {
+                            0 => crate::builtins::sambamba::tenda(&shared, &args),
+                            1 => crate::builtins::mkondo::mkondo_tumikia(&shared, &args),
+                            _ => crate::builtins::http::mkondo_tumikia_http(&shared, &args),
+                        }
+                    }
+                    None => (self.builtins[builtin])(&args),
+                };
+                match result {
                     Ok(v) => frame.vals[call.dst as usize] = v,
                     Err(e) => fail!(e),
                 }
@@ -3637,6 +3733,13 @@ fn ret_of(ty: Ty, v: Value) -> Ret {
 
 /// The tree-walker calling `name`: the VM runs it (and its native code) unless it is one of the
 /// tree-walker's own.
+/// [`crate::runtime::VmHook::shared`].
+fn vm_shared(vm: *mut std::ffi::c_void) -> crate::spawn::Shared {
+    // SAFETY: as for `tree_to_vm`.
+    let vm = unsafe { &mut *(vm as *mut Vm<'static>) };
+    vm.shared_program()
+}
+
 fn tree_to_vm(
     vm: *mut std::ffi::c_void,
     name: &str,

@@ -113,6 +113,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Threads and server handlers run on bytecode and native code**: `tenda`,
+  `mkondo_tumikia` and `mkondo_tumikia_http` used to run their `kazi` on the tree-walker, with
+  a copy of the syntax tree per thread and a fresh interpreter (builtin table included) per
+  connection. A bytecode program and its native code are now shared between threads
+  (`spawn::Shared`); each thread or server worker builds one VM and serves every call with it,
+  including when the spawning `kazi` is itself left to the tree-walker. Four threads computing
+  `fib(27)`: 296 → 4.4 ms; an HTTP handler computing `fib(18)`: 2.5 ms → 0.13 ms per request.
+  Programs calling these builtins are no longer left to the tree-walker for that reason, and a
+  program's own `kazi` named like one of them shadows it. `.asb` bytecode version 10 (struct and
+  field names are interned constants, so a program holds no thread-local data).
+
 - **Program output is block-buffered when stdout is not a terminal** (the runner, `pata tenda`,
   `pata jenga --tenda`): `chapisha` used to cost one `write` system call per line even into a
   pipe or file; output now goes out in 32 KiB writes, as C's stdio does. It is flushed before
