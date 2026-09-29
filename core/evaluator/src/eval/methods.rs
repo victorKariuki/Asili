@@ -77,12 +77,9 @@ pub(crate) fn index_value(base: &Value, index: &Value) -> Result<Value, EvalErro
 /// except CR LF, which is a single grapheme.
 pub(crate) fn grapheme_count(s: &str) -> usize {
     let b = s.as_bytes();
-    // One branch-free (vectorizable) pass for the common case: ASCII without '\r', where
-    // every byte is one grapheme.
-    if !b
-        .iter()
-        .fold(false, |odd, &c| odd | (c >= 0x80) | (c == b'\r'))
-    {
+    // The common case — ASCII without '\r', where every byte is one grapheme — checked a word
+    // at a time.
+    if plain_ascii(b) {
         return b.len();
     }
     if s.is_ascii() {
@@ -90,6 +87,29 @@ pub(crate) fn grapheme_count(s: &str) -> usize {
     } else {
         s.graphemes(true).count()
     }
+}
+
+/// Whether `b` is ASCII without `'\r'`: eight bytes per step (a byte is flagged if its top bit is
+/// set or it equals `'\r'`, by the classic zero-byte test on `word ^ 0x0d0d…`).
+#[inline]
+fn plain_ascii(b: &[u8]) -> bool {
+    const ONES: u64 = 0x0101_0101_0101_0101;
+    const HIGH: u64 = 0x8080_8080_8080_8080;
+    const CR: u64 = 0x0d0d_0d0d_0d0d_0d0d;
+    let flagged = |w: u64| {
+        let cr = w ^ CR;
+        (w | (cr.wrapping_sub(ONES) & !cr)) & HIGH != 0
+    };
+    let mut chunks = b.chunks_exact(8);
+    for c in &mut chunks {
+        if flagged(u64::from_le_bytes(c.try_into().expect("8 bytes"))) {
+            return false;
+        }
+    }
+    let rest = chunks.remainder();
+    let mut tail = [0u8; 8];
+    tail[..rest.len()].copy_from_slice(rest);
+    !flagged(u64::from_le_bytes(tail))
 }
 
 /// `recv.field`: the named field of a `umbo` value.
@@ -201,7 +221,15 @@ const PURE_METHODS: [&[&str]; 16] = [
         "gawanya",
         "badilisha",
     ],
-    &["clona", "urefu", "pata", "unganisha", "jiunge", "kwa_neno", "vipande"],
+    &[
+        "clona",
+        "urefu",
+        "pata",
+        "unganisha",
+        "jiunge",
+        "kwa_neno",
+        "vipande",
+    ],
     &["clona", "idadi", "pata", "funguo", "vipo"],
     &["ina", "urefu", "clona", "orodha"],
     &["angu", "ni_tupu", "ni_po", "hakikisha"],
@@ -1089,6 +1117,13 @@ mod tests {
             "e\u{301}",
         ] {
             assert_eq!(grapheme_count(s), s.graphemes(true).count(), "{s:?}");
+        }
+        // A '\r', a "\r\n" or a non-ASCII character at every position across word boundaries.
+        for odd in ["\r", "\r\n", "é", "\u{7f}"] {
+            for at in 0..=17 {
+                let s = format!("{}{odd}{}", "a".repeat(at), "b".repeat(17 - at));
+                assert_eq!(grapheme_count(&s), s.graphemes(true).count(), "{s:?}");
+            }
         }
     }
 
