@@ -239,6 +239,7 @@ fn worker_loop(
     #[cfg_attr(target_arch = "wasm32", allow(unused_variables))] tls_config: ServerTls,
 ) {
     loop {
+        crate::platform::flush_stdout();
         let stream = match listener.accept() {
             Ok((s, _addr)) => s,
             // The listener itself closing (every Arc clone dropped, or a real bind error) ends

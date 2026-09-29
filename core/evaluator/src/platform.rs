@@ -11,18 +11,104 @@
 
 use crate::value::EvalError;
 
+/// Block-buffered program output. `println!` flushes on every newline even into a pipe or a
+/// file — one `write` system call per `chapisha`. While a [`BlockOutput`] guard is alive and
+/// stdout is not a terminal, output collects here instead and goes out in large writes (as C's
+/// stdio does); it is flushed before reading input, before writing to stderr (so the two stay in
+/// order when they share a file), before `toka`, and when the guard drops.
+#[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+mod out {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static BLOCK: AtomicBool = AtomicBool::new(false);
+    static BUF: parking_lot::Mutex<Vec<u8>> = parking_lot::Mutex::new(Vec::new());
+    const LIMIT: usize = 32 * 1024;
+
+    pub fn write_line(s: &str) {
+        if !BLOCK.load(Ordering::Relaxed) {
+            println!("{s}");
+            return;
+        }
+        let mut buf = BUF.lock();
+        buf.extend_from_slice(s.as_bytes());
+        buf.push(b'\n');
+        if buf.len() >= LIMIT {
+            drain(&mut buf);
+        }
+    }
+
+    fn drain(buf: &mut Vec<u8>) {
+        if !buf.is_empty() {
+            let mut out = std::io::stdout().lock();
+            let _ = out.write_all(buf);
+            let _ = out.flush();
+            buf.clear();
+        }
+    }
+
+    pub fn flush() {
+        drain(&mut BUF.lock());
+    }
+
+    /// Buffer program output until dropped (a no-op when stdout is a terminal, where each line
+    /// should appear as it is written).
+    pub struct BlockOutput(bool);
+
+    impl BlockOutput {
+        pub fn begin() -> Self {
+            let block = !std::io::IsTerminal::is_terminal(&std::io::stdout());
+            if block {
+                // A panic (an interpreter bug; `panic = "abort"` in release builds skips this
+                // guard's drop) must not swallow what the program already printed.
+                static HOOK: std::sync::Once = std::sync::Once::new();
+                HOOK.call_once(|| {
+                    let previous = std::panic::take_hook();
+                    std::panic::set_hook(Box::new(move |info| {
+                        if let Some(mut buf) = BUF.try_lock() {
+                            drain(&mut buf);
+                        }
+                        previous(info);
+                    }));
+                });
+                BLOCK.store(true, Ordering::Relaxed);
+            }
+            BlockOutput(block)
+        }
+    }
+
+    impl Drop for BlockOutput {
+        fn drop(&mut self) {
+            if self.0 {
+                BLOCK.store(false, Ordering::Relaxed);
+                flush();
+            }
+        }
+    }
+}
+
+#[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+pub use out::{flush as flush_stdout, BlockOutput};
+
+/// Nothing is buffered without std I/O.
+#[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
+pub fn flush_stdout() {}
+
 #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
 pub fn write_stdout(s: &str) {
-    println!("{s}");
+    out::write_line(s);
 }
 
 #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
 pub fn write_stderr(s: &str) {
+    out::flush();
     eprintln!("{s}");
 }
 
 #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
 pub fn read_stdin() -> Result<String, EvalError> {
+    // A prompt written just before must be visible while waiting for the answer.
+    out::flush();
     let mut line = String::new();
     match std::io::stdin().read_line(&mut line) {
         Ok(_) => {

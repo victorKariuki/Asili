@@ -35,7 +35,10 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         Box::new(|args: &[Value]| {
             let code = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
-            std::process::exit(code);
+            {
+                crate::platform::flush_stdout();
+                std::process::exit(code);
+            }
             #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
             {
                 let _ = code;

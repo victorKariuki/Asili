@@ -101,6 +101,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             let secs = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0);
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
             {
+                crate::platform::flush_stdout();
                 std::thread::sleep(std::time::Duration::from_secs_f64(secs));
             }
             #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]

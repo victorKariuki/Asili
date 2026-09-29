@@ -570,6 +570,8 @@ pub fn run_asb(
     asb_path: Option<&std::path::Path>,
     args: Vec<String>,
 ) -> Result<(), RunAsbError> {
+    #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+    let _output = platform::BlockOutput::begin();
     on_known_stack(|| run_asb_here(bytes, asb_path, args))
 }
 

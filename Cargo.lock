@@ -151,7 +151,9 @@ name = "asili-runner"
 version = "0.2.1"
 dependencies = [
  "asili-evaluator",
+ "asili-lexer",
  "asili-mem",
+ "asili-parser",
 ]
 
 [[package]]

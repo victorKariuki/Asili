@@ -113,6 +113,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Program output is block-buffered when stdout is not a terminal** (the runner, `pata tenda`,
+  `pata jenga --tenda`): `chapisha` used to cost one `write` system call per line even into a
+  pipe or file; output now goes out in 32 KiB writes, as C's stdio does. It is flushed before
+  reading input, before writing to stderr (so the two stay in order in one log), before
+  blocking (`lala`, accepting a connection, reading a stream, `pokea`, `subiri_tenda`), on
+  `toka`, on a panic, and at the end of the run; on a terminal each line still appears as it is
+  printed. Printing 200,000 lines to a file: 70 → 22 ms.
+
 - **Leaner `nguvu` code**: arithmetic results and list elements computed before a branch are
   reused in its arms (with loads after a store to the same element forwarded from the stored
   register); calls no longer spill arguments that are already in their stack slots and

@@ -479,6 +479,7 @@ pub(crate) fn pure_method(
             Ok(Value::Tupu)
         }
         (Value::Mkondo(cell), "soma") => {
+            crate::platform::flush_stdout(); // about to block: show what was printed so far
             use std::io::Read;
             let mut guard = cell.borrow_mut();
             match guard.0.as_mut() {
@@ -520,6 +521,7 @@ pub(crate) fn pure_method(
         // behavior for every current caller (mkondo_unganisha's tests, examples/
         // mkondo_server/'s one-request-per-connection contract).
         (Value::Mkondo(cell), "soma_bailisi") => {
+            crate::platform::flush_stdout(); // about to block: show what was printed so far
             use std::io::Read;
             let kikomo = value::as_f64(args_val.first().unwrap_or(&Value::Hamna))
                 .unwrap_or(0.0)
@@ -569,6 +571,7 @@ pub(crate) fn pure_method(
             }
         }
         (Value::NjiaRx(rx), "pokea") => {
+            crate::platform::flush_stdout(); // about to block: show what was printed so far
             let guard = rx.lock().unwrap();
             match guard.recv() {
                 Ok(sv) => Ok(Value::sawa(sv.into_value())),
@@ -598,6 +601,7 @@ pub(crate) fn pure_method(
             }
         }
         (Value::NjiaRxBounded(rx), "pokea") => {
+            crate::platform::flush_stdout(); // about to block: show what was printed so far
             let guard = rx.lock().unwrap();
             match guard.recv() {
                 Ok(sv) => Ok(Value::sawa(sv.into_value())),

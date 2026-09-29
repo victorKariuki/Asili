@@ -11,3 +11,7 @@ path = "src/main.rs"
 [dependencies]
 asili-evaluator = { path = "../../core/evaluator" }
 asili-mem = { path = "mem" }
+
+[dev-dependencies]
+asili-lexer = { path = "../../core/lexer" }
+asili-parser = { path = "../../core/parser" }

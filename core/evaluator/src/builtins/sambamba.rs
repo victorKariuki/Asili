@@ -90,7 +90,10 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
                 None => Ok(Value::kosa(format!(
                     "subiri_tenda: uzi haujulikani au tayari umesubiriwa: {id}"
                 ))),
-                Some(h) => match h.join() {
+                Some(h) => match {
+                    crate::platform::flush_stdout();
+                    h.join()
+                } {
                     Ok(Ok(())) => Ok(Value::sawa(Value::Tupu)),
                     Ok(Err(msg)) => Ok(Value::kosa(msg)),
                     Err(_) => Ok(Value::kosa(

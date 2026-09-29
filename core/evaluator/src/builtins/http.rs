@@ -441,6 +441,7 @@ fn http_worker_loop(
     #[cfg_attr(target_arch = "wasm32", allow(unused_variables))] tls_config: ServerTls,
 ) {
     loop {
+        crate::platform::flush_stdout();
         let tcp_stream = match listener.accept() {
             Ok((s, _addr)) => s,
             Err(_) => return,
