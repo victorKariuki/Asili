@@ -130,54 +130,93 @@ pub(crate) fn field_ref<'v>(recv: &'v Value, field: &str) -> Result<&'v Value, E
 
 /// Whether `method` on `recv` is implemented by [`pure_method`].
 pub(crate) fn is_pure_method(recv: &Value, method: &str) -> bool {
-    match recv {
-        Value::Neno(_) => matches!(
-            method,
-            "clona"
-                | "urefu"
-                | "herufi_kwa"
-                | "biti_ngapi"
-                | "unganisha"
-                | "kata"
-                | "tafuta"
-                | "kwa_herufi_ndogo"
-                | "kwa_herufi_kubwa"
-                | "tupu"
-                | "ina"
-                | "hesabu"
-                | "rudia"
-                | "anza_na"
-                | "maliza_na"
-                | "gawanya"
-                | "badilisha"
-        ),
-        Value::Orodha(_) => matches!(
-            method,
-            "clona" | "urefu" | "pata" | "unganisha" | "jiunge" | "kwa_neno" | "vipande"
-        ),
-        Value::Kamusi(_) => matches!(method, "clona" | "idadi" | "pata" | "funguo" | "vipo"),
-        Value::Seti(_) => matches!(method, "ina" | "urefu" | "clona" | "orodha"),
-        Value::Chaguo(_) => matches!(method, "angu" | "ni_tupu" | "ni_po" | "hakikisha"),
-        Value::Tokeo(_) => matches!(method, "ni_kosa" | "ni_sawa" | "kosa" | "angu"),
-        Value::Jozi(..) => matches!(method, "clona" | "kwanza" | "pili"),
-        Value::Wakati(_) => method == "sekunde",
-        Value::KashaGC(_) => matches!(method, "pata" | "weka" | "idadi" | "shirikisha"),
-        Value::KashaGCDhaifu(_) => method == "imarisha",
-        Value::Faili(_) => matches!(method, "soma" | "andika" | "funga"),
-        Value::Mkondo(_) => matches!(method, "soma" | "andika" | "funga" | "soma_bailisi"),
-        Value::Kumbukumbu(_) => method == "pata",
-        Value::NjiaTx(_) | Value::NjiaTxBounded(_) => method == "tuma",
-        Value::NjiaRx(_) | Value::NjiaRxBounded(_) => method == "pokea",
-        Value::Fungo(_) => matches!(method, "funga" | "fungua" | "pata" | "weka"),
-        Value::Enum(en, _, _) if en == "Tokeo" => {
-            matches!(method, "ni_kosa" | "ni_sawa" | "kosa" | "angu")
-        }
-        Value::Enum(en, _, _) if en == "Chaguo" => {
-            matches!(method, "ni_po" | "ni_tupu" | "angu" | "hakikisha")
-        }
-        _ => false,
-    }
+    receiver_kind(recv).is_some_and(|kind| PURE_METHODS[kind as usize].contains(&method))
 }
+
+/// Receiver kinds with methods, indexing [`PURE_METHODS`].
+#[derive(Clone, Copy)]
+enum Kind {
+    Neno,
+    Orodha,
+    Kamusi,
+    Seti,
+    Chaguo,
+    Tokeo,
+    Jozi,
+    Wakati,
+    KashaGC,
+    KashaGCDhaifu,
+    Faili,
+    Mkondo,
+    Kumbukumbu,
+    NjiaTx,
+    NjiaRx,
+    Fungo,
+}
+
+fn receiver_kind(recv: &Value) -> Option<Kind> {
+    Some(match recv {
+        Value::Neno(_) => Kind::Neno,
+        Value::Orodha(_) => Kind::Orodha,
+        Value::Kamusi(_) => Kind::Kamusi,
+        Value::Seti(_) => Kind::Seti,
+        Value::Chaguo(_) => Kind::Chaguo,
+        Value::Enum(en, _, _) if en == "Chaguo" => Kind::Chaguo,
+        Value::Tokeo(_) => Kind::Tokeo,
+        Value::Enum(en, _, _) if en == "Tokeo" => Kind::Tokeo,
+        Value::Jozi(..) => Kind::Jozi,
+        Value::Wakati(_) => Kind::Wakati,
+        Value::KashaGC(_) => Kind::KashaGC,
+        Value::KashaGCDhaifu(_) => Kind::KashaGCDhaifu,
+        Value::Faili(_) => Kind::Faili,
+        Value::Mkondo(_) => Kind::Mkondo,
+        Value::Kumbukumbu(_) => Kind::Kumbukumbu,
+        Value::NjiaTx(_) | Value::NjiaTxBounded(_) => Kind::NjiaTx,
+        Value::NjiaRx(_) | Value::NjiaRxBounded(_) => Kind::NjiaRx,
+        Value::Fungo(_) => Kind::Fungo,
+        _ => return None,
+    })
+}
+
+/// The state-free methods of each receiver kind ([`pure_method`] implements them) — the one
+/// list, also consulted by name alone for receivers whose type is not known where a call is
+/// compiled ([`is_shared_method_name`]).
+const PURE_METHODS: [&[&str]; 16] = [
+    &[
+        "clona",
+        "urefu",
+        "herufi_kwa",
+        "biti_ngapi",
+        "unganisha",
+        "kata",
+        "tafuta",
+        "kwa_herufi_ndogo",
+        "kwa_herufi_kubwa",
+        "tupu",
+        "ina",
+        "hesabu",
+        "rudia",
+        "anza_na",
+        "maliza_na",
+        "gawanya",
+        "badilisha",
+    ],
+    &["clona", "urefu", "pata", "unganisha", "jiunge", "kwa_neno", "vipande"],
+    &["clona", "idadi", "pata", "funguo", "vipo"],
+    &["ina", "urefu", "clona", "orodha"],
+    &["angu", "ni_tupu", "ni_po", "hakikisha"],
+    &["ni_kosa", "ni_sawa", "kosa", "angu"],
+    &["clona", "kwanza", "pili"],
+    &["sekunde"],
+    &["pata", "weka", "idadi", "shirikisha"],
+    &["imarisha"],
+    &["soma", "andika", "funga"],
+    &["soma", "andika", "funga", "soma_bailisi"],
+    &["pata"],
+    &["tuma"],
+    &["pokea"],
+    &["funga", "fungua", "pata", "weka"],
+];
 
 /// Evaluate a state-free method. Callers must check [`is_pure_method`] first.
 pub(crate) fn pure_method(
@@ -1023,12 +1062,10 @@ pub(crate) fn is_shared_method_name(method: &str) -> bool {
         Value::Wakati(0.0),
         Value::Kumbukumbu(Box::new(Value::Tupu)),
     ];
-    probes.iter().any(|p| {
-        is_pure_method(p, method) || is_mutating(p, method) || is_callback_method(p, method)
-    }) || matches!(
-        method,
-        "shirikisha" | "imarisha" | "soma_bailisi" | "tuma" | "pokea" | "funga" | "fungua" | "weka"
-    )
+    PURE_METHODS.iter().any(|names| names.contains(&method))
+        || probes
+            .iter()
+            .any(|p| is_mutating(p, method) || is_callback_method(p, method))
 }
 
 #[cfg(test)]

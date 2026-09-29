@@ -123,6 +123,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Programs calling these builtins are no longer left to the tree-walker for that reason, and a
   program's own `kazi` named like one of them shadows it. `.asb` bytecode version 10 (struct and
   field names are interned constants, so a program holds no thread-local data).
+- **No example leaves a `kazi` to the tree-walker any more**: calls to `tenda` and the server
+  loops compile (they are now in the builtin table, which each engine intercepts), and methods
+  of handle types (`Mkondo`, `Faili`, channels, `Fungo`) compile on receivers whose type is not
+  known where they are called. Each receiver kind's state-free methods are listed once
+  (`PURE_METHODS`); the separate by-name list that had drifted from it is gone.
 
 - **Program output is block-buffered when stdout is not a terminal** (the runner, `pata tenda`,
   `pata jenga --tenda`): `chapisha` used to cost one `write` system call per line even into a

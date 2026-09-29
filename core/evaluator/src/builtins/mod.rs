@@ -51,6 +51,18 @@ fn register_all(m: &mut HashMap<String, BuiltinFn>) {
     kumbukumbu::register(m);
     seti::register(m);
     json::register(m);
+    // Listed so compilers resolve them; each engine intercepts the call and passes the program
+    // (see `MODULE_BUILTINS`), so these bodies run only for a by-name callback.
+    for name in MODULE_BUILTINS {
+        m.insert(
+            name.to_string(),
+            Box::new(move |_args: &[Value]| {
+                Err(EvalError::TypeErr(format!(
+                    "{name} haiwezi kupitishwa kama kazi"
+                )))
+            }),
+        );
+    }
 }
 
 /// Builtins by name (the tree-walking evaluator's lookup table).
