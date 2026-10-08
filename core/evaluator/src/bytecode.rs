@@ -1874,8 +1874,8 @@ impl<'a> FunctionCompiler<'a> {
                 let out = self.dst_or_temp(dst, Ty::Val);
                 self.emit(Opcode::MakeEnum {
                     dst: out.reg,
-                    enum_name: enum_name.clone(),
-                    variant: variant_name.clone(),
+                    enum_name: *enum_name,
+                    variant: *variant_name,
                     data,
                 });
                 Some(out)

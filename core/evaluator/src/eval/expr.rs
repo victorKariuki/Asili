@@ -284,11 +284,7 @@ fn eval_expr_cold(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Value, EvalError
             } else {
                 None
             };
-            Ok(Value::Enum(
-                enum_name.clone(),
-                variant_name.clone(),
-                variant_data,
-            ))
+            Ok(Value::Enum(*enum_name, *variant_name, variant_data))
         }
         Expr::FieldAccess {
             receiver, field, ..

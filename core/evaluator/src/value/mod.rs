@@ -373,8 +373,8 @@ impl Value {
                 SendValue::Struct(name.to_string(), out)
             }
             Value::Enum(en, vn, data) => SendValue::Enum(
-                en.clone(),
-                vn.clone(),
+                *en,
+                *vn,
                 match data {
                     Some(v) => Some(Box::new(v.try_into_send()?)),
                     None => None,

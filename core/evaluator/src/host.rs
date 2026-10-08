@@ -515,7 +515,7 @@ impl<'p> Host<'p> {
                 data,
             } => {
                 let data = data.map(|r| Box::new(frame.vals[r as usize].clone()));
-                frame.vals[*dst as usize] = Value::Enum(enum_name.clone(), variant.clone(), data);
+                frame.vals[*dst as usize] = Value::Enum(*enum_name, *variant, data);
                 return Flow::Next;
             }
             Opcode::MatchPattern {
