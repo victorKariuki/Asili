@@ -254,21 +254,19 @@ Next steps are the "Remaining gaps" below.
 
 - `ASILI_AOT=0` — don't build (at `pata jenga`) or load or compile (at run time) native code:
   the tree-walker runs the program.
-- `ASILI_BYTECODE_REPORT=1` / `ASILI_BYTECODE_DUMP=1` (at `pata jenga`) — list the `kazi` left
-  to the tree-walker / print every compiled `kazi`'s instructions.
+- `ASILI_BYTECODE_DUMP=1` (at `pata jenga`) — print every compiled `kazi`'s instructions.
 - `ASILI_NGUVU_IR=<file>` / `ASILI_NGUVU_DUMP=<file>` — dump the optimized IR with register
   locations / the machine code, function offsets and load address (in-memory compiles).
 
 ## Remaining gaps
 
-- A `kazi` using a construct the bytecode compiler does not lower (`tupa` of a binding from an
-  enclosing scope, pattern `weka`,
-  maps with computed keys, `shughuli ya` method calls on a receiver whose `umbo` is not known
-  where the call is compiled) runs on the tree-walker; `ASILI_BYTECODE_REPORT=1 pata jenga` lists each such `kazi` and line; the rest of the program stays bytecode and native code (mixed mode:
-  `Opcode::Interpreted` stubs, `BytecodeProgram::ast`, and a `NativeHook` that sends the
-  tree-walker's calls to compiled `kazi` back to native code). Lowering those constructs would move
-  the remaining functions onto the fast path; `compile_module_explained` reports the first one
-  and its line.
+- There is no mixed mode: a program lowers to bytecode as a whole or not at all
+  (`compile_module_explained` names the first `kazi` and line that blocked it). Pattern `weka`,
+  computed module constants (an init function the host runs once), maps with computed keys and
+  method calls on a receiver whose type is only known at run time all lower. The one construct
+  that does not is `tupa` of a binding declared outside an enclosing loop (the tree-walker fails
+  on the loop's second pass, which a static drop cannot reproduce). A program that does not lower
+  still builds a syntax-tree artifact under `--namna dev`; `--namna release` refuses it.
 - Threads (`tenda`) and server workers (`mkondo_tumikia`, `mkondo_tumikia_http`) share the
   bytecode program and its native code (`spawn::Shared`) and build one host per thread; only a
   program built as a syntax-tree artifact still runs them on the tree-walker.

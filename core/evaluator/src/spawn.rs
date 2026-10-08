@@ -52,7 +52,7 @@ impl Shared {
                         .iter()
                         .find(|f| f.name == name)
                         .ok_or_else(|| EvalError::UndefinedVar(name.to_string()))?;
-                    tree.call(module, f, args, None)
+                    tree.call(module, f, args)
                 })
             }
             #[cfg(not(target_arch = "wasm32"))]

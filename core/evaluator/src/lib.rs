@@ -96,9 +96,9 @@ pub fn run_function(
 /// pata/cli) were previously type-checked and exported but never actually bound at runtime, so
 /// referencing one by name failed with UndefinedVar. Call once per fresh Env, before pushing the
 /// function's own scope, so constants act as globals for the rest of execution.
-/// A reusable tree-walker for the `kazi` a bytecode program leaves to it (mixed mode): the
-/// environment (global and module constants) and builtin table are built once, and each call
-/// only pushes a scope for its parameters.
+/// A reusable tree-walker (threads of a tree-walked program): the environment (global and
+/// module constants) and builtin table are built once, and each call only pushes a scope for
+/// its parameters.
 pub(crate) struct TreeContext {
     env: Env,
     builtins: runtime::Builtins,
@@ -115,18 +115,15 @@ impl TreeContext {
         Ok(TreeContext { env, builtins })
     }
 
-    /// Run `f` (a function of `module`) on the tree-walker; its calls to `kazi` that run as
-    /// native code go through `hook` (none: every `kazi` runs here).
+    /// Run `f` (a function of `module`) on the tree-walker.
     pub(crate) fn call(
         &mut self,
         module: &Module,
         f: &Function,
         args: Vec<Value>,
-        hook: Option<runtime::NativeHook>,
     ) -> Result<Value, EvalError> {
         let builtins = std::mem::take(&mut self.builtins);
         let mut rt = runtime::Runtime::with_builtins(&mut self.env, module, builtins);
-        rt.host = hook;
         let out = eval::call_body(&mut rt, f, args);
         self.builtins = std::mem::take(&mut rt.builtins);
         out

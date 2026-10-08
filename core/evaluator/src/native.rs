@@ -291,8 +291,7 @@ pub(crate) fn num_reads(op: &Opcode) -> Vec<Reg> {
         | Opcode::MakeEnum { .. }
         | Opcode::MatchPattern { .. }
         | Opcode::MakeMap { .. }
-        | Opcode::CheckDepth
-        | Opcode::Interpreted { .. } => Vec::new(),
+        | Opcode::CheckDepth => Vec::new(),
     }
 }
 
@@ -366,8 +365,7 @@ pub(crate) fn num_writes(op: &Opcode) -> Vec<Reg> {
         | Opcode::Field { .. }
         | Opcode::MakeEnum { .. }
         | Opcode::MakeMap { .. }
-        | Opcode::CheckDepth
-        | Opcode::Interpreted { .. } => Vec::new(),
+        | Opcode::CheckDepth => Vec::new(),
     }
 }
 
@@ -441,8 +439,7 @@ pub(crate) fn list_writes(op: &Opcode) -> Vec<Reg> {
         | Opcode::MakeEnum { .. }
         | Opcode::MatchPattern { .. }
         | Opcode::MakeMap { .. }
-        | Opcode::CheckDepth
-        | Opcode::Interpreted { .. } => Vec::new(),
+        | Opcode::CheckDepth => Vec::new(),
     }
 }
 

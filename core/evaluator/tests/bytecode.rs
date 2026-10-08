@@ -231,31 +231,37 @@ fn string_list_methods_and_callbacks_run_in_the_vm() {
 }
 
 #[test]
-fn unsupported_methods_fall_back_to_the_evaluator() {
+fn a_kazi_that_cannot_be_lowered_fails_the_whole_program() {
+    // No mixed mode: an unknown function (the semantic check's error, if it ran) leaves the
+    // program without bytecode, and the error names the `kazi`.
     let tokens = tokenize(
         r#"
         kazi soma() -> Namba {
-            weka m = 3
-            kwa i kutoka 0 hadi 2 {
-                m = m + i
-            }
-            rejesha herufi_nyingi("abc").idadi_isiyojulikana()
+            rejesha herufi_nyingi("abc")
+        }
+        kazi kuu() -> Namba {
+            rejesha 1
         }
         "#,
     )
     .expect("tokenize");
     let module = parse_tokens(&tokens).expect("parse");
-    // Mixed mode: the program still compiles, `soma` is left to the tree-walker, and the
-    // strict variant names it.
-    let program = compile_module(&module).expect("mixed program");
-    let soma = program.find_function("soma").expect("soma");
-    assert!(matches!(
-        soma.code.as_slice(),
-        [asili_evaluator::Opcode::Interpreted { .. }]
-    ));
-    assert!(program.ast.is_some());
+    assert!(compile_module(&module).is_none());
     let err = asili_evaluator::compile_module_explained(&module).expect_err("strict");
     assert!(err.contains("soma"), "{err}");
+}
+
+#[test]
+fn unknown_methods_are_errors_at_run_time() {
+    let program = compile(
+        r#"
+        kazi soma() -> Namba {
+            rejesha "abc".idadi_isiyojulikana()
+        }
+        "#,
+    );
+    let err = run_bytecode_function(&program, "soma", vec![]).expect_err("unknown method");
+    assert!(err.to_string().contains("idadi_isiyojulikana"), "{err}");
 }
 
 #[test]

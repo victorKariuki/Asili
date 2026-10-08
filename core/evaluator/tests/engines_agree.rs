@@ -359,21 +359,19 @@ fn number_list_representations_match_the_tree_walker() {
 }
 
 #[test]
-fn mixed_programs_agree() {
+fn calls_between_kazi_agree() {
     agree(
-        "mixed",
+        "calls",
         r#"
         umbo Nukta {
             x: Namba,
             y: Namba,
         }
         kazi urefu_wa(p: Nukta) -> Namba {
-            # a pattern `weka`: left to the tree-walker
             weka (a, b) = jozi(p.x, p.y)
             rejesha mraba(p.x) + mraba(p.y)
         }
         kazi mraba(n: Namba) -> Namba {
-            # compiled, called from the tree-walker
             weka s: Namba = 0
             kwa i kutoka 0 hadi n {
                 s += n
@@ -389,7 +387,7 @@ fn mixed_programs_agree() {
             rejesha ""
         }
         kazi jumla_ya_aina(k: Namba) -> Neno {
-            # compiled, calling the tree-walker in a loop
+            # calling another kazi in a loop
             weka r: Neno = ""
             kwa i kutoka 0 hadi k {
                 r = r + aina(i)
@@ -667,13 +665,11 @@ fn methods_dispatch_like_the_tree_walker() {
         &["t"],
     );
     agree(
-        "methods_mixed",
+        "methods_from_a_pattern_weka",
         &format!(
             "{METHODS}{}",
             r#"
             kazi t() -> Orodha<Namba> {
-                # a pattern `weka` keeps this kazi on the tree-walker, which calls compiled
-                # methods
                 weka m = Mstatili { upana: 3, urefu_wake: 4 }
                 weka (a, b) = jozi(1, 2)
                 weka r: Orodha<Namba> = []

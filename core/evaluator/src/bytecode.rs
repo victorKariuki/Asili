@@ -15,8 +15,8 @@
 //! evaluator's shared helpers (`eval::methods`) so both execution paths agree on behaviour and
 //! error text.
 //!
-//! Programs containing syntax that is not represented here make [`compile_module`] return
-//! `None`, and the caller keeps emitting the serialized-AST artifact instead.
+//! A program containing syntax that is not represented here does not compile:
+//! [`compile_module_explained`] names the `kazi` and line.
 
 use crate::builtins::builtin_names;
 use crate::eval::methods;
@@ -464,12 +464,6 @@ pub enum Opcode {
     /// Where a call was inlined: fail as the call would have if it went one level past the
     /// call-depth limit (`MAX_CALL_DEPTH`), so inlining never changes where that error happens.
     CheckDepth,
-    /// The whole body of a `kazi` the bytecode compiler could not lower: run it on the
-    /// tree-walker (from `BytecodeProgram::ast`) with this frame's parameters, and return its
-    /// result.
-    Interpreted {
-        function: u32,
-    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -477,9 +471,8 @@ pub struct BytecodeProgram {
     pub constants: Vec<StoredConstant>,
     pub functions: Vec<BytecodeFunc>,
     pub entry: String,
-    /// The module's syntax tree, always carried: `kazi` that could not be lowered run on the
-    /// tree-walker (`Opcode::Interpreted`), and where native code cannot be built (no backend for
-    /// this platform, or `ASILI_AOT=0`) the tree-walker runs the whole program.
+    /// The module's syntax tree: where native code cannot be built (no backend for this
+    /// platform, or `ASILI_AOT=0`) the tree-walker runs the whole program.
     pub ast: Option<asili_parser::Module>,
     /// Every type a `shughuli ya` block is written for, even an empty one (for the error a
     /// method call on that type gives when no such method exists).
@@ -559,22 +552,20 @@ impl BytecodeProgram {
 // Compiler
 // ---------------------------------------------------------------------------------------------
 
-/// Lower the module to bytecode, leaving any `kazi` the compiler cannot lower to the
-/// tree-walker (mixed mode). `None` only when the module-level constants cannot be lowered
-/// (the caller then emits the serialized AST artifact).
+/// Lower the whole module to bytecode; `None` when some `kazi` cannot be lowered
+/// ([`compile_module_explained`] names it).
 pub fn compile_module(module: &Module) -> Option<BytecodeProgram> {
     compile_module_inner(module, &mut None)
 }
 
-/// Every `kazi` lowered to bytecode, or the first `kazi` and source line that could not be
-/// (`pata jenga --namna release`).
+/// Every `kazi` lowered to bytecode, or the first `kazi` and source line that could not be.
 pub fn compile_module_explained(module: &Module) -> Result<BytecodeProgram, String> {
     let mut failed_line = None;
     let program = compile_module_inner(module, &mut failed_line);
     match (program, failed_line) {
         (Some(program), None) => Ok(program),
         (_, Some((function, line))) => Err(format!("kazi '{function}', mstari {line}")),
-        (None, None) => Err("thabiti za moduli".to_string()),
+        (None, None) => unreachable!("a failed lowering records where"),
     }
 }
 
@@ -687,7 +678,7 @@ fn compile_module_inner(
                 *f,
             )
         }));
-    for (index, (qualified, function)) in all.enumerate() {
+    for (qualified, function) in all {
         match FunctionCompiler::compile(&mut program, &module.exprs, function).map(|mut f| {
             f.name = qualified.clone();
             f
@@ -698,25 +689,11 @@ fn compile_module_inner(
                 functions.push(f)
             }
             None => {
-                if failed_line.is_none() {
-                    *failed_line = Some((
-                        function.name.to_string(),
-                        program.failed_line.unwrap_or(function.line),
-                    ));
-                }
-                if std::env::var_os("ASILI_BYTECODE_REPORT").is_some() {
-                    // Debugging aid: every `kazi` left to the tree-walker, with the line.
-                    eprintln!(
-                        "mti: kazi '{}' mstari {}",
-                        function.name,
-                        program.failed_line.unwrap_or(function.line)
-                    );
-                }
-                program.failed_line = None;
-                let mut stub =
-                    FunctionCompiler::interpreted(&mut program, &module.exprs, function, index);
-                stub.name = qualified;
-                functions.push(stub);
+                *failed_line = Some((
+                    function.name.to_string(),
+                    program.failed_line.unwrap_or(function.line),
+                ));
+                return None;
             }
         }
     }
@@ -1074,47 +1051,6 @@ impl<'a> FunctionCompiler<'a> {
     /// The expression `id` (borrowed from the module, not from `self`).
     fn node(&self, id: ExprId) -> &'a Expr {
         &self.exprs[id]
-    }
-
-    /// A `kazi` left to the tree-walker: its parameters in registers as the compiled calling
-    /// convention expects, and one instruction that runs its body there.
-    fn interpreted(
-        program: &'a mut ProgramCompiler,
-        exprs: &'a Exprs,
-        function: &Function,
-        index: usize,
-    ) -> BytecodeFunc {
-        let ret = Ty::from_type_name(&function.return_type.name);
-        let mut f = FunctionCompiler {
-            exprs,
-            program,
-            scopes: vec![HashMap::new()],
-            code: Vec::new(),
-            num_regs: 0,
-            list_regs: 0,
-            val_regs: 0,
-            num_consts: Vec::new(),
-            const_regs: HashMap::new(),
-            loops: Vec::new(),
-            ret,
-        };
-        let params = function
-            .params
-            .iter()
-            .map(|p| f.declare(&p.name, Ty::from_type_name(&p.ty.name), None))
-            .collect();
-        BytecodeFunc {
-            name: function.name.to_string(),
-            params,
-            ret,
-            num_regs: f.num_regs,
-            list_regs: f.list_regs,
-            val_regs: f.val_regs,
-            num_consts: Vec::new(),
-            code: vec![Opcode::Interpreted {
-                function: index as u32,
-            }],
-        }
     }
 
     // -- registers and scopes -----------------------------------------------------------------
@@ -2957,7 +2893,7 @@ pub fn run_bytecode_function_on(
             let module = tree_of(program)?;
             let f =
                 ast_function(module, name).ok_or_else(|| EvalError::UndefinedVar(name.into()))?;
-            crate::TreeContext::new(module)?.call(module, f, args, None)
+            crate::TreeContext::new(module)?.call(module, f, args)
         }
     }
 }

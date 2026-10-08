@@ -3,13 +3,11 @@
 //! A [`Host`] owns one program's call frames (typed register files), its builtin table and
 //! constants, and runs every bytecode function as native code — nothing interprets bytecode. Instructions native code does not compile (strings, maps, structs, builtins,
 //! method calls, …) come back through [`native_exec`] one at a time and run here on the shared
-//! semantics (`eval::ops`, `eval::methods`); `kazi` the compiler left to the tree-walker run on a
-//! [`crate::TreeContext`].
+//! semantics (`eval::ops`, `eval::methods`).
 
 use crate::builtins::BuiltinFn;
 use crate::bytecode::{
-    ast_function, BytecodeFunc, BytecodeProgram, CmpOp, IndexMode, Opcode, Operand, StoredConstant,
-    Ty, UnaryCode,
+    BytecodeFunc, BytecodeProgram, CmpOp, IndexMode, Opcode, Operand, StoredConstant, Ty, UnaryCode,
 };
 use crate::eval::{methods, ops};
 use crate::numlist::NumList;
@@ -70,9 +68,6 @@ pub(crate) struct Host<'p> {
     args: Vec<Value>,
     /// Whether `init_constants` has run.
     constants_ready: bool,
-    /// Tree-walkers for mixed mode, reused across calls (a nested tree → native → tree call takes
-    /// a second one).
-    trees: Vec<crate::TreeContext>,
     /// The program's machine code (`nguvu`), one entry per function.
     native: &'p crate::aot::NativeLibrary,
     /// Outcome of an instruction that native code handed to `exec_slow` and that ended the call.
@@ -266,7 +261,6 @@ impl<'p> Host<'p> {
                     _ => crate::value::Name::default(),
                 })
                 .collect(),
-            trees: Vec::new(),
             native,
             pending: None,
             error_traced: false,
@@ -350,29 +344,6 @@ impl<'p> Host<'p> {
 
     fn release(&mut self, frame: Frame) {
         self.pool.push(frame);
-    }
-
-    /// Run function `index` — one the compiler left to the tree-walker — on it.
-    fn tree_call(&mut self, index: usize, args: Vec<Value>) -> Result<Value, EvalError> {
-        let program = self.program;
-        let module = program
-            .ast
-            .as_ref()
-            .ok_or_else(|| EvalError::Unknown("kilele hakina mti wa programu".into()))?;
-        let name = &program.functions[index].name;
-        let f = ast_function(module, name).ok_or_else(|| EvalError::UndefinedVar(name.clone()))?;
-        let mut tree = match self.trees.pop() {
-            Some(tree) => tree,
-            None => crate::TreeContext::new(module)?,
-        };
-        let hook = crate::runtime::NativeHook {
-            host: self as *mut Host<'p> as *mut std::ffi::c_void,
-            call: tree_to_native,
-            shared: native_shared,
-        };
-        let result = tree.call(module, f, args, Some(hook));
-        self.trees.push(tree);
-        result
     }
 
     /// Call a function with generic arguments, converting to and from its typed registers.
@@ -643,14 +614,6 @@ impl<'p> Host<'p> {
                 return Flow::Next;
             }
             _ => {}
-        }
-        if let Opcode::Interpreted { function } = op {
-            let f = &program.functions[*function as usize];
-            let args = f.params.iter().map(|p| operand_value(frame, *p)).collect();
-            return match self.tree_call(*function as usize, args) {
-                Ok(v) => Flow::Finish(ret_of(f.ret, v)),
-                Err(e) => Flow::Fail(e),
-            };
         }
         let n = &mut frame.nums;
         match op {
@@ -967,8 +930,7 @@ impl<'p> Host<'p> {
                 }
             }
             // Handled above.
-            Opcode::Interpreted { .. }
-            | Opcode::MakeStruct { .. }
+            Opcode::MakeStruct { .. }
             | Opcode::Field { .. }
             | Opcode::FieldNum { .. }
             | Opcode::IterItem { .. }
@@ -1042,62 +1004,6 @@ fn numeric_op(op: &Opcode, n: &mut [f64]) -> bool {
         _ => return false,
     }
     true
-}
-
-/// A register's value as a generic value.
-fn operand_value(frame: &Frame, op: Operand) -> Value {
-    match op.ty {
-        Ty::Num => Value::Namba(frame.nums[op.reg as usize]),
-        Ty::Bool => Value::Ukweli(frame.nums[op.reg as usize] != 0.0),
-        Ty::List => Value::list(
-            frame.lists[op.reg as usize]
-                .iter()
-                .map(Value::Namba)
-                .collect(),
-        ),
-        Ty::Val => frame.vals[op.reg as usize].clone(),
-    }
-}
-
-/// A generic result as a function declared to return `ty` returns it.
-fn ret_of(ty: Ty, v: Value) -> Ret {
-    match (ty, v) {
-        (Ty::Num, Value::Namba(n)) => Ret::Num(n),
-        (Ty::Bool, Value::Ukweli(b)) => Ret::Num(flag(b)),
-        (Ty::List, v @ Value::Orodha(_)) => match list_from_value(&v) {
-            Ok(l) => Ret::List(l),
-            Err(_) => Ret::Val(v),
-        },
-        (_, v) => Ret::Val(v),
-    }
-}
-
-/// The tree-walker calling `name`: native code runs it unless it is one of the
-/// tree-walker's own.
-/// [`crate::runtime::NativeHook::shared`].
-fn native_shared(host: *mut std::ffi::c_void) -> crate::spawn::Shared {
-    // SAFETY: as for `tree_to_native`.
-    let host = unsafe { &mut *(host as *mut Host<'static>) };
-    host.shared_program()
-}
-
-fn tree_to_native(
-    host: *mut std::ffi::c_void,
-    name: &str,
-    args: &[Value],
-) -> Option<Result<Value, EvalError>> {
-    // SAFETY: the pointer is the `Host` whose `tree_call` is running this tree-walker, alive and
-    // between instructions for the whole call (the same re-entry native code makes through
-    // `native_exec`).
-    let host = unsafe { &mut *(host as *mut Host<'static>) };
-    let index = host.program.functions.iter().position(|f| f.name == name)?;
-    if matches!(
-        host.program.functions[index].code.first(),
-        Some(Opcode::Interpreted { .. })
-    ) {
-        return None;
-    }
-    Some(host.call_values(index, args.to_vec()))
 }
 
 fn copy_operand(from: &Frame, src: Operand, to: &mut Frame, dst: Operand) {

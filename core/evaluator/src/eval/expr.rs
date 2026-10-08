@@ -36,11 +36,6 @@ fn invoke_named_callback(
         asili_trace::emit(asili_trace::Tukio::MwitoMfumo, name, 0);
         return f(args);
     }
-    if let Some(hook) = rt.host {
-        if let Some(result) = (hook.call)(hook.host, name, args) {
-            return result;
-        }
-    }
     let module = rt.module;
     let Some(f) = module.functions.iter().find(|x| x.name == name) else {
         return Err(EvalError::TypeErr(format!("kazi haijulikani: {name}")));
@@ -323,11 +318,7 @@ fn eval_expr_cold(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Value, EvalError
                     .position(|b| b == name)
                     .filter(|_| !rt.module.functions.iter().any(|f| f.name == *name))
                 {
-                    let shared = match rt.host {
-                        // Mixed mode: the host's program, bytecode and native code.
-                        Some(hook) => (hook.shared)(hook.host),
-                        None => crate::spawn::Shared::Tree(std::sync::Arc::new(rt.module.clone())),
-                    };
+                    let shared = crate::spawn::Shared::Tree(std::sync::Arc::new(rt.module.clone()));
                     return match which {
                         0 => crate::builtins::sambamba::tenda(&shared, &args_val),
                         1 => crate::builtins::mkondo::mkondo_tumikia(&shared, &args_val),
@@ -337,12 +328,6 @@ fn eval_expr_cold(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Value, EvalError
                 if let Some(f) = rt.builtins.get(name) {
                     asili_trace::emit(asili_trace::Tukio::MwitoMfumo, name, *line as u32);
                     return f(&args_val);
-                }
-                // Mixed mode: a `kazi` that is native code goes back to it.
-                if let Some(hook) = rt.host {
-                    if let Some(result) = (hook.call)(hook.host, name, &args_val) {
-                        return result;
-                    }
                 }
                 // Borrow through a copy of the module reference (not `rt`), so `rt` stays free
                 // for the body — no clone of the function's AST per call.
@@ -435,19 +420,19 @@ fn eval_expr_cold(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Value, EvalError
                     // method's AST per call.
                     let module = rt.module;
                     let struct_name: &str = struct_name;
-                    let (imp, method) = module
+                    let method = module
                         .impls
                         .iter()
                         .filter(|i| i.target == struct_name && i.trait_name.is_none())
-                        .flat_map(|i| i.body.iter().map(move |f| (i, f)))
-                        .find(|(_, mf)| mf.name == *method_name)
+                        .flat_map(|i| i.body.iter())
+                        .find(|mf| mf.name == *method_name)
                         .or_else(|| {
                             module
                                 .impls
                                 .iter()
                                 .filter(|i| i.target == struct_name && i.trait_name.is_some())
-                                .flat_map(|i| i.body.iter().map(move |f| (i, f)))
-                                .find(|(_, mf)| mf.name == *method_name)
+                                .flat_map(|i| i.body.iter())
+                                .find(|mf| mf.name == *method_name)
                         })
                         .ok_or_else(|| {
                             let has_any_impl = module.impls.iter().any(|i| i.target == struct_name);
@@ -464,20 +449,6 @@ fn eval_expr_cold(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Value, EvalError
                             }
                         })?;
 
-                    // Mixed mode: a method compiled to native code runs there.
-                    if let Some(hook) = rt.host {
-                        let qualified = crate::bytecode::impl_function_name(
-                            &imp.target,
-                            imp.trait_name.as_deref(),
-                            &method.name,
-                        );
-                        let mut call_args = Vec::with_capacity(args_val.len() + 1);
-                        call_args.push(recv.clone());
-                        call_args.extend(args_val.iter().cloned());
-                        if let Some(result) = (hook.call)(hook.host, &qualified, &call_args) {
-                            return result;
-                        }
-                    }
                     let args = std::iter::once(recv.clone()).chain(args_val);
                     super::call_body(rt, method, args)
                 }

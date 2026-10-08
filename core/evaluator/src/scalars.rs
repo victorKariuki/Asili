@@ -144,8 +144,6 @@ fn val_access(op: &Opcode, f: &mut impl FnMut(Reg, Access)) {
             });
             f(*dst, Write);
         }
-        // Reads its parameters, whatever they are; never replaced (no struct can be local).
-        Opcode::Interpreted { .. } => {}
     }
 }
 
@@ -153,7 +151,7 @@ fn val_access(op: &Opcode, f: &mut impl FnMut(Reg, Access)) {
 fn successors(code: &[Opcode], pc: usize) -> Vec<usize> {
     match &code[pc] {
         Opcode::Jump { target } => vec![*target as usize],
-        Opcode::Return { .. } | Opcode::ReturnTupu | Opcode::Interpreted { .. } => vec![],
+        Opcode::Return { .. } | Opcode::ReturnTupu => vec![],
         op => {
             let mut next = vec![pc + 1];
             next.extend(crate::native::jump_target(op));
@@ -168,12 +166,6 @@ type Shape = (u32, Vec<u32>);
 /// Replace the structs of `f` that never leave it by their fields (see the module docs).
 pub(crate) fn split_structs(f: &mut BytecodeFunc, constants: &[StoredConstant]) {
     let code = &f.code.clone();
-    if code
-        .iter()
-        .any(|op| matches!(op, Opcode::Interpreted { .. }))
-    {
-        return;
-    }
     // Candidates: written only by `MakeStruct`/`ValMov`, read only by fields and `ValMov`.
     let mut ok: BTreeMap<Reg, bool> = BTreeMap::new();
     let params: BTreeSet<Reg> = f

@@ -139,6 +139,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Every construct lowers to bytecode**: pattern `weka (a, b) = e`, module constants computed
+  from expressions (`thabiti TAU = 2.0 * PI`, run once by an init function before the first
+  call), maps with computed keys, calls to a `kazi` whose name a local shadows, `tupa` of a binding
+  from an enclosing scope, and method calls whose receiver type is only known at run time (the
+  host dispatches to the program's own `umbo`/`jenum` methods, inherent before trait, with the
+  tree-walker's error messages) now compile to bytecode and native code. The only construct left
+  is `tupa` of an outer binding inside a loop. `.asb` bytecode version 14.
+
 - **Method calls classified by pointer**: bytecode method instructions carry the method's
   interned `Name` (encoded as before), and the host decides whether a method is a pure or an
   in-place one by comparing it against interned copies of the method tables instead of
@@ -447,6 +455,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `kama Neno` does (`Siyo_Namba`, `Ukomo`, `-Ukomo`) instead of Rust's `NaN`/`inf`.
 
 ### Removed
+
+- **Mixed mode**: a `kazi` the bytecode compiler cannot lower no longer runs on the
+  tree-walker beside native code (`Opcode::Interpreted`, the host's tree-walker contexts and the
+  tree-walker's hook back into native code are gone). A program lowers as a whole or not at all;
+  `ASILI_BYTECODE_REPORT` is gone with it (`pata jenga --namna release` names the blocking
+  `kazi` and line).
 
 - **The register VM**: bytecode no longer has an interpreter. Every bytecode program runs as
   `nguvu` native code — the image `pata jenga` wrote, or compiled in memory at start-up when it

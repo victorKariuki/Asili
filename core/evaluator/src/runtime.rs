@@ -46,24 +46,6 @@ pub(crate) struct Runtime<'a> {
     /// resumes it.
     pub debug_hook: Option<Arc<dyn DebugHook>>,
     pub metrics: Option<EvalMetrics>,
-    /// The native-code host running this program, when the tree-walker runs only some of its
-    /// `kazi` (mixed mode): calls to the others go back to native code.
-    pub host: Option<NativeHook>,
-}
-
-/// A call from the tree-walker into the native-code host that started it. `call` returns `None`
-/// when that `kazi` is not native code (it is one of the tree-walker's own).
-#[derive(Clone, Copy)]
-pub(crate) struct NativeHook {
-    pub host: *mut std::ffi::c_void,
-    pub call: fn(
-        *mut std::ffi::c_void,
-        &str,
-        &[crate::value::Value],
-    ) -> Option<Result<crate::value::Value, crate::value::EvalError>>,
-    /// The host's program as its threads receive it (so `tenda` and the server loops called
-    /// from tree-walked code still run their `kazi` as native code).
-    pub shared: fn(*mut std::ffi::c_void) -> crate::spawn::Shared,
 }
 
 /// The tree-walker's builtins, by interned name.
@@ -97,7 +79,6 @@ impl<'a> Runtime<'a> {
             executed_lines: None,
             debug_hook: None,
             metrics: None,
-            host: None,
         }
     }
 
@@ -113,7 +94,6 @@ impl<'a> Runtime<'a> {
             executed_lines: None,
             debug_hook: None,
             metrics: None,
-            host: None,
         }
     }
 
