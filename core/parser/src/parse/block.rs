@@ -12,6 +12,7 @@
 use super::MAX_NESTING;
 use crate::cursor::Parser;
 use crate::{Block, Expr, ExprId, ForMode, MatchArm, Pattern, Stmt};
+use asili_lexer::{tk, TokenKind};
 
 /// An `ikiwa` statement's chain so far.
 struct IfChain {
@@ -96,7 +97,7 @@ impl<'a> Parser<'a> {
     /// Parse a function body `{ ... }`. Never recurses: see the module documentation. `None` when
     /// the body never closes (its error is already reported).
     pub(crate) fn parse_body(&mut self) -> Option<Block> {
-        self.consume("{", "PAR020", "kizuizi inahitaji '{'")?;
+        self.consume(tk!("{"), "PAR020", "kizuizi inahitaji '{'")?;
         let mut frames = vec![Frame::Block {
             stmts: Vec::new(),
             kind: Kind::Body,
@@ -126,8 +127,8 @@ impl<'a> Parser<'a> {
             let start = self.pos;
             let step = match frames.last() {
                 Some(Frame::Match { .. }) => self.match_step(frames),
-                _ if self.match_tok(";") => Some(None),
-                _ if self.match_tok("}") => self.close_block(frames),
+                _ if self.match_tok(tk!(";")) => Some(None),
+                _ if self.match_tok(tk!("}")) => self.close_block(frames),
                 _ => self.statement(frames).map(|()| None),
             };
             match step {
@@ -151,24 +152,30 @@ impl<'a> Parser<'a> {
     fn synchronize(&mut self, start: usize) -> Synced {
         let mut depth = self.tokens[start..self.pos.min(self.tokens.len())]
             .iter()
-            .fold(0isize, |d, t| match t.lexeme.as_str() {
-                "{" => d + 1,
-                "}" => d - 1,
+            .fold(0isize, |d, t| match t.kind {
+                TokenKind::LBrace => d + 1,
+                TokenKind::RBrace => d - 1,
                 _ => d,
             })
             .max(0) as usize;
         while !self.is_eof() {
             let t = self.peek();
-            match t.lexeme.as_str() {
-                "{" => depth += 1,
-                "}" if depth == 0 => return Synced::Boundary,
-                "}" => depth -= 1,
-                ";" if depth == 0 => {
+            match t.kind {
+                TokenKind::LBrace => depth += 1,
+                TokenKind::RBrace if depth == 0 => return Synced::Boundary,
+                TokenKind::RBrace => depth -= 1,
+                TokenKind::Semi if depth == 0 => {
                     self.pos += 1;
                     return Synced::Boundary;
                 }
                 // A new top-level item: this body's `}` is missing.
-                "kazi" | "umma" | "umbo" | "jenum" | "sifa" | "shughuli" | "leta"
+                TokenKind::KwKazi
+                | TokenKind::KwUmma
+                | TokenKind::KwUmbo
+                | TokenKind::KwJenum
+                | TokenKind::KwSifa
+                | TokenKind::KwShughuli
+                | TokenKind::KwLeta
                     if depth == 0 && t.column == 1 =>
                 {
                     return Synced::Lost;
@@ -182,7 +189,7 @@ impl<'a> Parser<'a> {
 
     /// One `linganisha` step: its closing `}`, or the next arm `pattern => {`.
     fn match_step(&mut self, frames: &mut Vec<Frame>) -> Option<Option<Block>> {
-        if self.match_tok("}") {
+        if self.match_tok(tk!("}")) {
             let Some(Frame::Match {
                 expr,
                 arms,
@@ -197,13 +204,15 @@ impl<'a> Parser<'a> {
             return Some(None);
         }
         let pattern = self.parse_pattern()?;
-        self.consume("=>", "PAR051", "mkono wa linganisha unahitaji '=>'")?;
+        self.consume(tk!("=>"), "PAR051", "mkono wa linganisha unahitaji '=>'")?;
         self.open_block(frames, Kind::Arm { pattern })?;
         Some(None)
     }
 
     fn open_block(&mut self, frames: &mut Vec<Frame>, kind: Kind) -> Option<()> {
-        let line = self.consume("{", "PAR020", "kizuizi inahitaji '{'")?.line;
+        let line = self
+            .consume(tk!("{"), "PAR020", "kizuizi inahitaji '{'")?
+            .line;
         let span = asili_trace::enter(kind.name(), line as u32);
         frames.push(Frame::Block {
             stmts: Vec::new(),
@@ -288,7 +297,7 @@ impl<'a> Parser<'a> {
                         line,
                     });
                 }
-                self.match_tok(",");
+                self.match_tok(tk!(","));
             }
         }
         Some(None)
@@ -296,11 +305,11 @@ impl<'a> Parser<'a> {
 
     /// After an `ikiwa` or `au_ikiwa` block: another `au_ikiwa`, a `vinginevyo`, or the end.
     fn continue_if(&mut self, frames: &mut Vec<Frame>, chain: IfChain) -> Option<()> {
-        if self.match_tok("au_ikiwa") {
+        if self.match_tok(tk!("au_ikiwa")) {
             let cond = self.parse_expression()?;
             return self.open_block(frames, Kind::IfElif { chain, cond });
         }
-        if self.match_tok("vinginevyo") {
+        if self.match_tok(tk!("vinginevyo")) {
             return self.open_block(frames, Kind::IfElse { chain });
         }
         self.emit(
@@ -319,44 +328,44 @@ impl<'a> Parser<'a> {
     /// One statement in the top block: a simple statement is parsed whole and added; a compound
     /// one parses its header and opens its block.
     fn statement(&mut self, frames: &mut Vec<Frame>) -> Option<()> {
-        if self.check("weka") || self.check("thabiti") {
+        if self.check(tk!("weka")) || self.check(tk!("thabiti")) {
             let group = self.parse_let_group()?;
             if let Some(Frame::Block { stmts, .. }) = frames.last_mut() {
                 stmts.extend(group);
             }
             return Some(());
         }
-        let label = if self.match_tok("lebo") {
+        let label = if self.match_tok(tk!("lebo")) {
             let id = self
                 .consume_ident("PAR042", "lebo inahitaji jina")
                 .map(|t| t.lexeme.trim_start_matches('\'').to_string());
-            let _ = self.consume(":", "PAR043", "lebo inahitaji ':'");
+            let _ = self.consume(tk!(":"), "PAR043", "lebo inahitaji ':'");
             id
         } else {
             None
         };
-        if self.match_tok("ikiwa") {
+        if self.match_tok(tk!("ikiwa")) {
             let line = self.prev().line;
             let cond = self.parse_expression()?;
             return self.open_block(frames, Kind::IfThen { cond, line });
         }
-        if self.match_tok("wakati") {
+        if self.match_tok(tk!("wakati")) {
             let line = self.prev().line;
-            let cond = if self.match_tok("milele") {
+            let cond = if self.match_tok(tk!("milele")) {
                 self.exprs.add(Expr::Bool(true))
             } else {
                 self.parse_expression()?
             };
             return self.open_block(frames, Kind::While { label, cond, line });
         }
-        if self.match_tok("kwa") {
+        if self.match_tok(tk!("kwa")) {
             let line = self.prev().line;
             let var_tok = self.consume_ident("PAR054", "kwa inahitaji jina")?;
-            let mode = if self.match_tok("katika") {
+            let mode = if self.match_tok(tk!("katika")) {
                 ForMode::InExpr(self.parse_expression()?)
-            } else if self.match_tok("kutoka") {
+            } else if self.match_tok(tk!("kutoka")) {
                 let start = self.parse_expression()?;
-                self.consume("hadi", "PAR055", "kwa kutoka inahitaji 'hadi'")?;
+                self.consume(tk!("hadi"), "PAR055", "kwa kutoka inahitaji 'hadi'")?;
                 let end = self.parse_expression()?;
                 ForMode::Range { start, end }
             } else {
@@ -367,17 +376,17 @@ impl<'a> Parser<'a> {
                 frames,
                 Kind::For {
                     label,
-                    var: var_tok.lexeme,
+                    var: var_tok.lexeme.clone(),
                     var_column: var_tok.column,
                     mode,
                     line,
                 },
             );
         }
-        if self.match_tok("linganisha") {
+        if self.match_tok(tk!("linganisha")) {
             let line = self.prev().line;
             let expr = self.parse_expression()?;
-            self.consume("{", "PAR050", "linganisha inahitaji '{'")?;
+            self.consume(tk!("{"), "PAR050", "linganisha inahitaji '{'")?;
             frames.push(Frame::Match {
                 expr,
                 arms: Vec::new(),

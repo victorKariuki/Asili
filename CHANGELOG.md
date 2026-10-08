@@ -139,6 +139,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Token kinds**: every `Token` now carries a `kind` (`asili_lexer::TokenKind`: one variant per
+  keyword and punctuation, plus `Ident`, `Number`, `Str`, `Char`), and the parser compares kinds
+  instead of lexeme strings. `tk!("weka")` names a kind at compile time and rejects text that
+  is not a token. Operator precedence and prefix operators are `match`es on the kind; operands
+  borrow the lexeme instead of copying it. The lexer reuses one character buffer per file and
+  joins two-character operators without allocating. On a 60,000-line file: tokenizing 55 → 26
+  ms, parsing 36 → 19.6 ms. Syntax trees and parser errors are identical on the 874-file
+  corpus (snippets, examples, `lib/std`).
+
+- **Faster tree-walker**: the stack-space check runs every 16 nesting levels rather than at
+  each expression and block; the common expressions (numbers, names, indexing, arithmetic)
+  are handled before the rest, and all `Namba` arithmetic and comparison goes through one
+  function (`number_op`). Assignment updates a binding in place, and `Neno` comparisons no
+  longer allocate. The Sudoku solver with `ASILI_AOT=0` runs 13.6% fewer instructions (15.67 →
+  13.53 billion).
+
 - **Expressions live in one arena per module**: `Module::exprs` (`Exprs`) holds every
   expression node contiguously, and a node refers to its children by `ExprId` (a `u32` index)
   instead of `Box<Expr>`; statements hold the ids of their expressions. Walking, cloning,

@@ -2,9 +2,180 @@ use asili_diagnostics::Diagnostic;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Token {
+    pub kind: TokenKind,
     pub lexeme: String,
     pub line: usize,
     pub column: usize,
+}
+
+/// What a token is, decided once by the lexer: every keyword and punctuation mark has its own
+/// kind, so the parser compares one byte instead of text. Generated with the lookups below from
+/// one table.
+macro_rules! token_kinds {
+    ($($text:literal => $name:ident,)*) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub enum TokenKind {
+            /// A name (anything word-like that is not a reserved word).
+            Ident,
+            /// A number literal: digits and at most the dots of a decimal (`12`, `1.5`).
+            Number,
+            /// A string literal (the lexeme keeps its quotes).
+            Str,
+            /// A character literal (lexeme `CHAR:<c>`).
+            Char,
+            $($name,)*
+        }
+
+        impl TokenKind {
+            /// The kind of a keyword or punctuation text (`None` for anything else).
+            pub fn of_text(text: &str) -> Option<TokenKind> {
+                match text {
+                    $($text => Some(TokenKind::$name),)*
+                    _ => None,
+                }
+            }
+
+            /// [`TokenKind::of_text`] at compile time (see [`tk!`]): unknown text is a
+            /// compile error, so a typo can never silently match every name.
+            pub const fn of_text_const(text: &str) -> TokenKind {
+                $(if const_eq(text, $text) { return TokenKind::$name; })*
+                panic!("not a keyword or punctuation token")
+            }
+
+            /// The fixed text of a keyword or punctuation kind.
+            pub fn text(self) -> Option<&'static str> {
+                match self {
+                    $(TokenKind::$name => Some($text),)*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+const fn const_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+token_kinds! {
+    "au" => KwAu,
+    "au_biti" => KwAuBiti,
+    "au_ikiwa" => KwAuIkiwa,
+    "azima" => KwAzima,
+    "azima_tenda" => KwAzimaTenda,
+    "endelea" => KwEndelea,
+    "hadi" => KwHadi,
+    "ikiwa" => KwIkiwa,
+    "jaribu" => KwJaribu,
+    "jenum" => KwJenum,
+    "kama" => KwKama,
+    "katika" => KwKatika,
+    "kazi" => KwKazi,
+    "kutoka" => KwKutoka,
+    "kwa" => KwKwa,
+    "kweli" => KwKweli,
+    "lebo" => KwLebo,
+    "leta" => KwLeta,
+    "linganisha" => KwLinganisha,
+    "milele" => KwMilele,
+    "na" => KwNa,
+    "na_biti" => KwNaBiti,
+    "rejesha" => KwRejesha,
+    "shughuli" => KwShughuli,
+    "si_kweli" => KwSiKweli,
+    "sifa" => KwSifa,
+    "siyo" => KwSiyo,
+    "siyo_biti" => KwSiyoBiti,
+    "sogeza_kulia" => KwSogezaKulia,
+    "sogeza_kushoto" => KwSogezaKushoto,
+    "thabiti" => KwThabiti,
+    "tupa" => KwTupa,
+    "umbo" => KwUmbo,
+    "umma" => KwUmma,
+    "vinginevyo" => KwVinginevyo,
+    "vunja" => KwVunja,
+    "wakati" => KwWakati,
+    "weka" => KwWeka,
+    "xor_biti" => KwXorBiti,
+    "ya" => KwYa,
+    "Hamna" => Hamna,
+    "_" => Underscore,
+    "'" => Quote,
+    "(" => LParen,
+    ")" => RParen,
+    "{" => LBrace,
+    "}" => RBrace,
+    ":" => Colon,
+    "," => Comma,
+    "." => Dot,
+    ";" => Semi,
+    "+" => Plus,
+    "-" => Minus,
+    "*" => Star,
+    "/" => Slash,
+    "%" => Percent,
+    "<" => Lt,
+    ">" => Gt,
+    "!" => Bang,
+    "=" => Assign,
+    "[" => LBracket,
+    "]" => RBracket,
+    "?" => Question,
+    "#" => Hash,
+    "&" => Amp,
+    "|" => Pipe,
+    "^" => Caret,
+    "==" => EqEq,
+    "!=" => NotEq,
+    ">=" => Ge,
+    "<=" => Le,
+    "->" => Arrow,
+    "+=" => PlusEq,
+    "-=" => MinusEq,
+    "*=" => StarEq,
+    "/=" => SlashEq,
+    "%=" => PercentEq,
+    "&=" => AmpEq,
+    "|=" => PipeEq,
+    "^=" => CaretEq,
+    "//" => SlashSlash,
+    "=>" => FatArrow,
+    "::" => ColonColon,
+    "**" => StarStar,
+    "&&" => AmpAmp,
+    "||" => PipePipe,
+    "<<" => Shl,
+    ">>" => Shr,
+    "//=" => SlashSlashEq,
+}
+
+impl TokenKind {
+    /// Punctuation (operators, brackets, separators), as opposed to words and literals.
+    pub fn is_punct(self) -> bool {
+        self.text()
+            .is_some_and(|t| !t.as_bytes()[0].is_ascii_alphabetic() && t != "_" && t != "'")
+    }
+}
+
+/// The [`TokenKind`] of a keyword or punctuation text, resolved at compile time:
+/// `tk!("weka")`, `tk!("{")`.
+#[macro_export]
+macro_rules! tk {
+    ($text:literal) => {{
+        const KIND: $crate::TokenKind = $crate::TokenKind::of_text_const($text);
+        KIND
+    }};
 }
 
 /// A comment captured as trivia rather than a token — see [`tokenize_with_trivia`]. `text`
@@ -79,16 +250,86 @@ pub fn tokenize_with_trivia(source: &str) -> Result<(Vec<Token>, Vec<Comment>), 
     Ok((tokens, comments))
 }
 
+/// A character that starts a punctuation token.
+#[inline]
+fn is_punct_char(c: char) -> bool {
+    matches!(
+        c,
+        '(' | ')'
+            | '{'
+            | '}'
+            | ':'
+            | ','
+            | '.'
+            | ';'
+            | '+'
+            | '-'
+            | '*'
+            | '/'
+            | '%'
+            | '<'
+            | '>'
+            | '!'
+            | '='
+            | '['
+            | ']'
+            | '?'
+            | '#'
+            | '&'
+            | '|'
+            | '^'
+    )
+}
+
+/// A character that ends a word (punctuation, a string's quote, or whitespace).
+#[inline]
+fn ends_word(c: char) -> bool {
+    c.is_whitespace() || c == '"' || (is_punct_char(c) && c != '.')
+}
+
+/// The two-character operator `a` `b` starts, if any.
+#[inline]
+fn pair(a: char, b: char) -> Option<&'static str> {
+    Some(match (a, b) {
+        ('=', '=') => "==",
+        ('!', '=') => "!=",
+        ('>', '=') => ">=",
+        ('<', '=') => "<=",
+        ('-', '>') => "->",
+        ('+', '=') => "+=",
+        ('-', '=') => "-=",
+        ('*', '=') => "*=",
+        ('/', '=') => "/=",
+        ('%', '=') => "%=",
+        ('&', '=') => "&=",
+        ('|', '=') => "|=",
+        ('^', '=') => "^=",
+        ('/', '/') => "//",
+        ('=', '>') => "=>",
+        (':', ':') => "::",
+        ('*', '*') => "**",
+        ('&', '&') => "&&",
+        ('|', '|') => "||",
+        ('<', '<') => "<<",
+        ('>', '>') => ">>",
+        _ => return None,
+    })
+}
+
 fn tokenize_inner(
     source: &str,
     mut trivia: Option<&mut Vec<Comment>>,
 ) -> Result<Vec<Token>, Vec<Diagnostic>> {
-    let mut tokens = Vec::new();
+    let mut tokens = Vec::with_capacity(source.len() / 4);
     let mut errors = Vec::new();
+    // One buffer for every line's characters (lookahead needs indexing).
+    let mut chars: Vec<char> = Vec::new();
 
     for (line_idx, line) in source.lines().enumerate() {
+        let line_no = line_idx + 1;
+        chars.clear();
+        chars.extend(line.chars());
         let mut col = 1usize;
-        let chars: Vec<char> = line.chars().collect();
         let mut i = 0usize;
         while i < chars.len() {
             let ch = chars[i];
@@ -98,14 +339,10 @@ fn tokenize_inner(
                 continue;
             }
 
-            if ch == '#' {
-                if i + 1 < chars.len() && chars[i + 1] == '[' {
-                    // Attribute start, treat '#' as a token
-                } else {
-                    // Comment: the rest of the line.
-                    skip_comment(&chars, &mut i, &mut col, line_idx, &tokens, &mut trivia);
-                    continue;
-                }
+            if ch == '#' && chars.get(i + 1) != Some(&'[') {
+                // Comment: the rest of the line (`#[` starts an attribute instead).
+                skip_comment(&chars, &mut i, &mut col, line_idx, &tokens, &mut trivia);
+                continue;
             }
 
             // `///` is a documentation comment (read by `pata thibitisha`'s public-API docs
@@ -118,12 +355,10 @@ fn tokenize_inner(
             if ch == '\'' {
                 let start_col = col;
                 let mut decoded = None;
-                let mut is_char_literal = false;
                 if i + 1 < chars.len() {
                     let c = chars[i + 1];
                     if c == '\\' && i + 3 < chars.len() && chars[i + 3] == '\'' {
                         let escaped = chars[i + 2];
-                        is_char_literal = true;
                         decoded = Some(match escaped {
                             'n' => '\n',
                             't' => '\t',
@@ -132,29 +367,19 @@ fn tokenize_inner(
                             _ => escaped,
                         });
                     } else if i + 2 < chars.len() && chars[i + 2] == '\'' && c != '\'' {
-                        is_char_literal = true;
                         decoded = Some(c);
                     }
                 }
-                if is_char_literal {
-                    i += 1;
-                    col += 1;
-                    if decoded == Some('\\') || decoded == Some('\'') {
-                        i += 3;
-                        col += 3;
-                    } else {
-                        i += 2;
-                        col += 2;
-                    }
-                    if let Some(ch) = decoded {
-                        tokens.push(Token {
-                            lexeme: format!("CHAR:{}", ch),
-                            line: line_idx + 1,
-                            column: start_col,
-                        });
-                    }
-                }
-                if is_char_literal {
+                if let Some(ch) = decoded {
+                    let width = if ch == '\\' || ch == '\'' { 4 } else { 3 };
+                    i += width;
+                    col += width;
+                    tokens.push(Token {
+                        kind: TokenKind::Char,
+                        lexeme: format!("CHAR:{ch}"),
+                        line: line_no,
+                        column: start_col,
+                    });
                     continue;
                 }
             }
@@ -197,89 +422,89 @@ fn tokenize_inner(
                 if !closed {
                     errors.push(
                         Diagnostic::new("LEX001", "Kamba haijafungwa")
-                            .with_span(line_idx + 1, start_col),
+                            .with_span(line_no, start_col),
                     );
                 } else {
                     tokens.push(Token {
+                        kind: TokenKind::Str,
                         lexeme: s,
-                        line: line_idx + 1,
+                        line: line_no,
                         column: start_col,
                     });
                 }
                 continue;
             }
 
-            if "(){}:,.;+-*/%<>!=[]?#&|^".contains(ch) {
-                let start_col = col;
-                let mut lexeme = ch.to_string();
+            if is_punct_char(ch) {
                 // `//=` (floor-division assignment) is the one three-character operator.
-                if ch == '/' && chars.get(i + 1) == Some(&'/') && chars.get(i + 2) == Some(&'=') {
-                    tokens.push(Token {
-                        lexeme: "//=".to_string(),
-                        line: line_idx + 1,
-                        column: start_col,
-                    });
-                    i += 3;
-                    col += 3;
-                    continue;
-                }
-                if i + 1 < chars.len() {
-                    let pair = format!("{}{}", ch, chars[i + 1]);
-                    if [
-                        "==", "!=", ">=", "<=", "->", "+=", "-=", "*=", "/=", "%=", "&=", "|=",
-                        "^=", "//", "=>", "::", "**", "&&", "||", "<<", ">>",
-                    ]
-                    .contains(&pair.as_str())
-                    {
-                        lexeme = pair;
-                        i += 1;
-                        col += 1;
-                    }
-                }
+                let text: &'static str = if ch == '/'
+                    && chars.get(i + 1) == Some(&'/')
+                    && chars.get(i + 2) == Some(&'=')
+                {
+                    "//="
+                } else if let Some(two) = chars.get(i + 1).and_then(|&n| pair(ch, n)) {
+                    two
+                } else {
+                    TokenKind::of_text(ch.encode_utf8(&mut [0; 4]))
+                        .and_then(TokenKind::text)
+                        .expect("every punctuation character is a token")
+                };
+                let width = text.len();
                 tokens.push(Token {
-                    lexeme,
-                    line: line_idx + 1,
-                    column: start_col,
+                    kind: TokenKind::of_text(text).expect("listed punctuation"),
+                    lexeme: text.to_string(),
+                    line: line_no,
+                    column: col,
                 });
-                i += 1;
-                col += 1;
+                i += width;
+                col += width;
                 continue;
             }
 
             let start_col = col;
             let mut word = String::new();
+            // Whether the word so far is all digits: a `.` followed by a digit then continues a
+            // decimal number (`100.0`) instead of ending the word.
+            let mut digits = true;
             while i < chars.len() {
                 let c = chars[i];
-                // Include decimal point in numeric literals: if building a digit-only token
-                // and we see '.' followed by a digit, absorb both to form e.g. "100.0".
                 if c == '.'
-                    && word.chars().all(|ch| ch.is_ascii_digit())
+                    && digits
                     && !word.is_empty()
-                    && i + 1 < chars.len()
-                    && chars[i + 1].is_ascii_digit()
+                    && chars.get(i + 1).is_some_and(|d| d.is_ascii_digit())
                 {
                     word.push('.');
+                    digits = false;
                     i += 1;
                     col += 1;
                     continue;
                 }
-                if c.is_whitespace() || "(){}:,.;+-*/%<>!=[]#&|^?\"".contains(c) {
+                if ends_word(c) || c == '.' {
                     break;
                 }
+                digits &= c.is_ascii_digit();
                 word.push(c);
                 i += 1;
                 col += 1;
             }
-            if !word.is_empty() {
-                tokens.push(Token {
-                    lexeme: word,
-                    line: line_idx + 1,
-                    column: start_col,
-                });
-            } else {
+            if word.is_empty() {
                 i += 1;
                 col += 1;
+                continue;
             }
+            let kind = TokenKind::of_text(&word).unwrap_or_else(|| {
+                if word.chars().all(|c| c.is_ascii_digit() || c == '.') {
+                    TokenKind::Number
+                } else {
+                    TokenKind::Ident
+                }
+            });
+            tokens.push(Token {
+                kind,
+                lexeme: word,
+                line: line_no,
+                column: start_col,
+            });
         }
     }
 

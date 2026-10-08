@@ -12,49 +12,49 @@ use asili_diagnostics::Diagnostic;
 use super::{build_binary, strip_string_lexeme_quotes, MAX_NESTING};
 use crate::cursor::Parser;
 use crate::{BinaryOp, Expr, ExprId, Exprs, UnaryOp};
+use asili_lexer::{tk, TokenKind};
 
 /// Binding power of each binary operator (higher binds tighter), lowest first: `au`, `na`,
 /// equality, comparison, bitwise or/xor/and, shifts, `+ -`, `* / % //`, `**`. A cast (`kama`)
 /// binds tighter than all of them, prefix operators tighter still, postfix operators tightest.
-const BINARY: &[(&str, BinaryOp, u8)] = &[
-    ("au", BinaryOp::Or, 1),
-    ("||", BinaryOp::Or, 1),
-    ("na", BinaryOp::And, 2),
-    ("&&", BinaryOp::And, 2),
-    ("==", BinaryOp::Eq, 3),
-    ("!=", BinaryOp::Ne, 3),
-    (">=", BinaryOp::Ge, 4),
-    ("<=", BinaryOp::Le, 4),
-    (">", BinaryOp::Gt, 4),
-    ("<", BinaryOp::Lt, 4),
-    ("au_biti", BinaryOp::BitOr, 5),
-    ("|", BinaryOp::BitOr, 5),
-    ("xor_biti", BinaryOp::BitXor, 6),
-    ("^", BinaryOp::BitXor, 6),
-    ("na_biti", BinaryOp::BitAnd, 7),
-    ("&", BinaryOp::BitAnd, 7),
-    ("sogeza_kushoto", BinaryOp::Shl, 8),
-    ("sogeza_kulia", BinaryOp::Shr, 8),
-    ("<<", BinaryOp::Shl, 8),
-    (">>", BinaryOp::Shr, 8),
-    ("+", BinaryOp::Add, 9),
-    ("-", BinaryOp::Sub, 9),
-    ("*", BinaryOp::Mul, 10),
-    ("/", BinaryOp::Div, 10),
-    ("%", BinaryOp::Rem, 10),
-    ("//", BinaryOp::Div, 10),
-    ("**", BinaryOp::Pow, 11),
-];
+fn binary_op(kind: TokenKind) -> Option<(BinaryOp, u8)> {
+    use TokenKind as K;
+    Some(match kind {
+        K::KwAu | K::PipePipe => (BinaryOp::Or, 1),
+        K::KwNa | K::AmpAmp => (BinaryOp::And, 2),
+        K::EqEq => (BinaryOp::Eq, 3),
+        K::NotEq => (BinaryOp::Ne, 3),
+        K::Ge => (BinaryOp::Ge, 4),
+        K::Le => (BinaryOp::Le, 4),
+        K::Gt => (BinaryOp::Gt, 4),
+        K::Lt => (BinaryOp::Lt, 4),
+        K::KwAuBiti | K::Pipe => (BinaryOp::BitOr, 5),
+        K::KwXorBiti | K::Caret => (BinaryOp::BitXor, 6),
+        K::KwNaBiti | K::Amp => (BinaryOp::BitAnd, 7),
+        K::KwSogezaKushoto | K::Shl => (BinaryOp::Shl, 8),
+        K::KwSogezaKulia | K::Shr => (BinaryOp::Shr, 8),
+        K::Plus => (BinaryOp::Add, 9),
+        K::Minus => (BinaryOp::Sub, 9),
+        K::Star => (BinaryOp::Mul, 10),
+        K::Slash | K::SlashSlash => (BinaryOp::Div, 10),
+        K::Percent => (BinaryOp::Rem, 10),
+        K::StarStar => (BinaryOp::Pow, 11),
+        _ => return None,
+    })
+}
 
-const PREFIX: &[(&str, UnaryOp)] = &[
-    ("-", UnaryOp::Neg),
-    ("siyo", UnaryOp::Not),
-    ("!", UnaryOp::Not),
-    ("siyo_biti", UnaryOp::BitNot),
-    ("azima", UnaryOp::BorrowImm),
-    ("azima_tenda", UnaryOp::BorrowMut),
-    ("jaribu", UnaryOp::Jaribu),
-];
+fn prefix_op(kind: TokenKind) -> Option<UnaryOp> {
+    use TokenKind as K;
+    Some(match kind {
+        K::Minus => UnaryOp::Neg,
+        K::KwSiyo | K::Bang => UnaryOp::Not,
+        K::KwSiyoBiti => UnaryOp::BitNot,
+        K::KwAzima => UnaryOp::BorrowImm,
+        K::KwAzimaTenda => UnaryOp::BorrowMut,
+        K::KwJaribu => UnaryOp::Jaribu,
+        _ => return None,
+    })
+}
 
 /// Where an `ikiwa` value expression is: reading a condition (ends at `{`) or a value (ends at
 /// `}`).
@@ -110,7 +110,7 @@ enum Open {
 
 enum Frame {
     Binary {
-        tok: &'static str,
+        tok: TokenKind,
         op: BinaryOp,
         prec: u8,
         line: usize,
@@ -247,11 +247,7 @@ impl<'a> Parser<'a> {
                 return None;
             }
             if want_operand {
-                if let Some(op) = PREFIX
-                    .iter()
-                    .find(|(t, _)| self.check(t))
-                    .map(|p| p.1.clone())
-                {
+                if let Some(op) = self.peek_n(0).and_then(|t| prefix_op(t.kind)) {
                     let line = self.advance().line;
                     m.frames.push(Frame::Prefix { op, line });
                     continue;
@@ -275,7 +271,7 @@ impl<'a> Parser<'a> {
                     Postfix::None => {}
                 }
             }
-            if self.match_tok("kama") {
+            if self.match_tok(tk!("kama")) {
                 let line = self.prev().line;
                 while matches!(m.frames.last(), Some(Frame::Prefix { .. })) {
                     m.reduce(&mut self.exprs);
@@ -285,7 +281,10 @@ impl<'a> Parser<'a> {
                 postfix_ok = false;
                 continue;
             }
-            if let Some(&(tok, ref op, prec)) = BINARY.iter().find(|(t, ..)| self.check(t)) {
+            if let Some((tok, (op, prec))) = self
+                .peek_n(0)
+                .and_then(|t| Some((t.kind, binary_op(t.kind)?)))
+            {
                 let line = self.advance().line;
                 while match m.frames.last() {
                     Some(Frame::Prefix { .. }) => true,
@@ -296,7 +295,7 @@ impl<'a> Parser<'a> {
                 }
                 m.frames.push(Frame::Binary {
                     tok,
-                    op: op.clone(),
+                    op,
                     prec,
                     line,
                 });
@@ -319,13 +318,13 @@ impl<'a> Parser<'a> {
     /// Start an operand at the current token: a whole primary expression (`true`), or an opening
     /// bracket pushed onto `m` (`false`, an operand is still wanted).
     fn operand(&mut self, m: &mut Machine) -> Option<bool> {
-        let t = self.peek_n(0).map(|t| (t.lexeme.clone(), t.line, t.column));
-        let Some((lexeme, line, column)) = t else {
+        let Some(t) = self.peek_n(0) else {
             self.err_here("PAR071", "usemi usiokubalika");
             return None;
         };
-        match lexeme.as_str() {
-            "ikiwa" => {
+        let (lexeme, line, column) = (t.lexeme.as_str(), t.line, t.column);
+        let literal = match t.kind {
+            TokenKind::KwIkiwa => {
                 self.pos += 1;
                 m.push_open(Open::If {
                     line,
@@ -334,26 +333,14 @@ impl<'a> Parser<'a> {
                 });
                 return Some(false);
             }
-            "(" => {
+            TokenKind::LParen => {
                 self.pos += 1;
                 m.push_open(Open::Group);
                 return Some(false);
             }
-            "kweli" | "si_kweli" | "Hamna" => {
+            TokenKind::LBracket => {
                 self.pos += 1;
-                self.push_node(
-                    m,
-                    match lexeme.as_str() {
-                        "kweli" => Expr::Bool(true),
-                        "si_kweli" => Expr::Bool(false),
-                        _ => Expr::Hamna,
-                    },
-                );
-                return Some(true);
-            }
-            "[" => {
-                self.pos += 1;
-                if self.match_tok("]") {
+                if self.match_tok(tk!("]")) {
                     self.push_node(
                         m,
                         Expr::List {
@@ -366,9 +353,9 @@ impl<'a> Parser<'a> {
                 m.push_open(Open::List { line, first: true });
                 return Some(false);
             }
-            "{" => {
+            TokenKind::LBrace => {
                 self.pos += 1;
-                if self.match_tok("}") {
+                if self.match_tok(tk!("}")) {
                     self.push_node(
                         m,
                         Expr::Map {
@@ -381,16 +368,18 @@ impl<'a> Parser<'a> {
                 m.push_open(Open::Map { line, value: false });
                 return Some(false);
             }
-            _ => {}
-        }
-        if let Some(ch) = lexeme.strip_prefix("CHAR:") {
+            TokenKind::KwKweli => Some(Expr::Bool(true)),
+            TokenKind::KwSiKweli => Some(Expr::Bool(false)),
+            TokenKind::Hamna => Some(Expr::Hamna),
+            TokenKind::Char => Some(Expr::Char(
+                lexeme["CHAR:".len()..].chars().next().unwrap_or('\0'),
+            )),
+            TokenKind::Str => Some(Expr::String(strip_string_lexeme_quotes(lexeme))),
+            _ => None,
+        };
+        if let Some(literal) = literal {
             self.pos += 1;
-            self.push_node(m, Expr::Char(ch.chars().next().unwrap_or('\0')));
-            return Some(true);
-        }
-        if lexeme.starts_with('"') {
-            self.pos += 1;
-            self.push_node(m, Expr::String(strip_string_lexeme_quotes(&lexeme)));
+            self.push_node(m, literal);
             return Some(true);
         }
         for (prefix, what) in [("0x", "heksadesimali (0x)"), ("0b", "binari (0b)")] {
@@ -407,7 +396,8 @@ impl<'a> Parser<'a> {
                 return None;
             }
         }
-        if lexeme.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        // A lone `.` is reported as a malformed number too.
+        if matches!(t.kind, TokenKind::Number | TokenKind::Dot) {
             self.pos += 1;
             if lexeme.trim().parse::<f64>().is_err() {
                 self.errors.push(
@@ -420,22 +410,20 @@ impl<'a> Parser<'a> {
                 );
                 return None;
             }
-            self.push_node(m, Expr::Number(lexeme));
+            self.push_node(m, Expr::Number(lexeme.to_string()));
             return Some(true);
         }
         if self.check_ident() {
             self.pos += 1;
             // A struct literal only where `{ field :` (or `{}`) follows; `jina {` alone is a
             // block (`linganisha x {`, `ikiwa sharti {`).
-            if self.check("{") {
-                let first = self.peek_n(1).map(|u| u.lexeme.as_str());
-                let second = self.peek_n(2).map(|u| u.lexeme.as_str());
-                if first == Some("}") {
+            if self.check(tk!("{")) {
+                if self.check_n(1, tk!("}")) {
                     self.pos += 2;
                     self.push_node(
                         m,
                         Expr::StructLiteral {
-                            struct_name: lexeme,
+                            struct_name: lexeme.to_string(),
                             fields: Vec::new(),
                             field_positions: Vec::new(),
                             line,
@@ -443,10 +431,10 @@ impl<'a> Parser<'a> {
                     );
                     return Some(true);
                 }
-                if second == Some(":") {
+                if self.check_n(2, tk!(":")) {
                     self.pos += 1;
                     m.push_open(Open::Struct {
-                        name: lexeme,
+                        name: lexeme.to_string(),
                         line,
                         fields: Vec::new(),
                         positions: Vec::new(),
@@ -458,7 +446,7 @@ impl<'a> Parser<'a> {
             self.push_node(
                 m,
                 Expr::Ident {
-                    name: lexeme,
+                    name: lexeme.to_string(),
                     line,
                     column,
                 },
@@ -473,7 +461,7 @@ impl<'a> Parser<'a> {
     fn struct_field(&mut self, m: &mut Machine) -> Option<()> {
         let name = self.consume_ident("PAR074", "umbo literal inahitaji jina la uga")?;
         self.consume(
-            ":",
+            tk!(":"),
             "PAR075",
             "umbo literal inahitaji ':' baada ya jina la uga",
         )?;
@@ -484,7 +472,7 @@ impl<'a> Parser<'a> {
             ..
         }) = m.frames.last_mut()
         {
-            fields.push(name.lexeme);
+            fields.push(name.lexeme.clone());
             positions.push((name.line, name.column));
         }
         Some(())
@@ -493,8 +481,8 @@ impl<'a> Parser<'a> {
     /// A postfix operator on the operand just ended: `(args)`, `.uga`, `.njia(args)`, `[i]`, `?`,
     /// `Jenum::Kigezo(data)`.
     fn postfix(&mut self, m: &mut Machine) -> Option<Postfix> {
-        if self.match_tok("(") {
-            if self.match_tok(")") {
+        if self.match_tok(tk!("(")) {
+            if self.match_tok(tk!(")")) {
                 let line = self.prev().line;
                 m.wrap(&mut self.exprs, |callee| Expr::Call {
                     callee,
@@ -506,11 +494,12 @@ impl<'a> Parser<'a> {
             m.push_open(Open::Call);
             return Some(Postfix::Opened);
         }
-        if self.match_tok(".") {
+        if self.match_tok(tk!(".")) {
             let name_tok = self.consume_ident("PAR063", "uga au njia unahitaji jina")?;
-            let (name, line, field_column) = (name_tok.lexeme, name_tok.line, name_tok.column);
-            if self.match_tok("(") {
-                if self.match_tok(")") {
+            let (name, line, field_column) =
+                (name_tok.lexeme.clone(), name_tok.line, name_tok.column);
+            if self.match_tok(tk!("(")) {
+                if self.match_tok(tk!(")")) {
                     m.wrap(&mut self.exprs, |receiver| Expr::MethodCall {
                         receiver,
                         method_name: name,
@@ -532,16 +521,16 @@ impl<'a> Parser<'a> {
             }
             return Some(Postfix::Applied);
         }
-        if self.match_tok("[") {
+        if self.match_tok(tk!("[")) {
             m.push_open(Open::Index);
             return Some(Postfix::Opened);
         }
-        if self.match_tok("?") {
+        if self.match_tok(tk!("?")) {
             let line = self.prev().line;
             m.wrap(&mut self.exprs, |e| Expr::Propagate { expr: e, line });
             return Some(Postfix::Applied);
         }
-        if self.match_tok("::") {
+        if self.match_tok(tk!("::")) {
             let Some(Expr::Ident {
                 name: enum_name, ..
             }) = m.operands.last().map(|id| &self.exprs[*id])
@@ -553,10 +542,10 @@ impl<'a> Parser<'a> {
             let variant = self.consume_ident("PAR080", "jenum kigezo inahitaji jina")?;
             let (line, column) = (variant.line, variant.column);
             m.pop();
-            if self.match_tok("(") {
+            if self.match_tok(tk!("(")) {
                 m.push_open(Open::EnumData {
                     enum_name,
-                    variant: variant.lexeme,
+                    variant: variant.lexeme.clone(),
                     line,
                     column,
                 });
@@ -566,7 +555,7 @@ impl<'a> Parser<'a> {
                     m,
                     Expr::EnumConstruct {
                         enum_name,
-                        variant_name: variant.lexeme,
+                        variant_name: variant.lexeme.clone(),
                         data: None,
                         line,
                         column,
@@ -585,17 +574,20 @@ impl<'a> Parser<'a> {
         m: &mut Machine,
         (code, msg): (&'static str, &'static str),
     ) -> Option<Step> {
-        let t = self.peek_n(0).map(|t| t.lexeme.clone()).unwrap_or_default();
+        let t = self.peek_n(0).map(|t| t.kind);
         let Some(Frame::Open { open, .. }) = m.frames.last_mut() else {
             unreachable!("the caller checked for an open bracket");
         };
-        let step = match (open, t.as_str()) {
-            (bracket @ (Open::Call | Open::Method { .. } | Open::List { .. }), ",") => {
+        let step = match (open, t) {
+            (
+                bracket @ (Open::Call | Open::Method { .. } | Open::List { .. }),
+                Some(TokenKind::Comma),
+            ) => {
                 let closer = if let Open::List { first, .. } = bracket {
                     *first = false;
-                    "]"
+                    tk!("]")
                 } else {
-                    ")"
+                    tk!(")")
                 };
                 self.pos += 1;
                 // A trailing comma before the closer is allowed.
@@ -605,7 +597,7 @@ impl<'a> Parser<'a> {
                 }
                 Step::Operand
             }
-            (bracket @ Open::List { first: true, .. }, ";") => {
+            (bracket @ Open::List { first: true, .. }, Some(TokenKind::Semi)) => {
                 let Open::List { line, .. } = *bracket else {
                     unreachable!("matched a list");
                 };
@@ -618,7 +610,7 @@ impl<'a> Parser<'a> {
                     value: value @ false,
                     ..
                 },
-                ":",
+                Some(TokenKind::Colon),
             ) => {
                 *value = true;
                 self.pos += 1;
@@ -629,19 +621,19 @@ impl<'a> Parser<'a> {
                     value: value @ true,
                     ..
                 },
-                ",",
+                Some(TokenKind::Comma),
             ) => {
                 *value = false;
                 self.pos += 1;
-                if self.match_tok("}") {
+                if self.match_tok(tk!("}")) {
                     self.close(m);
                     return Some(Step::Closed);
                 }
                 Step::Operand
             }
-            (Open::Struct { .. }, ",") => {
+            (Open::Struct { .. }, Some(TokenKind::Comma)) => {
                 self.pos += 1;
-                if self.match_tok("}") {
+                if self.match_tok(tk!("}")) {
                     self.close(m);
                     return Some(Step::Closed);
                 }
@@ -653,7 +645,7 @@ impl<'a> Parser<'a> {
                     phase: phase @ (IfPhase::Cond | IfPhase::ElifCond),
                     ..
                 },
-                "{",
+                Some(TokenKind::LBrace),
             ) => {
                 *phase = if *phase == IfPhase::Cond {
                     IfPhase::Then
@@ -669,17 +661,17 @@ impl<'a> Parser<'a> {
                     has_else,
                     ..
                 },
-                "}",
+                Some(TokenKind::RBrace),
             ) => {
                 self.pos += 1;
-                if self.match_tok("au_ikiwa") {
+                if self.match_tok(tk!("au_ikiwa")) {
                     *phase = IfPhase::ElifCond;
                     return Some(Step::Operand);
                 }
-                if self.match_tok("vinginevyo") {
+                if self.match_tok(tk!("vinginevyo")) {
                     *phase = IfPhase::Else;
                     *has_else = true;
-                    self.consume("{", "PAR094", "vinginevyo ya thamani inahitaji '{'")?;
+                    self.consume(tk!("{"), "PAR094", "vinginevyo ya thamani inahitaji '{'")?;
                     return Some(Step::Operand);
                 }
                 self.close(m);
@@ -690,11 +682,14 @@ impl<'a> Parser<'a> {
                     phase: IfPhase::Else,
                     ..
                 },
-                "}",
+                Some(TokenKind::RBrace),
             )
-            | (Open::Group | Open::Call | Open::Method { .. } | Open::EnumData { .. }, ")")
-            | (Open::Index | Open::List { .. } | Open::Repeat { .. }, "]")
-            | (Open::Map { value: true, .. } | Open::Struct { .. }, "}") => {
+            | (
+                Open::Group | Open::Call | Open::Method { .. } | Open::EnumData { .. },
+                Some(TokenKind::RParen),
+            )
+            | (Open::Index | Open::List { .. } | Open::Repeat { .. }, Some(TokenKind::RBracket))
+            | (Open::Map { value: true, .. } | Open::Struct { .. }, Some(TokenKind::RBrace)) => {
                 self.pos += 1;
                 self.close(m);
                 Step::Closed
