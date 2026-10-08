@@ -459,6 +459,9 @@ pub enum Opcode {
         dst: Reg,
         entries: Box<[(Reg, Reg)]>,
     },
+    /// Where a call was inlined: fail as the call would have if it went one level past the
+    /// call-depth limit (`MAX_CALL_DEPTH`), so inlining never changes where that error happens.
+    CheckDepth,
     /// The whole body of a `kazi` the bytecode compiler could not lower: run it on the
     /// tree-walker (from `BytecodeProgram::ast`) with this frame's parameters, and return its
     /// result.
@@ -578,6 +581,7 @@ fn compile_module_inner(
                     .collect(),
                 ret: Ty::from_type_name(&function.return_type.name),
                 ret_name: function.return_type.name.clone(),
+                inline: inlinable(function, &module.exprs),
             },
         );
     }
@@ -598,6 +602,7 @@ fn compile_module_inner(
                     .collect(),
                 ret: Ty::from_type_name(&f.return_type.name),
                 ret_name: f.return_type.name.clone(),
+                inline: None,
             },
         );
         program
@@ -633,7 +638,11 @@ fn compile_module_inner(
             f.name = qualified.clone();
             f
         }) {
-            Some(f) => functions.push(f),
+            Some(mut f) => {
+                #[cfg(not(target_arch = "wasm32"))]
+                crate::scalars::split_structs(&mut f, &program.constants);
+                functions.push(f)
+            }
             None => {
                 if failed_line.is_none() {
                     *failed_line = Some((
@@ -699,6 +708,68 @@ struct FunctionSig {
     params: Vec<Ty>,
     ret: Ty,
     ret_name: String,
+    /// Set when calls compile to the body itself (see [`inlinable`]).
+    inline: Option<Inline>,
+}
+
+/// A `kazi` whose body is one `rejesha` of a small expression that calls nothing, mutates
+/// nothing and cannot return early: a call to it compiles to that expression with the
+/// parameters bound to the arguments' registers — no frame, no call.
+#[derive(Clone)]
+struct Inline {
+    /// Parameter names and declared type names, in order.
+    params: Vec<(String, String)>,
+    body: ExprId,
+}
+
+/// Most expression nodes an inlined body may have.
+const INLINE_MAX_NODES: usize = 40;
+
+/// The [`Inline`] form of `f`, when it has one.
+fn inlinable(f: &Function, exprs: &Exprs) -> Option<Inline> {
+    let [Stmt::Return {
+        value: Some(body), ..
+    }] = f.body.statements.as_slice()
+    else {
+        return None;
+    };
+    if f.is_test {
+        return None;
+    }
+    let nodes = exprs.descendants(*body);
+    let pure = nodes.len() <= INLINE_MAX_NODES
+        && nodes.iter().all(|id| match &exprs[*id] {
+            Expr::Number(_)
+            | Expr::String(_)
+            | Expr::Bool(_)
+            | Expr::Char(_)
+            | Expr::Hamna
+            | Expr::Ident { .. }
+            | Expr::Group(_)
+            | Expr::Binary { .. }
+            | Expr::Cast { .. }
+            | Expr::FieldAccess { .. }
+            | Expr::StructLiteral { .. }
+            | Expr::EnumConstruct { .. }
+            | Expr::If { .. }
+            | Expr::List { .. } => true,
+            Expr::Unary { op, .. } => matches!(op, UnaryOp::Neg | UnaryOp::Not | UnaryOp::BitNot),
+            // Calls (depth, callbacks), methods (mutation), `?` (early return), indexing (its
+            // error names the callee's line): compiled as calls.
+            Expr::Call { .. }
+            | Expr::MethodCall { .. }
+            | Expr::Propagate { .. }
+            | Expr::Index { .. }
+            | Expr::Map { .. } => false,
+        });
+    pure.then(|| Inline {
+        params: f
+            .params
+            .iter()
+            .map(|p| (p.name.to_string(), p.ty.name.replace(' ', "")))
+            .collect(),
+        body: *body,
+    })
 }
 
 struct ProgramCompiler {
@@ -2332,9 +2403,9 @@ impl<'a> FunctionCompiler<'a> {
         args: impl Iterator<Item = &'e Expr>,
         dst: Option<Operand>,
     ) -> Option<Operand> {
-        let (params, ret) = {
+        let (params, ret, inline) = {
             let sig = self.program.functions.values().find(|s| s.index == index)?;
-            (sig.params.clone(), sig.ret)
+            (sig.params.clone(), sig.ret, sig.inline.clone())
         };
         let args: Vec<&Expr> = args.collect();
         if params.len() != args.len() {
@@ -2348,12 +2419,65 @@ impl<'a> FunctionCompiler<'a> {
             Some(d) if d.ty == ret => d,
             _ => self.temp(ret),
         };
+        if let Some(inline) = inline {
+            if self.inline_call(&inline, &operands, out).is_some() {
+                return Some(out);
+            }
+        }
         self.emit(Opcode::Call(Box::new(CallOp {
             function: index,
             args: operands,
             dst: out,
         })));
         Some(out)
+    }
+
+    /// `inline`'s body with its parameters bound to `args`, into `out`; on `None` nothing was
+    /// emitted and the caller makes an ordinary call.
+    fn inline_call(&mut self, inline: &Inline, args: &[Operand], out: Operand) -> Option<()> {
+        let mark = (self.code.len(), self.program.failed_line);
+        let params: HashMap<String, Local> = inline
+            .params
+            .iter()
+            .zip(args)
+            .map(|((name, ty), op)| {
+                let local = Local {
+                    op: *op,
+                    type_name: Some(ty.clone()),
+                };
+                (name.clone(), local)
+            })
+            .collect();
+        let scopes = std::mem::replace(&mut self.scopes, vec![params]);
+        // Write the result last: compile into a fresh register when `out` is also an argument.
+        let file = |ty: Ty| match ty {
+            Ty::Num | Ty::Bool => 0,
+            Ty::List => 1,
+            Ty::Val => 2,
+        };
+        let into = if args
+            .iter()
+            .any(|a| file(a.ty) == file(out.ty) && a.reg == out.reg)
+        {
+            self.temp(out.ty)
+        } else {
+            out
+        };
+        self.emit(Opcode::CheckDepth);
+        let body = self.node(inline.body);
+        let done = self.expr_into(body, into).and_then(|()| {
+            if into == out {
+                Some(())
+            } else {
+                self.convert(into, out)
+            }
+        });
+        self.scopes = scopes;
+        if done.is_none() {
+            self.code.truncate(mark.0);
+            self.program.failed_line = mark.1;
+        }
+        done
     }
 
     fn method_call(

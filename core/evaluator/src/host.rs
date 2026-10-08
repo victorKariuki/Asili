@@ -88,6 +88,7 @@ pub(crate) static NATIVE_RUNTIME: crate::native::Runtime = crate::native::Runtim
     shift_amount: crate::native::rt_shift_amount,
     stack_limit: crate::native::rt_stack_limit,
     call_host: native_call_host,
+    depth_error: native_depth_error,
 };
 
 /// A direct native call that cannot run on the native stack (too deep, or too little room left):
@@ -151,6 +152,19 @@ extern "C" fn native_exec(
 }
 
 pub(crate) use crate::runtime::MAX_CALL_DEPTH;
+
+/// The error of a call past [`MAX_CALL_DEPTH`].
+fn depth_error() -> EvalError {
+    EvalError::Unknown("undani mno".into())
+}
+
+/// `CheckDepth` failed in native code: leave the error pending and return the failure status.
+extern "C" fn native_depth_error(host: *mut std::ffi::c_void) -> u64 {
+    // SAFETY: native code passes the `Host` it was handed.
+    let host = unsafe { &mut *(host as *mut Host<'static>) };
+    host.pending = Some(Flow::Fail(depth_error()));
+    crate::native::STATUS_FAIL << 32
+}
 
 fn type_err(msg: &str) -> EvalError {
     EvalError::TypeErr(msg.to_string())
@@ -333,7 +347,7 @@ impl<'p> Host<'p> {
         self.depth += 1;
         if self.depth > MAX_CALL_DEPTH {
             self.depth -= 1;
-            return Err(EvalError::Unknown("undani mno".into()));
+            return Err(depth_error());
         }
         // Native code makes direct calls only while `DIRECT_CALL_HEADROOM` is free below it, so
         // give it that much (on a fresh segment when the stack is short — or when its size is
@@ -570,6 +584,11 @@ impl<'p> Host<'p> {
         }
         let n = &mut frame.nums;
         match op {
+            Opcode::CheckDepth => {
+                if self.depth >= MAX_CALL_DEPTH {
+                    fail!(depth_error());
+                }
+            }
             Opcode::ListRepeat { dst, value, count } => {
                 let count = n[*count as usize];
                 if !(count.is_finite() && count >= 0.0 && count.fract() == 0.0) {

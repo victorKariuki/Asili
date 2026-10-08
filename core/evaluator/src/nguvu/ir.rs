@@ -96,6 +96,8 @@ pub enum RtFn {
     StackLimit = 11,
     /// Make a direct call through the host's call path (see `native::Runtime::call_host`).
     CallHost = 12,
+    /// Report the call-depth error (see `native::Runtime::depth_error`).
+    DepthError = 13,
 }
 
 #[derive(Clone, Debug)]

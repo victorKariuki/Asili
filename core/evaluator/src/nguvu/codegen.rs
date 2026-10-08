@@ -24,7 +24,7 @@ enum Loc {
 /// and `rsp`/`rbp` frame the stack.
 pub struct Abi {
     pub target: Target,
-    /// Callee-saved general registers, pushed after `rbp` in the prologue.
+    /// Callee-saved general registers, pushed after `rbp` in the prologue when used.
     pushed: &'static [Gpr],
     /// Integer argument registers.
     args: &'static [Gpr],
@@ -106,6 +106,8 @@ struct Gen<'f> {
     func: &'f Func,
     alloc: Allocation,
     abi: &'static Abi,
+    /// Callee-saved general registers this function uses, pushed after `rbp`.
+    pushed: Vec<Gpr>,
     /// Callee-saved xmm registers this function uses (Win64), saved below the pushes.
     xmm_saved: Vec<u8>,
     /// Direct calls to link: (displacement offset, callee).
@@ -168,11 +170,19 @@ pub fn generate(func: &Func, abi: &'static Abi) -> super::Code {
         .collect();
     xmm_saved.sort_unstable();
     xmm_saved.dedup();
+    let used = |r: Gpr| {
+        alloc
+            .loc
+            .iter()
+            .any(|l| matches!(l, super::regalloc::Loc::Int(i) if GPRS[*i as usize] == r))
+    };
+    let pushed = abi.pushed.iter().copied().filter(|r| used(*r)).collect();
     let mut g = Gen {
         asm: Asm::new(),
         func,
         alloc,
         abi,
+        pushed,
         xmm_saved,
         calls: Vec::new(),
         homes: func.homes(),
@@ -236,7 +246,7 @@ pub fn generate(func: &Func, abi: &'static Abi) -> super::Code {
 impl<'f> Gen<'f> {
     /// Bytes between `rbp` and the first home slot: pushed registers and saved xmm registers.
     fn saved_bytes(&self) -> i32 {
-        8 * self.abi.pushed.len() as i32 + 16 * self.xmm_saved.len() as i32
+        8 * self.pushed.len() as i32 + 16 * self.xmm_saved.len() as i32
     }
 
     /// The direct-call register buffer, below the home slots.
@@ -262,7 +272,7 @@ impl<'f> Gen<'f> {
 
     fn prologue(&mut self) {
         let slots = self.alloc.slots as i32;
-        let pushed = self.abi.pushed.len() as i32;
+        let pushed = self.pushed.len() as i32;
         // At entry `rsp` is 8 mod 16 (the return address); `push rbp` realigns it, so after the
         // pushes it is `8 * pushed` mod 16 and the rest of the frame must restore alignment for
         // calls.
@@ -275,8 +285,8 @@ impl<'f> Gen<'f> {
         }
         self.asm.push(Gpr::Rbp);
         self.asm.mov_rr(Gpr::Rbp, Gpr::Rsp);
-        for r in self.abi.pushed {
-            self.asm.push(*r);
+        for r in self.pushed.clone() {
+            self.asm.push(r);
         }
         if self.abi.probe && frame > 4096 {
             // Windows commits the stack one guard page at a time: touch each page in order.
@@ -325,7 +335,7 @@ impl<'f> Gen<'f> {
     }
 
     fn epilogue(&mut self) {
-        let pushed = self.abi.pushed.len() as i32;
+        let pushed = self.pushed.len() as i32;
         for (i, x) in self.xmm_saved.clone().into_iter().enumerate() {
             let m = Mem {
                 base: Gpr::Rbp,
@@ -341,7 +351,7 @@ impl<'f> Gen<'f> {
                 disp: -8 * pushed,
             },
         );
-        for r in self.abi.pushed.iter().rev() {
+        for r in self.pushed.iter().rev() {
             a.pop(*r);
         }
         a.pop(Gpr::Rbp);

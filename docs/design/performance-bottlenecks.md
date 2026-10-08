@@ -16,7 +16,7 @@ a few lines and easy to recreate from the descriptions):
 | ungo | sieve of 5 M | 24 ms | 5.4 s | C −O2 56 ms |
 | orodha | push 1 M numbers, sum with `kwa x katika` | 15–17 ms | 435 ms | C −O2 12 ms |
 | fib | recursive `fib(30)`, 1.35 M calls | 14 ms | 796 ms | C −O2 5.9 ms |
-| umbo | build a 2-field `umbo` 1 M times through a `kazi` | 150–185 ms | 590 ms | C −O2 1.9 ms |
+| umbo | build a 2-field `umbo` 1 M times through a `kazi` | 3 ms (was 150–185 ms) | 590 ms | C −O2 1.9 ms |
 | kamusi | 300 k `Kamusi` updates with `Neno` keys | 75 ms | 184 ms | Python 66 ms |
 | maneno | 300 k numbers to text + join; 20 k `s = s + "ab"` | 71 ms | 105 ms | Python 64 ms |
 
@@ -35,6 +35,8 @@ is 1–80× off its reference. Calls between numeric functions cost ~2.4× C.
 | F3 | A `Vec` allocated and freed per builtin/method call in the host | 900 k allocations in the map loop | one reused argument buffer | −3% map loop |
 | F4 | Trace spans cost ~37 instructions per host call with tracing off | `asili_trace::open` in profiles | inline off-check, traced path `#[cold]` | −2% struct loop |
 | F5 | Builtin table built twice at every start | 249 k of 1.08 M start-up instructions | built once, sorted once | 1.08 → 0.98 M |
+| F6 | Small functions called through the host; structs built on the heap per iteration | ~600 instructions per call, ~280 per struct built, ~100 per field read | inlining of `rejesha`-only functions when compiling bytecode (`inlinable`, guarded by `CheckDepth`), then scalar replacement of structs that never leave their function (`scalars.rs`) | struct loop 1,805 M → 9 M instructions, ~150–185 → 3 ms (C 1.9 ms) |
+| F7 | x86-64 prologues pushed every callee-saved register | 10 push/pop per call in small functions | push only the registers the function uses (AArch64 already did) | no change on fib (it uses all five); smaller frames elsewhere |
 
 Earlier the same day: token kinds and interned names in the parser and tree-walker, parallel and
 reproducible native builds, incremental LSP parsing (see `CHANGELOG.md`).
@@ -67,15 +69,19 @@ list push — with their operands as arguments, no generic decode, and no spill 
 operation does not read. Then dedicated opcodes for the hot methods (`pata`, `angu`, `ingiza`,
 `ongeza`, `urefu`, `idadi`) chosen when the bytecode is compiled.
 
-### 3. Calls to functions that take or return values go through the host (umbo)
+### 3. Calls to functions that take or return values go through the host
 
 *Evidence*: ~600 instructions per call: `frame_for` (pooled frame, resized and cleared),
 `invoke` (depth, stack check), `run_native`, status decoding.
 
-*Fix*: direct entries for functions with value registers (pass a frame pointer, as the host
-does), or inline small functions when compiling bytecode.
+*Done for small functions* (F6): a function whose body is one `rejesha` of a pure expression is
+inlined. *Still open* for larger ones: direct entries for functions with value registers (pass a
+frame pointer, as the host does), and inlining of bodies with statements, method calls or `?`.
 
 ### 4. Struct layout
+
+*Partly done* (F6): a struct that never leaves its function is no longer built at all. Structs
+that are stored, passed or returned still are, and for those:
 
 *Evidence*: every struct instance carries its own list of `(field name, value)` pairs; building
 one allocates and fills that list, and a field read by name searches it.

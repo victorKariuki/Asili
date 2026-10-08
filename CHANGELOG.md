@@ -139,6 +139,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Inlining and structs in registers**: when bytecode is compiled, a call to a function whose
+  body is a single `rejesha` of a small expression (no calls, methods, indexing or `?`) is
+  replaced by that expression, guarded by a new `CheckDepth` instruction so the call-depth
+  error happens exactly where the call would have raised it. Then a `umbo` value that never
+  leaves its function — only built, copied and read field by field — is kept as one register per
+  field, and a field built from a number as a numeric register, so a loop that builds and reads
+  such structs is plain native numeric code. A loop updating a 2-field struct through a helper
+  function 1 M times: ~170 ms → 3 ms (1,805 → 9 million instructions). x86-64 functions now
+  save only the callee-saved registers they use. `.asb` bytecode format 13, native ABI 9.
+
 - **Smaller values**: a `Value` is 32 bytes instead of 56, so every copy, move and drop on
   both engines is cheaper. Struct, field, enum and variant names in values are interned
   `Name`s (one pointer, compared by pointer); `Kamusi`, `Seti`, `Namba_Kuu` and `Namba_Sahihi`

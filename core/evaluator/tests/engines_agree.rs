@@ -933,3 +933,87 @@ fn values_stay_small() {
     // Every `Value` is moved and copied constantly; keep it at four words.
     assert!(std::mem::size_of::<asili_evaluator::Value>() <= 32);
 }
+
+#[test]
+fn inlined_calls_and_structs_kept_in_registers() {
+    // Small `rejesha` functions are inlined, and structs that never leave a function live in
+    // registers: results, errors and the call-depth limit must not change.
+    agree(
+        "scalars",
+        r#"
+        umbo Nukta {
+            x: Namba,
+            y: Namba,
+        }
+        umbo Mtu {
+            jina: Neno,
+            umri: Namba,
+        }
+        kazi songa(p: Nukta, d: Namba) -> Nukta {
+            rejesha Nukta { x: p.x + d, y: p.y - d }
+        }
+        kazi mraba(n: Namba) -> Namba {
+            rejesha n * n
+        }
+        kazi jumla(p: Nukta) -> Namba {
+            weka s = p.x
+            rejesha s + p.y
+        }
+        kazi mzunguko() -> Namba {
+            weka p = Nukta { x: 0, y: 0 }
+            kwa i kutoka 0 hadi 1000 {
+                p = songa(p, mraba(i % 7))
+            }
+            rejesha p.x - p.y
+        }
+        kazi pishana() -> Orodha<Namba> {
+            # `q` is built while `p` is still read: each keeps its own fields.
+            weka r: Orodha<Namba> = []
+            weka p = Nukta { x: 1, y: 2 }
+            weka q = Nukta { x: 10, y: 20 }
+            r.ongeza(p.x + q.y)
+            p = q
+            q = Nukta { x: 5, y: 6 }
+            r.ongeza(p.x + q.x)
+            ikiwa p.x > 3 {
+                p = Nukta { x: q.y, y: p.x }
+            }
+            r.ongeza(p.x * 100 + p.y)
+            rejesha r
+        }
+        kazi inatoroka() -> Namba {
+            # passed to a function that is not inlined, so it stays a struct
+            weka p = Nukta { x: 3, y: 4 }
+            weka q = Nukta { x: 1, y: 1 }
+            rejesha jumla(p) + q.x
+        }
+        kazi maandishi() -> Neno {
+            weka m = Mtu { jina: "Amani", umri: 30 }
+            rejesha m.jina + " " + (m.umri kama Neno)
+        }
+        kazi g(x: Namba) -> Namba {
+            rejesha x + 1
+        }
+        kazi f(n: Namba) -> Namba {
+            ikiwa n == 0 {
+                rejesha g(n)
+            }
+            rejesha f(n - 1) + 0
+        }
+        kazi kina_sawa() -> Namba {
+            rejesha f(9997)
+        }
+        kazi kina_juu() -> Namba {
+            rejesha f(9998)
+        }
+        "#,
+        &[
+            "mzunguko",
+            "pishana",
+            "inatoroka",
+            "maandishi",
+            "kina_sawa",
+            "kina_juu",
+        ],
+    );
+}

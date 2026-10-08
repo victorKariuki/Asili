@@ -45,6 +45,9 @@ pub(crate) struct Runtime {
     /// the call depth or the stack would not allow a direct one); the result lands after the
     /// callee's registers, as a direct call leaves it.
     pub call_host: extern "C" fn(*mut c_void, u32, *mut f64) -> u64,
+    /// `(host) -> STATUS_FAIL`: a `CheckDepth` found the call depth at its limit; the error is
+    /// left pending.
+    pub depth_error: extern "C" fn(*mut c_void) -> u64,
 }
 
 /// Byte offset of the host's call-depth counter (`Host` is `repr(C)` with `depth` first).
@@ -235,6 +238,7 @@ pub(crate) fn num_reads(op: &Opcode) -> Vec<Reg> {
         | Opcode::MakeEnum { .. }
         | Opcode::MatchPattern { .. }
         | Opcode::MakeMap { .. }
+        | Opcode::CheckDepth
         | Opcode::Interpreted { .. } => Vec::new(),
     }
 }
@@ -309,6 +313,7 @@ pub(crate) fn num_writes(op: &Opcode) -> Vec<Reg> {
         | Opcode::Field { .. }
         | Opcode::MakeEnum { .. }
         | Opcode::MakeMap { .. }
+        | Opcode::CheckDepth
         | Opcode::Interpreted { .. } => Vec::new(),
     }
 }
@@ -383,6 +388,7 @@ pub(crate) fn list_writes(op: &Opcode) -> Vec<Reg> {
         | Opcode::MakeEnum { .. }
         | Opcode::MatchPattern { .. }
         | Opcode::MakeMap { .. }
+        | Opcode::CheckDepth
         | Opcode::Interpreted { .. } => Vec::new(),
     }
 }

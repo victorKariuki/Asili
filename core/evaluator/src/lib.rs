@@ -20,6 +20,8 @@ pub mod nguvu;
 mod numlist;
 mod platform;
 pub mod runtime;
+#[cfg(not(target_arch = "wasm32"))]
+mod scalars;
 mod signal;
 mod spawn;
 mod tir;

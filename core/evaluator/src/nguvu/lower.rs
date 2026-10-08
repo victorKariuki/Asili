@@ -1299,6 +1299,29 @@ impl<'a> Lower<'a> {
                 self.b.terminate(Term::Jump(done));
                 self.b.switch_to(done);
             }
+            Opcode::CheckDepth => {
+                let depth = self.vreg(Class::Int);
+                self.push(Inst::Load {
+                    dst: depth,
+                    base: HOST,
+                    offset: crate::native::DEPTH_OFFSET,
+                });
+                let max = self.b.iconst(crate::host::MAX_CALL_DEPTH as i64);
+                let ok = self.icmp(ICond::Lt, depth, max);
+                let cont = self.b.block();
+                let fail = self.b.cold_block();
+                self.b.terminate(Term::Branch {
+                    cond: ok,
+                    then_: cont,
+                    else_: fail,
+                });
+                self.b.switch_to(fail);
+                let status = self
+                    .call(RtFn::DepthError, vec![HOST], Some(Class::Int), false)
+                    .expect("status");
+                self.b.terminate(Term::Return(status));
+                self.b.switch_to(cont);
+            }
             Opcode::ListLen { dst, list } => {
                 let (_, len) = self.lists[*list as usize];
                 self.set_i(*dst, len);
