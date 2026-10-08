@@ -1,6 +1,6 @@
 //! Block layout and register allocation.
 //!
-//! * **Layout**: reverse postorder from the entry, with cold blocks (deoptimization exits and
+//! * **Layout**: reverse postorder from the entry, with cold blocks (error exits and
 //!   blocks that end the call) moved after all hot code, so hot paths fall through.
 //! * **Liveness**: per-block dataflow, then precise live *ranges* per virtual register (a
 //!   value is only live where some path still needs it; a cold exit that reads every register
@@ -42,6 +42,10 @@ impl Target {
     }
 }
 
+/// Byte alignment of loop headers, one x86-64 instruction-fetch window (functions start this
+/// aligned in an image, so the offset within a function is the real alignment).
+pub const LOOP_ALIGN: usize = 32;
+
 pub struct Allocation {
     pub loc: Vec<Loc>,
     /// Block emission order.
@@ -52,6 +56,8 @@ pub struct Allocation {
     pub uses: Vec<u32>,
     /// Estimated loop nesting depth of each block.
     pub depth: Vec<u32>,
+    /// Hot blocks a retreating edge jumps back to: loop headers, aligned when emitted.
+    pub loop_head: Vec<bool>,
     /// Each register's home slot index (`u32::MAX`: it never needs one).
     pub slot: Vec<u32>,
     /// Number of home slots.
@@ -101,10 +107,12 @@ pub fn allocate(func: &Func, target: &Target) -> Allocation {
 
     // Loop depth from retreating edges in the layout order.
     let mut depth = vec![0u32; nb];
+    let mut loop_head = vec![false; nb];
     for &b in &order {
         for s in func.blocks[b].term.successors() {
             let s = s.0 as usize;
             if rank[s] <= rank[b] {
+                loop_head[s] = !func.cold[s];
                 for &m in &order[rank[s]..=rank[b]] {
                     depth[m] += 1;
                 }
@@ -330,6 +338,7 @@ pub fn allocate(func: &Func, target: &Target) -> Allocation {
         live_across,
         uses,
         depth,
+        loop_head,
         slot,
         slots,
     }

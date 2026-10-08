@@ -133,6 +133,13 @@ impl Asm {
         self.labels[l.0 as usize] = Some(self.code.len());
     }
 
+    /// Pad with `nop`s up to a multiple of `n` bytes (a power of two, at least 4).
+    pub fn align(&mut self, n: usize) {
+        while !self.code.len().is_multiple_of(n) {
+            self.word(0xD503_201F);
+        }
+    }
+
     /// Resolve branches; fails if a branch cannot reach its target.
     pub fn finish(mut self) -> Result<Vec<u8>, String> {
         for &(at, l, kind) in &self.fixups {

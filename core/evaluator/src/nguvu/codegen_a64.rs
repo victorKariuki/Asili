@@ -12,7 +12,7 @@
 
 use super::a64::{Alu, Asm, Cond, Fop, Label, SP, ZR};
 use super::ir::{Class, FCond, FloatOp, Func, Home, ICond, Inst, IntOp, Term, VReg};
-use super::regalloc::{allocate, Allocation, Loc, Target};
+use super::regalloc::{allocate, Allocation, Loc, Target, LOOP_ALIGN};
 use super::schedule::Step;
 
 pub const TARGET: Target = Target {
@@ -105,6 +105,9 @@ pub fn generate(func: &Func) -> Result<super::Code, String> {
     let order = g.alloc.order.clone();
     for (k, &bi) in order.iter().enumerate() {
         let block = &func.blocks[bi];
+        if g.alloc.loop_head[bi] {
+            g.asm.align(LOOP_ALIGN);
+        }
         g.asm.bind(labels[bi]);
         let next = order.get(k + 1).map(|&b| labels[b]);
         let plan = super::schedule::plan(block, &g.alloc.uses);

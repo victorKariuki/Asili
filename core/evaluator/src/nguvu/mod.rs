@@ -119,7 +119,7 @@ pub fn generate(program: &BytecodeProgram) -> Result<Image, String> {
     let mut direct_at: std::collections::HashMap<usize, usize> = Default::default();
     let mut placed = Vec::with_capacity(units.len());
     for (of, unit) in &units {
-        while code.len() % 16 != 0 {
+        while code.len() % regalloc::LOOP_ALIGN != 0 {
             // Trap padding between functions: `int3` on x86-64, `udf #0` words on AArch64.
             code.push(if cfg!(target_arch = "aarch64") {
                 0x00
@@ -247,7 +247,7 @@ impl Image {
 const MAGIC: &[u8; 8] = b"NGUVU\0\0\0";
 /// Bumped whenever generated code changes, so images from an older toolchain are rebuilt
 /// rather than run.
-const IMAGE_VERSION: u32 = 7;
+const IMAGE_VERSION: u32 = 8;
 /// Instruction set and calling convention of the image (1 = x86-64 System V, 2 = AArch64
 /// AAPCS64, 3 = x86-64 Microsoft x64).
 const ARCH: u32 = if cfg!(target_arch = "aarch64") {

@@ -116,6 +116,27 @@ impl Asm {
         self.labels[label.0 as usize] = Some(self.code.len());
     }
 
+    /// Pad with multi-byte `nop`s up to a multiple of `n` bytes (a power of two).
+    pub fn align(&mut self, n: usize) {
+        const NOPS: [&[u8]; 9] = [
+            &[0x90],
+            &[0x66, 0x90],
+            &[0x0F, 0x1F, 0x00],
+            &[0x0F, 0x1F, 0x40, 0x00],
+            &[0x0F, 0x1F, 0x44, 0x00, 0x00],
+            &[0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00],
+            &[0x0F, 0x1F, 0x80, 0x00, 0x00, 0x00, 0x00],
+            &[0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00],
+            &[0x66, 0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00],
+        ];
+        let mut pad = self.code.len().wrapping_neg() & (n - 1);
+        while pad > 0 {
+            let k = pad.min(NOPS.len());
+            self.bytes(NOPS[k - 1]);
+            pad -= k;
+        }
+    }
+
     /// Resolve every rel32 fixup; call once after the last instruction.
     pub fn finish(mut self) -> Vec<u8> {
         for (at, label) in std::mem::take(&mut self.fixups) {

@@ -47,8 +47,10 @@ cargo test -p asili-evaluator --target aarch64-unknown-linux-gnu`).
    precondition leaves the code alone.
 3. **Native code is bit-identical to the interpreter.** A `Namba` register may be lowered to
    `i64` only when `native::analyze_numbers` proves it whole, never NaN, never `-0.0`, and within
-   ±2^53 — or when it is *speculated* with a ±2^53 guard that deoptimizes (`STATUS_DEOPT`) back
-   to the interpreter at the failing pc. `sdiv`/`srem` only on proven integers. Bounds checks
+   ±2^53. Nothing is speculated: no guards, no deoptimization, native code never resumes the
+   interpreter part-way through a call. If a counter needs to be an integer for speed, make the
+   analysis prove it (square-root narrowing, loop-accumulator caps are the existing tools).
+   `sdiv`/`srem` only on proven integers. Bounds checks
    are dropped only for indices in `NumAnalysis::safe_index`. When in doubt, the analysis must
    return the conservative fact (TOP), never an optimistic one.
 4. **Every opcode is described to the analysis.** A new `Opcode` needs entries in
@@ -80,7 +82,7 @@ cargo test -p asili-evaluator --target aarch64-unknown-linux-gnu`).
   builtin or syntax form.
 - `cargo test -p asili-evaluator --test native_tiers` — interpreter vs native code (through the
   on-disk image), bit-for-bit (NaN bit patterns excluded: Asili can't observe them).
-  Add edge cases for anything numeric: `-0.0`, NaN, ±∞, ±2^53 and beyond (exercises deopt),
+  Add edge cases for anything numeric: `-0.0`, NaN, ±∞, ±2^53 and beyond (must stay floats),
   negative `%`/`//`, shifts outside `0..=63`, out-of-range indices.
 - `cargo test -p asili-evaluator --test bytecode` — compiler/VM unit behaviour.
 - A new `nguvu` transform needs a snippet that exercises it — check by breaking the transform
@@ -113,8 +115,9 @@ new figures in `docs/design/performance.md` when they change meaningfully.
 ## Debugging a regression
 
 1. `ASILI_AOT=0` vs default: if only native code slowed down, it's `nguvu` or the analysis; if
-   both did, it's the bytecode compiler or VM. `ASILI_NATIVE_TRACE=1` prints every
-   deoptimization — a guard failing on every call looks like a VM-speed native tier.
+   both did, it's the bytecode compiler or VM. If native code is barely faster than the VM,
+   check that `analyze_numbers` converged: a function it gives up on (100,000 steps) runs
+   entirely on floats — `ASILI_NGUVU_IR` shows `FAdd`/`FloatToIntSat` where `Add` was expected.
 2. Did the program still lower to bytecode? `compile_module_explained` reports the first
    construct that forced the AST fallback (a 30× slowdown looks exactly like this).
 3. `ASILI_NGUVU_IR=<file>` dumps the optimized IR with register locations and loop depth;

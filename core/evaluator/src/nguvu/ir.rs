@@ -94,8 +94,8 @@ pub enum RtFn {
     ShiftAmount = 10,
     /// Lowest stack address a direct call may run below.
     StackLimit = 11,
-    /// Finish a directly called function in the interpreter after it deoptimized.
-    Resume = 12,
+    /// Make a direct call through the VM's call path (see `native::Runtime::call_vm`).
+    CallVm = 12,
 }
 
 #[derive(Clone, Debug)]
@@ -282,7 +282,7 @@ pub struct BlockData {
 pub struct Func {
     pub classes: Vec<Class>,
     pub blocks: Vec<BlockData>,
-    /// Blocks on rarely taken paths (deoptimization, errors, leaving the call), laid out last.
+    /// Blocks on rarely taken paths (errors, leaving the call), laid out last.
     pub cold: Vec<bool>,
     /// Bytes of frame space for direct calls' register buffers (0: no direct calls).
     pub call_buffer: u32,

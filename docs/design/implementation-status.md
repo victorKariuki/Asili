@@ -162,9 +162,9 @@ Researched, decided, not built.
       bytecode ahead of time to x86-64 or AArch64 machine code with Asili's own backend
       (`core/evaluator/src/nguvu/`, no external compiler) into `<name>.nguvu`; on other
       platforms the bytecode runs on the VM. A flow-sensitive integer
-      range analysis (`native.rs`) keeps provably whole-number `Namba` registers in `i64`,
-      speculating on unbounded counters with a bound check that deoptimizes back into the VM,
-      and drops provably in-range list bounds checks. All engines share one implementation of
+      range analysis (`native.rs`) keeps provably whole-number `Namba` registers in `i64` (never
+      by speculation: a register it cannot bound stays `f64`, and native code never resumes the
+      VM part-way through a call), and drops provably in-range list bounds checks. All engines share one implementation of
       the language's value semantics (`eval/ops.rs`, `eval/methods.rs`); `tests/engines_agree.rs`
       and `tests/native_tiers.rs` check that the tree-walker, VM and native code agree
       bit-for-bit. The Arto Inkala Sudoku (90,665 attempts, 10,041 backtracks) solves in

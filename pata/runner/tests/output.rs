@@ -172,11 +172,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    let out = Command::new(&exe)
-        .args(["habari", "x"])
-        .env("ASILI_NATIVE_TRACE", "1")
-        .output()
-        .unwrap();
+    let out = Command::new(&exe).args(["habari", "x"]).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&out.stdout), "332833500 habari 2\n");
     assert!(out.status.success());
     let _ = std::fs::remove_dir_all(&dir);

@@ -122,7 +122,7 @@ touches `core/evaluator/` (`bytecode.rs`, `nguvu/`, `aot.rs`, `native.rs`, `eval
   `pata jenga` as `kilele/<name>.nguvu`. No external compiler, assembler or linker, no C
   transpiler, no JIT at run time.
 - **Native code is bit-identical to the interpreter** — integer lowering only when range
-  analysis proves it (or speculates with a deopt guard); every new opcode is described to
+  analysis proves it (no speculation, no deoptimization: an unprovable register stays `f64`); every new opcode is described to
   `native.rs` (`num_reads`/`num_writes`/`list_writes`/`transfer`); `BYTECODE_VERSION` /
   `ABI_VERSION` bumped when their formats change.
 - **Tests and numbers, not assumptions**: `engines_agree.rs` and `native_tiers.rs` cover every

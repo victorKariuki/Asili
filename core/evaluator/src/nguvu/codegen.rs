@@ -8,7 +8,7 @@
 //! scratch. A comparison feeding the block's branch is fused into `cmp` + `jcc`.
 
 use super::ir::{Class, FCond, FloatOp, Func, Home, ICond, Inst, IntOp, Term, VReg};
-use super::regalloc::{allocate, Allocation, Target};
+use super::regalloc::{allocate, Allocation, Target, LOOP_ALIGN};
 use super::schedule::Step;
 
 /// Where a value lives, in x86-64 terms.
@@ -182,6 +182,9 @@ pub fn generate(func: &Func, abi: &'static Abi) -> super::Code {
     let order = g.alloc.order.clone();
     for (k, &bi) in order.iter().enumerate() {
         let block = &func.blocks[bi];
+        if g.alloc.loop_head[bi] {
+            g.asm.align(LOOP_ALIGN);
+        }
         g.asm.bind(labels[bi]);
         let next = order.get(k + 1).map(|&b| labels[b]);
         let plan = super::schedule::plan(block, &g.alloc.uses);

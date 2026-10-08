@@ -291,7 +291,7 @@ impl NumList {
     }
 
     /// Switch to representation `kind` and return the data pointer, or null when some element
-    /// does not fit it (the caller deoptimizes).
+    /// does not fit it.
     pub(crate) fn ensure(&mut self, kind: Kind) -> *mut u64 {
         if kind != self.kind {
             if !kind.covers(self.kind) && !self.iter().all(|v| kind.holds(v)) {

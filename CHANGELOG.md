@@ -128,6 +128,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Native code no longer guesses**: `nguvu` keeps a `Namba` register as `i64` only when the
+  range analysis proves it; the ±2^53 speculation guards, deoptimization (`STATUS_DEOPT`) and
+  resuming the VM part-way through a call are gone, along with `ASILI_NATIVE_TRACE`. Two new
+  proofs cover the counters that used to need a guess — `i * i <= n` bounds `i`, and loop
+  accumulators are capped by trip count × largest increment — and a direct native call that is
+  too deep or short of stack goes through the VM's call path (`RtFn::CallVm`) instead of
+  falling back. The analysis also stopped re-queuing blocks whose capped state had not changed,
+  which made it give up (all floats) on the sieve. Loop headers are aligned to 32 bytes.
+  Every benchmark is at parity or faster (sieve 20.7 → 18.7 ms; Sudoku 3.9 ms whole process vs
+  4.3 ms for clang `-O2` C, 90,665 attempts). Native image format 8.
+
 - **Threads and server handlers run on bytecode and native code**: `tenda`,
   `mkondo_tumikia` and `mkondo_tumikia_http` used to run their `kazi` on the tree-walker, with
   a copy of the syntax tree per thread and a fresh interpreter (builtin table included) per

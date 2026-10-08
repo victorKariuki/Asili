@@ -15,9 +15,6 @@ pub(crate) const STATUS_FINISH: u64 = 1;
 pub(crate) const STATUS_FAIL: u64 = 2;
 /// The function reached the `Return`/`ReturnTupu` instruction at `pc` (lower half).
 pub(crate) const STATUS_RETURN: u64 = 3;
-/// A speculation failed before instruction `pc`: every numeric register has been written back
-/// to the frame, and the interpreter continues the call from `pc` (deoptimization).
-pub(crate) const STATUS_DEOPT: u64 = 4;
 
 /// Entry points native code calls, passed as the first argument. Field order is ABI: generated
 /// code loads them by offset (`nguvu::ir::RtFn`).
@@ -43,9 +40,10 @@ pub(crate) struct Runtime {
     pub shift_amount: extern "C" fn(f64) -> i64,
     /// Lowest stack address direct native calls may run below (see [`rt_stack_limit`]).
     pub stack_limit: extern "C" fn() -> usize,
-    /// `(vm, function, nums, pc) -> status`: finish a directly called function in the
-    /// interpreter after it deoptimized.
-    pub resume: extern "C" fn(*mut c_void, u32, *mut f64, u32) -> u64,
+    /// `(vm, function, nums) -> status`: make a direct call through the VM's call path (when
+    /// the call depth or the stack would not allow a direct one); the result lands after the
+    /// callee's registers, as a direct call leaves it.
+    pub call_vm: extern "C" fn(*mut c_void, u32, *mut f64) -> u64,
 }
 
 /// Byte offset of the VM's call-depth counter (`Vm` is `repr(C)` with `depth` first).
@@ -98,7 +96,7 @@ pub(crate) extern "C" fn rt_shift_amount(a: f64) -> i64 {
 
 /// Data pointer of list register `reg`, switched to the representation `kind` (a
 /// `Kind::code`) that native code chose from the range analysis; null if some element does not
-/// fit it (the caller deoptimizes).
+/// fit it (native code then stops with an internal error: its analysis proved they all fit).
 pub(crate) extern "C" fn list_ptr(frame: *mut Frame, reg: u32, kind: u32) -> *mut u64 {
     // SAFETY: called by native code with the frame it was handed; `reg` was checked at compile
     // time to be below the function's `list_regs`.
@@ -132,14 +130,6 @@ pub(crate) extern "C" fn list_remove(frame: *mut Frame, reg: u32, idx: i64) -> i
 
 /// Block leaders of a function: entry, jump targets, and successors of branches/returns.
 /// `None` if a jump target is out of range.
-/// Record native code handing a call back to the interpreter. `ASILI_NATIVE_TRACE=1` prints
-/// each one (function index and bytecode pc), for finding guards that fail unexpectedly.
-pub(crate) fn note_deopt(function: usize, pc: usize) {
-    if std::env::var_os("ASILI_NATIVE_TRACE").is_some_and(|v| v == "1") {
-        eprintln!("deopt: kazi #{function} pc {pc}");
-    }
-}
-
 /// Where a jump instruction can transfer control besides falling through.
 pub(crate) fn jump_target(op: &Opcode) -> Option<usize> {
     match op {
@@ -464,12 +454,6 @@ impl NumFact {
         self.int && !self.nan && !self.neg_zero && self.lo > -EXACT && self.hi < EXACT
     }
 
-    /// Whole numbers without NaN/-0.0 whose range is not bounded by ±2^53: native code may keep
-    /// them as `i64` if every write checks the bound and deoptimizes when it fails.
-    pub fn int_like(&self) -> bool {
-        self.int && !self.nan && !self.neg_zero
-    }
-
     fn join(self, other: NumFact) -> NumFact {
         NumFact {
             lo: self.lo.min(other.lo),
@@ -532,6 +516,156 @@ pub(crate) struct NumAnalysis {
     pub list_kinds: Vec<Kind>,
 }
 
+/// A loop accumulator ("reset, then add"): `reg` is set (by `Mov`) right before the guard of a
+/// counted loop (`ForStep` over `ctr` up to `end`) and only ever increased inside it, by `Add`s
+/// of other registers. Every write of `reg` is either such an increment or a `Mov` (`writes`).
+struct Accumulator {
+    reg: Reg,
+    /// The loop's entry test `JumpIfNot { Lt, ctr, end }`.
+    guard: usize,
+    ctr: Reg,
+    end: Reg,
+    /// `(pc, operand)` of each increment.
+    adds: Vec<(usize, Reg)>,
+    /// `(pc, source)` of each `Mov` into `reg`, the reset before `guard` among them.
+    movs: Vec<(usize, Reg)>,
+    reset: (usize, Reg),
+}
+
+/// Find the loop accumulators of `code` (structure only; [`accumulator_caps`] bounds them).
+fn accumulators(
+    code: &[Opcode],
+    params: &std::collections::HashSet<Reg>,
+    leaders: &std::collections::BTreeSet<usize>,
+) -> Vec<Accumulator> {
+    use std::collections::HashMap;
+    let mut writes: HashMap<Reg, Vec<usize>> = HashMap::new();
+    for (pc, op) in code.iter().enumerate() {
+        for r in num_writes(op) {
+            writes.entry(r).or_default().push(pc);
+        }
+    }
+    // The last write of `r` before `pc` in `pc`'s block.
+    let last_write = |r: Reg, pc: usize| -> Option<usize> {
+        let mut i = pc;
+        while i > 0 && !leaders.contains(&i) {
+            i -= 1;
+            if num_writes(&code[i]).contains(&r) {
+                return Some(i);
+            }
+        }
+        None
+    };
+    let mut found = Vec::new();
+    for (f_pc, op) in code.iter().enumerate() {
+        let Opcode::ForStep { ctr, end, target } = *op else {
+            continue;
+        };
+        let (head, guard) = (target as usize, (target as usize).wrapping_sub(1));
+        let guarded = matches!(code.get(guard), Some(Opcode::JumpIfNot { op: CmpOp::Lt, a, b, target: exit })
+            if *a == ctr && *b == end && *exit as usize == f_pc + 1);
+        // No way into the body except through the guard (and the back edge).
+        let entered_inside = code.iter().enumerate().any(|(pc, op)| {
+            jump_target(op).is_some_and(|t| t > head && t <= f_pc && !(guard..=f_pc).contains(&pc))
+        });
+        // Each increment runs at most once per iteration (no inner loop), and only `ForStep`
+        // moves the counter or the bound.
+        let simple_body = (head..f_pc).all(|pc| {
+            jump_target(&code[pc]).is_none_or(|t| t > pc)
+                && !num_writes(&code[pc]).iter().any(|w| *w == ctr || *w == end)
+        });
+        if !guarded || entered_inside || !simple_body {
+            continue;
+        }
+        for (&reg, pcs) in &writes {
+            // A parameter starts as anything; only what this code writes is bounded.
+            if reg == ctr || reg == end || params.contains(&reg) {
+                continue;
+            }
+            let (mut adds, mut movs, mut ok) = (Vec::new(), Vec::new(), true);
+            for &pc in pcs {
+                match code[pc] {
+                    Opcode::Add { dst, a, b } if (head..=f_pc).contains(&pc) && dst == reg => {
+                        let x = if a == reg { b } else { a };
+                        if (a == reg) == (b == reg) {
+                            ok = false;
+                        }
+                        adds.push((pc, x));
+                    }
+                    Opcode::Mov { src, .. } if !(head..=f_pc).contains(&pc) => movs.push((pc, src)),
+                    _ => ok = false,
+                }
+            }
+            let reset =
+                last_write(reg, guard).and_then(|pc| movs.iter().copied().find(|m| m.0 == pc));
+            if let (true, false, Some(reset)) = (ok, adds.is_empty(), reset) {
+                found.push(Accumulator {
+                    reg,
+                    guard,
+                    ctr,
+                    end,
+                    adds,
+                    movs,
+                    reset,
+                });
+            }
+        }
+    }
+    found
+}
+
+/// Bounds for accumulators from facts proven by a completed pass: at most the reset value plus
+/// every increment's largest value times the loop's trip count, and within every value it is
+/// ever set to (and the 0 it holds before its first write). Only non-negative whole increments
+/// over a finite trip count give a bound; it is a proof from proven facts, not a guess.
+fn accumulator_caps(
+    accs: &[Accumulator],
+    before: &dyn Fn(usize) -> Option<Vec<NumFact>>,
+) -> std::collections::HashMap<Reg, NumFact> {
+    let mut caps = std::collections::HashMap::new();
+    for acc in accs {
+        let Some(at_guard) = before(acc.guard) else {
+            continue;
+        };
+        let (ctr, end) = (at_guard[acc.ctr as usize], at_guard[acc.end as usize]);
+        if !(ctr.exact_int() && end.exact_int() && ctr.lo.is_finite() && end.hi.is_finite()) {
+            continue;
+        }
+        let trips = (end.hi - ctr.lo).max(0.0);
+        let fact_at = |pc: usize, r: Reg| before(pc).map(|s| s[r as usize]);
+        let mut grow = 0.0;
+        let mut ok = true;
+        for &(pc, x) in &acc.adds {
+            match fact_at(pc, x) {
+                Some(f) if f.exact_int() && f.lo >= 0.0 && f.hi.is_finite() => grow += f.hi,
+                _ => ok = false,
+            }
+        }
+        let (mut lo, mut hi) = (0.0f64, 0.0f64);
+        for &(pc, src) in &acc.movs {
+            match fact_at(pc, src) {
+                Some(f) if f.exact_int() => {
+                    lo = lo.min(f.lo);
+                    hi = hi.max(f.hi);
+                }
+                _ => ok = false,
+            }
+        }
+        let base = fact_at(acc.reset.0, acc.reset.1).map_or(f64::INFINITY, |f| f.hi);
+        hi = hi.max(base + grow * trips);
+        if ok && lo.is_finite() && hi < 9_007_199_254_740_992.0 {
+            let cap = NumFact::int_range(lo, hi);
+            caps.entry(acc.reg)
+                .and_modify(|c: &mut NumFact| {
+                    c.lo = c.lo.max(cap.lo);
+                    c.hi = c.hi.min(cap.hi);
+                })
+                .or_insert(cap);
+        }
+    }
+    caps
+}
+
 pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis {
     let nregs = f.num_regs as usize;
     // State slots: numeric registers, then one pseudo-register per list holding its length.
@@ -545,11 +679,19 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
     let Some(leaders) = leaders(code) else {
         return give_up();
     };
-    let starts: Vec<usize> = leaders.into_iter().filter(|&l| l < code.len()).collect();
-    let block_of = |pc: usize| starts.partition_point(|&s| s <= pc) - 1;
-
     // Frame entry: constants, parameters, and zero for everything else.
     let consts: std::collections::HashMap<Reg, f64> = f.num_consts.iter().copied().collect();
+    let num_params: std::collections::HashSet<Reg> = f
+        .params
+        .iter()
+        .filter(|p| matches!(p.ty, Ty::Num | Ty::Bool))
+        .map(|p| p.reg)
+        .collect();
+    let accs = accumulators(code, &num_params, &leaders);
+    let mut caps: std::collections::HashMap<Reg, NumFact> = Default::default();
+    let mut cap_rounds = 0;
+    let starts: Vec<usize> = leaders.into_iter().filter(|&l| l < code.len()).collect();
+    let block_of = |pc: usize| starts.partition_point(|&s| s <= pc) - 1;
     let params: std::collections::HashSet<Reg> = f
         .params
         .iter()
@@ -639,6 +781,8 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
             let end = starts.get(b + 1).copied().unwrap_or(code.len());
             let mut edges: Vec<(usize, Vec<NumFact>)> = Vec::new();
             let mut falls_through = true;
+            // `(dst, x)`: `dst` holds `x * x` (both unchanged since, within this block).
+            let mut squares: Vec<(Reg, Reg)> = Vec::new();
             for (pc, op) in code.iter().enumerate().take(end).skip(starts[b]) {
                 for (list, fact) in list_transfer(op, &state, &lists) {
                     if fact.is_bottom() {
@@ -663,11 +807,32 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
                     || matches!(op, Opcode::ListGet { list, .. } if lists[*list as usize].is_none());
                 for (dst, fact) in transfer(op, &state, &lists) {
                     state[dst as usize] = if bottom_input { NumFact::BOTTOM } else { fact };
+                    squares.retain(|(d, x)| *d != dst && *x != dst);
+                }
+                if let Opcode::Mul { dst, a, b } = op {
+                    if a == b && dst != a {
+                        squares.push((*dst, *a));
+                    }
                 }
                 for (slot, fact) in len_transfer(op, &state, nregs) {
                     state[slot] = fact;
                 }
                 let next = pc + 1;
+                // A bound on `x * x` from a comparison bounds `x` too (`i * i <= n`).
+                let roots = |mut s: Vec<NumFact>| {
+                    for (sq, x) in &squares {
+                        let hi = s[*sq as usize].hi;
+                        if hi.is_finite() && hi >= 0.0 {
+                            // The product was rounded: one more keeps the bound sound.
+                            let r = hi.sqrt().floor() + 1.0;
+                            let f = &mut s[*x as usize];
+                            f.lo = f.lo.max(-r);
+                            f.hi = f.hi.min(r);
+                            f.nan = false;
+                        }
+                    }
+                    s
+                };
                 match op {
                     Opcode::Jump { target } => {
                         edges.push((*target as usize, state.clone()));
@@ -680,10 +845,10 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
                     }
                     Opcode::JumpIfNot { op, a, b, target } => {
                         if let Some(s) = refine(&state, *op, *a, *b, true) {
-                            edges.push((next, s));
+                            edges.push((next, roots(s)));
                         }
                         if let Some(s) = refine(&state, *op, *a, *b, false) {
-                            edges.push((*target as usize, s));
+                            edges.push((*target as usize, roots(s)));
                         }
                         falls_through = false;
                     }
@@ -722,14 +887,55 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
                                 visits[t][r] += 1;
                                 if visits[t][r] > 4 {
                                     widen(m, o);
+                                    // Never below the old state: the iteration must
+                                    // only grow to terminate.
+                                    if let Some(cap) = caps.get(&(r as Reg)) {
+                                        m.lo = m.lo.max(cap.lo.min(o.lo));
+                                        m.hi = m.hi.min(cap.hi.max(o.hi));
+                                    }
                                 }
                             }
+                        }
+                        if merged == *old {
+                            continue;
                         }
                         merged
                     }
                 };
                 in_states[t] = Some(merged);
                 work.insert(t);
+            }
+        }
+        if !lists_changed && !accs.is_empty() && cap_rounds < 3 {
+            // Bound loop accumulators from this pass's proven facts, then run again with them.
+            let before = |pc: usize| -> Option<Vec<NumFact>> {
+                let b = block_of(pc);
+                let mut state = in_states[b].clone()?;
+                for op in &code[starts[b]..pc] {
+                    let bottom_input = num_reads(op).iter().any(|r| state[*r as usize].is_bottom());
+                    for (dst, fact) in transfer(op, &state, &lists) {
+                        state[dst as usize] = if bottom_input { NumFact::BOTTOM } else { fact };
+                    }
+                    for (slot, fact) in len_transfer(op, &state, nregs) {
+                        state[slot] = fact;
+                    }
+                }
+                Some(state)
+            };
+            let mut next = accumulator_caps(&accs, &before);
+            // Keep every bound already proven (each round's facts already respect them).
+            for (r, old) in &caps {
+                next.entry(*r)
+                    .and_modify(|c| {
+                        c.lo = c.lo.max(old.lo);
+                        c.hi = c.hi.min(old.hi);
+                    })
+                    .or_insert(*old);
+            }
+            cap_rounds += 1;
+            if next != caps {
+                caps = next;
+                continue;
             }
         }
         if !lists_changed {
@@ -1135,4 +1341,51 @@ fn transfer(op: &Opcode, facts: &[NumFact], lists: &[Option<NumFact>]) -> Vec<(R
         }
     };
     vec![fact]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::analyze_numbers;
+
+    /// Facts for `kuu`'s registers in `source`.
+    fn facts(source: &str) -> Vec<super::NumFact> {
+        let tokens = asili_lexer::tokenize(source).expect("tokenize");
+        let module = asili_parser::parse_tokens(&tokens).expect("parse");
+        let program = crate::bytecode::compile_module(&module).expect("bytecode");
+        analyze_numbers(program.find_function("kuu").expect("kuu")).regs
+    }
+
+    /// A nested loop whose counters are bounded only through `i * i <= n` and a loop
+    /// accumulator: the analysis must converge and prove every register an integer, since
+    /// native code no longer guesses (a register it cannot prove stays a float).
+    #[test]
+    fn sieve_counters_are_proven_integers() {
+        let regs = facts(
+            "kazi kuu() -> Tupu {
+                weka n: Namba = 5000000
+                weka p: Orodha<Namba> = orodha_rudia(1, n + 1)
+                p[0] = 0
+                p[1] = 0
+                weka i: Namba = 2
+                wakati i * i <= n {
+                    ikiwa p[i] == 1 {
+                        weka j = i * i
+                        wakati j <= n {
+                            p[j] = 0
+                            j += i
+                        }
+                    }
+                    i += 1
+                }
+                weka hesabu: Namba = 0
+                kwa k kutoka 0 hadi n + 1 {
+                    hesabu += p[k]
+                }
+                chapisha(hesabu kama Neno)
+            }",
+        );
+        for (r, fact) in regs.iter().enumerate() {
+            assert!(fact.exact_int(), "r{r}: {fact:?}");
+        }
+    }
 }

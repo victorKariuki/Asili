@@ -1,7 +1,7 @@
 //! Differential tests: every snippet must produce bit-identical results on the register VM's
 //! interpreter and the native `nguvu` code (loaded through its on-disk image).
 //! The snippets target the places where native code could diverge from `f64` semantics:
-//! -0.0, NaN, infinities, integers beyond 2^53 (speculation/deoptimization), remainders and
+//! -0.0, NaN, infinities, integers beyond 2^53 (which stay floats), remainders and
 //! floor division of negatives, out-of-range shifts, and out-of-bounds list access.
 
 use asili_evaluator::{compile_module, run_bytecode_function_on, Engine, Value};
@@ -83,7 +83,7 @@ fn signed_zero_remainders_and_floor_division() {
 }
 
 #[test]
-fn integers_beyond_two_pow_53_deoptimize_correctly() {
+fn integers_beyond_two_pow_53_stay_exact() {
     check(
         "big",
         r#"
@@ -383,7 +383,7 @@ fn unrolled_loops_if_conversion_and_bit_tests() {
                 }
             }
             r.ongeza(p)
-            # a counter that leaves the exact-integer range inside an unrolled copy (deopt)
+            # a counter that leaves the exact-integer range inside an unrolled copy (stays a float)
             weka x: Namba = 9007199254740985
             kwa i kutoka 0 hadi 12 {
                 x += 1
@@ -578,7 +578,7 @@ fn direct_native_calls_keep_interpreter_semantics() {
             rejesha ni_shufwa_moja(n - 1)
         }
         kazi vuka_kikomo(n: Namba) -> Namba {
-            # a counter pushed past 2^53 deoptimizes inside a directly called function
+            # a counter pushed past 2^53 inside a directly called function
             weka x: Namba = 9007199254740980
             kwa i kutoka 0 hadi n {
                 x += 1

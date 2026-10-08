@@ -1,8 +1,8 @@
-//! Bytecode → IR. The same translation decisions as the LLVM emitter (`aot.rs`), driven by the
-//! same analysis (`native::analyze_numbers`): registers proven to hold exact integers become
-//! `Int` virtual registers, speculated ones check their ±2^53 bound on every write and
-//! deoptimize, proven in-range list accesses skip their bounds check, and every instruction the
-//! backend doesn't lower runs in the interpreter through `Runtime::exec`.
+//! Bytecode → IR, driven by the range analysis (`native::analyze_numbers`): registers proven to
+//! hold exact integers become `Int` virtual registers, proven in-range list accesses skip their
+//! bounds check, and every instruction the backend doesn't lower runs through `Runtime::exec`.
+//! Nothing is speculated: native code never hands a call back to the interpreter part-way, so
+//! every decision here is a proof.
 
 use super::ir::{
     Block, Builder, Class, FCond, FloatOp, ICond, Inst, IntOp, RtFn, Term, VReg, FRAME, NUMS, VM,
@@ -10,7 +10,7 @@ use super::ir::{
 use crate::bytecode::{BytecodeFunc, BytecodeProgram, CallOp, CmpOp, Opcode, Reg, Ty};
 use crate::native::{
     analyze_numbers, jump_target, leaders, list_writes, num_reads, num_writes, NumFact,
-    STATUS_DEOPT, STATUS_FAIL, STATUS_RETURN,
+    STATUS_FAIL, STATUS_RETURN,
 };
 use crate::numlist::Kind;
 use std::collections::{HashMap, HashSet};
@@ -34,17 +34,26 @@ pub fn direct_signature(f: &BytecodeFunc) -> bool {
         && f.params.iter().all(|p| matches!(p.ty, Ty::Num | Ty::Bool))
 }
 
-/// The registers whose values a direct entry's caller buffer carries: parameters and every
-/// register the function writes (the others keep their entry values).
-pub(crate) fn frame_registers(f: &BytecodeFunc) -> Vec<Reg> {
-    let mut regs: std::collections::BTreeSet<Reg> = f.code.iter().flat_map(writes).collect();
-    regs.extend(
-        f.params
-            .iter()
-            .filter(|p| matches!(p.ty, Ty::Num | Ty::Bool))
-            .map(|p| p.reg),
-    );
-    regs.into_iter().collect()
+/// Which instructions a path from the entry reaches (following jumps and fall-through).
+fn reachable(code: &[Opcode]) -> Vec<bool> {
+    let mut seen = vec![false; code.len()];
+    let mut work = vec![0usize];
+    while let Some(pc) = work.pop() {
+        if pc >= code.len() || seen[pc] {
+            continue;
+        }
+        seen[pc] = true;
+        if let Some(t) = jump_target(&code[pc]) {
+            work.push(t);
+        }
+        if !matches!(
+            code[pc],
+            Opcode::Jump { .. } | Opcode::Return { .. } | Opcode::ReturnTupu
+        ) {
+            work.push(pc + 1);
+        }
+    }
+    seen
 }
 
 /// A direct entry's third argument: the stack limit (the ordinary entry's is the frame).
@@ -52,7 +61,6 @@ const LIMIT_ARG: VReg = VReg(2);
 
 const SIGN: i64 = i64::MIN;
 const ABS_MASK: i64 = i64::MAX;
-const EXACT: f64 = 9_007_199_254_740_992.0; // 2^53
 
 struct Lower<'a> {
     b: Builder,
@@ -60,7 +68,6 @@ struct Lower<'a> {
     index: usize,
     facts: Vec<NumFact>,
     ints: Vec<bool>,
-    guarded: Vec<bool>,
     safe_index: std::collections::HashSet<usize>,
     /// Bytecode numeric register → its virtual register.
     regs: Vec<VReg>,
@@ -74,18 +81,15 @@ struct Lower<'a> {
     result_range: (f64, f64),
     /// How each list register's elements are stored (`NumAnalysis::list_kinds`).
     list_kinds: Vec<Kind>,
-    /// While reloading after an instruction the interpreter ran: where a failing guard resumes
-    /// (the next instruction) and the registers already current in the frame.
-    resume: Option<(usize, Vec<Reg>)>,
     ctx: &'a Ctx<'a>,
     /// A direct entry reached something only the interpreter can do: no direct entry.
     failed: bool,
+    /// Instructions some path from the entry reaches.
+    reachable: Vec<bool>,
     /// Stack limit for direct calls (an argument of direct entries, fetched on entry otherwise).
     limit: Option<VReg>,
     /// Largest register buffer a direct call site needs, in bytes.
     call_buffer: u32,
-    /// Shared deoptimization exit and the register carrying the resume pc into it.
-    deopt: Option<(Block, VReg)>,
     /// Numeric registers live on entry to each instruction (bytecode liveness).
     live_in: Vec<std::collections::BTreeSet<Reg>>,
     /// Registers some instruction writes; the others keep their frame value all call long.
@@ -160,14 +164,7 @@ pub fn lower(index: usize, function: &BytecodeFunc, ctx: &Ctx) -> Option<super::
     let leaders = leaders(code)?;
     let analysis = analyze_numbers(function);
     let facts = analysis.regs;
-    let ints: Vec<bool> = facts
-        .iter()
-        .map(|f| f.exact_int() || f.int_like())
-        .collect();
-    let guarded = facts
-        .iter()
-        .map(|f| f.int_like() && !f.exact_int())
-        .collect();
+    let ints: Vec<bool> = facts.iter().map(|f| f.exact_int()).collect();
     let mut b = Builder::new();
     let regs = ints
         .iter()
@@ -189,7 +186,6 @@ pub fn lower(index: usize, function: &BytecodeFunc, ctx: &Ctx) -> Option<super::
         index,
         facts,
         ints,
-        guarded,
         safe_index: analysis.safe_index,
         regs,
         lists,
@@ -198,13 +194,12 @@ pub fn lower(index: usize, function: &BytecodeFunc, ctx: &Ctx) -> Option<super::
         cur_pc: 0,
         result_range: (f64::NEG_INFINITY, f64::INFINITY),
         list_kinds: analysis.list_kinds,
-        resume: None,
-        deopt: None,
         live_in: liveness(code),
         written,
         consts,
         ctx,
         failed: false,
+        reachable: reachable(code),
         limit: None,
         call_buffer: 0,
     };
@@ -229,8 +224,12 @@ pub fn lower(index: usize, function: &BytecodeFunc, ctx: &Ctx) -> Option<super::
     if l.b.is_open() {
         let pc = code.len().saturating_sub(1);
         if ctx.entry_direct {
-            l.cur_pc = pc;
-            l.deopt_here();
+            // A direct entry returns only through `Return` with a value.
+            if l.reachable.get(pc).copied().unwrap_or(false) {
+                l.failed = true;
+            }
+            let v = l.b.iconst(((STATUS_FAIL << 32) | pc as u64) as i64);
+            l.b.terminate(Term::Return(v));
         } else {
             l.ret_status(STATUS_RETURN, pc);
         }
@@ -249,7 +248,6 @@ pub fn lower(index: usize, function: &BytecodeFunc, ctx: &Ctx) -> Option<super::
             l.b.iconst(((STATUS_RETURN << 32) | pc.saturating_sub(1) as u64) as i64);
         l.b.terminate(Term::Return(v));
     }
-    l.deopt_block();
     if l.failed {
         return None;
     }
@@ -293,9 +291,6 @@ impl<'a> Lower<'a> {
     /// and it is small: each copy of the body sees the counter as a constant, so everything
     /// derived from it folds (`1 << (v - 1)` becomes an immediate mask). Returns the pc to
     /// continue at, or `None` to lower the loop normally.
-    ///
-    /// A copy that deoptimizes spills the counter as that iteration's constant, so the
-    /// interpreter resumes with exactly its frame state.
     fn unroll(&mut self, pc: usize) -> Option<usize> {
         let code = &self.function.code;
         let Opcode::JumpIfNot {
@@ -382,62 +377,14 @@ impl<'a> Lower<'a> {
     }
 
     /// A call to a function with a direct entry: its registers go in a buffer in this frame,
-    /// and native code calls native code. The interpreter's call path still runs it when the
-    /// call depth reaches the VM's limit or the stack is low (it can grow the stack), and it
-    /// finishes the call when the callee deoptimizes.
-    fn direct_call(&mut self, pc: usize, op: &Opcode, call: &CallOp) {
+    /// and native code calls native code. When the call depth reaches the VM's limit or the
+    /// stack is low, the call goes through the VM's call path instead (`RtFn::CallVm`: it grows
+    /// the stack, or reports the depth error, and still runs the callee's native code).
+    fn direct_call(&mut self, pc: usize, _op: &Opcode, call: &CallOp) {
         let callee = self.direct_callee(call).expect("direct callee");
         let limit = self.limit.expect("stack limit fetched on entry");
         let result_offset = 8 * callee.num_regs as i32;
         self.call_buffer = self.call_buffer.max(8 * (callee.num_regs + 1));
-        let depth = self.vreg(Class::Int);
-        self.push(Inst::Load {
-            dst: depth,
-            base: VM,
-            offset: crate::native::VM_DEPTH_OFFSET,
-        });
-        let max = self.b.iconst(crate::bytecode::MAX_CALL_DEPTH as i64);
-        let done = self.b.block();
-        // Two compare-and-branch pairs (each fuses), not one branch on their conjunction.
-        let interp = (!self.ctx.entry_direct).then(|| self.b.cold_block());
-        let check = |l: &mut Self, ok: VReg| match interp {
-            // No interpreter frame here: deoptimize, and the caller finishes this function in
-            // the interpreter — which makes the call through its own path.
-            None => l.guard(ok),
-            Some(interp) => {
-                let next = l.b.block();
-                l.b.terminate(Term::Branch {
-                    cond: ok,
-                    then_: next,
-                    else_: interp,
-                });
-                l.b.switch_to(next);
-            }
-        };
-        let shallow = self.icmp(ICond::Lt, depth, max);
-        check(self, shallow);
-        let sp = self.vreg(Class::Int);
-        self.push(Inst::StackPointer { dst: sp });
-        let roomy = self.icmp(ICond::Ult, limit, sp);
-        check(self, roomy);
-        if let Some(interp) = interp {
-            let fast = self.b.block();
-            self.b.terminate(Term::Jump(fast));
-            self.b.switch_to(interp);
-            self.slow(pc, op);
-            self.b.terminate(Term::Jump(done));
-            self.b.switch_to(fast);
-        }
-        let one = self.b.iconst(1);
-        let deeper = self.int_op(IntOp::Add, depth, one);
-        let set_depth = |l: &mut Self, v: VReg| {
-            l.push(Inst::Store {
-                src: v,
-                base: VM,
-                offset: crate::native::VM_DEPTH_OFFSET,
-            })
-        };
-        set_depth(self, deeper);
         let buf = self.vreg(Class::Int);
         self.push(Inst::CallBuffer { dst: buf });
         for (arg, param) in call.args.iter().zip(&callee.params) {
@@ -448,13 +395,72 @@ impl<'a> Lower<'a> {
                 offset: 8 * param.reg as i32,
             });
         }
+        let depth = self.vreg(Class::Int);
+        self.push(Inst::Load {
+            dst: depth,
+            base: VM,
+            offset: crate::native::VM_DEPTH_OFFSET,
+        });
+        let max = self.b.iconst(crate::bytecode::MAX_CALL_DEPTH as i64);
+        let via_vm = self.b.cold_block();
         let status = self.vreg(Class::Int);
+        let returned = self.b.block();
+        // Two compare-and-branch pairs (each fuses), not one branch on their conjunction.
+        let shallow = self.icmp(ICond::Lt, depth, max);
+        let next = self.b.block();
+        self.b.terminate(Term::Branch {
+            cond: shallow,
+            then_: next,
+            else_: via_vm,
+        });
+        self.b.switch_to(next);
+        let sp = self.vreg(Class::Int);
+        self.push(Inst::StackPointer { dst: sp });
+        let roomy = self.icmp(ICond::Ult, limit, sp);
+        let fast = self.b.block();
+        self.b.terminate(Term::Branch {
+            cond: roomy,
+            then_: fast,
+            else_: via_vm,
+        });
+
+        self.b.switch_to(via_vm);
+        let f = self.b.iconst(call.function as i64);
+        let s = self
+            .call(RtFn::CallVm, vec![VM, f, buf], Some(Class::Int), false)
+            .expect("status");
+        self.push(Inst::Mov {
+            dst: status,
+            src: s,
+        });
+        self.b.terminate(Term::Jump(returned));
+
+        self.b.switch_to(fast);
+        let one = self.b.iconst(1);
+        let deeper = self.int_op(IntOp::Add, depth, one);
+        let set_depth = |l: &mut Self, v: VReg| {
+            l.push(Inst::Store {
+                src: v,
+                base: VM,
+                offset: crate::native::VM_DEPTH_OFFSET,
+            })
+        };
+        set_depth(self, deeper);
+        let s = self.vreg(Class::Int);
         self.push(Inst::CallDirect {
             func: call.function,
             args: vec![super::ir::RT, VM, limit, buf],
-            dst: status,
+            dst: s,
         });
         set_depth(self, depth);
+        self.push(Inst::Mov {
+            dst: status,
+            src: s,
+        });
+        self.b.terminate(Term::Jump(returned));
+
+        // Anything but a plain return is a failure to pass on.
+        self.b.switch_to(returned);
         let kind = self.vreg(Class::Int);
         self.push(Inst::IntImm {
             op: IntOp::Sar,
@@ -463,52 +469,11 @@ impl<'a> Lower<'a> {
             imm: 32,
         });
         let ret = self.b.iconst(crate::native::STATUS_RETURN as i64);
-        let returned = self.icmp(ICond::Eq, kind, ret);
+        let ok = self.icmp(ICond::Eq, kind, ret);
         let got = self.b.block();
-        let other = self.b.cold_block();
-        self.b.terminate(Term::Branch {
-            cond: returned,
-            then_: got,
-            else_: other,
-        });
-
-        // Not a plain return: a deoptimized callee finishes in the interpreter (counted at
-        // its depth, as the VM would); anything else is a failure to pass on.
-        self.b.switch_to(other);
-        let deopt = self.b.iconst(STATUS_DEOPT as i64);
-        let is_deopt = self.icmp(ICond::Eq, kind, deopt);
-        let resume = self.b.cold_block();
         let fail = self.b.cold_block();
         self.b.terminate(Term::Branch {
-            cond: is_deopt,
-            then_: resume,
-            else_: fail,
-        });
-        self.b.switch_to(resume);
-        set_depth(self, deeper);
-        let low = self.vreg(Class::Int);
-        self.push(Inst::IntImm {
-            op: IntOp::And,
-            dst: low,
-            a: status,
-            imm: i32::MAX,
-        });
-        let f = self.b.iconst(call.function as i64);
-        let resumed = self
-            .call(RtFn::Resume, vec![VM, f, buf, low], Some(Class::Int), false)
-            .expect("status");
-        set_depth(self, depth);
-        let kind2 = self.vreg(Class::Int);
-        self.push(Inst::IntImm {
-            op: IntOp::Sar,
-            dst: kind2,
-            a: resumed,
-            imm: 32,
-        });
-        let ret2 = self.b.iconst(crate::native::STATUS_RETURN as i64);
-        let ok2 = self.icmp(ICond::Eq, kind2, ret2);
-        self.b.terminate(Term::Branch {
-            cond: ok2,
+            cond: ok,
             then_: got,
             else_: fail,
         });
@@ -523,21 +488,7 @@ impl<'a> Lower<'a> {
             base: buf,
             offset: result_offset,
         });
-        // The call has happened: a bound check on the result deoptimizes to the next
-        // instruction, with the result already in the frame.
-        let dst = call.dst.reg;
-        if self.int(dst) && self.guarded[dst as usize] {
-            self.push(Inst::Store {
-                src: v,
-                base: NUMS,
-                offset: 8 * dst as i32,
-            });
-            self.resume = Some((pc + 1, vec![dst]));
-        }
-        self.set_f(dst, v);
-        self.resume = None;
-        self.b.terminate(Term::Jump(done));
-        self.b.switch_to(done);
+        self.set_f(call.dst.reg, v);
     }
 
     fn label(&self, pc: usize) -> Block {
@@ -674,115 +625,8 @@ impl<'a> Lower<'a> {
         dst
     }
 
-    fn fabs(&mut self, v: VReg) -> VReg {
-        let bits = self.vreg(Class::Int);
-        self.push(Inst::FloatBits { dst: bits, src: v });
-        let mask = self.b.iconst(ABS_MASK);
-        let abs = self.int_op(IntOp::And, bits, mask);
-        let f = self.vreg(Class::Float);
-        self.push(Inst::BitsFloat { dst: f, src: abs });
-        f
-    }
-
-    /// Continue only if `ok != 0`; otherwise deoptimize at the current instruction.
-    fn guard(&mut self, ok: VReg) {
-        let (deopt, dpc) = match self.deopt {
-            Some(d) => d,
-            None => {
-                let block = self.b.cold_block();
-                let dpc = self.vreg(Class::Int);
-                self.deopt = Some((block, dpc));
-                (block, dpc)
-            }
-        };
-        let site = self.b.cold_block();
-        let cont = self.b.block();
-        self.b.terminate(Term::Branch {
-            cond: ok,
-            then_: cont,
-            else_: site,
-        });
-        self.b.switch_to(site);
-        // The interpreter resumes at this instruction (or after one it just ran) and only reads
-        // registers live there; registers native code never writes, and those the interpreter
-        // just wrote, already hold their value in the frame.
-        let (pc, fresh) = match &self.resume {
-            Some((pc, fresh)) => (*pc, fresh.clone()),
-            None => (self.cur_pc, Vec::new()),
-        };
-        let need: Vec<Reg> = self.live_in[pc]
-            .iter()
-            .copied()
-            .filter(|r| self.written.contains(r) && !fresh.contains(r))
-            .collect();
-        for r in need {
-            self.spill(r);
-        }
-        self.push(Inst::IConst {
-            dst: dpc,
-            value: pc as i64,
-        });
-        self.b.terminate(Term::Jump(deopt));
-        self.b.switch_to(cont);
-    }
-
-    /// Leave a direct entry for the interpreter at the current instruction (something only it
-    /// does exactly, such as a `kazi` declared to return a number returning nothing).
-    fn deopt_here(&mut self) {
-        let never = self.b.iconst(0);
-        self.guard(never);
-        let unreachable = self
-            .b
-            .iconst(((STATUS_FAIL << 32) | self.cur_pc as u64) as i64);
-        self.b.terminate(Term::Return(unreachable));
-    }
-
-    /// `|v| <= 2^53` for a speculated integer register, checking only the sides
-    /// `result_range` does not already rule out.
-    fn guard_i(&mut self, v: VReg) {
-        let (lo, hi) =
-            std::mem::replace(&mut self.result_range, (f64::NEG_INFINITY, f64::INFINITY));
-        // Strict: the bounds are summed in f64, which rounds; monotonic rounding keeps a
-        // result below 2^53 only if the exact sum is.
-        let ok = match (lo > -EXACT, hi < EXACT) {
-            (true, true) => return,
-            (true, false) => {
-                let limit = self.b.iconst(1 << 53);
-                self.icmp(ICond::Le, v, limit)
-            }
-            (false, true) => {
-                let limit = self.b.iconst(-(1 << 53));
-                self.icmp(ICond::Ge, v, limit)
-            }
-            (false, false) => {
-                let bias = self.b.iconst(1 << 53);
-                let shifted = self.int_op(IntOp::Add, v, bias);
-                let limit = self.b.iconst(1 << 54);
-                self.icmp(ICond::Ule, shifted, limit)
-            }
-        };
-        self.guard(ok);
-    }
-
-    /// Write every register back and resume in the interpreter at the failing instruction.
-    fn deopt_block(&mut self) {
-        let Some((block, dpc)) = self.deopt else {
-            return;
-        };
-        self.b.switch_to(block);
-        let tag = self.b.iconst((STATUS_DEOPT << 32) as i64);
-        let ret = self.int_op(IntOp::Or, dpc, tag);
-        self.b.terminate(Term::Return(ret));
-    }
-
     fn set_f(&mut self, r: Reg, v: VReg) {
         let dst = self.regs[r as usize];
-        if self.int(r) && self.guarded[r as usize] {
-            let a = self.fabs(v);
-            let limit = self.b.fconst(EXACT);
-            let ok = self.fcmp(FCond::Ole, a, limit);
-            self.guard(ok);
-        }
         if self.int(r) {
             // Every value this register receives is an exact integer.
             self.push(Inst::FloatToInt { dst, src: v });
@@ -793,9 +637,6 @@ impl<'a> Lower<'a> {
 
     fn set_i(&mut self, r: Reg, v: VReg) {
         let dst = self.regs[r as usize];
-        if self.int(r) && self.guarded[r as usize] {
-            self.guard_i(v);
-        }
         if self.int(r) {
             if dst != v {
                 self.push(Inst::Mov { dst, src: v });
@@ -839,10 +680,24 @@ impl<'a> Lower<'a> {
             ret32: false,
         });
         if kind != Kind::F64 {
-            // Null: some element does not fit after all — continue in the interpreter.
+            // The analysis saw every value stored into this list, so each fits `kind` and the
+            // runtime always hands back a pointer. Null would mean that proof was wrong: stop
+            // with an internal error rather than read the list at the wrong width.
             let z = self.b.iconst(0);
             let ok = self.icmp(ICond::Ne, p, z);
-            self.guard(ok);
+            let fine = self.b.block();
+            let broken = self.b.cold_block();
+            self.b.terminate(Term::Branch {
+                cond: ok,
+                then_: fine,
+                else_: broken,
+            });
+            self.b.switch_to(broken);
+            let status = self
+                .b
+                .iconst(((STATUS_FAIL << 32) | self.cur_pc as u64) as i64);
+            self.b.terminate(Term::Return(status));
+            self.b.switch_to(fine);
         }
         self.push(Inst::Call {
             target: RtFn::ListLen,
@@ -941,16 +796,12 @@ impl<'a> Lower<'a> {
         let ret = self.int_op(IntOp::Or, hi, pcv);
         self.b.terminate(Term::Return(ret));
         self.b.switch_to(cont);
-        // The instruction has run: a guard failing while reading its results back resumes
-        // after it, without overwriting what it wrote.
-        self.resume = Some((pc + 1, num_writes(op)));
         for r in num_writes(op) {
             self.reload(r);
         }
         for r in list_writes(op) {
             self.refresh_list(r);
         }
-        self.resume = None;
     }
 
     /// Bounds-checked element index into `list` (out of range: the interpreter raises the
@@ -1077,10 +928,10 @@ impl<'a> Lower<'a> {
         }
     }
 
-    /// Where to compute an integer result for `r`: straight into its register when no bound
-    /// check is needed, else a temporary that `finish_i` checks and copies.
+    /// Where to compute an integer result for `r`: straight into its register when it is an
+    /// integer register, else a temporary that `finish_i` converts.
     fn int_dst(&mut self, r: Reg) -> VReg {
-        if self.int(r) && !self.guarded[r as usize] {
+        if self.int(r) {
             self.regs[r as usize]
         } else {
             self.vreg(Class::Int)
@@ -1177,30 +1028,6 @@ impl<'a> Lower<'a> {
             }
             Opcode::Add { dst, a, b } => self.arith(*dst, *a, *b, IntOp::Add, FloatOp::Add),
             Opcode::Sub { dst, a, b } => self.arith(*dst, *a, *b, IntOp::Sub, FloatOp::Sub),
-            Opcode::Mul { dst, a, b }
-                if self.int(*dst)
-                    && self.int(*a)
-                    && self.int(*b)
-                    && (self.guarded[*dst as usize]
-                        || self.guarded[*a as usize]
-                        || self.guarded[*b as usize]) =>
-            {
-                // Operands up to 2^53 can overflow i64: check, then bound the product.
-                let x = self.get_i(*a);
-                let y = self.get_i(*b);
-                let prod = self.vreg(Class::Int);
-                let ovf = self.vreg(Class::Int);
-                self.push(Inst::MulOverflow {
-                    dst: prod,
-                    ovf,
-                    a: x,
-                    b: y,
-                });
-                let z = self.b.iconst(0);
-                let ok = self.icmp(ICond::Eq, ovf, z);
-                self.guard(ok);
-                self.set_i(*dst, prod);
-            }
             Opcode::Mul { dst, a, b } => self.arith(*dst, *a, *b, IntOp::Mul, FloatOp::Mul),
             Opcode::Div { dst, a, b } => {
                 let x = self.get_f(*a);
@@ -1501,7 +1328,15 @@ impl<'a> Lower<'a> {
             Opcode::Call(call) if self.direct_callee(call).is_some() => {
                 self.direct_call(pc, op, call)
             }
-            Opcode::ReturnTupu if self.ctx.entry_direct => self.deopt_here(),
+            // A direct entry returns only a number: one that can return nothing has none (the
+            // `ReturnTupu` every function ends with is usually unreachable).
+            Opcode::ReturnTupu if self.ctx.entry_direct => {
+                if self.reachable[pc] {
+                    self.failed = true;
+                }
+                let v = self.b.iconst(((STATUS_FAIL << 32) | pc as u64) as i64);
+                self.b.terminate(Term::Return(v));
+            }
             Opcode::ReturnTupu => self.ret_status(STATUS_RETURN, pc),
             other => self.slow(pc, other),
         }

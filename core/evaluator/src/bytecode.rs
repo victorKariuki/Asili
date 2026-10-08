@@ -2682,35 +2682,29 @@ pub(crate) static NATIVE_RUNTIME: crate::native::Runtime = crate::native::Runtim
     float_to_int_sat: crate::native::rt_float_to_int_sat,
     shift_amount: crate::native::rt_shift_amount,
     stack_limit: crate::native::rt_stack_limit,
-    resume: native_resume,
+    call_vm: native_call_vm,
 };
 
-/// A function entered through its direct native entry deoptimized at `pc`: finish the call in
-/// the interpreter from the register values native code left in `nums` (the caller's buffer),
-/// storing a numeric result at `nums[num_regs]`. Returns `STATUS_RETURN`, or `STATUS_FAIL` with
-/// the error pending.
+/// A direct native call that cannot run on the native stack (too deep, or too little room left):
+/// make it through the VM's own call path instead, with the arguments native code stored in
+/// `nums` (the callee's register buffer), storing a numeric result at `nums[num_regs]`. Returns
+/// `STATUS_RETURN`, or `STATUS_FAIL` with the error pending.
 #[cfg(not(target_arch = "wasm32"))]
-extern "C" fn native_resume(
-    vm: *mut std::ffi::c_void,
-    function: u32,
-    nums: *mut f64,
-    pc: u32,
-) -> u64 {
+extern "C" fn native_call_vm(vm: *mut std::ffi::c_void, function: u32, nums: *mut f64) -> u64 {
     // SAFETY: called by native code with the `Vm` it was handed, whose program is live, and a
-    // buffer of `num_regs + 1` registers for `function`.
+    // buffer of `num_regs + 1` registers for `function` holding its arguments.
     let vm = unsafe { &mut *(vm as *mut Vm<'static>) };
     let program = vm.program;
     let index = function as usize;
     let f = &program.functions[index];
     let buf = unsafe { std::slice::from_raw_parts_mut(nums, f.num_regs as usize + 1) };
     let mut frame = vm.frame_for(f);
-    // Parameters and every register the function writes hold their values in the buffer; the
-    // rest keep their entry values (constants, zeros) from `frame_for`.
-    for r in crate::nguvu::lower::frame_registers(f) {
-        frame.nums[r as usize] = buf[r as usize];
+    for p in &f.params {
+        frame.nums[p.reg as usize] = buf[p.reg as usize];
     }
-    crate::native::note_deopt(index, pc as usize);
-    match vm.run(index, frame, pc as usize) {
+    // `invoke` counts the depth (reporting the limit), grows the stack, and runs the callee's
+    // native code.
+    match vm.invoke(index, frame) {
         Ok(Ret::Num(v)) => {
             buf[f.num_regs as usize] = v;
             crate::native::STATUS_RETURN << 32
@@ -2985,10 +2979,6 @@ impl<'p> Vm<'p> {
         // the call runs.
         let status = unsafe { native(&NATIVE_RUNTIME, vm, &mut frame, nums) };
         let pc = (status & 0xffff_ffff) as usize;
-        if status >> 32 == crate::native::STATUS_DEOPT {
-            crate::native::note_deopt(index, pc);
-            return self.run(index, frame, pc);
-        }
         let result = match status >> 32 {
             crate::native::STATUS_RETURN => Ok(match &self.program.functions[index].code[pc] {
                 Opcode::Return { src } => match src.ty {

@@ -45,8 +45,8 @@ The repository follows a Linux-kernel–style modular layout. Each directory is 
   typed register VM (`bytecode.rs`); `pata jenga` additionally compiles that bytecode ahead of
   time to x86-64 or AArch64 machine code with Asili's own backend (`nguvu/`, no external
   compiler; a `<name>.nguvu` next to the `.asb`), run instead of the interpreter when present;
-  on other platforms the program runs on the VM. `native.rs` holds the runtime ABI, the integer range analysis and deoptimization
-  back into the VM. Programs using constructs the VM does not lower keep the serialized-AST artifact and
+  on other platforms the program runs on the VM. `native.rs` holds the runtime ABI and the integer range analysis
+  (proofs only: native code never speculates or deoptimizes). Programs using constructs the VM does not lower keep the serialized-AST artifact and
   the tree-walking evaluator. All engines share one implementation of operators, methods, casts
   and iteration (`eval/ops.rs`, `eval/methods.rs`). Integration tests live in `tests/`.
 - **diagnostics/** — The "Mwalimu" error reporting system (Context Map).

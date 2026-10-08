@@ -3,8 +3,8 @@
 //! The bytecode analysis (`native::analyze_numbers`) sees each register as one value over the
 //! whole function. After lowering — and especially after full unrolling, where a counter is a
 //! different constant in every copy — the IR exposes much tighter facts: a count reset to 0
-//! and bumped at most once per copy of a 9-iteration loop is at most 9, so its ±2^53
-//! speculation guard can never fail. This forward dataflow tracks `[lo, hi]` per integer
+//! and bumped at most once per copy of a 9-iteration loop is at most 9, so its bound checks
+//! can never fail. This forward dataflow tracks `[lo, hi]` per integer
 //! register (absent = unknown), narrows on branch edges, and widens at loop headers so it
 //! terminates; comparisons it decides become constants for `fold_constants` to turn into jumps.
 

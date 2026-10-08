@@ -178,12 +178,22 @@ integers is kept in integer words and read with plain integer loads. `sakafu(a /
 `sdiv` (below 2^53 the rounded quotient never crosses the next integer), `%` on integers becomes
 `srem`, and list accesses whose index is proven in range drop their bounds check.
 
-**Speculation with deoptimization.** Some whole-number registers have no provable bound (the
-candidate counter `n`, `majaribio`). They are still kept as `i64`, but every write checks
-`|v| <= 2^53`; if a check ever fails, the native function writes every register back to the
-frame and returns `STATUS_DEOPT` with the failing instruction, and the interpreter resumes the
-same call there with exact `f64` semantics. This is the technique production JITs (V8, LuaJIT,
-PyPy) use; `tests/native_tiers.rs` includes values crossing 2^53 to exercise it.
+**No speculation.** Native code never guesses: a register is `i64` only when the analysis
+proves it, and a register it cannot bound stays `f64` (an exact float add, as fast as an integer
+one for a counter). There are no guards, no deoptimization and no resuming the interpreter
+part-way through a call — native code either finishes the call or stops with the call's error.
+Two refinements keep the counters that used to need a guess provable:
+
+- *square roots* — after `i * i <= n` (both edges), `i` is bounded by `±(⌊√n.hi⌋ + 1)`;
+- *loop accumulators* — a register that only grows by non-negative increments inside a
+  bounded `kwa` loop (and is reset before it) is capped at `reset + trips × max increment`,
+  derived from the previous round's proven facts and re-analysed until the caps settle (at
+  most three rounds). This bounds Sudoku's attempt counter and the sieve's `hesabu`.
+
+A direct native-to-native call that is too deep, or would run out of native stack, goes through
+the VM's own call path (`RtFn::CallVm`), which grows the stack, reports the depth error, and
+still runs the callee's native code. Loop headers are aligned to 32 bytes (one x86-64 fetch
+window), so a loop's speed no longer depends on where unrelated code shifted it.
 
 ## Correctness guardrails
 
@@ -212,7 +222,8 @@ The plan this work followed, in order, and where each step stands:
 4. Native code without a C step: LLVM IR text → clang, AOT at `pata jenga`, hash-checked at load.
    Done, then superseded by step 9; the Cranelift JIT prototype was removed earlier.
 5. Integer range analysis, speculation with deoptimization, bounds-check elimination. Done
-   (4.8 ms solve vs 4.4 ms for gcc C with the LLVM backend).
+   (4.8 ms solve vs 4.4 ms for gcc C with the LLVM backend). Speculation was later removed
+   (step 11).
 6. Terse syntax that lowers to the fast forms: `//`, `%= &= |= ^= //=`, compound assignment on
    list elements, bitwise-before-comparison precedence, `a[i]` returning the element. Done.
 7. Codebase-wide deduplication so nothing is implemented twice (compile front end, keyword list,
@@ -226,6 +237,10 @@ The plan this work followed, in order, and where each step stands:
    division. Done — solve ≈ 2.6 ms vs clang C ≈ 3.1 ms; `pata jenga --namna release` needs no
    external tool.
 10. The LLVM/clang backend removed; `nguvu` for AArch64. Done.
+11. Stop guessing: speculation and deoptimization removed from `nguvu`, replaced by stronger
+    proofs (square-root narrowing, loop-accumulator caps) and a VM call path for deep direct
+    calls. Done — every benchmark at parity or faster (sieve 20.7 → 18.7 ms, Sudoku whole
+    process 2.3 ms, solve below clang `-O2` C).
 
 Next steps are the "Remaining gaps" below.
 
@@ -233,7 +248,6 @@ Next steps are the "Remaining gaps" below.
 
 - `ASILI_AOT=0` — don't build (at `pata jenga`) or load (at run time) native code.
 - `ASILI_NGUVU=1` — compile in memory at load time when no `.nguvu` image was built.
-- `ASILI_NATIVE_TRACE=1` — print every deoptimization (function and bytecode pc).
 - `ASILI_BYTECODE_REPORT=1` / `ASILI_BYTECODE_DUMP=1` (at `pata jenga`) — list the `kazi` left
   to the tree-walker / print every compiled `kazi`'s instructions.
 - `ASILI_NGUVU_IR=<file>` / `ASILI_NGUVU_DUMP=<file>` — dump the optimized IR with register
