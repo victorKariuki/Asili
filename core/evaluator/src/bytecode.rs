@@ -22,7 +22,8 @@ use crate::builtins::builtin_names;
 use crate::eval::methods;
 use crate::value::{self, EvalError, Value};
 use asili_parser::{
-    AssignOp, BinaryOp, Block, Expr, ForMode, Function, Module, Pattern, Stmt, UnaryOp,
+    AssignOp, BinaryOp, Block, Expr, ExprId, Exprs, ForMode, Function, Module, Pattern, Stmt,
+    UnaryOp,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -605,7 +606,7 @@ fn compile_module_inner(
             .or_insert(index);
     }
     for constant in &module.constants {
-        let stored = literal(&constant.value)?;
+        let stored = literal(&module.exprs, &module[constant.value])?;
         let ty = match (&stored, Ty::from_type_name(&constant.ty.name)) {
             (StoredConstant::Namba(_), _) => Ty::Num,
             (StoredConstant::Ukweli(_), _) => Ty::Bool,
@@ -628,7 +629,7 @@ fn compile_module_inner(
             )
         }));
     for (index, (qualified, function)) in all.enumerate() {
-        match FunctionCompiler::compile(&mut program, function).map(|mut f| {
+        match FunctionCompiler::compile(&mut program, &module.exprs, function).map(|mut f| {
             f.name = qualified.clone();
             f
         }) {
@@ -649,7 +650,8 @@ fn compile_module_inner(
                     );
                 }
                 program.failed_line = None;
-                let mut stub = FunctionCompiler::interpreted(&mut program, function, index);
+                let mut stub =
+                    FunctionCompiler::interpreted(&mut program, &module.exprs, function, index);
                 stub.name = qualified;
                 functions.push(stub);
             }
@@ -672,19 +674,19 @@ fn compile_module_inner(
     })
 }
 
-fn literal(expr: &Expr) -> Option<StoredConstant> {
+fn literal(exprs: &Exprs, expr: &Expr) -> Option<StoredConstant> {
     Some(match expr {
         Expr::Number(s) => StoredConstant::Namba(value::parse_number(s)),
         Expr::String(s) => StoredConstant::Neno(s.clone()),
         Expr::Bool(b) => StoredConstant::Ukweli(*b),
         Expr::Char(c) => StoredConstant::Herufi(*c),
         Expr::Hamna => StoredConstant::Hamna,
-        Expr::Group(e) => return literal(e),
+        Expr::Group(e) => return literal(exprs, &exprs[*e]),
         Expr::Unary {
             op: UnaryOp::Neg,
             expr,
             ..
-        } => match literal(expr)? {
+        } => match literal(exprs, &exprs[*expr])? {
             StoredConstant::Namba(n) => StoredConstant::Namba(-n),
             _ => return None,
         },
@@ -745,6 +747,8 @@ struct LoopState {
 
 struct FunctionCompiler<'a> {
     program: &'a mut ProgramCompiler,
+    /// The module's expression arena.
+    exprs: &'a Exprs,
     scopes: Vec<HashMap<String, Local>>,
     code: Vec<Opcode>,
     num_regs: u32,
@@ -838,10 +842,15 @@ fn block_assigns(block: &Block, name: &str) -> bool {
 }
 
 impl<'a> FunctionCompiler<'a> {
-    fn compile(program: &'a mut ProgramCompiler, function: &Function) -> Option<BytecodeFunc> {
+    fn compile(
+        program: &'a mut ProgramCompiler,
+        exprs: &'a Exprs,
+        function: &Function,
+    ) -> Option<BytecodeFunc> {
         let ret = Ty::from_type_name(&function.return_type.name);
         let mut f = FunctionCompiler {
             program,
+            exprs,
             scopes: vec![HashMap::new()],
             code: Vec::new(),
             num_regs: 0,
@@ -872,15 +881,22 @@ impl<'a> FunctionCompiler<'a> {
         })
     }
 
+    /// The expression `id` (borrowed from the module, not from `self`).
+    fn node(&self, id: ExprId) -> &'a Expr {
+        &self.exprs[id]
+    }
+
     /// A `kazi` left to the tree-walker: its parameters in registers as the compiled calling
     /// convention expects, and one instruction that runs its body there.
     fn interpreted(
         program: &'a mut ProgramCompiler,
+        exprs: &'a Exprs,
         function: &Function,
         index: usize,
     ) -> BytecodeFunc {
         let ret = Ty::from_type_name(&function.return_type.name);
         let mut f = FunctionCompiler {
+            exprs,
             program,
             scopes: vec![HashMap::new()],
             code: Vec::new(),
@@ -1002,11 +1018,13 @@ impl<'a> FunctionCompiler<'a> {
                     },
                 },
             },
-            Expr::Group(e) => self.infer(e),
+            Expr::Group(e) => self.infer(self.node(*e)),
             Expr::Unary { op, expr, .. } => match op {
-                UnaryOp::Neg | UnaryOp::BitNot if self.infer(expr) == Ty::Num => Ty::Num,
+                UnaryOp::Neg | UnaryOp::BitNot if self.infer(self.node(*expr)) == Ty::Num => {
+                    Ty::Num
+                }
                 UnaryOp::Not => Ty::Bool,
-                UnaryOp::BorrowImm | UnaryOp::BorrowMut => self.infer(expr),
+                UnaryOp::BorrowImm | UnaryOp::BorrowMut => self.infer(self.node(*expr)),
                 _ => Ty::Val,
             },
             Expr::Binary {
@@ -1014,24 +1032,26 @@ impl<'a> FunctionCompiler<'a> {
             } => {
                 if is_cmp(op).is_some() || matches!(op, BinaryOp::And | BinaryOp::Or) {
                     Ty::Bool
-                } else if self.infer(left) == Ty::Num && self.infer(right) == Ty::Num {
+                } else if self.infer(self.node(*left)) == Ty::Num
+                    && self.infer(self.node(*right)) == Ty::Num
+                {
                     Ty::Num
                 } else {
                     Ty::Val
                 }
             }
             Expr::Cast { expr, ty, .. } => {
-                if ty.name.replace(' ', "") == "Namba" && self.infer(expr).in_nums() {
+                if ty.name.replace(' ', "") == "Namba" && self.infer(self.node(*expr)).in_nums() {
                     Ty::Num
                 } else {
                     Ty::Val
                 }
             }
-            Expr::Call { callee, args, .. } => match &**callee {
+            Expr::Call { callee, args, .. } => match self.node(*callee) {
                 Expr::Ident { name, .. } => {
                     if matches!(name.as_str(), "sakafu" | "dari")
                         && args.len() == 1
-                        && self.infer(&args[0]) == Ty::Num
+                        && self.infer(self.node(args[0])) == Ty::Num
                         && self.lookup(name).is_none()
                         && !self.program.functions.contains_key(name)
                     {
@@ -1050,12 +1070,14 @@ impl<'a> FunctionCompiler<'a> {
             Expr::MethodCall {
                 method_name, args, ..
             } if method_name == "urefu" && args.is_empty() => Ty::Num,
-            Expr::Index { base, .. } if self.infer(base) == Ty::List => Ty::Num,
+            Expr::Index { base, .. } if self.infer(self.node(*base)) == Ty::List => Ty::Num,
             Expr::FieldAccess {
                 receiver, field, ..
-            } if self.field_type(receiver, field).as_deref() == Some("Namba") => Ty::Num,
-            Expr::Propagate { expr, .. } => match &**expr {
-                Expr::Index { base, .. } if self.infer(base) == Ty::List => Ty::Num,
+            } if self.field_type(self.node(*receiver), field).as_deref() == Some("Namba") => {
+                Ty::Num
+            }
+            Expr::Propagate { expr, .. } => match self.node(*expr) {
+                Expr::Index { base, .. } if self.infer(self.node(*base)) == Ty::List => Ty::Num,
                 _ => Ty::Val,
             },
             Expr::If {
@@ -1064,14 +1086,14 @@ impl<'a> FunctionCompiler<'a> {
                 else_expr,
                 ..
             } => {
-                let mut ty = self.infer(then_expr);
+                let mut ty = self.infer(self.node(*then_expr));
                 for (_, e) in else_if {
-                    if self.infer(e) != ty {
+                    if self.infer(self.node(*e)) != ty {
                         ty = Ty::Val;
                     }
                 }
                 match else_expr {
-                    Some(e) if self.infer(e) == ty => ty,
+                    Some(e) if self.infer(self.node(*e)) == ty => ty,
                     _ => Ty::Val,
                 }
             }
@@ -1100,12 +1122,12 @@ impl<'a> FunctionCompiler<'a> {
             Expr::List {
                 elements: items, ..
             } => {
-                let first = items.first().and_then(|e| self.type_name(e));
+                let first = items.first().and_then(|e| self.type_name(self.node(*e)));
                 Some(match first {
                     Some(t)
                         if items[1..]
                             .iter()
-                            .all(|e| self.type_name(e).as_ref() == Some(&t)) =>
+                            .all(|e| self.type_name(self.node(*e)).as_ref() == Some(&t)) =>
                     {
                         format!("Orodha<{t}>")
                     }
@@ -1114,12 +1136,12 @@ impl<'a> FunctionCompiler<'a> {
             }
             // An element of an `Orodha<T>` (not `?`, which keeps the `Tokeo`).
             Expr::Index { base, .. } => self
-                .type_name(base)?
+                .type_name(self.node(*base))?
                 .strip_prefix("Orodha<")?
                 .strip_suffix('>')
                 .map(str::to_string),
             Expr::StructLiteral { struct_name, .. } => Some(struct_name.clone()),
-            Expr::Group(e) => self.type_name(e),
+            Expr::Group(e) => self.type_name(self.node(*e)),
             Expr::Ident { name, .. } => match self.lookup(name) {
                 Some(local) if local.op.ty == Ty::List => Some("Orodha<Namba>".into()),
                 Some(local) => local.type_name.clone(),
@@ -1132,14 +1154,14 @@ impl<'a> FunctionCompiler<'a> {
             Expr::Cast { ty, .. } if ty.name == "Neno" => Some("Neno".into()),
             Expr::FieldAccess {
                 receiver, field, ..
-            } => self.field_type(receiver, field),
+            } => self.field_type(self.node(*receiver), field),
             Expr::Binary {
                 left,
                 op: BinaryOp::Add,
                 right,
                 ..
-            } if self.type_name(left).as_deref() == Some("Neno")
-                || self.type_name(right).as_deref() == Some("Neno") =>
+            } if self.type_name(self.node(*left)).as_deref() == Some("Neno")
+                || self.type_name(self.node(*right)).as_deref() == Some("Neno") =>
             {
                 Some("Neno".into())
             }
@@ -1148,11 +1170,11 @@ impl<'a> FunctionCompiler<'a> {
                 method_name,
                 ..
             } => {
-                let recv = self.type_name(receiver)?;
+                let recv = self.type_name(self.node(*receiver))?;
                 method_result_type(&recv, method_name).map(str::to_string)
             }
             // The program's own `kazi` (which shadows a builtin of the same name).
-            Expr::Call { callee, .. } => match &**callee {
+            Expr::Call { callee, .. } => match self.node(*callee) {
                 Expr::Ident { name, .. } => {
                     self.program.functions.get(name).map(|f| f.ret_name.clone())
                 }
@@ -1184,18 +1206,20 @@ impl<'a> FunctionCompiler<'a> {
                 let (declared, type_name) = match ty {
                     Some(t) => (Ty::from_type_name(&t.name), Some(t.name.clone())),
                     None => {
-                        let inferred = self.infer(value);
-                        let inferred = if inferred == Ty::Val && self.numeric_list_literal(value) {
+                        let inferred = self.infer(self.node(*value));
+                        let inferred = if inferred == Ty::Val
+                            && self.numeric_list_literal(self.node(*value))
+                        {
                             Ty::List
                         } else {
                             inferred
                         };
-                        (inferred, self.type_name(value))
+                        (inferred, self.type_name(self.node(*value)))
                     }
                 };
                 // The initializer is evaluated before the new binding is visible.
                 let dst = self.temp(declared);
-                self.expr_into(value, dst)?;
+                self.expr_into(self.node(*value), dst)?;
                 self.scopes
                     .last_mut()?
                     .insert(name.clone(), Local { op: dst, type_name });
@@ -1205,7 +1229,7 @@ impl<'a> FunctionCompiler<'a> {
             } => {
                 let dst = self.lookup(name)?.op;
                 match op {
-                    AssignOp::Assign => self.expr_into(value, dst)?,
+                    AssignOp::Assign => self.expr_into(self.node(*value), dst)?,
                     compound => {
                         let bin = match compound {
                             AssignOp::AddAssign => BinaryOp::Add,
@@ -1221,17 +1245,17 @@ impl<'a> FunctionCompiler<'a> {
                         };
                         // The result may land in a temporary of another type (e.g. a generic
                         // `+`); make sure it reaches the variable.
-                        let result = self.binary(&current, &bin, value, Some(dst))?;
+                        let result = self.binary(&current, &bin, self.node(*value), Some(dst))?;
                         if result != dst {
                             self.convert(result, dst)?;
                         }
                     }
                 }
             }
-            Stmt::Expr { expr, .. } => self.expr_stmt(expr)?,
+            Stmt::Expr { expr, .. } => self.expr_stmt(self.node(*expr))?,
             Stmt::Return { value, .. } => match value {
                 Some(value) => {
-                    let src = self.expr_as(value, self.ret)?;
+                    let src = self.expr_as(self.node(*value), self.ret)?;
                     self.emit(Opcode::Return { src });
                 }
                 None => {
@@ -1246,7 +1270,7 @@ impl<'a> FunctionCompiler<'a> {
                 ..
             } => {
                 let mut ends = Vec::new();
-                let skip = self.cond_false_jumps(cond)?;
+                let skip = self.cond_false_jumps(self.node(*cond))?;
                 self.block(then_block)?;
                 ends.push(self.emit(Opcode::Jump { target: 0 }));
                 let mut pending = skip;
@@ -1255,7 +1279,7 @@ impl<'a> FunctionCompiler<'a> {
                     for j in pending {
                         self.patch(j, here);
                     }
-                    pending = self.cond_false_jumps(cond)?;
+                    pending = self.cond_false_jumps(self.node(*cond))?;
                     self.block(block)?;
                     ends.push(self.emit(Opcode::Jump { target: 0 }));
                 }
@@ -1275,7 +1299,7 @@ impl<'a> FunctionCompiler<'a> {
                 label, cond, body, ..
             } => {
                 let top = self.here();
-                let exits = self.cond_false_jumps(cond)?;
+                let exits = self.cond_false_jumps(self.node(*cond))?;
                 self.loops.push(LoopState {
                     label: label.clone(),
                     breaks: Vec::new(),
@@ -1313,7 +1337,7 @@ impl<'a> FunctionCompiler<'a> {
             Stmt::Match { expr, arms, .. } => {
                 // The scrutinee is evaluated once; arms are tried in order and the first match
                 // runs with the pattern's names bound (no arm matching does nothing).
-                let src = self.expr_as(expr, Ty::Val)?;
+                let src = self.expr_as(self.node(*expr), Ty::Val)?;
                 let mut ends = Vec::new();
                 for arm in arms {
                     self.scopes.push(HashMap::new());
@@ -1386,7 +1410,10 @@ impl<'a> FunctionCompiler<'a> {
     fn numeric_list_literal(&self, expr: &Expr) -> bool {
         match expr {
             Expr::List { elements, .. } => {
-                !elements.is_empty() && elements.iter().all(|e| self.infer(e) == Ty::Num)
+                !elements.is_empty()
+                    && elements
+                        .iter()
+                        .all(|e| self.infer(self.node(*e)) == Ty::Num)
             }
             _ => false,
         }
@@ -1402,8 +1429,8 @@ impl<'a> FunctionCompiler<'a> {
         self.scopes.push(HashMap::new());
         match mode {
             ForMode::Range { start, end } => {
-                let start = self.expr_as(start, Ty::Num)?;
-                let end = self.expr_as(end, Ty::Num)?;
+                let start = self.expr_as(self.node(*start), Ty::Num)?;
+                let end = self.expr_as(self.node(*end), Ty::Num)?;
                 let ctr = self.temp(Ty::Num).reg;
                 let end_reg = self.temp(Ty::Num).reg;
                 self.emit(Opcode::Trunc {
@@ -1467,9 +1494,9 @@ impl<'a> FunctionCompiler<'a> {
                 // Iterate over a snapshot the body cannot reach, like the evaluator.
                 let idx = self.temp(Ty::Num).reg;
                 let len = self.temp(Ty::Num).reg;
-                let (source, item) = if self.infer(collection) == Ty::List {
+                let (source, item) = if self.infer(self.node(*collection)) == Ty::List {
                     let snapshot = self.temp(Ty::List);
-                    self.expr_into(collection, snapshot)?;
+                    self.expr_into(self.node(*collection), snapshot)?;
                     self.emit(Opcode::ListLen {
                         dst: len,
                         list: snapshot.reg,
@@ -1478,7 +1505,7 @@ impl<'a> FunctionCompiler<'a> {
                     (snapshot, item)
                 } else {
                     // `Orodha` items, or `Kamusi` entries as `Jozi` pairs.
-                    let type_name = self.type_name(collection);
+                    let type_name = self.type_name(self.node(*collection));
                     let elem = match type_name.as_deref() {
                         Some(t) if t.starts_with("Kamusi") => Some("Jozi".to_string()),
                         Some(t) => t
@@ -1487,7 +1514,7 @@ impl<'a> FunctionCompiler<'a> {
                             .map(str::to_string),
                         None => None,
                     };
-                    let value = self.expr_as(collection, Ty::Val)?;
+                    let value = self.expr_as(self.node(*collection), Ty::Val)?;
                     let snapshot = self.temp(Ty::Val);
                     self.emit(Opcode::IterItems {
                         dst: snapshot.reg,
@@ -1570,26 +1597,27 @@ impl<'a> FunctionCompiler<'a> {
         } = expr
         {
             // (A user method name skips the numeric-list fast paths: `method_call` handles it.)
-            if let (false, Expr::Ident { name, .. }) =
-                (self.program.impl_methods.contains(method_name), &**receiver)
-            {
+            if let (false, Expr::Ident { name, .. }) = (
+                self.program.impl_methods.contains(method_name),
+                self.node(*receiver),
+            ) {
                 if let Some(local) = self.lookup(name).cloned() {
                     // Statement-level numeric-list mutations: no `Tupu`/`Chaguo` result.
                     let list = local.op.reg;
                     match (local.op.ty, method_name.as_str(), args.len()) {
                         (Ty::List, "ondoa", 1) => {
-                            let idx = self.expr_as(&args[0], Ty::Num)?.reg;
+                            let idx = self.expr_as(self.node(args[0]), Ty::Num)?.reg;
                             self.emit(Opcode::ListRemove { list, idx });
                             return Some(());
                         }
                         (Ty::List, "ongeza", 1) => {
-                            let src = self.expr_as(&args[0], Ty::Num)?.reg;
+                            let src = self.expr_as(self.node(args[0]), Ty::Num)?.reg;
                             self.emit(Opcode::ListPush { list, src });
                             return Some(());
                         }
                         (Ty::List, "ingiza", 2) => {
-                            let idx = self.expr_as(&args[0], Ty::Num)?.reg;
-                            let src = self.expr_as(&args[1], Ty::Num)?.reg;
+                            let idx = self.expr_as(self.node(args[0]), Ty::Num)?.reg;
+                            let src = self.expr_as(self.node(args[1]), Ty::Num)?.reg;
                             self.emit(Opcode::ListSet { list, idx, src });
                             return Some(());
                         }
@@ -1605,25 +1633,25 @@ impl<'a> FunctionCompiler<'a> {
     /// Emit jumps taken when `cond` is false; returns the jump sites to patch.
     fn cond_false_jumps(&mut self, cond: &Expr) -> Option<Vec<usize>> {
         match cond {
-            Expr::Group(inner) => self.cond_false_jumps(inner),
+            Expr::Group(inner) => self.cond_false_jumps(self.node(*inner)),
             Expr::Binary {
                 left,
                 op: BinaryOp::And,
                 right,
                 ..
             } => {
-                let mut jumps = self.cond_false_jumps(left)?;
-                jumps.extend(self.cond_false_jumps(right)?);
+                let mut jumps = self.cond_false_jumps(self.node(*left))?;
+                jumps.extend(self.cond_false_jumps(self.node(*right))?);
                 Some(jumps)
             }
             Expr::Binary {
                 left, op, right, ..
             } if is_cmp(op).is_some()
-                && self.infer(left) == Ty::Num
-                && self.infer(right) == Ty::Num =>
+                && self.infer(self.node(*left)) == Ty::Num
+                && self.infer(self.node(*right)) == Ty::Num =>
             {
-                let a = self.expr_as(left, Ty::Num)?;
-                let b = self.expr_as(right, Ty::Num)?;
+                let a = self.expr_as(self.node(*left), Ty::Num)?;
+                let b = self.expr_as(self.node(*right), Ty::Num)?;
                 Some(vec![self.emit(Opcode::JumpIfNot {
                     op: is_cmp(op)?,
                     a: a.reg,
@@ -1734,7 +1762,7 @@ impl<'a> FunctionCompiler<'a> {
                 Some(Operand { ty: Ty::Bool, reg })
             }
             Expr::String(_) | Expr::Char(_) | Expr::Hamna => {
-                let k = literal(expr)?;
+                let k = literal(self.exprs, expr)?;
                 let k = self.program.constant(k);
                 let out = self.dst_or_temp(dst, Ty::Val);
                 self.emit(Opcode::ConstVal { dst: out.reg, k });
@@ -1776,7 +1804,7 @@ impl<'a> FunctionCompiler<'a> {
                     }
                 }
             }
-            Expr::Group(e) => self.expr_to(e, dst),
+            Expr::Group(e) => self.expr_to(self.node(*e), dst),
             Expr::StructLiteral {
                 struct_name,
                 fields,
@@ -1788,7 +1816,7 @@ impl<'a> FunctionCompiler<'a> {
                 let mut regs = Vec::with_capacity(declared.len());
                 for (fname, _) in declared {
                     let (_, fexpr) = fields.iter().find(|(n, _)| *n == fname)?;
-                    let reg = self.expr_as(fexpr, Ty::Val)?.reg;
+                    let reg = self.expr_as(self.node(*fexpr), Ty::Val)?.reg;
                     regs.push((self.program.constant(StoredConstant::Neno(fname)), reg));
                 }
                 let out = self.dst_or_temp(dst, Ty::Val);
@@ -1805,8 +1833,10 @@ impl<'a> FunctionCompiler<'a> {
             Expr::FieldAccess {
                 receiver, field, ..
             } => {
-                let slot = self.field_decl(receiver, field).map_or(u32::MAX, |d| d.0);
-                let src = self.expr_as(receiver, Ty::Val)?;
+                let slot = self
+                    .field_decl(self.node(*receiver), field)
+                    .map_or(u32::MAX, |d| d.0);
+                let src = self.expr_as(self.node(*receiver), Ty::Val)?;
                 if self.infer(expr) == Ty::Num {
                     let out = self.dst_or_temp(dst, Ty::Num);
                     self.emit(Opcode::FieldNum {
@@ -1836,7 +1866,7 @@ impl<'a> FunctionCompiler<'a> {
                     return None;
                 }
                 let data = match data {
-                    Some(d) => Some(self.expr_as(d, Ty::Val)?.reg),
+                    Some(d) => Some(self.expr_as(self.node(*d), Ty::Val)?.reg),
                     None => None,
                 };
                 let out = self.dst_or_temp(dst, Ty::Val);
@@ -1853,15 +1883,15 @@ impl<'a> FunctionCompiler<'a> {
             Expr::Map { entries, .. }
                 if entries.iter().all(|(k, _)| {
                     matches!(
-                        k,
+                        self.node(*k),
                         Expr::String(_) | Expr::Number(_) | Expr::Char(_) | Expr::Bool(_)
                     )
                 }) =>
             {
                 let mut regs = Vec::with_capacity(entries.len());
                 for (k, v) in entries {
-                    let k = self.expr_as(k, Ty::Val)?.reg;
-                    let v = self.expr_as(v, Ty::Val)?.reg;
+                    let k = self.expr_as(self.node(*k), Ty::Val)?.reg;
+                    let v = self.expr_as(self.node(*v), Ty::Val)?.reg;
                     regs.push((k, v));
                 }
                 let out = self.dst_or_temp(dst, Ty::Val);
@@ -1873,11 +1903,13 @@ impl<'a> FunctionCompiler<'a> {
             }
             Expr::List { elements, .. } => {
                 if dst.is_some_and(|d| d.ty == Ty::List)
-                    && elements.iter().all(|e| self.infer(e) == Ty::Num)
+                    && elements
+                        .iter()
+                        .all(|e| self.infer(self.node(*e)) == Ty::Num)
                 {
                     let mut items = Vec::with_capacity(elements.len());
                     for e in elements {
-                        items.push(self.expr_as(e, Ty::Num)?.reg);
+                        items.push(self.expr_as(self.node(*e), Ty::Num)?.reg);
                     }
                     let out = dst?;
                     self.emit(Opcode::MakeNumList {
@@ -1888,7 +1920,7 @@ impl<'a> FunctionCompiler<'a> {
                 }
                 let mut items = Vec::with_capacity(elements.len());
                 for e in elements {
-                    items.push(self.expr_as(e, Ty::Val)?.reg);
+                    items.push(self.expr_as(self.node(*e), Ty::Val)?.reg);
                 }
                 let out = self.dst_or_temp(dst, Ty::Val);
                 self.emit(Opcode::MakeList {
@@ -1898,9 +1930,9 @@ impl<'a> FunctionCompiler<'a> {
                 Some(out)
             }
             Expr::Index { base, index, .. } => {
-                let base_op = self.expr(base)?;
+                let base_op = self.expr(self.node(*base))?;
                 if base_op.ty == Ty::List {
-                    let idx = self.expr_as(index, Ty::Num)?;
+                    let idx = self.expr_as(self.node(*index), Ty::Num)?;
                     let out = self.dst_or_temp(dst, Ty::Num);
                     self.emit(Opcode::ListGet {
                         dst: out.reg,
@@ -1914,7 +1946,7 @@ impl<'a> FunctionCompiler<'a> {
                     });
                 }
                 let base_val = self.as_val(base_op)?;
-                let idx = self.expr_as(index, Ty::Val)?;
+                let idx = self.expr_as(self.node(*index), Ty::Val)?;
                 let out = self.dst_or_temp(dst, Ty::Val);
                 self.emit(Opcode::ValIndex {
                     dst: out.reg,
@@ -1925,10 +1957,10 @@ impl<'a> FunctionCompiler<'a> {
                 Some(out)
             }
             Expr::Propagate { expr: inner, .. } => {
-                if let Expr::Index { base, index, .. } = &**inner {
-                    if self.infer(base) == Ty::List {
-                        let list = self.expr_as(base, Ty::List)?;
-                        let idx = self.expr_as(index, Ty::Num)?;
+                if let Expr::Index { base, index, .. } = self.node(*inner) {
+                    if self.infer(self.node(*base)) == Ty::List {
+                        let list = self.expr_as(self.node(*base), Ty::List)?;
+                        let idx = self.expr_as(self.node(*index), Ty::Num)?;
                         let out = self.dst_or_temp(dst, Ty::Num);
                         self.emit(Opcode::ListGet {
                             dst: out.reg,
@@ -1942,7 +1974,7 @@ impl<'a> FunctionCompiler<'a> {
                         });
                     }
                 }
-                let src = self.tokeo_operand(inner)?;
+                let src = self.tokeo_operand(self.node(*inner))?;
                 let out = self.dst_or_temp(dst, Ty::Val);
                 self.emit(Opcode::Unwrap {
                     dst: out.reg,
@@ -1954,13 +1986,13 @@ impl<'a> FunctionCompiler<'a> {
                 expr: inner, ty, ..
             } => {
                 if self.infer(expr) == Ty::Num {
-                    let src = self.expr_as(inner, Ty::Num)?;
+                    let src = self.expr_as(self.node(*inner), Ty::Num)?;
                     return Some(Operand {
                         ty: Ty::Num,
                         reg: src.reg,
                     });
                 }
-                let src = self.expr_as(inner, Ty::Val)?;
+                let src = self.expr_as(self.node(*inner), Ty::Val)?;
                 let out = self.dst_or_temp(dst, Ty::Val);
                 self.emit(Opcode::Cast {
                     dst: out.reg,
@@ -1972,9 +2004,9 @@ impl<'a> FunctionCompiler<'a> {
             Expr::Unary {
                 op, expr: inner, ..
             } => match op {
-                UnaryOp::BorrowImm | UnaryOp::BorrowMut => self.expr_to(inner, dst),
+                UnaryOp::BorrowImm | UnaryOp::BorrowMut => self.expr_to(self.node(*inner), dst),
                 UnaryOp::Not => {
-                    let src = self.expr_as(inner, Ty::Bool)?;
+                    let src = self.expr_as(self.node(*inner), Ty::Bool)?;
                     let out = self.dst_or_temp(dst, Ty::Bool);
                     self.emit(Opcode::Not {
                         dst: out.reg,
@@ -1985,8 +2017,8 @@ impl<'a> FunctionCompiler<'a> {
                         reg: out.reg,
                     })
                 }
-                UnaryOp::Neg | UnaryOp::BitNot if self.infer(inner) == Ty::Num => {
-                    let src = self.expr_as(inner, Ty::Num)?;
+                UnaryOp::Neg | UnaryOp::BitNot if self.infer(self.node(*inner)) == Ty::Num => {
+                    let src = self.expr_as(self.node(*inner), Ty::Num)?;
                     let out = self.dst_or_temp(dst, Ty::Num);
                     self.emit(if *op == UnaryOp::Neg {
                         Opcode::Neg {
@@ -2005,7 +2037,7 @@ impl<'a> FunctionCompiler<'a> {
                     })
                 }
                 UnaryOp::Neg | UnaryOp::BitNot => {
-                    let src = self.expr_as(inner, Ty::Val)?;
+                    let src = self.expr_as(self.node(*inner), Ty::Val)?;
                     let out = self.dst_or_temp(dst, Ty::Val);
                     self.emit(Opcode::ValUnary {
                         op: if *op == UnaryOp::Neg {
@@ -2019,7 +2051,7 @@ impl<'a> FunctionCompiler<'a> {
                     Some(out)
                 }
                 UnaryOp::Jaribu => {
-                    let src = self.tokeo_operand(inner)?;
+                    let src = self.tokeo_operand(self.node(*inner))?;
                     let out = self.dst_or_temp(dst, Ty::Val);
                     self.emit(Opcode::Jaribu {
                         dst: out.reg,
@@ -2030,7 +2062,7 @@ impl<'a> FunctionCompiler<'a> {
             },
             Expr::Binary {
                 left, op, right, ..
-            } => self.binary(left, op, right, dst),
+            } => self.binary(self.node(*left), op, self.node(*right), dst),
             Expr::If {
                 cond,
                 then_expr,
@@ -2044,16 +2076,16 @@ impl<'a> FunctionCompiler<'a> {
                     _ => self.temp(ty),
                 };
                 let mut ends = Vec::new();
-                let mut pending = self.cond_false_jumps(cond)?;
-                self.expr_into(then_expr, out)?;
+                let mut pending = self.cond_false_jumps(self.node(*cond))?;
+                self.expr_into(self.node(*then_expr), out)?;
                 ends.push(self.emit(Opcode::Jump { target: 0 }));
                 for (c, e) in else_if {
                     let here = self.here();
                     for j in pending {
                         self.patch(j, here);
                     }
-                    pending = self.cond_false_jumps(c)?;
-                    self.expr_into(e, out)?;
+                    pending = self.cond_false_jumps(self.node(*c))?;
+                    self.expr_into(self.node(*e), out)?;
                     ends.push(self.emit(Opcode::Jump { target: 0 }));
                 }
                 let here = self.here();
@@ -2061,7 +2093,7 @@ impl<'a> FunctionCompiler<'a> {
                     self.patch(j, here);
                 }
                 match else_expr {
-                    Some(e) => self.expr_into(e, out)?,
+                    Some(e) => self.expr_into(self.node(*e), out)?,
                     None => {
                         let k = self.program.constant(StoredConstant::Tupu);
                         let tmp = self.temp(Ty::Val);
@@ -2075,13 +2107,13 @@ impl<'a> FunctionCompiler<'a> {
                 }
                 Some(out)
             }
-            Expr::Call { callee, args, .. } => self.call(callee, args, dst),
+            Expr::Call { callee, args, .. } => self.call(self.node(*callee), args, dst),
             Expr::MethodCall {
                 receiver,
                 method_name,
                 args,
                 ..
-            } => self.method_call(receiver, method_name, args, dst),
+            } => self.method_call(self.node(*receiver), method_name, args, dst),
             // A map with computed keys (see the literal-key case above).
             Expr::Map { .. } => None,
         }
@@ -2093,10 +2125,10 @@ impl<'a> FunctionCompiler<'a> {
         let Expr::Index { base, index, .. } = expr else {
             return self.expr_as(expr, Ty::Val);
         };
-        let base_op = self.expr(base)?;
+        let base_op = self.expr(self.node(*base))?;
         let out = self.temp(Ty::Val);
         if base_op.ty == Ty::List {
-            let idx = self.expr_as(index, Ty::Num)?.reg;
+            let idx = self.expr_as(self.node(*index), Ty::Num)?.reg;
             self.emit(Opcode::ListGetTokeo {
                 dst: out.reg,
                 list: base_op.reg,
@@ -2104,7 +2136,7 @@ impl<'a> FunctionCompiler<'a> {
             });
         } else {
             let base = self.as_val(base_op)?.reg;
-            let idx = self.expr_as(index, Ty::Val)?.reg;
+            let idx = self.expr_as(self.node(*index), Ty::Val)?.reg;
             self.emit(Opcode::ValIndex {
                 dst: out.reg,
                 base,
@@ -2231,7 +2263,7 @@ impl<'a> FunctionCompiler<'a> {
         Some(out)
     }
 
-    fn call(&mut self, callee: &Expr, args: &[Expr], dst: Option<Operand>) -> Option<Operand> {
+    fn call(&mut self, callee: &Expr, args: &[ExprId], dst: Option<Operand>) -> Option<Operand> {
         let Expr::Ident { name, .. } = callee else {
             return None;
         };
@@ -2242,9 +2274,9 @@ impl<'a> FunctionCompiler<'a> {
         let own = self.program.functions.contains_key(name);
         if let Some(builtin) = self.program.builtins.get(name).copied().filter(|_| !own) {
             if let (Some(out), "orodha_rudia", 2) = (dst, name.as_str(), args.len()) {
-                if out.ty == Ty::List && self.infer(&args[0]) == Ty::Num {
-                    let value = self.expr_as(&args[0], Ty::Num)?.reg;
-                    let count = self.expr_as(&args[1], Ty::Num)?.reg;
+                if out.ty == Ty::List && self.infer(self.node(args[0])) == Ty::Num {
+                    let value = self.expr_as(self.node(args[0]), Ty::Num)?.reg;
+                    let count = self.expr_as(self.node(args[1]), Ty::Num)?.reg;
                     self.emit(Opcode::ListRepeat {
                         dst: out.reg,
                         value,
@@ -2255,9 +2287,9 @@ impl<'a> FunctionCompiler<'a> {
             }
             if matches!(name.as_str(), "sakafu" | "dari")
                 && args.len() == 1
-                && self.infer(&args[0]) == Ty::Num
+                && self.infer(self.node(args[0])) == Ty::Num
             {
-                let src = self.expr_as(&args[0], Ty::Num)?.reg;
+                let src = self.expr_as(self.node(args[0]), Ty::Num)?.reg;
                 let out = self.dst_or_temp(dst, Ty::Num).reg;
                 self.emit(if name == "sakafu" {
                     Opcode::Floor { dst: out, src }
@@ -2279,7 +2311,10 @@ impl<'a> FunctionCompiler<'a> {
             return Some(out);
         }
         let index = self.program.functions.get(name)?.index;
-        self.call_index(index, args.iter(), dst)
+        {
+            let exprs = self.exprs;
+            self.call_index(index, args.iter().map(|a| &exprs[*a]), dst)
+        }
     }
 
     /// Call program function `index` with `args` evaluated in order.
@@ -2317,14 +2352,19 @@ impl<'a> FunctionCompiler<'a> {
         &mut self,
         receiver: &Expr,
         method: &str,
-        args: &[Expr],
+        args: &[ExprId],
         dst: Option<Operand>,
     ) -> Option<Operand> {
         if self.program.impl_methods.contains(method) {
             // A user method: called directly when the receiver's `umbo` is known here.
             let target = self.type_name(receiver)?;
             let index = *self.program.impl_index.get(&(target, method.to_string()))?;
-            return self.call_index(index, std::iter::once(receiver).chain(args), dst);
+            let exprs = self.exprs;
+            return self.call_index(
+                index,
+                std::iter::once(receiver).chain(args.iter().map(|a| &exprs[*a])),
+                dst,
+            );
         }
         let recv_ty = self.infer(receiver);
         // Numeric-list fast paths.
@@ -2344,7 +2384,7 @@ impl<'a> FunctionCompiler<'a> {
                     });
                 }
                 ("ongeza", 1, Some(list)) => {
-                    let src = self.expr_as(&args[0], Ty::Num)?.reg;
+                    let src = self.expr_as(self.node(args[0]), Ty::Num)?.reg;
                     self.emit(Opcode::ListPush {
                         list: list.reg,
                         src,
@@ -2352,8 +2392,8 @@ impl<'a> FunctionCompiler<'a> {
                     return self.tupu(dst);
                 }
                 ("ingiza", 2, Some(list)) => {
-                    let idx = self.expr_as(&args[0], Ty::Num)?.reg;
-                    let src = self.expr_as(&args[1], Ty::Num)?.reg;
+                    let idx = self.expr_as(self.node(args[0]), Ty::Num)?.reg;
+                    let src = self.expr_as(self.node(args[1]), Ty::Num)?.reg;
                     self.emit(Opcode::ListSet {
                         list: list.reg,
                         idx,
@@ -2362,7 +2402,7 @@ impl<'a> FunctionCompiler<'a> {
                     return self.tupu(dst);
                 }
                 ("ondoa", 1, Some(list)) => {
-                    let idx = self.expr_as(&args[0], Ty::Num)?.reg;
+                    let idx = self.expr_as(self.node(args[0]), Ty::Num)?.reg;
                     let out = self.dst_or_temp(dst, Ty::Val);
                     self.emit(Opcode::ListRemoveVal {
                         dst: out.reg,
@@ -2435,7 +2475,7 @@ impl<'a> FunctionCompiler<'a> {
         &mut self,
         receiver: &Expr,
         method: &str,
-        args: &[Expr],
+        args: &[ExprId],
         dst: Option<Operand>,
     ) -> Option<Operand> {
         if !methods::is_shared_method_name(method) {
@@ -2453,9 +2493,9 @@ impl<'a> FunctionCompiler<'a> {
     }
 
     /// Compile `args` into generic registers, in order.
-    fn val_args(&mut self, args: &[Expr]) -> Option<Vec<Reg>> {
+    fn val_args(&mut self, args: &[ExprId]) -> Option<Vec<Reg>> {
         args.iter()
-            .map(|arg| self.expr_as(arg, Ty::Val).map(|op| op.reg))
+            .map(|arg| self.expr_as(self.node(*arg), Ty::Val).map(|op| op.reg))
             .collect()
     }
 
@@ -2464,7 +2504,7 @@ impl<'a> FunctionCompiler<'a> {
         &mut self,
         method: &str,
         recv: Reg,
-        args: &[Expr],
+        args: &[ExprId],
         dst: Option<Operand>,
     ) -> Option<Operand> {
         let args = self.val_args(args)?;
@@ -2483,7 +2523,7 @@ impl<'a> FunctionCompiler<'a> {
         &mut self,
         receiver: &Expr,
         method: &str,
-        args: &[Expr],
+        args: &[ExprId],
         dst: Option<Operand>,
     ) -> Option<Operand> {
         let recv = self.expr_as(receiver, Ty::Val)?.reg;

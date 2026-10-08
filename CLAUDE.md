@@ -142,7 +142,7 @@ the change. The current single sources:
 | Concern | The one place |
 |---|---|
 | Language keywords | `asili_lexer::KEYWORDS` (LSP completion/hover/rename, formatter) |
-| Expression-tree shape | `Expr::children` in `core/parser/src/ast.rs` (lint, LSP, parser checks) |
+| Expression-tree shape | `Expr::children` / `Expr::map_children` in `core/parser/src/ast.rs`; `Exprs::descendants` to visit a whole expression; `Block::map_expr_roots` for every expression a block holds (lint, LSP, parser checks, module merging) |
 | Builtin signatures | `core/parser/src/builtins.rs` export tables (analyzer, LSP completion); `BUILTIN_MODULE_NAMES` for the module whitelist |
 | Builtin implementations | `core/evaluator/src/builtins/*` via `register_all`/`BuiltinTable` (evaluator and native code's host); `Value::sawa`/`Value::kosa`, `arg_str` for results/arguments |
 | Value semantics and methods | `eval/ops.rs`, `eval/methods.rs` |

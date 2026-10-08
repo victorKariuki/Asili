@@ -4,6 +4,10 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Architecture ([02-architecture-and-files.md](02-architecture-and-files.md)): the parser is a set
+  of flat state machines (no recursion; one synchronize step for error recovery), and a module's
+  expressions live in one arena indexed by `ExprId`. No change to the language.
+
 - Execution ([02-architecture-and-files.md](02-architecture-and-files.md),
   [07-execution-and-roadmap.md](07-execution-and-roadmap.md)): the register VM is gone. `.asb`
   bytecode is the native backend's input and always carries the program's syntax tree; it runs

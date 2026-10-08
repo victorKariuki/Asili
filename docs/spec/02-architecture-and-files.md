@@ -40,7 +40,11 @@ The repository follows a Linux-kernel–style modular layout. Each directory is 
 ### /core (Kiini)
 
 - **lexer/** — Tokenizes Swahili input from `.as` and `.asi` files.
-- **parser/** — Generates the AST; split into cursor (token stream), parse (statements/expressions), and semantic (types + analyzer). Integration tests live in `tests/`.
+- **parser/** — Generates the AST; split into cursor (token stream), parse (module items, plus
+  flat non-recursive state machines for blocks, expressions and patterns with explicit heap
+  stacks and synchronize-style error recovery), and semantic (types + analyzer). Expressions
+  are stored in one contiguous arena per module (`Module::exprs`, children referenced by
+  `ExprId` index). Integration tests live in `tests/`.
 - **evaluator/** — Executes `.asb` artifacts. Programs the bytecode compiler can lower
   (`bytecode.rs`) run as x86-64 or AArch64 machine code from Asili's own backend (`nguvu/`, no
   external compiler): `pata jenga` writes it ahead of time as `<name>.nguvu` next to the `.asb`,

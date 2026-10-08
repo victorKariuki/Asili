@@ -38,12 +38,12 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
 
     match stmt {
         Stmt::Let { name, value, .. } => {
-            let v = super::eval_expr_impl(value, rt)?;
+            let v = super::eval_expr_impl(*value, rt)?;
             rt.env.define(name, v);
             Ok(EvalOut::Next)
         }
         Stmt::LetPattern { pattern, value, .. } => {
-            let value = super::eval_expr_impl(value, rt)?;
+            let value = super::eval_expr_impl(*value, rt)?;
             if !super::expr::match_and_bind_pattern(pattern, &value, rt) {
                 return Err(EvalError::TypeErr(
                     "muundo wa weka haulingani na thamani".into(),
@@ -54,7 +54,7 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
         Stmt::Assign {
             name, op, value, ..
         } => {
-            let rhs = super::eval_expr_impl(value, rt)?;
+            let rhs = super::eval_expr_impl(*value, rt)?;
             let current = rt
                 .env
                 .get(name)
@@ -73,12 +73,12 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             Ok(EvalOut::Next)
         }
         Stmt::Expr { expr, .. } => {
-            let _ = super::eval_expr_impl(expr, rt)?;
+            let _ = super::eval_expr_impl(*expr, rt)?;
             Ok(EvalOut::Next)
         }
         Stmt::Return { value, .. } => {
             let v = match value {
-                Some(e) => super::eval_expr_impl(e, rt)?,
+                Some(e) => super::eval_expr_impl(*e, rt)?,
                 None => Value::Tupu,
             };
             Ok(EvalOut::Return(v))
@@ -96,13 +96,13 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             else_block,
             ..
         } => {
-            let c = super::eval_expr_impl(cond, rt)?;
+            let c = super::eval_expr_impl(*cond, rt)?;
             let run = super::ops::truthy(&c);
             if run {
                 return super::eval_block_impl(then_block, rt);
             }
             for (c2, blk) in else_if {
-                let c2val = super::eval_expr_impl(c2, rt)?;
+                let c2val = super::eval_expr_impl(*c2, rt)?;
                 if super::ops::truthy(&c2val) {
                     return super::eval_block_impl(blk, rt);
                 }
@@ -119,7 +119,7 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             ..
         } => {
             loop {
-                let c = super::eval_expr_impl(cond, rt)?;
+                let c = super::eval_expr_impl(*cond, rt)?;
                 if !super::ops::truthy(&c) {
                     break;
                 }
@@ -140,8 +140,8 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
         } => {
             match mode {
                 ForMode::Range { start, end } => {
-                    let s = super::eval_expr_impl(start, rt)?;
-                    let e = super::eval_expr_impl(end, rt)?;
+                    let s = super::eval_expr_impl(*start, rt)?;
+                    let e = super::eval_expr_impl(*end, rt)?;
                     let start_n = value::as_f64(&s)
                         .ok_or_else(|| EvalError::TypeErr("kwa kutoka inahitaji Namba".into()))?;
                     let end_n = value::as_f64(&e)
@@ -160,7 +160,7 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                     }
                 }
                 ForMode::InExpr(expr) => {
-                    let col = super::eval_expr_impl(expr, rt)?;
+                    let col = super::eval_expr_impl(*expr, rt)?;
                     // Move the items out when nothing else shares them; copy one at a time
                     // otherwise.
                     let items: Box<dyn Iterator<Item = Value>> =
@@ -186,7 +186,7 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             Ok(EvalOut::Next)
         }
         Stmt::Match { expr, arms, .. } => {
-            let v = super::eval_expr_impl(expr, rt)?;
+            let v = super::eval_expr_impl(*expr, rt)?;
             for arm in arms {
                 rt.env.push_scope();
                 if match_and_bind_pattern(&arm.pattern, &v, rt) {

@@ -1,6 +1,8 @@
 use crate::types::{HoverInfo, ScopeContext, SymbolInfo, SymbolKind, TypeInfo};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, Expr, ForMode, Module, Pattern, Stmt, TypeExpr, ValueType};
+use asili_parser::{
+    parse_tokens, Expr, ExprId, ForMode, Module, Pattern, Stmt, TypeExpr, ValueType,
+};
 use std::collections::{HashMap, HashSet};
 use tower_lsp::lsp_types::{SemanticToken, SemanticTokens};
 
@@ -93,7 +95,8 @@ struct RawToken {
 }
 
 pub struct SemanticAnalyzer {
-    module: Module,
+    /// Shared so a walk can hold the module while the analyzer records tokens.
+    module: std::sync::Arc<Module>,
     raw_tokens: Vec<RawToken>,
     /// Module-level names: functions, structs, enums, traits, constants. These are legitimately
     /// global (Asili has no nested modules), so a flat map is fine here. Stores the modifiers
@@ -126,7 +129,7 @@ pub struct SemanticAnalyzer {
 impl SemanticAnalyzer {
     pub fn new(module: Module) -> Self {
         SemanticAnalyzer {
-            module,
+            module: std::sync::Arc::new(module),
             raw_tokens: Vec::new(),
             global_decls: HashMap::new(),
             local_decls: vec![HashMap::new()],
@@ -414,11 +417,11 @@ impl SemanticAnalyzer {
                 mutable,
                 ..
             } => {
-                self.scan_expr(value);
+                self.scan_expr(*value);
                 let inferred_type = if let Some(t) = ty {
                     type_expr_to_value_type(t)
                 } else {
-                    let inferred = self.infer_expr_type(value);
+                    let inferred = self.infer_expr_type(*value);
                     // Only offer a hint when there's something real to show — `Unknown` would
                     // render as a literal "Unknown" label in the editor, worse than no hint.
                     if !matches!(inferred, ValueType::Unknown) {
@@ -459,7 +462,7 @@ impl SemanticAnalyzer {
                 if let Some((token_type, modifiers)) = self.resolve(name) {
                     self.push_raw(*line, *column, token_type, modifiers, name.len());
                 }
-                self.scan_expr(value);
+                self.scan_expr(*value);
             }
             Stmt::If {
                 cond,
@@ -468,12 +471,12 @@ impl SemanticAnalyzer {
                 else_block,
                 ..
             } => {
-                self.scan_expr(cond);
+                self.scan_expr(*cond);
                 self.push_scope(self.current_scope().parent_fn.clone());
                 self.scan_block(then_block);
                 self.pop_scope();
                 for (c, b) in else_if {
-                    self.scan_expr(c);
+                    self.scan_expr(*c);
                     self.push_scope(self.current_scope().parent_fn.clone());
                     self.scan_block(b);
                     self.pop_scope();
@@ -485,7 +488,7 @@ impl SemanticAnalyzer {
                 }
             }
             Stmt::While { cond, body, .. } => {
-                self.scan_expr(cond);
+                self.scan_expr(*cond);
                 self.push_scope(self.current_scope().parent_fn.clone());
                 self.scan_block(body);
                 self.pop_scope();
@@ -502,7 +505,7 @@ impl SemanticAnalyzer {
                 // iterating a Orodha<T>/Kamusi<K,V> yields T / Jozi<K,V>; `kutoka ... hadi ...`
                 // always yields Namba.
                 let var_ty = match mode {
-                    ForMode::InExpr(expr) => match self.infer_expr_type(expr) {
+                    ForMode::InExpr(expr) => match self.infer_expr_type(*expr) {
                         ValueType::Orodha(inner) => *inner,
                         ValueType::Kamusi(k, v) => ValueType::Jozi(k, v),
                         _ => ValueType::Unknown,
@@ -520,17 +523,17 @@ impl SemanticAnalyzer {
                     var.len(),
                 );
                 if let ForMode::InExpr(expr) = mode {
-                    self.scan_expr(expr);
+                    self.scan_expr(*expr);
                 }
                 if let ForMode::Range { start, end } = mode {
-                    self.scan_expr(start);
-                    self.scan_expr(end);
+                    self.scan_expr(*start);
+                    self.scan_expr(*end);
                 }
                 self.scan_block(body);
                 self.pop_scope();
             }
             Stmt::Match { expr, arms, .. } => {
-                self.scan_expr(expr);
+                self.scan_expr(*expr);
                 for a in arms {
                     self.push_scope(self.current_scope().parent_fn.clone());
                     self.scan_pattern(&a.pattern);
@@ -539,17 +542,19 @@ impl SemanticAnalyzer {
                 }
             }
             Stmt::Return { value: Some(e), .. } => {
-                self.scan_expr(e);
+                self.scan_expr(*e);
             }
             Stmt::Return { .. } => {}
             Stmt::Expr { expr, .. } => {
-                self.scan_expr(expr);
+                self.scan_expr(*expr);
             }
             _ => {}
         }
     }
 
-    fn scan_expr(&mut self, expr: &Expr) {
+    fn scan_expr(&mut self, expr: ExprId) {
+        let module = self.module.clone();
+        let expr = &module[expr];
         match expr {
             // NOTE(syntax-highlighting): color this *usage* at its own line/column (now
             // available on Expr::Ident) rather than only a declaration's position — that's
@@ -561,11 +566,11 @@ impl SemanticAnalyzer {
                 }
             }
             Expr::Call { callee, args, .. } => {
-                if let Expr::Ident { .. } = &**callee {
-                    self.scan_expr(callee);
+                if let Expr::Ident { .. } = &module[*callee] {
+                    self.scan_expr(*callee);
                 }
                 for arg in args {
-                    self.scan_expr(arg);
+                    self.scan_expr(*arg);
                 }
             }
             Expr::FieldAccess {
@@ -575,7 +580,7 @@ impl SemanticAnalyzer {
                 field_column,
                 ..
             } => {
-                self.scan_expr(receiver);
+                self.scan_expr(*receiver);
                 // Field names aren't tracked in any declaration map (struct-field validation
                 // is core/parser's job, not the LSP's) — this is purely a highlight, emitted
                 // unconditionally at the field name's own position.
@@ -597,7 +602,7 @@ impl SemanticAnalyzer {
                 // evaluator/analyzer's existing (String, Expr) destructuring never had to change.
                 for ((name, e), (line, column)) in fields.iter().zip(field_positions.iter()) {
                     self.push_raw(*line, *column, TokenType::Property, 0, name.len());
-                    self.scan_expr(e);
+                    self.scan_expr(*e);
                 }
             }
             Expr::EnumConstruct {
@@ -609,7 +614,7 @@ impl SemanticAnalyzer {
             } => {
                 self.push_raw(*line, *column, TokenType::EnumMember, 0, variant_name.len());
                 if let Some(d) = data {
-                    self.scan_expr(d);
+                    self.scan_expr(*d);
                 }
             }
             other => {
@@ -690,7 +695,8 @@ impl SemanticAnalyzer {
     }
 
     /// Infer the type of an expression (basic type inference for literals and identifiers).
-    fn infer_expr_type(&self, expr: &Expr) -> ValueType {
+    fn infer_expr_type(&self, expr: ExprId) -> ValueType {
+        let expr = &self.module[expr];
         match expr {
             Expr::Number(_) => ValueType::Namba,
             Expr::String(_) => ValueType::Neno,
@@ -702,7 +708,7 @@ impl SemanticAnalyzer {
             Expr::Map { .. } => {
                 ValueType::Kamusi(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown))
             }
-            Expr::Group(e) => self.infer_expr_type(e),
+            Expr::Group(e) => self.infer_expr_type(*e),
             _ => ValueType::Unknown,
         }
     }

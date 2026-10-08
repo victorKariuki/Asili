@@ -11,13 +11,15 @@ use std::mem;
 
 use crate::cursor::Parser;
 use crate::{
-    AssignOp, Attribute, BinaryOp, Constant, EnumDecl, EnumVariant, Expr, Function, ImplDecl,
-    Import, ImportPath, Module, Param, Stmt, StructDecl, TraitDecl, TraitMethodSig, TypeExpr,
+    AssignOp, Attribute, BinaryOp, Constant, EnumDecl, EnumVariant, Expr, ExprId, Exprs, Function,
+    ImplDecl, Import, ImportPath, Module, Param, Stmt, StructDecl, TraitDecl, TraitMethodSig,
+    TypeExpr,
 };
 
 /// Deepest nesting of blocks and brackets a program may use (`PAR073`). The parser itself has no
-/// limit — its stacks live on the heap — but the passes after it (the semantic analyzer, the
-/// bytecode compiler, serialization of the syntax tree) still walk it recursively.
+/// limit — its stacks live on the heap — and expressions are stored flat (`Exprs`), but the
+/// passes after it (the semantic analyzer, the bytecode compiler, the LSP) still walk the tree
+/// recursively, and nested blocks are serialized and dropped recursively.
 const MAX_NESTING: usize = 1000;
 
 /// Strip surrounding double quotes from string literal lexeme so the AST holds content only.
@@ -135,6 +137,7 @@ impl<'a> Parser<'a> {
         traits.extend(self.standard_traits());
 
         Module {
+            exprs: std::mem::take(&mut self.exprs),
             imports,
             constants,
             enums,
@@ -643,7 +646,7 @@ impl<'a> Parser<'a> {
                 let op_column = self.peek().column;
                 let op_lexeme = self.advance().lexeme.clone();
                 // The index is evaluated twice (read and write), so it must not call anything.
-                if expr_has_call(&idx) {
+                if expr_has_call(&self.exprs, idx) {
                     self.errors.push(
                         Diagnostic::new(
                             "PAR096",
@@ -655,25 +658,23 @@ impl<'a> Parser<'a> {
                     return None;
                 }
                 let val = self.parse_expression()?;
-                let target = || Expr::Ident {
-                    name: name.clone(),
-                    line,
-                    column,
-                };
-                let current = Expr::Index {
-                    base: Box::new(target()),
-                    index: Box::new(idx.clone()),
-                    line,
-                };
-                return Some(Stmt::Expr {
-                    expr: Expr::MethodCall {
-                        receiver: Box::new(target()),
-                        method_name: "ingiza".to_string(),
-                        args: vec![idx, build_binary(op_base, op, current, val, line)],
-                        line,
-                    },
+                let target = Expr::Ident { name, line, column };
+                let base = self.exprs.add(target.clone());
+                // The index is pure (checked above), so the read and the write share its node.
+                let current = self.exprs.add(Expr::Index {
+                    base,
+                    index: idx,
                     line,
                 });
+                let receiver = self.exprs.add(target);
+                let value = build_binary(&mut self.exprs, op_base, op, current, val, line);
+                let expr = self.exprs.add(Expr::MethodCall {
+                    receiver,
+                    method_name: "ingiza".to_string(),
+                    args: vec![idx, value],
+                    line,
+                });
+                return Some(Stmt::Expr { expr, line });
             }
             if depth == 0 && after == Some("=") {
                 let name = self.advance().lexeme.clone();
@@ -684,15 +685,14 @@ impl<'a> Parser<'a> {
                 self.consume("]", "PAR091", "fahirisi inahitaji ']'")?;
                 self.advance(); // consume =
                 let val = self.parse_expression()?;
-                return Some(Stmt::Expr {
-                    expr: Expr::MethodCall {
-                        receiver: Box::new(Expr::Ident { name, line, column }),
-                        method_name: "ingiza".to_string(),
-                        args: vec![idx, val],
-                        line,
-                    },
+                let receiver = self.exprs.add(Expr::Ident { name, line, column });
+                let expr = self.exprs.add(Expr::MethodCall {
+                    receiver,
+                    method_name: "ingiza".to_string(),
+                    args: vec![idx, val],
                     line,
                 });
+                return Some(Stmt::Expr { expr, line });
             }
         }
 
@@ -721,15 +721,15 @@ impl<'a> Parser<'a> {
             let column = self.prev().column;
             let (op_base, op) = compound_op(&self.advance().lexeme.clone()).expect("listed above");
             let rhs = self.parse_expression()?;
-            let current = Expr::Ident {
+            let current = self.exprs.add(Expr::Ident {
                 name: name.clone(),
                 line,
                 column,
-            };
+            });
             return Some(Stmt::Assign {
                 name,
                 op: AssignOp::Assign,
-                value: build_binary(op_base, op, current, rhs, line),
+                value: build_binary(&mut self.exprs, op_base, op, current, rhs, line),
                 line,
                 column,
             });
@@ -933,40 +933,49 @@ fn compound_op(token: &str) -> Option<(&'static str, BinaryOp)> {
     })
 }
 
-/// `left <tok> right`. Every binary expression, including compound assignments, is built here:
-/// floor division `a // b` is `sakafu(a / b)`, so it shares `sakafu`'s semantics (and the native
-/// backend's integer-division lowering) instead of being a second implementation.
-fn build_binary(tok: &str, op: BinaryOp, left: Expr, right: Expr, line: usize) -> Expr {
-    let quotient = Expr::Binary {
-        left: Box::new(left),
+/// `left <tok> right`, added to `exprs`. Every binary expression, including compound
+/// assignments, is built here: floor division `a // b` is `sakafu(a / b)`, so it shares
+/// `sakafu`'s semantics (and the native backend's integer-division lowering) instead of being a
+/// second implementation.
+fn build_binary(
+    exprs: &mut Exprs,
+    tok: &str,
+    op: BinaryOp,
+    left: ExprId,
+    right: ExprId,
+    line: usize,
+) -> ExprId {
+    let quotient = exprs.add(Expr::Binary {
+        left,
         op,
-        right: Box::new(right),
+        right,
         line,
-    };
+    });
     if tok != "//" {
         return quotient;
     }
-    Expr::Call {
-        callee: Box::new(Expr::Ident {
-            name: "sakafu".to_string(),
-            line,
-            column: 0,
-        }),
+    let callee = exprs.add(Expr::Ident {
+        name: "sakafu".to_string(),
+        line,
+        column: 0,
+    });
+    exprs.add(Expr::Call {
+        callee,
         args: vec![quotient],
         line,
-    }
+    })
 }
 
 /// Whether evaluating `expr` could call a `kazi`, builtin or method (an explicit worklist, no
 /// recursion).
-fn expr_has_call(expr: &Expr) -> bool {
+fn expr_has_call(exprs: &Exprs, expr: ExprId) -> bool {
     let mut work = vec![expr];
     while let Some(e) = work.pop() {
-        match e {
+        match &exprs[e] {
             // Pure numeric builtins may be evaluated twice without any observable difference
             // (builtins take precedence over a same-named `kazi`).
             Expr::Call { callee, args, .. }
-                if matches!(&**callee, Expr::Ident { name, .. }
+                if matches!(&exprs[*callee], Expr::Ident { name, .. }
                     if matches!(name.as_str(), "sakafu" | "dari" | "abs" | "mzizi")) =>
             {
                 work.extend(args);

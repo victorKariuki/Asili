@@ -16,19 +16,19 @@
 //! (e.g. matching a function signature) has an escape hatch.
 
 use asili_diagnostics::Diagnostic;
-use asili_parser::{Block, Expr, Function, Module, Stmt};
+use asili_parser::{Block, Expr, ExprId, Exprs, Function, Module, Stmt};
 use std::collections::HashSet;
 
 /// Check for logic errors: currently LINT301 (unused local variables) only.
 pub fn check_logic_errors(module: &Module) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
     for func in &module.functions {
-        diags.extend(check_unused_locals(func));
+        diags.extend(check_unused_locals(&module.exprs, func));
     }
     diags
 }
 
-fn check_unused_locals(func: &Function) -> Vec<Diagnostic> {
+fn check_unused_locals(exprs: &Exprs, func: &Function) -> Vec<Diagnostic> {
     let mut declared: Vec<(String, usize)> = Vec::new();
     collect_let_bindings(&func.body, &mut declared);
     if declared.is_empty() {
@@ -36,7 +36,7 @@ fn check_unused_locals(func: &Function) -> Vec<Diagnostic> {
     }
 
     let mut referenced: HashSet<String> = HashSet::new();
-    collect_referenced_idents(&func.body, &mut referenced);
+    collect_referenced_idents(exprs, &func.body, &mut referenced);
 
     let mut diags = Vec::new();
     for (name, line) in declared {
@@ -74,33 +74,24 @@ fn collect_let_bindings(block: &Block, out: &mut Vec<(String, usize)>) {
 
 /// Collect every name referenced via `Expr::Ident` anywhere in `block`, including inside nested
 /// blocks and every expression position (call args, binary operands, struct-literal field
-/// values, etc.) — an exhaustive walk over every `Expr` variant, mirroring
-/// `pata-lsp`'s `SemanticAnalyzer::scan_expr` (kept as an independent copy rather than a shared
-/// dependency: `pata-lint` has no reason to depend on `pata-lsp`, and this walk is simple enough
-/// that duplicating it is cheaper than the coupling).
-fn collect_referenced_idents(block: &Block, out: &mut HashSet<String>) {
+/// values, etc.), through the arena's one expression walk (`Exprs::descendants`).
+fn collect_referenced_idents(exprs: &Exprs, block: &Block, out: &mut HashSet<String>) {
     for stmt in &block.statements {
         match stmt {
-            Stmt::Let { value, .. } => scan_expr(value, out),
-            Stmt::Assign { value, .. } => scan_expr(value, out),
-            Stmt::If { cond, .. } => scan_expr(cond, out),
-            Stmt::While { cond, .. } => scan_expr(cond, out),
-            Stmt::For { mode, .. } => {
-                if let asili_parser::ForMode::InExpr(e) = mode {
-                    scan_expr(e, out);
-                }
-            }
-            Stmt::Match { expr, arms, .. } => {
-                scan_expr(expr, out);
-                for arm in arms {
-                    scan_pattern(&arm.pattern, out);
-                }
-            }
-            Stmt::Return { value: Some(e), .. } => scan_expr(e, out),
-            Stmt::Expr { expr, .. } => scan_expr(expr, out),
+            Stmt::Let { value, .. } => scan_expr(exprs, *value, out),
+            Stmt::Assign { value, .. } => scan_expr(exprs, *value, out),
+            Stmt::If { cond, .. } => scan_expr(exprs, *cond, out),
+            Stmt::While { cond, .. } => scan_expr(exprs, *cond, out),
+            Stmt::For {
+                mode: asili_parser::ForMode::InExpr(e),
+                ..
+            } => scan_expr(exprs, *e, out),
+            Stmt::Match { expr, .. } => scan_expr(exprs, *expr, out),
+            Stmt::Return { value: Some(e), .. } => scan_expr(exprs, *e, out),
+            Stmt::Expr { expr, .. } => scan_expr(exprs, *expr, out),
             _ => {}
         }
-        recurse_into_nested_blocks(stmt, &mut |b| collect_referenced_idents(b, out));
+        recurse_into_nested_blocks(stmt, &mut |b| collect_referenced_idents(exprs, b, out));
     }
 }
 
@@ -135,33 +126,11 @@ fn recurse_into_nested_blocks(stmt: &Stmt, f: &mut dyn FnMut(&Block)) {
     }
 }
 
-/// A pattern can itself reference a value in a `Literal(Expr)` arm (e.g. matching against a
-/// constant expression) — scanned for completeness, though the common case (binding patterns)
-/// introduces names rather than referencing them, so most pattern shapes contribute nothing here.
-fn scan_pattern(pattern: &asili_parser::Pattern, out: &mut HashSet<String>) {
-    use asili_parser::Pattern;
-    match pattern {
-        Pattern::Literal(e) => scan_expr(e, out),
-        Pattern::Struct { fields, .. } => {
-            for (_, p) in fields {
-                scan_pattern(p, out);
-            }
+fn scan_expr(exprs: &Exprs, root: ExprId, out: &mut HashSet<String>) {
+    for id in exprs.descendants(root) {
+        if let Expr::Ident { name, .. } = &exprs[id] {
+            out.insert(name.clone());
         }
-        Pattern::Enum { data: Some(p), .. } => scan_pattern(p, out),
-        Pattern::Jozi(a, b) => {
-            scan_pattern(a, out);
-            scan_pattern(b, out);
-        }
-        _ => {}
-    }
-}
-
-fn scan_expr(expr: &Expr, out: &mut HashSet<String>) {
-    if let Expr::Ident { name, .. } = expr {
-        out.insert(name.clone());
-    }
-    for child in expr.children() {
-        scan_expr(child, out);
     }
 }
 

@@ -13,6 +13,8 @@ use std::collections::HashMap;
 /// `thabiti` constant (constants have no visibility modifier), and any impl block from an
 /// imported module.
 pub fn merge_modules(entrypoint: &Module, resolved: &HashMap<String, Module>) -> Module {
+    // The entrypoint keeps its arena; everything imported is copied into it.
+    let mut exprs = entrypoint.exprs.clone();
     let mut functions = entrypoint.functions.clone();
     let mut constants = entrypoint.constants.clone();
     let mut structs = entrypoint.structs.clone();
@@ -35,7 +37,7 @@ pub fn merge_modules(entrypoint: &Module, resolved: &HashMap<String, Module>) ->
                 Some(names) => names.contains(&f.name),
             };
             if include && !functions.iter().any(|x| x.name == f.name) {
-                functions.push(f.clone());
+                functions.push(exprs.import_function(&module.exprs, f));
             }
         }
         for c in &module.constants {
@@ -44,7 +46,9 @@ pub fn merge_modules(entrypoint: &Module, resolved: &HashMap<String, Module>) ->
                 Some(names) => names.contains(&c.name),
             };
             if include && !constants.iter().any(|x| x.name == c.name) {
-                constants.push(c.clone());
+                let mut c = c.clone();
+                c.value = exprs.import(&module.exprs, c.value);
+                constants.push(c);
             }
         }
         for s in &module.structs {
@@ -67,11 +71,16 @@ pub fn merge_modules(entrypoint: &Module, resolved: &HashMap<String, Module>) ->
         }
         for imp_decl in &module.impls {
             if !impls.iter().any(|x| x.target == imp_decl.target) {
-                impls.push(imp_decl.clone());
+                let mut imp_decl = imp_decl.clone();
+                for f in &mut imp_decl.body {
+                    *f = exprs.import_function(&module.exprs, f);
+                }
+                impls.push(imp_decl);
             }
         }
     }
     Module {
+        exprs,
         imports: entrypoint.imports.clone(),
         constants,
         enums: entrypoint.enums.clone(),

@@ -11,13 +11,13 @@
 
 use super::MAX_NESTING;
 use crate::cursor::Parser;
-use crate::{Block, Expr, ForMode, MatchArm, Pattern, Stmt};
+use crate::{Block, Expr, ExprId, ForMode, MatchArm, Pattern, Stmt};
 
 /// An `ikiwa` statement's chain so far.
 struct IfChain {
-    cond: Expr,
+    cond: ExprId,
     then_block: Block,
-    else_if: Vec<(Expr, Block)>,
+    else_if: Vec<(ExprId, Block)>,
     line: usize,
 }
 
@@ -26,19 +26,19 @@ enum Kind {
     /// The function body itself.
     Body,
     IfThen {
-        cond: Expr,
+        cond: ExprId,
         line: usize,
     },
     IfElif {
         chain: IfChain,
-        cond: Expr,
+        cond: ExprId,
     },
     IfElse {
         chain: IfChain,
     },
     While {
         label: Option<String>,
-        cond: Expr,
+        cond: ExprId,
         line: usize,
     },
     For {
@@ -58,7 +58,7 @@ enum Frame {
     Block { stmts: Vec<Stmt>, kind: Kind },
     /// Inside `linganisha x { ... }`, between arms.
     Match {
-        expr: Expr,
+        expr: ExprId,
         arms: Vec<MatchArm>,
         line: usize,
     },
@@ -308,7 +308,7 @@ impl<'a> Parser<'a> {
         if self.match_tok("wakati") {
             let line = self.prev().line;
             let cond = if self.match_tok("milele") {
-                Expr::Bool(true)
+                self.exprs.add(Expr::Bool(true))
             } else {
                 self.parse_expression()?
             };

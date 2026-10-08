@@ -10,7 +10,7 @@
 use asili_parser::Module;
 use std::fmt;
 
-const ASB_HEADER_PREFIX: &str = "ASB-STUB\nversion=4\nformat=serialized\n";
+const ASB_HEADER_PREFIX: &str = "ASB-STUB\nversion=5\nformat=serialized\n";
 const PAYLOAD_MARKER: &[u8] = b"\nPAYLOAD\n";
 
 /// Parse format from .asb header (e.g. "serialized" or "bytecode"). Returns None if header missing.
@@ -65,7 +65,7 @@ pub fn emit_asb_bytes(module: &Module, source: &str) -> Vec<u8> {
 
 /// Version of the bytecode payload (its instruction set, and the syntax tree it carries). Artifacts built by an
 /// older `pata jenga` carry a different `version=` and must be rebuilt.
-const BYTECODE_VERSION: &str = "11";
+const BYTECODE_VERSION: &str = "12";
 
 /// Emit a real bytecode artifact.  The header remains intentionally simple and textual so older
 /// runners can reject it cleanly, while the payload is the same deterministic bincode envelope

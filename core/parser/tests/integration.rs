@@ -178,9 +178,9 @@ fn parses_method_call() {
             method_name,
             args,
             ..
-        } = value
+        } = &module[*value]
         {
-            if let Expr::Ident { name: r, .. } = &**receiver {
+            if let Expr::Ident { name: r, .. } = &module[*receiver] {
                 assert_eq!(r, "x");
             } else {
                 panic!("expected Ident receiver");
@@ -223,14 +223,14 @@ fn parses_bitwise_and_shift() {
     let module = parse_tokens(&toks).expect("parse");
     let kuu = module.functions.iter().find(|f| f.name == "kuu").unwrap();
     let stmt = &kuu.body.statements[0];
-    if let Stmt::Let {
-        value: Expr::Binary {
-            op: BinaryOp::BitAnd,
-            ..
-        },
-        ..
-    } = stmt
-    {
+    if let Stmt::Let { value, .. } = stmt {
+        assert!(matches!(
+            &module[*value],
+            Expr::Binary {
+                op: BinaryOp::BitAnd,
+                ..
+            }
+        ));
     } else {
         panic!("expected Let with na_biti (BitAnd)");
     }
@@ -330,11 +330,11 @@ fn method_call_type_checking_is_implemented() {
             method_name,
             args,
             ..
-        } = value
+        } = &module[*value]
         {
             assert_eq!(method_name, "urefu");
             assert!(args.is_empty());
-            assert!(matches!(receiver.as_ref(), Expr::Ident { .. }));
+            assert!(matches!(&module[*receiver], Expr::Ident { .. }));
         } else {
             panic!("expected MethodCall");
         }
@@ -403,21 +403,21 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     // `;` separates statements but adds none.
     assert_eq!(kuu.body.statements.len(), 7);
     // `[0; 500]` is `orodha_rudia(0, 500)`.
-    match &kuu.body.statements[5] {
-        Stmt::Let {
-            value: Expr::Call { callee, args, .. },
-            ..
-        } => {
-            assert!(matches!(&**callee, Expr::Ident { name, .. } if name == "orodha_rudia"));
+    let Stmt::Let { value, .. } = &kuu.body.statements[5] else {
+        panic!("expected a weka");
+    };
+    match &module[*value] {
+        Expr::Call { callee, args, .. } => {
+            assert!(matches!(&module[*callee], Expr::Ident { name, .. } if name == "orodha_rudia"));
             assert_eq!(args.len(), 2);
         }
         other => panic!("expected orodha_rudia call, got {other:?}"),
     }
-    match &kuu.body.statements[0] {
-        Stmt::Let {
-            value: Expr::List { elements, .. },
-            ..
-        } => assert_eq!(elements.len(), 3),
+    let Stmt::Let { value, .. } = &kuu.body.statements[0] else {
+        panic!("expected a weka");
+    };
+    match &module[*value] {
+        Expr::List { elements, .. } => assert_eq!(elements.len(), 3),
         other => panic!("expected a list, got {other:?}"),
     }
 }

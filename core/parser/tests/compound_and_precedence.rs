@@ -1,26 +1,28 @@
 //! Bitwise precedence and compound assignment (including on index targets).
 
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, AssignOp, BinaryOp, Expr, Stmt};
+use asili_parser::{parse_tokens, AssignOp, BinaryOp, Expr, Module, Stmt};
 
-fn body(src: &str) -> Vec<Stmt> {
+/// The module (for its expression arena) and `f`'s statements.
+fn body(src: &str) -> (Module, Vec<Stmt>) {
     let source = format!("kazi f() -> Tupu {{\n{src}\n}}\n");
     let module = parse_tokens(&tokenize(&source).expect("tokenize")).expect("parse");
-    module.functions[0].body.statements.clone()
+    let stmts = module.functions[0].body.statements.clone();
+    (module, stmts)
 }
 
 #[test]
 fn bitwise_binds_tighter_than_comparison() {
-    let stmts = body("weka t = mask & bit == 0");
+    let (m, stmts) = body("weka t = mask & bit == 0");
     let Stmt::Let { value, .. } = &stmts[0] else {
         panic!("expected weka");
     };
-    let Expr::Binary { op, left, .. } = value else {
+    let Expr::Binary { op, left, .. } = &m[*value] else {
         panic!("expected binary");
     };
     assert_eq!(*op, BinaryOp::Eq);
     assert!(matches!(
-        **left,
+        m[*left],
         Expr::Binary {
             op: BinaryOp::BitAnd,
             ..
@@ -30,11 +32,11 @@ fn bitwise_binds_tighter_than_comparison() {
 
 #[test]
 fn logical_operators_still_bind_loosest() {
-    let stmts = body("weka t = a | b > 1 na c == 2");
+    let (m, stmts) = body("weka t = a | b > 1 na c == 2");
     let Stmt::Let { value, .. } = &stmts[0] else {
         panic!("expected weka");
     };
-    let Expr::Binary { op, left, .. } = value else {
+    let Expr::Binary { op, left, .. } = &m[*value] else {
         panic!("expected binary");
     };
     assert_eq!(*op, BinaryOp::And);
@@ -43,12 +45,12 @@ fn logical_operators_still_bind_loosest() {
         op: BinaryOp::Gt,
         left: inner,
         ..
-    } = &**left
+    } = &m[*left]
     else {
         panic!("expected >");
     };
     assert!(matches!(
-        **inner,
+        m[*inner],
         Expr::Binary {
             op: BinaryOp::BitOr,
             ..
@@ -64,7 +66,7 @@ fn new_compound_assignments_desugar_to_binary_ops() {
         ("|=", BinaryOp::BitOr),
         ("^=", BinaryOp::BitXor),
     ] {
-        let stmts = body(&format!("x {token} 3"));
+        let (m, stmts) = body(&format!("x {token} 3"));
         let Stmt::Assign {
             name, op, value, ..
         } = &stmts[0]
@@ -73,8 +75,9 @@ fn new_compound_assignments_desugar_to_binary_ops() {
         };
         assert_eq!(name, "x");
         assert_eq!(*op, AssignOp::Assign);
+        let value = &m[*value];
         assert!(
-            matches!(value, Expr::Binary { op, left, .. } if *op == expected && matches!(**left, Expr::Ident { ref name, .. } if name == "x")),
+            matches!(value, Expr::Binary { op, left, .. } if *op == expected && matches!(&m[*left], Expr::Ident { name, .. } if name == "x")),
             "{token}: {value:?}"
         );
     }
@@ -82,20 +85,20 @@ fn new_compound_assignments_desugar_to_binary_ops() {
 
 #[test]
 fn compound_assignment_on_index_target() {
-    let stmts = body("safu[r + 1] |= x");
-    let Stmt::Expr {
-        expr: Expr::MethodCall {
-            method_name, args, ..
-        },
-        ..
-    } = &stmts[0]
-    else {
+    let (m, stmts) = body("safu[r + 1] |= x");
+    let Stmt::Expr { expr, .. } = &stmts[0] else {
         panic!("expected ingiza call, got {:?}", stmts[0]);
+    };
+    let Expr::MethodCall {
+        method_name, args, ..
+    } = &m[*expr]
+    else {
+        panic!("expected ingiza call, got {:?}", m[*expr]);
     };
     assert_eq!(method_name, "ingiza");
     assert!(
-        matches!(&args[1], Expr::Binary { op: BinaryOp::BitOr, left, .. }
-        if matches!(**left, Expr::Index { .. }))
+        matches!(&m[args[1]], Expr::Binary { op: BinaryOp::BitOr, left, .. }
+        if matches!(m[*left], Expr::Index { .. }))
     );
 }
 

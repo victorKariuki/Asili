@@ -158,6 +158,7 @@ fn resolve_one(
             name.to_string(),
             ResolvedModule {
                 module: Module {
+                    exprs: Default::default(),
                     imports: vec![],
                     constants: vec![],
                     enums: vec![],
@@ -207,6 +208,7 @@ fn resolve_one(
                     constants,
                 };
                 let module = Module {
+                    exprs: Default::default(),
                     imports: vec![],
                     constants: vec![],
                     enums: vec![],

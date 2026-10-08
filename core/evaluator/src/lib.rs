@@ -16,6 +16,7 @@ mod host;
 mod native;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod nguvu;
+#[cfg(not(target_arch = "wasm32"))]
 mod numlist;
 mod platform;
 pub mod runtime;
@@ -132,7 +133,7 @@ impl TreeContext {
 
 fn seed_module_constants(module: &Module, rt: &mut runtime::Runtime) -> Result<(), EvalError> {
     for c in &module.constants {
-        let val = eval::eval_expr_impl(&c.value, rt)?;
+        let val = eval::eval_expr_impl(c.value, rt)?;
         rt.env.define(&c.name, val);
     }
     Ok(())

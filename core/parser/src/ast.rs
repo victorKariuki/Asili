@@ -1,9 +1,91 @@
 //! Abstract syntax tree and related types.
+//!
+//! Expressions live in one contiguous arena per module ([`Exprs`], `Module::exprs`): a node
+//! refers to its sub-expressions by [`ExprId`] (an index), never by pointer. Walking, cloning,
+//! serializing or dropping a module's expressions is a pass over one array, however deeply the
+//! source nests. Statements hold the ids of their expressions; each block's statements are
+//! already one contiguous `Vec`.
 
 use serde::{Deserialize, Serialize};
 
+/// An expression: an index into its module's [`Exprs`] arena.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ExprId(pub u32);
+
+/// A module's expression nodes, contiguous; children are [`ExprId`]s into the same arena.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Exprs(Vec<Expr>);
+
+impl Exprs {
+    /// Append a node; its children must already be in this arena.
+    pub fn add(&mut self, expr: Expr) -> ExprId {
+        let id = ExprId(u32::try_from(self.0.len()).expect("fewer than 2^32 expressions"));
+        self.0.push(expr);
+        id
+    }
+
+    /// `root` and every expression under it, in preorder (an explicit stack, no recursion): the
+    /// one walk analyses use to visit a whole expression.
+    pub fn descendants(&self, root: ExprId) -> Vec<ExprId> {
+        let mut out = Vec::new();
+        let mut work = vec![root];
+        while let Some(e) = work.pop() {
+            out.push(e);
+            work.extend(self[e].children().into_iter().rev());
+        }
+        out
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Copy the expression `id` of `from` and everything under it into this arena (children
+    /// first, with an explicit stack), returning its id here. Used when a function or constant
+    /// moves between modules (`merge_modules`).
+    pub fn import(&mut self, from: &Exprs, id: ExprId) -> ExprId {
+        let mut copied: std::collections::HashMap<ExprId, ExprId> = Default::default();
+        let mut work = vec![(id, false)];
+        while let Some((e, children_done)) = work.pop() {
+            if copied.contains_key(&e) {
+                continue;
+            }
+            let node = &from[e];
+            if !children_done {
+                work.push((e, true));
+                work.extend(node.children().into_iter().map(|c| (c, false)));
+                continue;
+            }
+            let moved = node.map_children(|c| copied[&c]);
+            let new = self.add(moved);
+            copied.insert(e, new);
+        }
+        copied[&id]
+    }
+}
+
+impl std::ops::Index<ExprId> for Exprs {
+    type Output = Expr;
+    fn index(&self, id: ExprId) -> &Expr {
+        &self.0[id.0 as usize]
+    }
+}
+
+impl std::ops::Index<ExprId> for Module {
+    type Output = Expr;
+    fn index(&self, id: ExprId) -> &Expr {
+        &self.exprs[id]
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Module {
+    /// Every expression of the module (see the module documentation).
+    pub exprs: Exprs,
     pub imports: Vec<Import>,
     pub constants: Vec<Constant>,
     pub enums: Vec<EnumDecl>,
@@ -17,7 +99,7 @@ pub struct Module {
 pub struct Constant {
     pub name: String,
     pub ty: TypeExpr,
-    pub value: Expr,
+    pub value: ExprId,
     pub line: usize,
     pub column: usize,
 }
@@ -143,7 +225,7 @@ pub enum Stmt {
         mutable: bool,
         name: String,
         ty: Option<TypeExpr>,
-        value: Expr,
+        value: ExprId,
         line: usize,
         // `column` of `name` — added for LSP semantic-token highlighting (pata/lsp/src/semantic.rs)
         // so declarations/usages can be colored at their real position, not just column 1.
@@ -152,27 +234,27 @@ pub enum Stmt {
     LetPattern {
         mutable: bool,
         pattern: Pattern,
-        value: Expr,
+        value: ExprId,
         line: usize,
     },
     Assign {
         name: String,
         op: AssignOp,
-        value: Expr,
+        value: ExprId,
         line: usize,
         // see `column` note on `Let` above.
         column: usize,
     },
     If {
-        cond: Expr,
+        cond: ExprId,
         then_block: Block,
-        else_if: Vec<(Expr, Block)>,
+        else_if: Vec<(ExprId, Block)>,
         else_block: Option<Block>,
         line: usize,
     },
     While {
         label: Option<String>,
-        cond: Expr,
+        cond: ExprId,
         body: Block,
         line: usize,
     },
@@ -185,7 +267,7 @@ pub enum Stmt {
         line: usize,
     },
     Match {
-        expr: Expr,
+        expr: ExprId,
         arms: Vec<MatchArm>,
         line: usize,
     },
@@ -198,7 +280,7 @@ pub enum Stmt {
         line: usize,
     },
     Return {
-        value: Option<Expr>,
+        value: Option<ExprId>,
         line: usize,
     },
     Drop {
@@ -206,9 +288,77 @@ pub enum Stmt {
         line: usize,
     },
     Expr {
-        expr: Expr,
+        expr: ExprId,
         line: usize,
     },
+}
+
+impl Block {
+    /// Replace every expression id the statements hold directly (not their sub-expressions: a
+    /// node's children are ids into the same arena) with `f(id)`, nested blocks included —
+    /// walked with an explicit stack.
+    pub fn map_expr_roots(&mut self, f: &mut impl FnMut(ExprId) -> ExprId) {
+        let mut work: Vec<&mut Block> = vec![self];
+        while let Some(block) = work.pop() {
+            for stmt in &mut block.statements {
+                match stmt {
+                    Stmt::Let { value, .. }
+                    | Stmt::LetPattern { value, .. }
+                    | Stmt::Assign { value, .. }
+                    | Stmt::Expr { expr: value, .. } => *value = f(*value),
+                    Stmt::Return { value, .. } => {
+                        if let Some(v) = value {
+                            *v = f(*v);
+                        }
+                    }
+                    Stmt::If {
+                        cond,
+                        then_block,
+                        else_if,
+                        else_block,
+                        ..
+                    } => {
+                        *cond = f(*cond);
+                        work.push(then_block);
+                        for (c, b) in else_if {
+                            *c = f(*c);
+                            work.push(b);
+                        }
+                        work.extend(else_block.as_mut());
+                    }
+                    Stmt::While { cond, body, .. } => {
+                        *cond = f(*cond);
+                        work.push(body);
+                    }
+                    Stmt::For { mode, body, .. } => {
+                        match mode {
+                            ForMode::InExpr(e) => *e = f(*e),
+                            ForMode::Range { start, end } => {
+                                *start = f(*start);
+                                *end = f(*end);
+                            }
+                        }
+                        work.push(body);
+                    }
+                    Stmt::Match { expr, arms, .. } => {
+                        *expr = f(*expr);
+                        work.extend(arms.iter_mut().map(|a| &mut a.body));
+                    }
+                    Stmt::Break { .. } | Stmt::Continue { .. } | Stmt::Drop { .. } => {}
+                }
+            }
+        }
+    }
+}
+
+impl Exprs {
+    /// `function` (from a module whose arena is `from`) with its expressions copied into this
+    /// arena.
+    pub fn import_function(&mut self, from: &Exprs, function: &Function) -> Function {
+        let mut f = function.clone();
+        f.body.map_expr_roots(&mut |id| self.import(from, id));
+        f
+    }
 }
 
 impl Stmt {
@@ -234,8 +384,8 @@ impl Stmt {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ForMode {
-    InExpr(Expr),
-    Range { start: Expr, end: Expr },
+    InExpr(ExprId),
+    Range { start: ExprId, end: ExprId },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -299,52 +449,52 @@ pub enum Expr {
         column: usize,
     },
     Hamna,
-    Group(Box<Expr>),
+    Group(ExprId),
     If {
-        cond: Box<Expr>,
-        then_expr: Box<Expr>,
-        else_if: Vec<(Expr, Expr)>,
-        else_expr: Option<Box<Expr>>,
+        cond: ExprId,
+        then_expr: ExprId,
+        else_if: Vec<(ExprId, ExprId)>,
+        else_expr: Option<ExprId>,
         line: usize,
     },
     Unary {
         op: UnaryOp,
-        expr: Box<Expr>,
+        expr: ExprId,
         line: usize,
     },
     Binary {
-        left: Box<Expr>,
+        left: ExprId,
         op: BinaryOp,
-        right: Box<Expr>,
+        right: ExprId,
         line: usize,
     },
     Cast {
-        expr: Box<Expr>,
+        expr: ExprId,
         ty: TypeExpr,
         line: usize,
     },
     Call {
-        callee: Box<Expr>,
-        args: Vec<Expr>,
+        callee: ExprId,
+        args: Vec<ExprId>,
         line: usize,
     },
     MethodCall {
-        receiver: Box<Expr>,
+        receiver: ExprId,
         method_name: String,
-        args: Vec<Expr>,
+        args: Vec<ExprId>,
         line: usize,
     },
     List {
-        elements: Vec<Expr>,
+        elements: Vec<ExprId>,
         line: usize,
     },
     Map {
-        entries: Vec<(Expr, Expr)>,
+        entries: Vec<(ExprId, ExprId)>,
         line: usize,
     },
     StructLiteral {
         struct_name: String,
-        fields: Vec<(String, Expr)>,
+        fields: Vec<(String, ExprId)>,
         // Parallel to `fields` (index-aligned) — the (line, column) of each field *name* at
         // this construction site, e.g. `x` in `Point { x: 1, y: 2 }`. Kept separate from
         // `fields` itself rather than widening its tuple, since `fields` is destructured by
@@ -356,13 +506,13 @@ pub enum Expr {
     EnumConstruct {
         enum_name: String,
         variant_name: String,
-        data: Option<Box<Expr>>,
+        data: Option<ExprId>,
         line: usize,
         // column of `variant_name` (line is already the variant name's own line).
         column: usize,
     },
     FieldAccess {
-        receiver: Box<Expr>,
+        receiver: ExprId,
         field: String,
         line: usize,
         // line/column of `field` itself (not the receiver) — for LSP semantic "property" tokens.
@@ -370,12 +520,12 @@ pub enum Expr {
         field_column: usize,
     },
     Index {
-        base: Box<Expr>,
-        index: Box<Expr>,
+        base: ExprId,
+        index: ExprId,
         line: usize,
     },
     Propagate {
-        expr: Box<Expr>,
+        expr: ExprId,
         line: usize,
     },
 }
@@ -384,7 +534,7 @@ impl Expr {
     /// The direct sub-expressions of `self`, in evaluation order — the one definition of the
     /// expression tree's shape that analyses walking it (linters, the LSP, the parser's own
     /// checks) share instead of each re-listing every variant.
-    pub fn children(&self) -> Vec<&Expr> {
+    pub fn children(&self) -> Vec<ExprId> {
         match self {
             Expr::Number(_)
             | Expr::String(_)
@@ -396,7 +546,7 @@ impl Expr {
             | Expr::Unary { expr: e, .. }
             | Expr::Cast { expr: e, .. }
             | Expr::Propagate { expr: e, .. }
-            | Expr::FieldAccess { receiver: e, .. } => vec![e],
+            | Expr::FieldAccess { receiver: e, .. } => vec![*e],
             Expr::If {
                 cond,
                 then_expr,
@@ -404,25 +554,107 @@ impl Expr {
                 else_expr,
                 ..
             } => {
-                let mut out = vec![&**cond, &**then_expr];
+                let mut out = vec![*cond, *then_expr];
                 for (c, e) in else_if {
-                    out.push(c);
-                    out.push(e);
+                    out.push(*c);
+                    out.push(*e);
                 }
-                out.extend(else_expr.as_deref());
+                out.extend(*else_expr);
                 out
             }
-            Expr::Binary { left, right, .. } => vec![left, right],
-            Expr::Index { base, index, .. } => vec![base, index],
-            Expr::Call { callee, args, .. } => std::iter::once(&**callee).chain(args).collect(),
-            Expr::MethodCall { receiver, args, .. } => {
-                std::iter::once(&**receiver).chain(args).collect()
-            }
-            Expr::List { elements, .. } => elements.iter().collect(),
-            Expr::Map { entries, .. } => entries.iter().flat_map(|(k, v)| [k, v]).collect(),
-            Expr::StructLiteral { fields, .. } => fields.iter().map(|(_, e)| e).collect(),
-            Expr::EnumConstruct { data, .. } => data.as_deref().into_iter().collect(),
+            Expr::Binary { left, right, .. } => vec![*left, *right],
+            Expr::Index { base, index, .. } => vec![*base, *index],
+            Expr::Call { callee, args, .. } => std::iter::once(*callee)
+                .chain(args.iter().copied())
+                .collect(),
+            Expr::MethodCall { receiver, args, .. } => std::iter::once(*receiver)
+                .chain(args.iter().copied())
+                .collect(),
+            Expr::List { elements, .. } => elements.clone(),
+            Expr::Map { entries, .. } => entries.iter().flat_map(|(k, v)| [*k, *v]).collect(),
+            Expr::StructLiteral { fields, .. } => fields.iter().map(|(_, e)| *e).collect(),
+            Expr::EnumConstruct { data, .. } => data.iter().copied().collect(),
         }
+    }
+
+    /// `self` with every child id replaced by `f(id)` (the shape `children` lists, in the same
+    /// order).
+    pub fn map_children(&self, mut f: impl FnMut(ExprId) -> ExprId) -> Expr {
+        let mut node = self.clone();
+        match &mut node {
+            Expr::Number(_)
+            | Expr::String(_)
+            | Expr::Bool(_)
+            | Expr::Char(_)
+            | Expr::Ident { .. }
+            | Expr::Hamna => {}
+            Expr::Group(e)
+            | Expr::Unary { expr: e, .. }
+            | Expr::Cast { expr: e, .. }
+            | Expr::Propagate { expr: e, .. }
+            | Expr::FieldAccess { receiver: e, .. } => *e = f(*e),
+            Expr::If {
+                cond,
+                then_expr,
+                else_if,
+                else_expr,
+                ..
+            } => {
+                *cond = f(*cond);
+                *then_expr = f(*then_expr);
+                for (c, e) in else_if {
+                    *c = f(*c);
+                    *e = f(*e);
+                }
+                if let Some(e) = else_expr {
+                    *e = f(*e);
+                }
+            }
+            Expr::Binary {
+                left: a, right: b, ..
+            }
+            | Expr::Index {
+                base: a, index: b, ..
+            } => {
+                *a = f(*a);
+                *b = f(*b);
+            }
+            Expr::Call {
+                callee: head, args, ..
+            }
+            | Expr::MethodCall {
+                receiver: head,
+                args,
+                ..
+            } => {
+                *head = f(*head);
+                for a in args {
+                    *a = f(*a);
+                }
+            }
+            Expr::List { elements, .. } => {
+                for e in elements {
+                    *e = f(*e);
+                }
+            }
+            Expr::Map { entries, .. } => {
+                for (k, v) in entries {
+                    *k = f(*k);
+                    *v = f(*v);
+                }
+            }
+            Expr::StructLiteral { fields, .. } => {
+                for (_, e) in fields {
+                    *e = f(*e);
+                }
+            }
+            Expr::EnumConstruct { data, .. } => {
+                if let Some(e) = data {
+                    *e = f(*e);
+                }
+            }
+        }
+        node
     }
 }
 

@@ -8,6 +8,8 @@ pub(crate) struct Parser<'a> {
     pub(crate) pos: usize,
     pub(crate) errors: Vec<Diagnostic>,
     pub(crate) depth: usize,
+    /// The module's expression arena, filled as expressions are parsed.
+    pub(crate) exprs: crate::Exprs,
 }
 
 impl<'a> Parser<'a> {
@@ -17,6 +19,7 @@ impl<'a> Parser<'a> {
             pos: 0,
             errors: Vec::new(),
             depth: 0,
+            exprs: crate::Exprs::default(),
         }
     }
 

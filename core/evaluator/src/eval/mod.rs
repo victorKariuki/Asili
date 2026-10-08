@@ -5,7 +5,7 @@ pub(crate) mod methods;
 pub(crate) mod ops;
 mod stmt;
 
-use asili_parser::{Block, Expr, Module, Param};
+use asili_parser::{Block, ExprId, Module, Param};
 
 use crate::runtime::{Runtime, MAX_CALL_DEPTH};
 use crate::value::{EvalError, EvalOut, Value};
@@ -84,7 +84,7 @@ pub(crate) fn eval_block_in_env(block: &Block, rt: &mut Runtime<'_>) -> Result<E
 }
 
 pub fn eval_expr(
-    expr: &Expr,
+    expr: ExprId,
     env: &mut crate::env::Env,
     module: &Module,
 ) -> Result<crate::value::Value, EvalError> {
@@ -93,7 +93,7 @@ pub fn eval_expr(
 }
 
 pub(crate) fn eval_expr_impl(
-    expr: &Expr,
+    expr: ExprId,
     rt: &mut Runtime<'_>,
 ) -> Result<crate::value::Value, EvalError> {
     rt.count_expression();

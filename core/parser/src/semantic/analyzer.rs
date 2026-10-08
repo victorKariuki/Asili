@@ -2,7 +2,7 @@ use asili_diagnostics::{ContextMap, Diagnostic, Span};
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    AssignOp, Attribute, BinaryOp, Block, Expr, FnContract, ForMode, Function, ImplDecl,
+    AssignOp, Attribute, BinaryOp, Block, Expr, ExprId, FnContract, ForMode, Function, ImplDecl,
     ImportPath, Module, Pattern, Stmt, TypeExpr, UnaryOp, ValueType,
 };
 
@@ -114,8 +114,8 @@ impl<'a> Analyzer<'a> {
     /// instead); indexing a `Kamusi<K, V>` yields `V`.
     fn check_index(
         &mut self,
-        base: &Expr,
-        index: &Expr,
+        base: ExprId,
+        index: ExprId,
         line: usize,
         scopes: &mut Vec<HashMap<String, Binding>>,
     ) -> (ValueType, bool) {
@@ -145,47 +145,32 @@ impl<'a> Analyzer<'a> {
         }
     }
 
-    fn collect_idents_from_expr(expr: &Expr) -> Vec<String> {
-        match expr {
-            Expr::Ident { name: n, .. } => vec![n.clone()],
-            Expr::Group(e) => Self::collect_idents_from_expr(e),
-            Expr::Unary { expr: e, .. } => Self::collect_idents_from_expr(e),
-            Expr::Binary { left, right, .. } => {
-                let mut v = Self::collect_idents_from_expr(left);
-                v.extend(Self::collect_idents_from_expr(right));
-                v
-            }
-            Expr::Index { base, index, .. } => {
-                let mut v = Self::collect_idents_from_expr(base);
-                v.extend(Self::collect_idents_from_expr(index));
-                v
-            }
-            Expr::Call { callee, args, .. } => {
-                let mut v = Self::collect_idents_from_expr(callee);
-                for a in args {
-                    v.extend(Self::collect_idents_from_expr(a));
+    /// Names an expression reads, in source order, through the sub-expressions whose value can
+    /// flow into it (an explicit worklist).
+    fn collect_idents_from_expr(&self, expr: ExprId) -> Vec<String> {
+        let mut names = Vec::new();
+        let mut work = vec![expr];
+        while let Some(e) = work.pop() {
+            let next: Vec<ExprId> = match &self.module[e] {
+                Expr::Ident { name, .. } => {
+                    names.push(name.clone());
+                    continue;
                 }
-                v
-            }
-            Expr::MethodCall { receiver, args, .. } => {
-                let mut v = Self::collect_idents_from_expr(receiver);
-                for a in args {
-                    v.extend(Self::collect_idents_from_expr(a));
-                }
-                v
-            }
-            Expr::Propagate { expr: e, .. } => Self::collect_idents_from_expr(e),
-            Expr::FieldAccess { receiver, .. } => Self::collect_idents_from_expr(receiver),
-            Expr::StructLiteral { fields, .. } => {
-                let mut v = Vec::new();
-                for (_, e) in fields {
-                    v.extend(Self::collect_idents_from_expr(e));
-                }
-                v
-            }
-            Expr::Cast { expr: e, .. } => Self::collect_idents_from_expr(e),
-            _ => vec![],
+                Expr::Group(e)
+                | Expr::Unary { expr: e, .. }
+                | Expr::Propagate { expr: e, .. }
+                | Expr::FieldAccess { receiver: e, .. }
+                | Expr::Cast { expr: e, .. } => vec![*e],
+                node @ (Expr::Binary { .. }
+                | Expr::Index { .. }
+                | Expr::Call { .. }
+                | Expr::MethodCall { .. }
+                | Expr::StructLiteral { .. }) => node.children(),
+                _ => continue,
+            };
+            work.extend(next.into_iter().rev());
         }
+        names
     }
 
     fn mark_tokeo_consumed(&mut self, scopes: &[HashMap<String, Binding>], idents: &[String]) {
@@ -603,7 +588,7 @@ impl<'a> Analyzer<'a> {
                 line,
                 ..
             } => {
-                let inferred = self.check_expr(value, scopes, UseMode::Return);
+                let inferred = self.check_expr(*value, scopes, UseMode::Return);
                 let declared = ty
                     .as_ref()
                     .map(|t| self.type_from_decl(&t.name))
@@ -640,7 +625,7 @@ impl<'a> Analyzer<'a> {
                 line,
                 ..
             } => {
-                let value_ty = self.check_expr(value, scopes, UseMode::Move);
+                let value_ty = self.check_expr(*value, scopes, UseMode::Move);
                 match pattern {
                     Pattern::Jozi(first, second) => {
                         if let ValueType::Jozi(first_ty, second_ty) = value_ty {
@@ -667,7 +652,7 @@ impl<'a> Analyzer<'a> {
                 line,
                 ..
             } => {
-                let rhs_ty = self.check_expr(value, scopes, UseMode::Return);
+                let rhs_ty = self.check_expr(*value, scopes, UseMode::Return);
                 let mut found = false;
                 for scope in scopes.iter_mut().rev() {
                     if let Some(b) = scope.get_mut(name) {
@@ -759,7 +744,7 @@ impl<'a> Analyzer<'a> {
                 else_block,
                 line,
             } => {
-                let ty = self.check_expr(cond, scopes, UseMode::Move);
+                let ty = self.check_expr(*cond, scopes, UseMode::Move);
                 if ty != ValueType::Ukweli {
                     self.errors.push(
                         Diagnostic::new("SEM020", "sharti la ikiwa lazima liwe Ukweli")
@@ -769,7 +754,7 @@ impl<'a> Analyzer<'a> {
                 }
                 self.check_block(then_block, scopes, return_type, false);
                 for (c, b) in else_if {
-                    let ty = self.check_expr(c, scopes, UseMode::Move);
+                    let ty = self.check_expr(*c, scopes, UseMode::Move);
                     if ty != ValueType::Ukweli {
                         self.errors.push(
                             Diagnostic::new("SEM021", "sharti la au_ikiwa lazima liwe Ukweli")
@@ -789,7 +774,7 @@ impl<'a> Analyzer<'a> {
                 body,
                 line,
             } => {
-                let ty = self.check_expr(cond, scopes, UseMode::Move);
+                let ty = self.check_expr(*cond, scopes, UseMode::Move);
                 if ty != ValueType::Ukweli {
                     self.errors.push(
                         Diagnostic::new("SEM022", "sharti la wakati lazima liwe Ukweli")
@@ -810,7 +795,7 @@ impl<'a> Analyzer<'a> {
             } => {
                 let var_ty = match mode {
                     ForMode::InExpr(expr) => {
-                        let iter_ty = self.check_expr(expr, scopes, UseMode::BorrowImm);
+                        let iter_ty = self.check_expr(*expr, scopes, UseMode::BorrowImm);
                         match iter_ty {
                             ValueType::Orodha(inner) => *inner,
                             ValueType::Kamusi(k, v) => ValueType::Jozi(k, v),
@@ -818,8 +803,8 @@ impl<'a> Analyzer<'a> {
                         }
                     }
                     ForMode::Range { start, end } => {
-                        let st = self.check_expr(start, scopes, UseMode::Move);
-                        let en = self.check_expr(end, scopes, UseMode::Move);
+                        let st = self.check_expr(*start, scopes, UseMode::Move);
+                        let en = self.check_expr(*end, scopes, UseMode::Move);
                         if st != ValueType::Namba || en != ValueType::Namba {
                             self.errors.push(
                                 Diagnostic::new("SEM048", "kwa kutoka/hadi inahitaji Namba")
@@ -870,15 +855,13 @@ impl<'a> Analyzer<'a> {
                 self.loop_depth -= 1;
             }
             Stmt::Match { expr, arms, line } => {
-                let _ = self.check_expr(expr, scopes, UseMode::Move);
-                let idents = Self::collect_idents_from_expr(expr);
+                let _ = self.check_expr(*expr, scopes, UseMode::Move);
+                let idents = self.collect_idents_from_expr(*expr);
                 self.mark_tokeo_consumed(scopes, &idents);
                 for a in arms {
                     scopes.push(HashMap::new());
                     match &a.pattern {
-                        Pattern::Literal(e) => {
-                            let _ = self.check_expr(e, scopes, UseMode::Move);
-                        }
+                        Pattern::Literal(_) => {}
                         Pattern::Enum {
                             enum_name,
                             variant_name,
@@ -1016,7 +999,7 @@ impl<'a> Analyzer<'a> {
             Stmt::Return { value, line } => {
                 let got = value
                     .as_ref()
-                    .map(|e| self.check_expr(e, scopes, UseMode::Return))
+                    .map(|e| self.check_expr(*e, scopes, UseMode::Return))
                     .unwrap_or(ValueType::Tupu);
                 let want = self.type_from_decl(return_type);
                 self.check_type_compatibility(
@@ -1078,14 +1061,14 @@ impl<'a> Analyzer<'a> {
                 }
             }
             Stmt::Expr { expr, .. } => {
-                let _ = self.check_expr(expr, scopes, UseMode::Move);
+                let _ = self.check_expr(*expr, scopes, UseMode::Move);
             }
         }
     }
 
     fn check_expr(
         &mut self,
-        expr: &Expr,
+        expr: ExprId,
         scopes: &mut Vec<HashMap<String, Binding>>,
         mode: UseMode,
     ) -> ValueType {
@@ -1096,17 +1079,19 @@ impl<'a> Analyzer<'a> {
 
     fn check_expr_inner(
         &mut self,
-        expr: &Expr,
+        expr_id: ExprId,
         scopes: &mut Vec<HashMap<String, Binding>>,
         mode: UseMode,
     ) -> ValueType {
+        let module = self.module;
+        let expr = &module[expr_id];
         match expr {
             Expr::Number(_) => ValueType::Namba,
             Expr::String(_) => ValueType::Neno,
             Expr::Bool(_) => ValueType::Ukweli,
             Expr::Char(_) => ValueType::Herufi,
             Expr::Hamna => ValueType::Hamna,
-            Expr::Group(e) => self.check_expr(e, scopes, mode),
+            Expr::Group(e) => self.check_expr(*e, scopes, mode),
             Expr::If {
                 cond,
                 then_expr,
@@ -1114,7 +1099,7 @@ impl<'a> Analyzer<'a> {
                 else_expr,
                 line,
             } => {
-                let cond_ty = self.check_expr(cond, scopes, UseMode::BorrowImm);
+                let cond_ty = self.check_expr(*cond, scopes, UseMode::BorrowImm);
                 if cond_ty != ValueType::Ukweli && cond_ty != ValueType::Unknown {
                     self.errors.push(
                         Diagnostic::new("SEM020", "sharti la ikiwa lazima liwe Ukweli")
@@ -1122,9 +1107,9 @@ impl<'a> Analyzer<'a> {
                             .with_span(*line, 1),
                     );
                 }
-                let result_ty = self.check_expr(then_expr, scopes, mode);
+                let result_ty = self.check_expr(*then_expr, scopes, mode);
                 for (branch_cond, branch_expr) in else_if {
-                    let branch_cond_ty = self.check_expr(branch_cond, scopes, UseMode::BorrowImm);
+                    let branch_cond_ty = self.check_expr(*branch_cond, scopes, UseMode::BorrowImm);
                     if branch_cond_ty != ValueType::Ukweli && branch_cond_ty != ValueType::Unknown {
                         self.errors.push(
                             Diagnostic::new("SEM021", "sharti la au_ikiwa lazima liwe Ukweli")
@@ -1132,7 +1117,7 @@ impl<'a> Analyzer<'a> {
                                 .with_span(*line, 1),
                         );
                     }
-                    let branch_ty = self.check_expr(branch_expr, scopes, mode);
+                    let branch_ty = self.check_expr(*branch_expr, scopes, mode);
                     if !self.compatible(&result_ty, &branch_ty)
                         && result_ty != ValueType::Unknown
                         && branch_ty != ValueType::Unknown
@@ -1145,7 +1130,7 @@ impl<'a> Analyzer<'a> {
                     }
                 }
                 if let Some(branch_expr) = else_expr {
-                    let branch_ty = self.check_expr(branch_expr, scopes, mode);
+                    let branch_ty = self.check_expr(*branch_expr, scopes, mode);
                     if !self.compatible(&result_ty, &branch_ty)
                         && result_ty != ValueType::Unknown
                         && branch_ty != ValueType::Unknown
@@ -1162,24 +1147,24 @@ impl<'a> Analyzer<'a> {
             Expr::Ident { name, .. } => self.use_ident(name, scopes, mode),
             Expr::Unary { op, expr, line } => {
                 let t = match op {
-                    UnaryOp::BorrowImm => self.check_expr(expr, scopes, UseMode::BorrowImm),
-                    UnaryOp::BorrowMut => self.check_expr(expr, scopes, UseMode::BorrowMut),
+                    UnaryOp::BorrowImm => self.check_expr(*expr, scopes, UseMode::BorrowImm),
+                    UnaryOp::BorrowMut => self.check_expr(*expr, scopes, UseMode::BorrowMut),
                     // `jaribu b[i]` on an `Orodha`: the element (out of range aborts).
-                    UnaryOp::Jaribu => match &**expr {
+                    UnaryOp::Jaribu => match &module[*expr] {
                         Expr::Index {
                             base,
                             index,
                             line: index_line,
                         } => {
-                            let (t, is_list) = self.check_index(base, index, *index_line, scopes);
+                            let (t, is_list) = self.check_index(*base, *index, *index_line, scopes);
                             if is_list {
                                 return t;
                             }
                             t
                         }
-                        _ => self.check_expr(expr, scopes, UseMode::Move),
+                        _ => self.check_expr(*expr, scopes, UseMode::Move),
                     },
-                    _ => self.check_expr(expr, scopes, UseMode::Move),
+                    _ => self.check_expr(*expr, scopes, UseMode::Move),
                 };
                 match op {
                     UnaryOp::Neg => {
@@ -1234,8 +1219,8 @@ impl<'a> Analyzer<'a> {
                 right,
                 line,
             } => {
-                let l = self.check_expr(left, scopes, UseMode::BorrowImm);
-                let r = self.check_expr(right, scopes, UseMode::BorrowImm);
+                let l = self.check_expr(*left, scopes, UseMode::BorrowImm);
+                let r = self.check_expr(*right, scopes, UseMode::BorrowImm);
                 // Namba_Kuu/Namba_Sahihi arithmetic widens the same way the evaluator's
                 // big_numeric_binary_op does at runtime: Namba paired with either widens to
                 // match; Namba_Kuu paired with Namba_Sahihi promotes to Namba_Sahihi. Checked
@@ -1388,7 +1373,7 @@ impl<'a> Analyzer<'a> {
                 }
             }
             Expr::Cast { expr, ty, .. } => {
-                let source = self.check_expr(expr, scopes, UseMode::Move);
+                let source = self.check_expr(*expr, scopes, UseMode::Move);
                 let target = self.type_from_decl(&ty.name);
                 let s = ty.name.replace(' ', "");
                 // Fallible: Biti*/uBiti* (may not fit the fixed width), and Namba_Kuu/
@@ -1405,7 +1390,7 @@ impl<'a> Analyzer<'a> {
                 }
             }
             Expr::Call { callee, args, line } => {
-                let callee_name = if let Expr::Ident { name: n, .. } = &**callee {
+                let callee_name = if let Expr::Ident { name: n, .. } = &module[*callee] {
                     Some(n.clone())
                 } else {
                     None
@@ -1413,13 +1398,13 @@ impl<'a> Analyzer<'a> {
                 let callee_ty = if callee_name.is_some() {
                     ValueType::Unknown
                 } else {
-                    self.check_expr(callee, scopes, UseMode::Move)
+                    self.check_expr(*callee, scopes, UseMode::Move)
                 };
                 if let Some(name) = callee_name {
                     if let Some(f) = self.fn_map.get(&name).cloned() {
                         let use_mode = UseMode::BorrowImm;
                         for a in args {
-                            let _ = self.check_expr(a, scopes, use_mode);
+                            let _ = self.check_expr(*a, scopes, use_mode);
                         }
                         if f.params.len() != args.len() {
                             self.errors.push(
@@ -1432,7 +1417,7 @@ impl<'a> Analyzer<'a> {
                             );
                         } else {
                             for (arg, param) in args.iter().zip(f.params.iter()) {
-                                if let Expr::Ident { name: n, .. } = arg {
+                                if let Expr::Ident { name: n, .. } = &module[*arg] {
                                     let pt = self.type_from_decl(&param.ty.name);
                                     if matches!(pt, ValueType::Tokeo(_, _)) {
                                         self.mark_tokeo_consumed(scopes, std::slice::from_ref(n));
@@ -1459,7 +1444,7 @@ impl<'a> Analyzer<'a> {
                         // Evaluate all arg types upfront for both validation and generic instantiation.
                         let arg_types: Vec<ValueType> = args
                             .iter()
-                            .map(|a| self.check_expr(a, scopes, UseMode::Move))
+                            .map(|a| self.check_expr(*a, scopes, UseMode::Move))
                             .collect();
                         if !variadic && sig.params.len() != arg_types.len() {
                             self.errors.push(
@@ -1486,7 +1471,7 @@ impl<'a> Analyzer<'a> {
                                         .with_span(*line, 1),
                                     );
                                 }
-                                if let Expr::Ident { name: n, .. } = &args[idx] {
+                                if let Expr::Ident { name: n, .. } = &module[args[idx]] {
                                     if matches!(want, ValueType::Tokeo(_, _)) {
                                         self.mark_tokeo_consumed(scopes, std::slice::from_ref(n));
                                     }
@@ -1543,7 +1528,7 @@ impl<'a> Analyzer<'a> {
                 args,
                 line,
             } => {
-                let receiver_ty = self.check_expr(receiver, scopes, UseMode::BorrowImm);
+                let receiver_ty = self.check_expr(*receiver, scopes, UseMode::BorrowImm);
                 let receiver_ty_name = match &receiver_ty {
                     ValueType::Struct(name) => name.clone(),
                     ValueType::Neno => "Neno".to_string(),
@@ -1600,7 +1585,7 @@ impl<'a> Analyzer<'a> {
                 );
                 if is_builtin {
                     for arg in args {
-                        let _ = self.check_expr(arg, scopes, UseMode::Move);
+                        let _ = self.check_expr(*arg, scopes, UseMode::Move);
                     }
                     return match (receiver_ty, method_name.as_str()) {
                         (ValueType::Neno, "clona") => ValueType::Neno,
@@ -1747,14 +1732,14 @@ impl<'a> Analyzer<'a> {
                             ("Tokeo", "ni_kosa" | "ni_sawa") => Some(ValueType::Ukweli),
                             ("Tokeo", "kosa" | "angu") => {
                                 for arg in args {
-                                    let _ = self.check_expr(arg, scopes, UseMode::Move);
+                                    let _ = self.check_expr(*arg, scopes, UseMode::Move);
                                 }
                                 Some(ValueType::TypeVar("T".to_string()))
                             }
                             ("Chaguo", "ni_po" | "ni_tupu") => Some(ValueType::Ukweli),
                             ("Chaguo", "angu" | "hakikisha") => {
                                 for arg in args {
-                                    let _ = self.check_expr(arg, scopes, UseMode::Move);
+                                    let _ = self.check_expr(*arg, scopes, UseMode::Move);
                                 }
                                 Some(ValueType::TypeVar("T".to_string()))
                             }
@@ -1795,7 +1780,7 @@ impl<'a> Analyzer<'a> {
 
                 // Type check arguments
                 for (i, arg) in args.iter().enumerate() {
-                    let arg_ty = self.check_expr(arg, scopes, UseMode::Move);
+                    let arg_ty = self.check_expr(*arg, scopes, UseMode::Move);
                     let param_ty = self.type_from_decl(&func.params[i + 1].ty.name);
                     self.check_type_compatibility(
                         &param_ty,
@@ -1852,7 +1837,7 @@ impl<'a> Analyzer<'a> {
                             .with_span(*line, 1),
                         );
                     }
-                    let ft = self.check_expr(fexpr, scopes, UseMode::Move);
+                    let ft = self.check_expr(*fexpr, scopes, UseMode::Move);
                     if let Some((_, Some(ref fty))) = st.fields.iter().find(|(n, _)| n == fname) {
                         let want = self.type_from_decl(&fty.name);
                         if !self.compatible(&want, &ft) {
@@ -1901,18 +1886,18 @@ impl<'a> Analyzer<'a> {
                     return ValueType::Unknown;
                 }
                 if let Some(d) = data {
-                    let _ = self.check_expr(d, scopes, UseMode::Move);
+                    let _ = self.check_expr(*d, scopes, UseMode::Move);
                 }
                 ValueType::Struct(enum_name.clone())
             }
-            Expr::Index { base, index, line } => self.check_index(base, index, *line, scopes).0,
+            Expr::Index { base, index, line } => self.check_index(*base, *index, *line, scopes).0,
             Expr::FieldAccess {
                 receiver,
                 field,
                 line,
                 ..
             } => {
-                let rec_ty = self.check_expr(receiver, scopes, UseMode::BorrowImm);
+                let rec_ty = self.check_expr(*receiver, scopes, UseMode::BorrowImm);
                 match &rec_ty {
                     ValueType::Struct(name) => {
                         let Some(st) = self.module.structs.iter().find(|s| s.name == *name) else {
@@ -1954,15 +1939,15 @@ impl<'a> Analyzer<'a> {
                     base,
                     index,
                     line: index_line,
-                } = &**expr
+                } = &module[*expr]
                 {
-                    let (t, is_list) = self.check_index(base, index, *index_line, scopes);
+                    let (t, is_list) = self.check_index(*base, *index, *index_line, scopes);
                     if is_list {
                         return t;
                     }
                 }
-                let t = self.check_expr(expr, scopes, UseMode::Move);
-                let idents = Self::collect_idents_from_expr(expr);
+                let t = self.check_expr(*expr, scopes, UseMode::Move);
+                let idents = self.collect_idents_from_expr(*expr);
                 self.mark_tokeo_consumed(scopes, &idents);
                 match t {
                     ValueType::Tokeo(ok, _) => *ok,
@@ -1980,7 +1965,7 @@ impl<'a> Analyzer<'a> {
             Expr::List { elements, line } => {
                 let mut ty = ValueType::Unknown;
                 for e in elements {
-                    let ety = self.check_expr(e, scopes, UseMode::Move);
+                    let ety = self.check_expr(*e, scopes, UseMode::Move);
                     if matches!(ty, ValueType::Unknown) {
                         ty = ety;
                     } else if !self.compatible(&ty, &ety) {
@@ -1997,8 +1982,8 @@ impl<'a> Analyzer<'a> {
                 let mut kty = ValueType::Unknown;
                 let mut vty = ValueType::Unknown;
                 for (k, v) in entries {
-                    let kety = self.check_expr(k, scopes, UseMode::Move);
-                    let vety = self.check_expr(v, scopes, UseMode::Move);
+                    let kety = self.check_expr(*k, scopes, UseMode::Move);
+                    let vety = self.check_expr(*v, scopes, UseMode::Move);
                     if matches!(kty, ValueType::Unknown) {
                         kty = kety.clone();
                     }

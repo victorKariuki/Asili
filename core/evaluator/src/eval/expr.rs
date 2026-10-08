@@ -1,6 +1,6 @@
 //! Expression evaluation and pattern matching.
 
-use asili_parser::{BinaryOp, Expr, Pattern, UnaryOp};
+use asili_parser::{BinaryOp, Expr, ExprId, Pattern, UnaryOp};
 
 use crate::runtime::Runtime;
 use crate::value::{parse_number, EvalError, MapKey, Value};
@@ -9,15 +9,16 @@ use super::methods::{index_element, index_value};
 
 /// `base[index]`; `as_tokeo` for the `b[i]?` / `jaribu b[i]` forms.
 fn eval_index(
-    base: &Expr,
-    index: &Expr,
+    base: ExprId,
+    index: ExprId,
     rt: &mut Runtime<'_>,
     as_tokeo: bool,
 ) -> Result<Value, EvalError> {
     rt.count_index_read();
     let i_val = super::eval_expr_impl(index, rt)?;
     let read = if as_tokeo { index_value } else { index_element };
-    if let Expr::Ident { name, .. } = base {
+    let module = rt.module;
+    if let Expr::Ident { name, .. } = &module[base] {
         if let Some(value) = rt.env.get_ref(name) {
             return read(value, &i_val);
         }
@@ -150,14 +151,16 @@ pub(crate) fn match_pattern(pat: &Pattern, v: &Value, bind: &mut dyn FnMut(&str,
     }
 }
 
-pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value, EvalError> {
+pub(crate) fn eval_expr_inner(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Value, EvalError> {
+    let module = rt.module;
+    let expr = &module[expr];
     match expr {
         Expr::Number(s) => Ok(Value::Namba(parse_number(s))),
         Expr::String(s) => Ok(Value::neno(s.clone())),
         Expr::Bool(b) => Ok(Value::Ukweli(*b)),
         Expr::Char(c) => Ok(Value::Herufi(*c)),
         Expr::Hamna => Ok(Value::Hamna),
-        Expr::Group(e) => super::eval_expr_impl(e, rt),
+        Expr::Group(e) => super::eval_expr_impl(*e, rt),
         Expr::If {
             cond,
             then_expr,
@@ -166,16 +169,16 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             ..
         } => {
             let matches = |value: &Value| matches!(value, Value::Ukweli(true));
-            if matches(&super::eval_expr_impl(cond, rt)?) {
-                super::eval_expr_impl(then_expr, rt)
+            if matches(&super::eval_expr_impl(*cond, rt)?) {
+                super::eval_expr_impl(*then_expr, rt)
             } else {
                 for (branch_cond, branch_expr) in else_if {
-                    if matches(&super::eval_expr_impl(branch_cond, rt)?) {
-                        return super::eval_expr_impl(branch_expr, rt);
+                    if matches(&super::eval_expr_impl(*branch_cond, rt)?) {
+                        return super::eval_expr_impl(*branch_expr, rt);
                     }
                 }
                 match else_expr {
-                    Some(expr) => super::eval_expr_impl(expr, rt),
+                    Some(expr) => super::eval_expr_impl(*expr, rt),
                     None => Ok(Value::Hamna),
                 }
             }
@@ -187,15 +190,15 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
         Expr::List { elements, .. } => {
             let vals: Vec<Value> = elements
                 .iter()
-                .map(|e| super::eval_expr_impl(e, rt))
+                .map(|e| super::eval_expr_impl(*e, rt))
                 .collect::<Result<_, _>>()?;
             Ok(Value::list(vals))
         }
         Expr::Map { entries, .. } => {
             let mut m = crate::value::Kamusi::default();
             for (k, v) in entries {
-                let kval = super::eval_expr_impl(k, rt)?;
-                let vval = super::eval_expr_impl(v, rt)?;
+                let kval = super::eval_expr_impl(*k, rt)?;
+                let vval = super::eval_expr_impl(*v, rt)?;
                 let key = MapKey::try_from_value(&kval)?;
                 m.insert(key, vval);
             }
@@ -218,7 +221,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     .iter()
                     .find(|(n, _)| n == fname)
                     .ok_or_else(|| EvalError::TypeErr(format!("umbo linahitaji uga: {}", fname)))?;
-                flds.push((fname.as_str().into(), super::eval_expr_impl(fexpr, rt)?));
+                flds.push((fname.as_str().into(), super::eval_expr_impl(*fexpr, rt)?));
             }
             Ok(Value::Struct(struct_name.as_str().into(), flds.into()))
         }
@@ -235,7 +238,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 .find(|e| e.name == *enum_name)
                 .ok_or_else(|| EvalError::TypeErr(format!("jenum haijulikani: {}", enum_name)))?;
             let variant_data = if let Some(d) = data {
-                Some(Box::new(super::eval_expr_impl(d, rt)?))
+                Some(Box::new(super::eval_expr_impl(*d, rt)?))
             } else {
                 None
             };
@@ -248,52 +251,52 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
         Expr::FieldAccess {
             receiver, field, ..
         } => {
-            let recv = super::eval_expr_impl(receiver, rt)?;
+            let recv = super::eval_expr_impl(*receiver, rt)?;
             super::methods::field_of(&recv, field)
         }
-        Expr::Index { base, index, .. } => eval_index(base, index, rt, false),
+        Expr::Index { base, index, .. } => eval_index(*base, *index, rt, false),
         Expr::Unary { op, expr, .. } => {
-            let v = match (op, &**expr) {
+            let v = match (op, &module[*expr]) {
                 // `jaribu b[i]`: unwrap the index's `Tokeo`, not a plain element.
                 (UnaryOp::Jaribu, Expr::Index { base, index, .. }) => {
-                    eval_index(base, index, rt, true)?
+                    eval_index(*base, *index, rt, true)?
                 }
-                _ => super::eval_expr_impl(expr, rt)?,
+                _ => super::eval_expr_impl(*expr, rt)?,
             };
             super::ops::unary_value(op, v)
         }
         Expr::Binary {
             left, op, right, ..
         } => {
-            let l = super::eval_expr_impl(left, rt)?;
+            let l = super::eval_expr_impl(*left, rt)?;
             let r = match op {
                 BinaryOp::And => {
                     if let Value::Ukweli(false) = &l {
                         return Ok(Value::Ukweli(false));
                     }
-                    super::eval_expr_impl(right, rt)?
+                    super::eval_expr_impl(*right, rt)?
                 }
                 BinaryOp::Or => {
                     if let Value::Ukweli(true) = &l {
                         return Ok(Value::Ukweli(true));
                     }
-                    super::eval_expr_impl(right, rt)?
+                    super::eval_expr_impl(*right, rt)?
                 }
-                _ => super::eval_expr_impl(right, rt)?,
+                _ => super::eval_expr_impl(*right, rt)?,
             };
             super::ops::binary_value(op, &l, &r)
         }
         Expr::Cast { expr, ty, .. } => {
-            let v = super::eval_expr_impl(expr, rt)?;
+            let v = super::eval_expr_impl(*expr, rt)?;
             super::methods::cast_value(v, &ty.name)
         }
         Expr::Call { callee, args, .. } => {
             rt.count_function_call();
             let args_val: Vec<Value> = args
                 .iter()
-                .map(|a| super::eval_expr_impl(a, rt))
+                .map(|a| super::eval_expr_impl(*a, rt))
                 .collect::<Result<_, _>>()?;
-            if let Expr::Ident { name, .. } = &**callee {
+            if let Expr::Ident { name, .. } = &module[*callee] {
                 // `tenda` and the server loops run named `kazi` on other threads, so they need
                 // the program itself (see `builtins::MODULE_BUILTINS`); a tree-walked program
                 // gives its threads a copy of its syntax tree.
@@ -342,7 +345,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             ..
         } => {
             rt.count_method_call();
-            let receiver_name = match &**receiver {
+            let receiver_name = match &module[*receiver] {
                 Expr::Ident { name, .. } => Some(name.as_str()),
                 _ => None,
             };
@@ -376,17 +379,17 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 {
                     let args_val: Vec<Value> = args
                         .iter()
-                        .map(|a| super::eval_expr_impl(a, rt))
+                        .map(|a| super::eval_expr_impl(*a, rt))
                         .collect::<Result<_, _>>()?;
                     if let Some(target) = rt.env.get_mut(name) {
                         return super::methods::mutate(target, method_name, &args_val);
                     }
                 }
             }
-            let recv = super::eval_expr_impl(receiver, rt)?;
+            let recv = super::eval_expr_impl(*receiver, rt)?;
             let args_val: Vec<Value> = args
                 .iter()
-                .map(|a| super::eval_expr_impl(a, rt))
+                .map(|a| super::eval_expr_impl(*a, rt))
                 .collect::<Result<_, _>>()?;
 
             match (&recv, method_name.as_str()) {
@@ -502,10 +505,10 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
             }
         }
         Expr::Propagate { expr, .. } => {
-            let v = match &**expr {
+            let v = match &module[*expr] {
                 // `b[i]?`: an out-of-range index becomes the propagated `Tokeo` error.
-                Expr::Index { base, index, .. } => eval_index(base, index, rt, true)?,
-                _ => super::eval_expr_impl(expr, rt)?,
+                Expr::Index { base, index, .. } => eval_index(*base, *index, rt, true)?,
+                _ => super::eval_expr_impl(*expr, rt)?,
             };
             super::ops::propagate(v)
         }

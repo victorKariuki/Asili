@@ -85,6 +85,7 @@ fn parse_only(src: &str) -> Module {
 fn asb_is_deterministic() {
     use asili_evaluator::emit_asb;
     let module = Module {
+        exprs: Default::default(),
         imports: vec![],
         constants: vec![],
         enums: vec![],
@@ -109,22 +110,20 @@ fn asb_roundtrip() {
 
 #[test]
 fn eval_expr_literals_and_arithmetic() {
-    let module = parse_and_check(
+    let mut module = parse_and_check(
         "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
          kazi add() -> Namba { rejesha 2 + 3 }",
     );
+    let left = module.exprs.add(asili_parser::Expr::Number("2".into()));
+    let right = module.exprs.add(asili_parser::Expr::Number("3".into()));
+    let sum = module.exprs.add(asili_parser::Expr::Binary {
+        left,
+        op: asili_parser::BinaryOp::Add,
+        right,
+        line: 1,
+    });
     let mut env = asili_evaluator::Env::new();
-    let v = eval_expr(
-        &asili_parser::Expr::Binary {
-            left: Box::new(asili_parser::Expr::Number("2".into())),
-            op: asili_parser::BinaryOp::Add,
-            right: Box::new(asili_parser::Expr::Number("3".into())),
-            line: 1,
-        },
-        &mut env,
-        &module,
-    )
-    .expect("eval");
+    let v = eval_expr(sum, &mut env, &module).expect("eval");
     assert_eq!(v, Value::Namba(5.0));
 }
 

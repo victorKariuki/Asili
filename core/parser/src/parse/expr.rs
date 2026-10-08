@@ -11,7 +11,7 @@ use asili_diagnostics::Diagnostic;
 
 use super::{build_binary, strip_string_lexeme_quotes, MAX_NESTING};
 use crate::cursor::Parser;
-use crate::{BinaryOp, Expr, UnaryOp};
+use crate::{BinaryOp, Expr, ExprId, Exprs, UnaryOp};
 
 /// Binding power of each binary operator (higher binds tighter), lowest first: `au`, `na`,
 /// equality, comparison, bitwise or/xor/and, shifts, `+ -`, `* / % //`, `**`. A cast (`kama`)
@@ -152,42 +152,43 @@ impl Open {
 
 /// The machine's registers for one expression.
 struct Machine {
-    operands: Vec<Expr>,
+    operands: Vec<ExprId>,
     frames: Vec<Frame>,
     /// How many `Open` frames are on `frames` (nesting, checked against `MAX_NESTING`).
     open: usize,
 }
 
 impl Machine {
-    fn pop(&mut self) -> Expr {
+    fn pop(&mut self) -> ExprId {
         self.operands
             .pop()
             .expect("an operator always has its operands")
     }
 
     /// Collapse the top frame, a pending operator, into one operand.
-    fn reduce(&mut self) {
+    fn reduce(&mut self, x: &mut Exprs) {
         match self.frames.pop() {
             Some(Frame::Binary { tok, op, line, .. }) => {
                 let right = self.pop();
                 let left = self.pop();
-                self.operands.push(build_binary(tok, op, left, right, line));
+                self.operands
+                    .push(build_binary(x, tok, op, left, right, line));
             }
             Some(Frame::Prefix { op, line }) => {
-                let expr = Box::new(self.pop());
-                self.operands.push(Expr::Unary { op, expr, line });
+                let expr = self.pop();
+                self.operands.push(x.add(Expr::Unary { op, expr, line }));
             }
             _ => unreachable!("only operators are reduced"),
         }
     }
 
     /// Collapse pending operators down to the innermost open bracket (or the bottom).
-    fn reduce_to_open(&mut self) {
+    fn reduce_to_open(&mut self, x: &mut Exprs) {
         while matches!(
             self.frames.last(),
             Some(Frame::Binary { .. } | Frame::Prefix { .. })
         ) {
-            self.reduce();
+            self.reduce(x);
         }
     }
 
@@ -205,7 +206,7 @@ impl Machine {
     }
 
     /// Pop the innermost open bracket with the operands it gathered.
-    fn pop_open(&mut self) -> (Open, Vec<Expr>) {
+    fn pop_open(&mut self) -> (Open, Vec<ExprId>) {
         let Some(Frame::Open { open, base }) = self.frames.pop() else {
             unreachable!("reduce_to_open leaves an open bracket on top");
         };
@@ -215,15 +216,15 @@ impl Machine {
     }
 
     /// Replace the top operand with `wrap(it)` (postfix operators and casts).
-    fn wrap(&mut self, wrap: impl FnOnce(Expr) -> Expr) {
+    fn wrap(&mut self, x: &mut Exprs, wrap: impl FnOnce(ExprId) -> Expr) {
         let top = self.pop();
-        self.operands.push(wrap(top));
+        self.operands.push(x.add(wrap(top)));
     }
 }
 
 impl<'a> Parser<'a> {
     /// Parse one expression. Never recurses: see the module documentation.
-    pub(crate) fn parse_expression(&mut self) -> Option<Expr> {
+    pub(crate) fn parse_expression(&mut self) -> Option<ExprId> {
         let mut m = Machine {
             operands: Vec::new(),
             frames: Vec::new(),
@@ -277,14 +278,10 @@ impl<'a> Parser<'a> {
             if self.match_tok("kama") {
                 let line = self.prev().line;
                 while matches!(m.frames.last(), Some(Frame::Prefix { .. })) {
-                    m.reduce();
+                    m.reduce(&mut self.exprs);
                 }
                 let ty = self.parse_type();
-                m.wrap(|e| Expr::Cast {
-                    expr: Box::new(e),
-                    ty,
-                    line,
-                });
+                m.wrap(&mut self.exprs, |e| Expr::Cast { expr: e, ty, line });
                 postfix_ok = false;
                 continue;
             }
@@ -295,7 +292,7 @@ impl<'a> Parser<'a> {
                     Some(Frame::Binary { prec: p, .. }) => *p >= prec,
                     _ => false,
                 } {
-                    m.reduce();
+                    m.reduce(&mut self.exprs);
                 }
                 m.frames.push(Frame::Binary {
                     tok,
@@ -308,7 +305,7 @@ impl<'a> Parser<'a> {
             }
 
             // Not an operator: a separator or closer of the innermost bracket, or the end.
-            m.reduce_to_open();
+            m.reduce_to_open(&mut self.exprs);
             let Some(expected) = m.innermost().map(Open::expected) else {
                 return Some(m.pop());
             };
@@ -344,20 +341,26 @@ impl<'a> Parser<'a> {
             }
             "kweli" | "si_kweli" | "Hamna" => {
                 self.pos += 1;
-                m.operands.push(match lexeme.as_str() {
-                    "kweli" => Expr::Bool(true),
-                    "si_kweli" => Expr::Bool(false),
-                    _ => Expr::Hamna,
-                });
+                self.push_node(
+                    m,
+                    match lexeme.as_str() {
+                        "kweli" => Expr::Bool(true),
+                        "si_kweli" => Expr::Bool(false),
+                        _ => Expr::Hamna,
+                    },
+                );
                 return Some(true);
             }
             "[" => {
                 self.pos += 1;
                 if self.match_tok("]") {
-                    m.operands.push(Expr::List {
-                        elements: Vec::new(),
-                        line,
-                    });
+                    self.push_node(
+                        m,
+                        Expr::List {
+                            elements: Vec::new(),
+                            line,
+                        },
+                    );
                     return Some(true);
                 }
                 m.push_open(Open::List { line, first: true });
@@ -366,10 +369,13 @@ impl<'a> Parser<'a> {
             "{" => {
                 self.pos += 1;
                 if self.match_tok("}") {
-                    m.operands.push(Expr::Map {
-                        entries: Vec::new(),
-                        line,
-                    });
+                    self.push_node(
+                        m,
+                        Expr::Map {
+                            entries: Vec::new(),
+                            line,
+                        },
+                    );
                     return Some(true);
                 }
                 m.push_open(Open::Map { line, value: false });
@@ -379,14 +385,12 @@ impl<'a> Parser<'a> {
         }
         if let Some(ch) = lexeme.strip_prefix("CHAR:") {
             self.pos += 1;
-            m.operands
-                .push(Expr::Char(ch.chars().next().unwrap_or('\0')));
+            self.push_node(m, Expr::Char(ch.chars().next().unwrap_or('\0')));
             return Some(true);
         }
         if lexeme.starts_with('"') {
             self.pos += 1;
-            m.operands
-                .push(Expr::String(strip_string_lexeme_quotes(&lexeme)));
+            self.push_node(m, Expr::String(strip_string_lexeme_quotes(&lexeme)));
             return Some(true);
         }
         for (prefix, what) in [("0x", "heksadesimali (0x)"), ("0b", "binari (0b)")] {
@@ -416,7 +420,7 @@ impl<'a> Parser<'a> {
                 );
                 return None;
             }
-            m.operands.push(Expr::Number(lexeme));
+            self.push_node(m, Expr::Number(lexeme));
             return Some(true);
         }
         if self.check_ident() {
@@ -428,12 +432,15 @@ impl<'a> Parser<'a> {
                 let second = self.peek_n(2).map(|u| u.lexeme.as_str());
                 if first == Some("}") {
                     self.pos += 2;
-                    m.operands.push(Expr::StructLiteral {
-                        struct_name: lexeme,
-                        fields: Vec::new(),
-                        field_positions: Vec::new(),
-                        line,
-                    });
+                    self.push_node(
+                        m,
+                        Expr::StructLiteral {
+                            struct_name: lexeme,
+                            fields: Vec::new(),
+                            field_positions: Vec::new(),
+                            line,
+                        },
+                    );
                     return Some(true);
                 }
                 if second == Some(":") {
@@ -448,11 +455,14 @@ impl<'a> Parser<'a> {
                     return Some(false);
                 }
             }
-            m.operands.push(Expr::Ident {
-                name: lexeme,
-                line,
-                column,
-            });
+            self.push_node(
+                m,
+                Expr::Ident {
+                    name: lexeme,
+                    line,
+                    column,
+                },
+            );
             return Some(true);
         }
         self.err_here("PAR071", "usemi usiokubalika");
@@ -486,8 +496,8 @@ impl<'a> Parser<'a> {
         if self.match_tok("(") {
             if self.match_tok(")") {
                 let line = self.prev().line;
-                m.wrap(|callee| Expr::Call {
-                    callee: Box::new(callee),
+                m.wrap(&mut self.exprs, |callee| Expr::Call {
+                    callee,
                     args: Vec::new(),
                     line,
                 });
@@ -501,8 +511,8 @@ impl<'a> Parser<'a> {
             let (name, line, field_column) = (name_tok.lexeme, name_tok.line, name_tok.column);
             if self.match_tok("(") {
                 if self.match_tok(")") {
-                    m.wrap(|receiver| Expr::MethodCall {
-                        receiver: Box::new(receiver),
+                    m.wrap(&mut self.exprs, |receiver| Expr::MethodCall {
+                        receiver,
                         method_name: name,
                         args: Vec::new(),
                         line,
@@ -512,8 +522,8 @@ impl<'a> Parser<'a> {
                     return Some(Postfix::Opened);
                 }
             } else {
-                m.wrap(|receiver| Expr::FieldAccess {
-                    receiver: Box::new(receiver),
+                m.wrap(&mut self.exprs, |receiver| Expr::FieldAccess {
+                    receiver,
                     field: name,
                     line,
                     field_line: line,
@@ -528,16 +538,13 @@ impl<'a> Parser<'a> {
         }
         if self.match_tok("?") {
             let line = self.prev().line;
-            m.wrap(|e| Expr::Propagate {
-                expr: Box::new(e),
-                line,
-            });
+            m.wrap(&mut self.exprs, |e| Expr::Propagate { expr: e, line });
             return Some(Postfix::Applied);
         }
         if self.match_tok("::") {
             let Some(Expr::Ident {
                 name: enum_name, ..
-            }) = m.operands.last()
+            }) = m.operands.last().map(|id| &self.exprs[*id])
             else {
                 self.err_here("PAR082", ":: inahitaji jina la jenum");
                 return None;
@@ -555,13 +562,16 @@ impl<'a> Parser<'a> {
                 });
                 return Some(Postfix::Opened);
             } else {
-                m.operands.push(Expr::EnumConstruct {
-                    enum_name,
-                    variant_name: variant.lexeme,
-                    data: None,
-                    line,
-                    column,
-                });
+                self.push_node(
+                    m,
+                    Expr::EnumConstruct {
+                        enum_name,
+                        variant_name: variant.lexeme,
+                        data: None,
+                        line,
+                        column,
+                    },
+                );
             }
             return Some(Postfix::Applied);
         }
@@ -702,11 +712,11 @@ impl<'a> Parser<'a> {
         let (open, mut items) = m.pop_open();
         let closer_line = self.prev().line;
         let node = match open {
-            Open::Group => Expr::Group(Box::new(items.pop().expect("one operand"))),
+            Open::Group => Expr::Group(items.pop().expect("one operand")),
             Open::Call => {
                 let callee = m.pop();
                 Expr::Call {
-                    callee: Box::new(callee),
+                    callee,
                     args: items,
                     line: closer_line,
                 }
@@ -714,7 +724,7 @@ impl<'a> Parser<'a> {
             Open::Method { name, line } => {
                 let receiver = m.pop();
                 Expr::MethodCall {
-                    receiver: Box::new(receiver),
+                    receiver,
                     method_name: name,
                     args: items,
                     line,
@@ -723,8 +733,8 @@ impl<'a> Parser<'a> {
             Open::Index => {
                 let base = m.pop();
                 Expr::Index {
-                    base: Box::new(base),
-                    index: Box::new(items.pop().expect("one operand")),
+                    base,
+                    index: items.pop().expect("one operand"),
                     line: closer_line,
                 }
             }
@@ -736,7 +746,7 @@ impl<'a> Parser<'a> {
             } => Expr::EnumConstruct {
                 enum_name,
                 variant_name: variant,
-                data: Some(Box::new(items.pop().expect("one operand"))),
+                data: Some(items.pop().expect("one operand")),
                 line,
                 column,
             },
@@ -746,7 +756,7 @@ impl<'a> Parser<'a> {
             },
             // `[thamani; idadi]`: `idadi` copies of `thamani` (`orodha_rudia`).
             Open::Repeat { line } => Expr::Call {
-                callee: Box::new(Expr::Ident {
+                callee: self.exprs.add(Expr::Ident {
                     name: "orodha_rudia".to_string(),
                     line,
                     column: 0,
@@ -775,10 +785,10 @@ impl<'a> Parser<'a> {
             },
             Open::If { line, has_else, .. } => {
                 let mut it = items.into_iter();
-                let cond = Box::new(it.next().expect("condition"));
-                let then_expr = Box::new(it.next().expect("value"));
-                let mut rest: Vec<Expr> = it.collect();
-                let else_expr = has_else.then(|| Box::new(rest.pop().expect("else value")));
+                let cond = it.next().expect("condition");
+                let then_expr = it.next().expect("value");
+                let mut rest: Vec<ExprId> = it.collect();
+                let else_expr = has_else.then(|| rest.pop().expect("else value"));
                 let mut else_if = Vec::with_capacity(rest.len() / 2);
                 let mut it = rest.into_iter();
                 while let (Some(c), Some(v)) = (it.next(), it.next()) {
@@ -793,7 +803,13 @@ impl<'a> Parser<'a> {
                 }
             }
         };
-        m.operands.push(node);
+        self.push_node(m, node);
+    }
+
+    /// Add `node` to the arena and push it as an operand.
+    fn push_node(&mut self, m: &mut Machine, node: Expr) {
+        let id = self.exprs.add(node);
+        m.operands.push(id);
     }
 }
 

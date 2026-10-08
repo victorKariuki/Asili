@@ -128,6 +128,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Expressions live in one arena per module**: `Module::exprs` (`Exprs`) holds every
+  expression node contiguously, and a node refers to its children by `ExprId` (a `u32` index)
+  instead of `Box<Expr>`; statements hold the ids of their expressions. Walking, cloning,
+  serializing and dropping expressions is a pass over one array, however deep the nesting. The
+  parser's expression machine pushes finished nodes straight into the arena;
+  `merge_modules` copies imported functions' expressions across (`Exprs::import`, children
+  first, no recursion); `Exprs::descendants` is the one whole-expression walk (pata-lint's
+  unused-local check uses it instead of its own copy of the LSP's walk). Every syntax tree in
+  the 832-snippet corpus is identical to the boxed version once ids are inlined; the
+  tree-walker's speed is unchanged. `.asb` formats bumped (syntax tree 5, bytecode 12).
+
 - **Flat parser**: blocks, expressions and patterns are parsed by non-recursive state machines
   (`core/parser/src/parse/{block,expr,pattern}.rs`) with explicit heap stacks — a precedence
   (Pratt) operator/operand stack for expressions, a frame stack for blocks whose `}` runs the
