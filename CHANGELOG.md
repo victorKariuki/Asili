@@ -128,6 +128,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Flat parser**: blocks, expressions and patterns are parsed by non-recursive state machines
+  (`core/parser/src/parse/{block,expr,pattern}.rs`) with explicit heap stacks — a precedence
+  (Pratt) operator/operand stack for expressions, a frame stack for blocks whose `}` runs the
+  frame's transition (`ikiwa` chains, loops, `linganisha` arms) — instead of ~15 mutually
+  recursive functions. Error recovery is one synchronize step: skip to the next `;` or the `}`
+  closing the current block (over balanced pairs and braces the failed statement opened), so
+  each broken block is reported once and parsing resumes. Every syntax tree in the repository's
+  832 snippets (files, test sources, doc examples) is identical to before; on broken input the
+  first error is unchanged and cascades are gone. Nesting stays capped at 1,000 (`PAR073`) as a
+  policy for the passes that still walk the tree recursively.
+
 - **Native code no longer guesses**: `nguvu` keeps a `Namba` register as `i64` only when the
   range analysis proves it; the ±2^53 speculation guards, deoptimization (`STATUS_DEOPT`) and
   resuming the VM part-way through a call are gone, along with `ASILI_NATIVE_TRACE`. Two new
@@ -334,6 +345,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was not built.
 
 ### Fixed
+
+- **Parser crash at end of input**: source ending mid-expression (`weka x = g(`, `a.`, an
+  unclosed list or `linganisha` arm) indexed past the last token and panicked; it is now a
+  syntax error.
 
 - **Tree-walker call depth**: its `undani mno` limit counted every nested block and expression
   (1,000, about 200 `kazi` calls deep), so deep recursion failed there long before native code's

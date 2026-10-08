@@ -430,3 +430,55 @@ fn one_syntax_error_per_mistake() {
     let errors = parse_tokens(&tokenize(src).unwrap()).unwrap_err();
     assert_eq!(errors.len(), 2, "{errors:?}");
 }
+
+#[test]
+fn deep_nesting_needs_no_machine_stack() {
+    // The parser keeps nesting on heap stacks: 900 nested brackets and 900 nested blocks parse
+    // on a thread with a 512 KiB stack (a recursive descent parser needs megabytes for this).
+    let depth = 900;
+    let expr = format!("{}1{}", "[(".repeat(depth / 2), ")]".repeat(depth / 2));
+    let blocks = format!(
+        "{}weka y = 2{}",
+        "ikiwa kweli {\n".repeat(depth),
+        "}\n".repeat(depth)
+    );
+    let src = format!("kazi kuu(hoja: Orodha<Neno>) -> Tupu {{\n weka x = {expr}\n {blocks}\n}}\n");
+    let parsed = std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(move || {
+            let module = parse_tokens(&tokenize(&src).unwrap()).map(|m| m.functions.len());
+            // Dropping the deep tree is recursive (a property of the tree, not the parser).
+            std::mem::forget(src);
+            module
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    assert_eq!(parsed, Ok(1));
+}
+
+#[test]
+fn recovery_reports_each_broken_block_and_resumes_after_semicolon() {
+    // An error skips to the end of its own block (or the next `;`), not the whole function.
+    let src = "kazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    ikiwa kweli {\n        weka a = 1 +* 2\n        chapisha(a)\n    }\n    weka b = (3\n    chapisha(b)\n}\n\nkazi f() -> Tupu { weka c = +; weka d = 1 +* 2 }\n";
+    let errors = parse_tokens(&tokenize(src).unwrap()).unwrap_err();
+    let codes: Vec<_> = errors.iter().map(|d| d.code).collect();
+    assert_eq!(
+        codes,
+        ["PAR071", "PAR070", "PAR071", "PAR071"],
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn input_ending_mid_expression_is_an_error_not_a_crash() {
+    for src in [
+        "kazi f() -> Tupu { weka x = g(",
+        "kazi f() -> Tupu { weka x = a.",
+        "kazi f() -> Tupu { weka x = [1, ",
+        "kazi f() -> Tupu { linganisha x { Jenum::A(",
+        "kazi f() -> Tupu { weka x = ikiwa a { 1 } vinginevyo",
+    ] {
+        assert!(parse_tokens(&tokenize(src).unwrap()).is_err(), "{src}");
+    }
+}
