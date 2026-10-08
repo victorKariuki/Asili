@@ -176,3 +176,86 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     assert!(out.status.success());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `ASILI_FUATILIA` traces a run on either engine without changing its output; an error is
+/// recorded once, inside the `kazi` it first left; `toka` still flushes the trace.
+#[test]
+fn tracing_records_calls_bindings_builtins_and_errors() {
+    let dir = std::env::temp_dir().join(format!("asili-runner-trace-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let asb = artifact(
+        &dir,
+        r#"
+kazi ndani(n: Namba) -> Namba {
+    weka x: Orodha<Namba> = [n]
+    rejesha x[5]
+}
+
+kazi kuu(hoja: Orodha<Neno>) -> Tupu {
+    weka a = 2
+    chapisha(a kama Neno)
+    ikiwa hoja.urefu() > 0 {
+        toka(4)
+    }
+    chapisha(ndani(a) kama Neno)
+}
+"#,
+    );
+    for aot in ["0", "1"] {
+        let trace = dir.join(format!("trace-{aot}.json"));
+        let out = Command::new(env!("CARGO_BIN_EXE_tenda"))
+            .arg(&asb)
+            .env("ASILI_AOT", aot)
+            .env("ASILI_FUATILIA", format!("json:{}", trace.display()))
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "2\n",
+            "ASILI_AOT={aot}"
+        );
+        assert_ne!(out.status.code(), Some(0));
+        let lines = std::fs::read_to_string(&trace).unwrap();
+        let spans: Vec<&str> = lines
+            .lines()
+            .filter(|l| l.contains("\"kind\":\"span\""))
+            .collect();
+        assert!(
+            spans.iter().any(|l| l.contains("\"name\":\"kuu\"")),
+            "{lines}"
+        );
+        assert!(
+            spans.iter().any(|l| l.contains("\"name\":\"ndani\"")),
+            "{lines}"
+        );
+        let errors = lines
+            .lines()
+            .filter(|l| l.contains("\"name\":\"kosa\""))
+            .count();
+        assert_eq!(errors, 1, "one error event, not one per kazi: {lines}");
+        if aot == "0" {
+            // The tree-walker also sees bindings and builtin calls.
+            assert!(lines.contains("\"name\":\"kigeuzi\""), "{lines}");
+            assert!(lines.contains("\"name\":\"mwito_mfumo\""), "{lines}");
+        }
+    }
+    // `toka` ends the process: the binary trace is still flushed, and decodes.
+    let trace = dir.join("trace.bin");
+    let status = Command::new(env!("CARGO_BIN_EXE_tenda"))
+        .arg(&asb)
+        .arg("x")
+        .env("ASILI_AOT", "0")
+        .env("ASILI_FUATILIA", format!("binari:{}", trace.display()))
+        .stdout(Stdio::null())
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(4));
+    let bytes = std::fs::read(&trace).unwrap();
+    assert_eq!(
+        &bytes[..4],
+        &[0x01, 0x00, 0x00, 0x07],
+        "kuu enters at line 7"
+    );
+    assert!(asili_trace::decode(&bytes).starts_with("└── tukio: kuingia — mstari 7\n"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

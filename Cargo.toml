@@ -4,6 +4,7 @@ members = [
   "core/lexer",
   "core/parser",
   "core/evaluator",
+  "core/trace",
   "pata/core",
   "pata/config",
   "pata/cli",

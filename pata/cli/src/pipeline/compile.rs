@@ -213,10 +213,14 @@ fn parse_and_resolve(
     registry: &mut InterfaceRegistry,
     target: &Target,
 ) -> Result<(Module, ResolvedProgram), CliError> {
-    let tokens = tokenize(source).map_err(|errors| diag_err("leksika", errors))?;
-    let mut entrypoint = parse_tokens(&tokens).map_err(|errors| diag_err("uchanganuzi", errors))?;
+    let mut entrypoint = {
+        let _phase = asili_trace::phase("uchanganuzi");
+        let tokens = tokenize(source).map_err(|errors| diag_err("leksika", errors))?;
+        parse_tokens(&tokens).map_err(|errors| diag_err("uchanganuzi", errors))?
+    };
     filter_module_for_target(&mut entrypoint, target)
         .map_err(|errors| diag_err("sharti", errors))?;
+    let _phase = asili_trace::phase("utatuzi");
     let mut program = resolve_all(&entrypoint, root, dependencies, registry)
         .map_err(|errors| diag_err("utatuzi", errors))?;
     for res in program.resolved.values_mut() {
@@ -236,6 +240,7 @@ fn check_program(
     prelude: &StdlibEnv,
     require_main: bool,
 ) -> Result<(), CliError> {
+    let _phase = asili_trace::phase("semantiki");
     let dup_errors = check_duplicate_imports(entrypoint, &program.resolved, prelude);
     if !dup_errors.is_empty() {
         return Err(diag_err("semantiki", dup_errors));
@@ -436,6 +441,7 @@ pub fn emit_build_artifacts(
     fs::create_dir_all(&target)
         .map_err(|e| CliError::new(format!("imeshindwa kuunda {}: {e}", target.display()), 1))?;
 
+    let bytecode_phase = asili_trace::phase("bytecode");
     let asb = match profile {
         BuildProfile::Dev => emit_asb(&compiled.module, &compiled.source),
         BuildProfile::Release => asili_evaluator::emit_asb_bytecode(&compiled.module, &compiled.source)
@@ -456,7 +462,11 @@ pub fn emit_build_artifacts(
         )
     })?;
 
-    build_native_library(&asb, &target, &compiled.config.name, profile)?;
+    drop(bytecode_phase);
+    {
+        let _phase = asili_trace::phase("msimbo asilia");
+        build_native_library(&asb, &target, &compiled.config.name, profile)?;
+    }
     if profile == BuildProfile::Release {
         write_standalone(&asb, &target, &compiled.config.name)?;
     }

@@ -452,6 +452,7 @@ impl<'a> Parser<'a> {
     ) -> Option<Function> {
         let name_tok = self.consume_ident("PAR001", "kazi haina jina")?;
         let line = name_tok.line;
+        let _span = asili_trace::enter(&name_tok.lexeme, line as u32);
         let column = name_tok.column;
         self.consume("(", "PAR002", "kazi inahitaji '('")?;
         let params = self.parse_params();

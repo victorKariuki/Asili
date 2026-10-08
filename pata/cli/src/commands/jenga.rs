@@ -21,6 +21,8 @@ Chagua:
                      [jenga] lengo katika pata.toml; default "native".
   --workspace-info   Onyesha wanachama wa workspace na urejeshi.
   --muda             Onyesha muda wa kila awamu ya ujenzi (kuchanganua/kutoa).
+  --fuatilia[=namna] Fuatilia ujenzi na utekelezaji: mti (chaguo-msingi), json,
+                     json:<faili> au binari:<faili> (pia ASILI_FUATILIA).
   --msaada           Onyesha ujumbe huu.
 
 Hoja za kuu: Kila neno lisilokuwa chagua linapewa kwa kuu(hoja: Orodha<Neno>).
@@ -226,7 +228,9 @@ pub fn parse_args(
                 i += 1;
             }
             other => {
-                if other.ends_with(".as") && single_file.is_none() {
+                if let Some(traced) = super::trace_flag(other) {
+                    traced?;
+                } else if other.ends_with(".as") && single_file.is_none() {
                     single_file = Some(PathBuf::from(other));
                 } else {
                     program_args.push(other.to_string());

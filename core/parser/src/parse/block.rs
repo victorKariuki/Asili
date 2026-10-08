@@ -54,14 +54,34 @@ enum Kind {
 }
 
 enum Frame {
-    /// Inside `{ ... }`: statements so far.
-    Block { stmts: Vec<Stmt>, kind: Kind },
+    /// Inside `{ ... }`: statements so far, and its trace span (closed with the frame).
+    Block {
+        stmts: Vec<Stmt>,
+        kind: Kind,
+        span: asili_trace::Span,
+    },
     /// Inside `linganisha x { ... }`, between arms.
     Match {
         expr: ExprId,
         arms: Vec<MatchArm>,
         line: usize,
+        span: asili_trace::Span,
     },
+}
+
+impl Kind {
+    /// The construct a block belongs to, as a trace span name.
+    fn name(&self) -> &'static str {
+        match self {
+            Kind::Body => "mwili wa kazi",
+            Kind::IfThen { .. } => "ikiwa",
+            Kind::IfElif { .. } => "au_ikiwa",
+            Kind::IfElse { .. } => "vinginevyo",
+            Kind::While { .. } => "wakati",
+            Kind::For { .. } => "kwa",
+            Kind::Arm { .. } => "mkono wa linganisha",
+        }
+    }
 }
 
 /// What the synchronize state stopped at.
@@ -80,6 +100,7 @@ impl<'a> Parser<'a> {
         let mut frames = vec![Frame::Block {
             stmts: Vec::new(),
             kind: Kind::Body,
+            span: asili_trace::Span::none(),
         }];
         let outer = self.depth;
         let block = self.run_blocks(&mut frames);
@@ -113,6 +134,10 @@ impl<'a> Parser<'a> {
                 Some(Some(body)) => return Some(body),
                 Some(None) => {}
                 None => {
+                    if asili_trace::on() {
+                        let line = self.peek_n(0).map_or(0, |t| t.line as u32);
+                        asili_trace::emit(asili_trace::Tukio::Urejeshaji, "", line);
+                    }
                     if let Synced::Lost = self.synchronize(start) {
                         return None;
                     }
@@ -158,9 +183,16 @@ impl<'a> Parser<'a> {
     /// One `linganisha` step: its closing `}`, or the next arm `pattern => {`.
     fn match_step(&mut self, frames: &mut Vec<Frame>) -> Option<Option<Block>> {
         if self.match_tok("}") {
-            let Some(Frame::Match { expr, arms, line }) = frames.pop() else {
+            let Some(Frame::Match {
+                expr,
+                arms,
+                line,
+                span,
+            }) = frames.pop()
+            else {
                 unreachable!("called on a match frame");
             };
+            drop(span);
             self.emit(frames, Stmt::Match { expr, arms, line });
             return Some(None);
         }
@@ -171,10 +203,12 @@ impl<'a> Parser<'a> {
     }
 
     fn open_block(&mut self, frames: &mut Vec<Frame>, kind: Kind) -> Option<()> {
-        self.consume("{", "PAR020", "kizuizi inahitaji '{'")?;
+        let line = self.consume("{", "PAR020", "kizuizi inahitaji '{'")?.line;
+        let span = asili_trace::enter(kind.name(), line as u32);
         frames.push(Frame::Block {
             stmts: Vec::new(),
             kind,
+            span,
         });
         Some(())
     }
@@ -189,9 +223,10 @@ impl<'a> Parser<'a> {
     /// `}` was just consumed: finish the top block and run its transition. `Some(Some(body))`
     /// when it was the function body.
     fn close_block(&mut self, frames: &mut Vec<Frame>) -> Option<Option<Block>> {
-        let Some(Frame::Block { stmts, kind }) = frames.pop() else {
+        let Some(Frame::Block { stmts, kind, span }) = frames.pop() else {
             unreachable!("called on a block frame");
         };
+        drop(span);
         let block = Block { statements: stmts };
         match kind {
             Kind::Body => return Some(Some(block)),
@@ -347,6 +382,7 @@ impl<'a> Parser<'a> {
                 expr,
                 arms: Vec::new(),
                 line,
+                span: asili_trace::enter("linganisha", line as u32),
             });
             return Some(());
         }

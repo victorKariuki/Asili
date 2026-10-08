@@ -37,8 +37,11 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
     }
 
     match stmt {
-        Stmt::Let { name, value, .. } => {
+        Stmt::Let {
+            name, value, line, ..
+        } => {
             let v = super::eval_expr_impl(*value, rt)?;
+            asili_trace::emit(asili_trace::Tukio::Kigeuzi, name, *line as u32);
             rt.env.define(name, v);
             Ok(EvalOut::Next)
         }

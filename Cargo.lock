@@ -102,6 +102,7 @@ dependencies = [
  "asili-diagnostics",
  "asili-lexer",
  "asili-parser",
+ "asili-trace",
  "bigdecimal",
  "bincode",
  "foldhash 0.2.0",
@@ -142,6 +143,7 @@ version = "0.4.0"
 dependencies = [
  "asili-diagnostics",
  "asili-lexer",
+ "asili-trace",
  "serde",
  "stacker",
 ]
@@ -154,7 +156,12 @@ dependencies = [
  "asili-lexer",
  "asili-mem",
  "asili-parser",
+ "asili-trace",
 ]
+
+[[package]]
+name = "asili-trace"
+version = "0.1.0"
 
 [[package]]
 name = "asili-wasm"
@@ -1273,6 +1280,7 @@ dependencies = [
  "asili-evaluator",
  "asili-lexer",
  "asili-parser",
+ "asili-trace",
  "git2",
  "pata-core",
  "pata-fmt",

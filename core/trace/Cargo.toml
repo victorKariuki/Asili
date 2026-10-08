@@ -1,0 +1,7 @@
+[package]
+name = "asili-trace"
+version = "0.1.0"
+edition = "2021"
+description = "Pata-Trace: one tracing API for the Asili compiler and runtime, with readable, JSON and 4-byte binary outputs"
+
+[dependencies]

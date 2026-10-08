@@ -125,7 +125,7 @@ impl TreeContext {
         let builtins = std::mem::take(&mut self.builtins);
         let mut rt = runtime::Runtime::with_builtins(&mut self.env, module, builtins);
         rt.host = hook;
-        let out = eval::call_body(&mut rt, &f.params, args, &f.body);
+        let out = eval::call_body(&mut rt, f, args);
         self.builtins = std::mem::take(&mut rt.builtins);
         out
     }
@@ -181,8 +181,8 @@ fn run_in_fresh_runtime<T>(
         None => runtime::Runtime::new(&mut env, module),
     };
     setup(&mut rt);
-    let result = seed_module_constants(module, &mut rt)
-        .and_then(|()| eval::call_body(&mut rt, &f.params, args, &f.body));
+    let result =
+        seed_module_constants(module, &mut rt).and_then(|()| eval::call_body(&mut rt, f, args));
     (result, report(rt))
 }
 

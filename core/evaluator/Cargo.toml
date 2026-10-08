@@ -4,6 +4,7 @@ version = "0.4.1"
 edition = "2021"
 
 [dependencies]
+asili-trace = { path = "../trace" }
 asili-diagnostics = { path = "../diagnostics" }
 rand = "0.10"
 asili-parser = { path = "../parser" }

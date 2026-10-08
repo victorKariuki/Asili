@@ -5,6 +5,10 @@ Purpose: build project sources into bytecode or target binary. Optionally displa
 Flags:
 - `--workspace-info`: Display workspace members from `pata.toml`'s `[eneo-kazi]` table and exit
 - `--tenda`: After building, execute `kuu` with any trailing arguments
+- `--fuatilia[=<namna>]`: Trace the build (phases `uchanganuzi`, `utatuzi`, `semantiki`,
+  `bytecode`, `msimbo asilia`, and the parser's blocks) and, with `--tenda`, the run. `<namna>`
+  is `mti` (default), `json`, `json:<faili>`, `mti:<faili>` or `binari:<faili>`; same as
+  `ASILI_FUATILIA`. See `docs/design/tracing.md`.
 - `--pato <path>`: Output directory (default `kilele/`)
 - `--lengo <lengo>`: Build target (default `native`); overrides `pata.toml`'s `[jenga] lengo`
 - `--namna <dev|release>`: Build profile. `dev` (default) is best effort: bytecode whenever

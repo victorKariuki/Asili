@@ -29,6 +29,8 @@ pub(crate) struct Runtime<'a> {
     pub depth: usize,
     /// `kazi` calls in progress (bounded by [`MAX_CALL_DEPTH`]).
     pub calls: usize,
+    /// The error now leaving `kazi` was already traced (by the first one it left).
+    pub error_traced: bool,
     /// Highest depth reached during this run; for telemetry in development.
     pub peak_depth: usize,
     /// Source lines of statements actually executed during this run — real line-level coverage,
@@ -84,6 +86,7 @@ impl<'a> Runtime<'a> {
             builtins: unshadowed(builtins::builtins(), module),
             depth: 0,
             calls: 0,
+            error_traced: false,
             peak_depth: 0,
             executed_lines: None,
             debug_hook: None,
@@ -103,6 +106,7 @@ impl<'a> Runtime<'a> {
             builtins,
             depth: 0,
             calls: 0,
+            error_traced: false,
             peak_depth: 0,
             executed_lines: None,
             debug_hook: None,

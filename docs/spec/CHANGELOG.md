@@ -4,6 +4,9 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Architecture ([02-architecture-and-files.md](02-architecture-and-files.md)): new `core/trace`
+  crate (Pata-Trace) for compiler and runtime tracing. No change to the language.
+
 - Architecture ([02-architecture-and-files.md](02-architecture-and-files.md)): the parser is a set
   of flat state machines (no recursion; one synchronize step for error recovery), and a module's
   expressions live in one arena indexed by `ExprId`. No change to the language.

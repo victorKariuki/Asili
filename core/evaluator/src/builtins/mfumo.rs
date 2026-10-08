@@ -37,6 +37,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
             {
                 crate::platform::flush_stdout();
+                asili_trace::finish();
                 std::process::exit(code);
             }
             #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]

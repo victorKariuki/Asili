@@ -152,6 +152,7 @@ the change. The current single sources:
 | Finding `pata.toml` / reading tool sections | the `pata-config` crate |
 | LSP raw-source scanning | `pata/lsp/src/scan.rs::code_chars` |
 | `pata-cli` test fixtures | `pata/cli/src/test_support.rs` |
+| Tracing (events, spans, output formats) | the `asili-trace` crate (`emit`/`enter`/`phase`; sinks chosen by `install_spec`) |
 
 Hand-maintained mirrors that cannot share code (the VS Code TextMate grammar, the playground
 highlighter, `lib/std/*.asi` stubs, `extension.ts`'s `findProjectRoot`) must be updated in the

@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Tracing (Pata-Trace)**: a new `asili-trace` crate gives the compiler and runtime one API
+  (`emit`, `enter` spans, `phase` spans) and three outputs chosen at start-up with
+  `ASILI_FUATILIA` or `--fuatilia[=namna]` (`pata jenga`, `pata tenda`): `mti`, an indented tree
+  with Swahili labels and span durations; `json`, OpenTelemetry-shaped spans and events, one per
+  line; `binari:<faili>`, fixed 4-byte frames (event id, depth, source line) that
+  `pata fuatilia <faili>` decodes back into the tree. Traced: build phases and the parser's
+  blocks and recovery; `kazi` calls, bindings, builtin calls and errors (once, where they first
+  leave a `kazi`) on the tree-walker; calls, builtin calls and errors through native code's host.
+  Off by default, at one atomic load per hook: every benchmark is within noise. Design and
+  limits in `docs/design/tracing.md`.
+
 - **Separators**: `;` may separate statements (`weka a = 1; weka b = 2`), never required; a
   trailing comma is allowed in every comma-separated list (list and map literals, call
   arguments, parameters, `umbo` fields, `jenum` variants); `[thamani; idadi]` builds `idadi`

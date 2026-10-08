@@ -33,6 +33,7 @@ fn invoke_named_callback(
     args: &[Value],
 ) -> Result<Value, EvalError> {
     if let Some(f) = rt.builtins.get(name) {
+        asili_trace::emit(asili_trace::Tukio::MwitoMfumo, name, 0);
         return f(args);
     }
     if let Some(hook) = rt.host {
@@ -44,7 +45,7 @@ fn invoke_named_callback(
     let Some(f) = module.functions.iter().find(|x| x.name == name) else {
         return Err(EvalError::TypeErr(format!("kazi haijulikani: {name}")));
     };
-    super::call_body(rt, &f.params, args.iter().cloned(), &f.body)
+    super::call_body(rt, f, args.iter().cloned())
 }
 
 /// Whether `v` matches `pat`, binding the pattern's names in the tree-walker's current scope.
@@ -290,7 +291,9 @@ pub(crate) fn eval_expr_inner(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Valu
             let v = super::eval_expr_impl(*expr, rt)?;
             super::methods::cast_value(v, &ty.name)
         }
-        Expr::Call { callee, args, .. } => {
+        Expr::Call {
+            callee, args, line, ..
+        } => {
             rt.count_function_call();
             let args_val: Vec<Value> = args
                 .iter()
@@ -317,6 +320,7 @@ pub(crate) fn eval_expr_inner(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Valu
                     };
                 }
                 if let Some(f) = rt.builtins.get(name) {
+                    asili_trace::emit(asili_trace::Tukio::MwitoMfumo, name, *line as u32);
                     return f(&args_val);
                 }
                 // Mixed mode: a `kazi` that is native code goes back to it.
@@ -329,7 +333,7 @@ pub(crate) fn eval_expr_inner(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Valu
                 // for the body — no clone of the function's AST per call.
                 let module = rt.module;
                 if let Some(f) = module.functions.iter().find(|x| x.name == *name) {
-                    return super::call_body(rt, &f.params, args_val, &f.body);
+                    return super::call_body(rt, f, args_val);
                 }
                 // Not found as builtin or module function.
                 return Err(EvalError::UndefinedVar(name.clone()));
@@ -460,26 +464,25 @@ pub(crate) fn eval_expr_inner(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Valu
                         }
                     }
                     let args = std::iter::once(recv.clone()).chain(args_val);
-                    super::call_body(rt, &method.params, args, &method.body)
+                    super::call_body(rt, method, args)
                 }
                 // Built-in methods on Tokeo-as-Enum (e.g. Tokeo::Sawa(x).ni_kosa())
                 (Value::Enum(enum_name, _, _), _) => {
-                    let method = rt
-                        .module
+                    let module = rt.module;
+                    let method = module
                         .impls
                         .iter()
                         .filter(|i| i.target == *enum_name && i.trait_name.is_none())
                         .flat_map(|i| i.body.iter())
                         .find(|mf| mf.name == *method_name)
                         .or_else(|| {
-                            rt.module
+                            module
                                 .impls
                                 .iter()
                                 .filter(|i| i.target == *enum_name && i.trait_name.is_some())
                                 .flat_map(|i| i.body.iter())
                                 .find(|mf| mf.name == *method_name)
                         })
-                        .cloned()
                         .ok_or_else(|| {
                             let has_any_impl =
                                 rt.module.impls.iter().any(|i| i.target == *enum_name);
@@ -497,7 +500,7 @@ pub(crate) fn eval_expr_inner(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Valu
                         })?;
 
                     let args = std::iter::once(recv.clone()).chain(args_val);
-                    super::call_body(rt, &method.params, args, &method.body)
+                    super::call_body(rt, method, args)
                 }
                 _ => Err(EvalError::TypeErr(format!(
                     "mwito wa njia '{method_name}' unahitaji Neno, Orodha, jenum au umbo"

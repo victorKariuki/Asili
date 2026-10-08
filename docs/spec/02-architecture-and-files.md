@@ -57,6 +57,9 @@ The repository follows a Linux-kernel–style modular layout. Each directory is 
   evaluator. All engines share one implementation of operators, methods, casts
   and iteration (`eval/ops.rs`, `eval/methods.rs`). Integration tests live in `tests/`.
 - **diagnostics/** — The "Mwalimu" error reporting system (Context Map).
+- **trace/** — Pata-Trace: one tracing API (`emit`, `enter`, `phase`) for the compiler and
+  runtime, with readable-tree, OpenTelemetry-shaped JSON and 4-byte binary outputs, chosen at
+  start-up (`ASILI_FUATILIA`, `--fuatilia`). See `docs/design/tracing.md`.
 
 ### /driver (Mfumo)
 

@@ -9,6 +9,7 @@ name = "tenda"
 path = "src/main.rs"
 
 [dependencies]
+asili-trace = { path = "../../core/trace" }
 asili-evaluator = { path = "../../core/evaluator" }
 asili-mem = { path = "mem" }
 

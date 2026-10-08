@@ -1,3 +1,4 @@
+pub mod fuatilia;
 pub mod jaribu;
 pub mod jenga;
 pub mod mwalimu;
@@ -35,6 +36,16 @@ impl From<pata_core::Error> for CliError {
 
 pub type CliResult = Result<(), CliError>;
 
+/// `--fuatilia` / `--fuatilia=<namna>`: trace this command (`mti` unless a format is named; see
+/// `asili_trace::install_spec`). `None` when `arg` is not the flag.
+pub(crate) fn trace_flag(arg: &str) -> Option<CliResult> {
+    let spec = match arg {
+        "--fuatilia" => "mti",
+        _ => arg.strip_prefix("--fuatilia=")?,
+    };
+    Some(asili_trace::install_spec(spec).map_err(|e| CliError::new(e, 2)))
+}
+
 #[cfg(test)]
 pub static TEST_CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -53,6 +64,7 @@ pub fn dispatch(args: &[String]) -> CliResult {
         "nadhifu" => nadhifu::run(rest),
         "repl" => repl::run(rest),
         "tenda" => tenda::run(rest),
+        "fuatilia" => fuatilia::run(rest),
         "thibitisha" => thibitisha::run(rest),
         "--msaada" | "msaada" => {
             println!("{}", usage());
@@ -70,6 +82,7 @@ Amri ni kitendo unachotaka kufanya. Chagua na hoja hutofautiana kwa kila amri.
 Amri:
   jenga [faili.as] [chagua...]  Jenga mradi (kutoka pata.toml) au faili moja.
   tenda <path.asb|manifest>      Tenda kilele bila kujenga upya.
+  fuatilia <faili>             Soma ufuatiliaji wa binari na kuuonyesha kama mti.
   jaribu [chagua...]            Endesha majaribio (#[jaribio]).
   mwalimu                      Anza seva ya LSP (Mwalimu).
   repl                         Fungua REPL.

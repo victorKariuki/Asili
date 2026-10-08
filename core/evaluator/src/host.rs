@@ -65,6 +65,8 @@ pub(crate) struct Host<'p> {
     native: &'p crate::aot::NativeLibrary,
     /// Outcome of an instruction that native code handed to `exec_slow` and that ended the call.
     pending: Option<Flow>,
+    /// The error now leaving calls was already traced (by the first call it left).
+    error_traced: bool,
 }
 
 pub(crate) static NATIVE_RUNTIME: crate::native::Runtime = crate::native::Runtime {
@@ -211,6 +213,7 @@ impl<'p> Host<'p> {
             trees: Vec::new(),
             native,
             pending: None,
+            error_traced: false,
         }
     }
 
@@ -326,10 +329,21 @@ impl<'p> Host<'p> {
         // unknown past the committed pages, as on musl's main thread).
         let native = self.native.funcs[index];
         let red_zone = 64 * 1024 + crate::native::DIRECT_CALL_HEADROOM;
+        // Calls native code makes directly to native code bypass the host and are not traced.
+        let span = asili_trace::enter(&self.program.functions[index].name, 0);
         let result = stacker::maybe_grow(red_zone, 2 * 1024 * 1024, || {
             self.run_native(native, index, frame)
         });
         self.depth -= 1;
+        match &result {
+            Err(e) if asili_trace::on() && !self.error_traced => {
+                asili_trace::emit(asili_trace::Tukio::Kosa, &e.to_string(), 0);
+                self.error_traced = true;
+            }
+            Ok(_) => self.error_traced = false,
+            Err(_) => {}
+        }
+        drop(span);
         result
     }
 
@@ -775,6 +789,14 @@ impl<'p> Host<'p> {
                     .map(|r| frame.vals[*r as usize].clone())
                     .collect();
                 let builtin = call.builtin as usize;
+                if asili_trace::on() {
+                    let name = self.builtin_index.iter().find(|(_, i)| **i == builtin);
+                    asili_trace::emit(
+                        asili_trace::Tukio::MwitoMfumo,
+                        name.map_or("", |(n, _)| n.as_str()),
+                        0,
+                    );
+                }
                 let result = match self.spawners.iter().position(|s| *s == builtin) {
                     // Threads that run this program's `kazi` on this engine.
                     Some(which) => {

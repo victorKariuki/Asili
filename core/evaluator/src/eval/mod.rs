@@ -5,7 +5,7 @@ pub(crate) mod methods;
 pub(crate) mod ops;
 mod stmt;
 
-use asili_parser::{Block, ExprId, Module, Param};
+use asili_parser::{Block, ExprId, Function, Module};
 
 use crate::runtime::{Runtime, MAX_CALL_DEPTH};
 use crate::value::{EvalError, EvalOut, Value};
@@ -16,25 +16,40 @@ use crate::value::{EvalError, EvalOut, Value};
 /// expression grows the stack on demand.
 pub(crate) fn call_body(
     rt: &mut Runtime<'_>,
-    params: &[Param],
+    f: &Function,
     args: impl IntoIterator<Item = Value>,
-    body: &Block,
 ) -> Result<Value, EvalError> {
     if rt.calls >= MAX_CALL_DEPTH {
         return Err(EvalError::Unknown("undani mno".into()));
     }
+    let span = asili_trace::enter(&f.name, f.line as u32);
     rt.calls += 1;
     rt.env.push_scope();
     let mut args = args.into_iter();
-    for p in params {
+    for p in &f.params {
         rt.env.define(&p.name, args.next().unwrap_or(Value::Hamna));
     }
-    let out = eval_block_impl(body, rt);
+    let out = eval_block_impl(&f.body, rt);
     rt.env.pop_scope();
     rt.calls -= 1;
-    match out? {
-        EvalOut::Return(v) => Ok(v),
-        _ => Ok(Value::Tupu),
+    match out {
+        // An error is traced once, by the `kazi` it first leaves.
+        Err(e) => {
+            if asili_trace::on() && !rt.error_traced {
+                asili_trace::emit(asili_trace::Tukio::Kosa, &e.to_string(), f.line as u32);
+                rt.error_traced = true;
+            }
+            drop(span);
+            Err(e)
+        }
+        Ok(out) => {
+            rt.error_traced = false;
+            drop(span);
+            Ok(match out {
+                EvalOut::Return(v) => v,
+                _ => Value::Tupu,
+            })
+        }
     }
 }
 
