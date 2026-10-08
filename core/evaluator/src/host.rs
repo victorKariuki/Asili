@@ -70,6 +70,8 @@ pub(crate) struct Host<'p> {
     constants_ready: bool,
     /// The source lines executed so far, when coverage is recorded (`Opcode::Line`).
     pub(crate) coverage: Option<std::collections::HashSet<usize>>,
+    /// The debugger attached to this run, told of every `Opcode::Line`.
+    pub(crate) debug: Option<std::sync::Arc<dyn crate::debug_hook::DebugHook>>,
     /// The program's machine code (`nguvu`), one entry per function.
     native: &'p crate::aot::NativeLibrary,
     /// Outcome of an instruction that native code handed to `exec_slow` and that ended the call.
@@ -268,6 +270,7 @@ impl<'p> Host<'p> {
             error_traced: false,
             constants_ready: false,
             coverage: None,
+            debug: None,
         }
     }
 
@@ -645,9 +648,28 @@ impl<'p> Host<'p> {
                     fail!(depth_error());
                 }
             }
-            Opcode::Line { line } => {
+            Opcode::Line { line, binds } => {
                 if let Some(lines) = &mut self.coverage {
                     lines.insert(*line as usize);
+                }
+                if let Some(hook) = &self.debug {
+                    // A fresh snapshot before `should_pause` may block, so a `variables` request
+                    // made while paused sees this line's values: the locals visible here, then
+                    // the predefined names (the tree-walker's outermost scope).
+                    let mut bindings: Vec<(String, String)> = binds
+                        .iter()
+                        .map(|(name, op)| {
+                            (name.clone(), format!("{:?}", operand_value(frame, *op)))
+                        })
+                        .collect();
+                    bindings.extend(
+                        crate::env::global_constants()
+                            .into_iter()
+                            .filter(|(n, _)| !binds.iter().any(|(b, _)| b == n))
+                            .map(|(n, v)| (n.to_string(), format!("{v:?}"))),
+                    );
+                    hook.record_bindings(bindings);
+                    hook.should_pause(*line as usize);
                 }
             }
             Opcode::ListRepeat { dst, value, count } => {
@@ -1032,6 +1054,21 @@ fn numeric_op(op: &Opcode, n: &mut [f64]) -> bool {
         _ => return false,
     }
     true
+}
+
+/// A register's value as a generic value.
+fn operand_value(frame: &Frame, op: Operand) -> Value {
+    match op.ty {
+        Ty::Num => Value::Namba(frame.nums[op.reg as usize]),
+        Ty::Bool => Value::Ukweli(frame.nums[op.reg as usize] != 0.0),
+        Ty::List => Value::list(
+            frame.lists[op.reg as usize]
+                .iter()
+                .map(Value::Namba)
+                .collect(),
+        ),
+        Ty::Val => frame.vals[op.reg as usize].clone(),
+    }
 }
 
 fn copy_operand(from: &Frame, src: Operand, to: &mut Frame, dst: Operand) {

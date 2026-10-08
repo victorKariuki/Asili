@@ -7,8 +7,8 @@
 //!
 //! `DebugHook` is defined in `asili_evaluator::debug_hook` (not in this crate — see that
 //! module's own doc comment for why: `core/` never depends on `pata/`, so the trait a `core/`
-//! type implements has to live on the `core/` side). `core/evaluator`'s `eval_stmt_impl` calls
-//! into `Runtime::debug_hook` for real, driving actual step-through debugging via
+//! type implements has to live on the `core/` side). A debug build of the program runs as native
+//! code whose host calls the hook at every statement, driving actual step-through debugging via
 //! `RealDebugHook`, not just a test fake — `MockHook` (this crate) remains useful independently
 //! for exercising the DAP wire protocol without a real `.as` program on disk.
 

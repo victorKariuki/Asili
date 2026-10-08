@@ -6,7 +6,7 @@
 //! Real step-through debugging: a `launch` naming a `.as` file, followed by `configurationDone`,
 //! compiles and runs that file with `asili_evaluator::debug_hook::RealDebugHook` attached (see
 //! `pata_dap::runner::real_session`) — breakpoints genuinely pause the running program,
-//! `variables` reflects real interpreter state, `continue` genuinely resumes it.
+//! `variables` reflects the running native code's state, `continue` genuinely resumes it.
 
 fn main() {
     let session = pata_dap::real_session();

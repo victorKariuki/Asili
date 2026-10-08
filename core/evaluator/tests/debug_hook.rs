@@ -133,3 +133,36 @@ fn no_configured_breakpoints_runs_to_completion_without_blocking() {
         "a run with no breakpoints must complete normally: {result:?}"
     );
 }
+
+/// Shadowing: while paused, an inner binding hides an outer one of the same name — the
+/// variables view shows each name once, with the value the paused line would read.
+#[test]
+fn inner_bindings_shadow_outer_ones_while_paused() {
+    let module = compile(
+        "kazi kuu(hoja: Orodha<Neno>) -> Tupu {\n\
+           weka x = 1\n\
+           ikiwa kweli {\n\
+             weka x = 2\n\
+             weka y = x\n\
+           }\n\
+         }",
+    );
+    let hook = Arc::new(RealDebugHook::new(vec![5]));
+    let hook_for_run = Arc::clone(&hook);
+    let run_thread =
+        std::thread::spawn(move || run_main_with_debug_hook(&module, vec![], hook_for_run).is_ok());
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !hook.did_pause() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "breakpoint never fired"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let bindings = hook.current_bindings();
+    let xs: Vec<_> = bindings.iter().filter(|(n, _)| n == "x").collect();
+    assert_eq!(xs.len(), 1, "{bindings:?}");
+    assert!(xs[0].1.contains('2'), "{bindings:?}");
+    hook.resume();
+    assert!(run_thread.join().unwrap());
+}

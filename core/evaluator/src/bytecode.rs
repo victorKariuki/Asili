@@ -465,9 +465,12 @@ pub enum Opcode {
     /// call-depth limit (`MAX_CALL_DEPTH`), so inlining never changes where that error happens.
     CheckDepth,
     /// The statement at source line `line` starts (only in programs compiled with
-    /// `CompileOptions::lines`): coverage and the debugger observe it in the host.
+    /// `CompileOptions::lines`): coverage and the debugger observe it in the host. `binds`
+    /// (with `CompileOptions::bindings`): the locals visible there, innermost first, for the
+    /// debugger's variables view.
     Line {
         line: u32,
+        binds: Box<[(String, Operand)]>,
     },
 }
 
@@ -563,6 +566,8 @@ pub struct CompileOptions {
     /// Mark the start of every statement (`Opcode::Line`), for coverage and the debugger; no
     /// call is inlined, so every statement of every `kazi` is marked.
     pub lines: bool,
+    /// With `lines`: each mark also names the locals visible there (the debugger).
+    pub bindings: bool,
 }
 
 /// Lower the whole module to bytecode; `None` when some `kazi` cannot be lowered
@@ -1336,14 +1341,36 @@ impl<'a> FunctionCompiler<'a> {
         }
     }
 
+    /// Every local visible here, innermost first, each name once (a shadowed one is hidden).
+    fn visible_locals(&self) -> Box<[(String, Operand)]> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for scope in self.scopes.iter().rev() {
+            let mut names: Vec<_> = scope.iter().collect();
+            names.sort_by_key(|(_, l)| std::cmp::Reverse((l.op.ty as u8, l.op.reg)));
+            for (name, local) in names {
+                if seen.insert(name.as_str()) {
+                    out.push((name.clone(), local.op));
+                }
+            }
+        }
+        out.into_boxed_slice()
+    }
+
     // -- statements ---------------------------------------------------------------------------
 
     fn block(&mut self, block: &Block) -> Option<()> {
         self.scopes.push(HashMap::new());
         for stmt in &block.statements {
             if self.program.options.lines {
+                let binds = if self.program.options.bindings {
+                    self.visible_locals()
+                } else {
+                    Box::new([])
+                };
                 self.emit(Opcode::Line {
                     line: stmt.line() as u32,
+                    binds,
                 });
             }
             if self.stmt(stmt).is_none() {

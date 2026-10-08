@@ -1,12 +1,10 @@
 //! Runtime context for evaluation.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use asili_parser::Module;
 
 use crate::builtins;
-use crate::debug_hook::DebugHook;
 use crate::env::Env;
 
 /// Deepest chain of `kazi` calls a program may make, on every engine (the tree-walker and native
@@ -33,12 +31,6 @@ pub(crate) struct Runtime<'a> {
     pub error_traced: bool,
     /// Highest depth reached during this run; for telemetry in development.
     pub peak_depth: usize,
-    /// A real debugger attached to this run (a `pata-dap` session driving a `RealDebugHook`) —
-    /// `None` for every ordinary run (the common case, zero cost). When `Some`, `eval_stmt_impl`
-    /// snapshots the current environment into the hook and calls `should_pause` before executing
-    /// each statement, so a configured breakpoint genuinely halts this thread until the debugger
-    /// resumes it.
-    pub debug_hook: Option<Arc<dyn DebugHook>>,
     pub metrics: Option<EvalMetrics>,
 }
 
@@ -70,7 +62,6 @@ impl<'a> Runtime<'a> {
             calls: 0,
             error_traced: false,
             peak_depth: 0,
-            debug_hook: None,
             metrics: None,
         }
     }
@@ -84,7 +75,6 @@ impl<'a> Runtime<'a> {
             calls: 0,
             error_traced: false,
             peak_depth: 0,
-            debug_hook: None,
             metrics: None,
         }
     }
@@ -125,12 +115,6 @@ impl<'a> Runtime<'a> {
         if let Some(metrics) = &mut self.metrics {
             metrics.function_calls += 1;
         }
-    }
-
-    /// Attach a real debugger to this runtime — `eval_stmt_impl` will snapshot bindings into
-    /// `hook` and call `hook.should_pause(line)` before every statement from here on.
-    pub fn enable_debug_hook(&mut self, hook: Arc<dyn DebugHook>) {
-        self.debug_hook = Some(hook);
     }
 
     /// Update peak depth from current depth. Call after incrementing `depth`.

@@ -239,6 +239,7 @@ pub fn run_main(module: &Module, args: Vec<String>) -> Result<(), EvalError> {
 /// `debug_hook::RealDebugHook`) attached: `eval_stmt_impl` will snapshot bindings into `hook`
 /// and call `hook.should_pause(line)` before every statement, genuinely pausing this thread at a
 /// configured breakpoint until the debugger resumes it.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run_main_with_debug_hook(
     module: &Module,
     args: Vec<String>,
@@ -255,16 +256,13 @@ pub fn run_main_with_debug_hook(
     } else {
         vec![hoja]
     };
-    run_in_fresh_runtime(
-        module,
-        f,
-        args,
-        None,
-        |rt| rt.enable_debug_hook(hook),
-        |_| (),
-    )
-    .0
-    .map(|_| ())
+    let options = bytecode::CompileOptions {
+        lines: true,
+        bindings: true,
+    };
+    NativeProgram::build_with(module, options)?
+        .call_with_debugger("kuu", args, hook)
+        .map(|_| ())
 }
 
 fn test_result(function: &Function, result: Result<Value, EvalError>) -> TestResult {
@@ -300,7 +298,10 @@ pub fn run_test_with_coverage(
     module: &Module,
     function: &Function,
 ) -> (TestResult, std::collections::HashSet<usize>) {
-    let options = bytecode::CompileOptions { lines: true };
+    let options = bytecode::CompileOptions {
+        lines: true,
+        ..Default::default()
+    };
     match NativeProgram::build_with(module, options) {
         Ok(program) => {
             let (result, lines) = program.call_with_coverage(&function.name, vec![]);

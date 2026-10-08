@@ -61,8 +61,12 @@ fn val_access(op: &Opcode, f: &mut impl FnMut(Reg, Access)) {
         | Opcode::ListLen { .. }
         | Opcode::ListMov { .. }
         | Opcode::ReturnTupu
-        | Opcode::CheckDepth
-        | Opcode::Line { .. } => {}
+        | Opcode::CheckDepth => {}
+        // The debugger shows the generic locals visible there.
+        Opcode::Line { binds, .. } => binds
+            .iter()
+            .filter(|(_, op)| op.ty == Ty::Val)
+            .for_each(|(_, op)| f(op.reg, Read)),
         Opcode::ListGetTokeo { dst, .. }
         | Opcode::ListRemoveVal { dst, .. }
         | Opcode::ListToVal { dst, .. }

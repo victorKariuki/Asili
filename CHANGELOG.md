@@ -145,6 +145,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   statement (`Opcode::Line`, only under `CompileOptions::lines`, with inlining off), so the
   tree-walker no longer tracks lines.
 
+- **The debugger runs native code**: `pata-dap` builds the program with statement marks that
+  also name the visible locals (`CompileOptions { lines, bindings }`), and the host reports each
+  statement to the debugger: breakpoints pause the native code, and the variables view shows the
+  locals visible at the paused line (innermost wins) and the predefined names. The tree-walker's
+  debugger hook is gone.
+
 - **Signal handlers under native code**: a signal registered with `sikiliza_ishara` now runs
   its `kazi` in native code as well — the host checks for a pending signal whenever native code
   calls into it (before each instruction it runs and each call it makes); before, only the

@@ -291,8 +291,13 @@ pub(crate) fn num_reads(op: &Opcode) -> Vec<Reg> {
         | Opcode::MakeEnum { .. }
         | Opcode::MatchPattern { .. }
         | Opcode::MakeMap { .. }
-        | Opcode::CheckDepth
-        | Opcode::Line { .. } => Vec::new(),
+        | Opcode::CheckDepth => Vec::new(),
+        // The debugger reads the numeric locals it shows.
+        Opcode::Line { binds, .. } => binds
+            .iter()
+            .filter(|(_, op)| matches!(op.ty, Ty::Num | Ty::Bool))
+            .map(|(_, op)| op.reg)
+            .collect(),
     }
 }
 

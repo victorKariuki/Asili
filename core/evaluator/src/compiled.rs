@@ -68,6 +68,19 @@ impl NativeProgram {
         (result, host.coverage.take().unwrap_or_default())
     }
 
+    /// Like [`NativeProgram::call`], with the debugger `hook` told of every statement (the
+    /// program must be built with `CompileOptions { lines: true, bindings: true }`).
+    pub fn call_with_debugger(
+        &self,
+        name: &str,
+        args: Vec<Value>,
+        hook: std::sync::Arc<dyn crate::debug_hook::DebugHook>,
+    ) -> Result<Value, EvalError> {
+        let mut host = self.host();
+        host.debug = Some(hook);
+        host.call_by_name(name, args)
+    }
+
     fn host(&self) -> crate::host::Host<'_> {
         let shared = crate::spawn::Shared::Code {
             program: self.program.clone(),
