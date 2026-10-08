@@ -39,6 +39,7 @@ is 1–80× off its reference. Calls between numeric functions cost ~2.4× C.
 | F8 | `s = s + t` copied the whole string every time | 45% of the strings workload in `memcpy` | `Neno` storage is `Text` (header + bytes, spare capacity), appended in place when unshared (`ops::assign_in_place`, both engines) | 830 → 427 M instructions, 71 → 60 ms (Python 64) |
 | F9 | Boxing numbers, copying values and loading constants each went through the host's general instruction path | ~100 instructions of dispatch per instruction | direct runtime calls from native code (`BoxNum`, `BoxBool`, `ValMov`, `ConstVal`) | map loop −9%, strings −6% |
 | F10 | Every list push called the runtime | ~85 instructions per push | inline append when there is room, the length stored into the list; runtime only to grow | list workload 119.6 → 37.8 M instructions |
+| F11 | x86-64 parked every incoming argument on the stack and reloaded every call argument from it | 4 stores + 4 loads per entry, a load per pointer argument per call | arguments kept in callee-saved registers move register to register | Sudoku 23.66 → 22.87 M instructions |
 | F7 | x86-64 prologues pushed every callee-saved register | 10 push/pop per call in small functions | push only the registers the function uses (AArch64 already did) | no change on fib (it uses all five); smaller frames elsewhere |
 
 Earlier the same day: token kinds and interned names in the parser and tree-walker, parallel and
@@ -148,6 +149,14 @@ reports `SEM040`, and a test checks the engines implement every listed method.
 
 ## Next
 
-In order (list pushes are done, F10): the direct-call
-convention (fib); method ids instead of name matching; local slots and closure compilation for
-the tree-walker.
+Measured and ruled out this round: passing `f64` arguments of direct calls in registers (the
+code generator routes every call argument through its home slot, so it saves nothing without
+a register-to-register parallel move); a stack-allocated argument array for host method calls
+(`SmallVec`, 4 % slower than the reused buffer — moving the inline array costs more than it
+saves). Whole-process Sudoku (minimum of 20 runs): C 4.18 ms, `tenda` 4.20 ms, the standalone
+executable 3.97 ms — level within noise; Asili takes ~120 more page faults (~0.1 ms) at start.
+
+Remaining, all structural: a direct-call convention with fewer pointer arguments (fib, ~25 %
+expected); method ids resolved at compile time instead of name matching (~10 % on map- and
+string-heavy code); local slots and closure compilation for the tree-walker (2–4×, REPL and
+wasm).
