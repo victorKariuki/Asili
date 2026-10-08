@@ -98,6 +98,10 @@ pub enum RtFn {
     CallHost = 12,
     /// Report the call-depth error (see `native::Runtime::depth_error`).
     DepthError = 13,
+    BoxNum = 14,
+    BoxBool = 15,
+    ValMov = 16,
+    ConstVal = 17,
 }
 
 #[derive(Clone, Debug)]

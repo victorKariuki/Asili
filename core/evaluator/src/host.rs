@@ -89,7 +89,18 @@ pub(crate) static NATIVE_RUNTIME: crate::native::Runtime = crate::native::Runtim
     stack_limit: crate::native::rt_stack_limit,
     call_host: native_call_host,
     depth_error: native_depth_error,
+    box_num: crate::native::rt_box_num,
+    box_bool: crate::native::rt_box_bool,
+    val_mov: crate::native::rt_val_mov,
+    const_val: native_const_val,
 };
+
+/// `ConstVal` from native code: `vals[dst] = constant k`.
+extern "C" fn native_const_val(host: *mut std::ffi::c_void, frame: *mut Frame, dst: u32, k: u32) {
+    // SAFETY: native code passes the `Host` and `Frame` that `run_native` handed it.
+    let (host, frame) = unsafe { (&*(host as *const Host<'static>), &mut *frame) };
+    frame.vals[dst as usize] = host.consts[k as usize].clone();
+}
 
 /// A direct native call that cannot run on the native stack (too deep, or too little room left):
 /// make it through the host's own call path instead, with the arguments native code stored in
@@ -678,14 +689,14 @@ impl<'p> Host<'p> {
             Opcode::ConstVal { dst, k } => {
                 frame.vals[*dst as usize] = self.consts[*k as usize].clone();
             }
-            Opcode::ValMov { dst, src } => {
-                frame.vals[*dst as usize] = frame.vals[*src as usize].clone()
-            }
+            Opcode::ValMov { dst, src } => crate::native::val_mov(frame, *dst, *src),
             Opcode::BoxNum { dst, src } => {
-                frame.vals[*dst as usize] = Value::Namba(n[*src as usize])
+                let v = n[*src as usize];
+                crate::native::box_num(frame, *dst, v)
             }
             Opcode::BoxBool { dst, src } => {
-                frame.vals[*dst as usize] = Value::Ukweli(n[*src as usize] != 0.0)
+                let v = n[*src as usize];
+                crate::native::box_bool(frame, *dst, v)
             }
             Opcode::UnboxNum { dst, src } => match &frame.vals[*src as usize] {
                 Value::Namba(v) => frame.nums[*dst as usize] = *v,

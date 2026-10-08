@@ -5,6 +5,7 @@
 use crate::bytecode::{CmpOp, Opcode, Reg, Ty};
 use crate::host::Frame;
 use crate::numlist::Kind;
+use crate::value::Value;
 use std::ffi::c_void;
 
 /// `fn(runtime, host, frame, nums) -> status << 32 | pc`.
@@ -48,6 +49,41 @@ pub(crate) struct Runtime {
     /// `(host) -> STATUS_FAIL`: a `CheckDepth` found the call depth at its limit; the error is
     /// left pending.
     pub depth_error: extern "C" fn(*mut c_void) -> u64,
+    // Value-register instructions that cannot fail, called directly (no `exec` round trip).
+    pub box_num: extern "C" fn(*mut Frame, u32, f64),
+    pub box_bool: extern "C" fn(*mut Frame, u32, f64),
+    pub val_mov: extern "C" fn(*mut Frame, u32, u32),
+    pub const_val: extern "C" fn(*mut c_void, *mut Frame, u32, u32),
+}
+
+/// `BoxNum`: `vals[dst] = Namba(v)`.
+pub(crate) fn box_num(frame: &mut Frame, dst: u32, v: f64) {
+    frame.vals[dst as usize] = Value::Namba(v);
+}
+
+/// `BoxBool`: `vals[dst] = Ukweli(v != 0)`.
+pub(crate) fn box_bool(frame: &mut Frame, dst: u32, v: f64) {
+    frame.vals[dst as usize] = Value::Ukweli(v != 0.0);
+}
+
+/// `ValMov`: `vals[dst] = vals[src]` (a copy).
+pub(crate) fn val_mov(frame: &mut Frame, dst: u32, src: u32) {
+    frame.vals[dst as usize] = frame.vals[src as usize].clone();
+}
+
+pub(crate) extern "C" fn rt_box_num(frame: *mut Frame, dst: u32, v: f64) {
+    // SAFETY: native code passes the frame it runs in, not otherwise borrowed during the call.
+    box_num(unsafe { &mut *frame }, dst, v)
+}
+
+pub(crate) extern "C" fn rt_box_bool(frame: *mut Frame, dst: u32, v: f64) {
+    // SAFETY: as in `rt_box_num`.
+    box_bool(unsafe { &mut *frame }, dst, v)
+}
+
+pub(crate) extern "C" fn rt_val_mov(frame: *mut Frame, dst: u32, src: u32) {
+    // SAFETY: as in `rt_box_num`.
+    val_mov(unsafe { &mut *frame }, dst, src)
 }
 
 /// Byte offset of the host's call-depth counter (`Host` is `repr(C)` with `depth` first).

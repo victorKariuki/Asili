@@ -139,6 +139,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Direct calls for simple value instructions**: native code boxes numbers and booleans,
+  copies values and loads constants (`BoxNum`, `BoxBool`, `ValMov`, `ConstVal`) by calling one
+  small runtime function each, instead of a round trip through the host's general instruction
+  path. Map loop −9%, string building −6% (instructions). Native ABI 9 includes the new
+  entries.
+
 - **Linear string building**: a `Neno` is now a `Text` — one allocation (counts, length,
   capacity, then the bytes), one pointer wide, shared by copies like before — that grows in
   place when no other copy holds it. `s = s + t` appends in place on both engines

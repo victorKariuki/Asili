@@ -1299,6 +1299,27 @@ impl<'a> Lower<'a> {
                 self.b.terminate(Term::Jump(done));
                 self.b.switch_to(done);
             }
+            // Value-register instructions that cannot fail: direct runtime calls.
+            Opcode::BoxNum { dst, src } | Opcode::BoxBool { dst, src } => {
+                let target = if matches!(op, Opcode::BoxNum { .. }) {
+                    RtFn::BoxNum
+                } else {
+                    RtFn::BoxBool
+                };
+                let v = self.get_f(*src);
+                let d = self.b.iconst(*dst as i64);
+                self.call(target, vec![FRAME, d, v], None, false);
+            }
+            Opcode::ValMov { dst, src } => {
+                let d = self.b.iconst(*dst as i64);
+                let s = self.b.iconst(*src as i64);
+                self.call(RtFn::ValMov, vec![FRAME, d, s], None, false);
+            }
+            Opcode::ConstVal { dst, k } => {
+                let d = self.b.iconst(*dst as i64);
+                let k = self.b.iconst(*k as i64);
+                self.call(RtFn::ConstVal, vec![HOST, FRAME, d, k], None, false);
+            }
             Opcode::CheckDepth => {
                 let depth = self.vreg(Class::Int);
                 self.push(Inst::Load {
