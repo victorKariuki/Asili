@@ -61,7 +61,8 @@ fn val_access(op: &Opcode, f: &mut impl FnMut(Reg, Access)) {
         | Opcode::ListLen { .. }
         | Opcode::ListMov { .. }
         | Opcode::ReturnTupu
-        | Opcode::CheckDepth => {}
+        | Opcode::CheckDepth
+        | Opcode::Line { .. } => {}
         Opcode::ListGetTokeo { dst, .. }
         | Opcode::ListRemoveVal { dst, .. }
         | Opcode::ListToVal { dst, .. }

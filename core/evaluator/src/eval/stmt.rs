@@ -10,7 +10,6 @@ use super::expr::match_and_bind_pattern;
 
 pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOut, EvalError> {
     rt.count_statement();
-    rt.record_line(stmt.line());
 
     if let Some(hook) = &rt.debug_hook {
         // Push a fresh bindings snapshot in before should_pause might block, so a real pause

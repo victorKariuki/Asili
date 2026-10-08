@@ -68,6 +68,8 @@ pub(crate) struct Host<'p> {
     args: Vec<Value>,
     /// Whether `init_constants` has run.
     constants_ready: bool,
+    /// The source lines executed so far, when coverage is recorded (`Opcode::Line`).
+    pub(crate) coverage: Option<std::collections::HashSet<usize>>,
     /// The program's machine code (`nguvu`), one entry per function.
     native: &'p crate::aot::NativeLibrary,
     /// Outcome of an instruction that native code handed to `exec_slow` and that ended the call.
@@ -265,6 +267,7 @@ impl<'p> Host<'p> {
             pending: None,
             error_traced: false,
             constants_ready: false,
+            coverage: None,
         }
     }
 
@@ -348,6 +351,7 @@ impl<'p> Host<'p> {
 
     /// Call a function with generic arguments, converting to and from its typed registers.
     fn call_values(&mut self, index: usize, args: Vec<Value>) -> Result<Value, EvalError> {
+        self.poll_signal()?;
         let program = self.program;
         let f = program
             .functions
@@ -498,7 +502,26 @@ impl<'p> Host<'p> {
         }
     }
 
+    /// Run the `kazi` registered (`sikiliza_ishara`) for a signal that arrived, if any. Polled
+    /// whenever native code calls into the host, as the tree-walker polls before each statement.
+    fn poll_signal(&mut self) -> Result<(), EvalError> {
+        let signal = crate::signal::take_pending();
+        if signal == 0 {
+            return Ok(());
+        }
+        let Some(name) = crate::signal::get_handler(signal) else {
+            return Ok(());
+        };
+        let Some(index) = self.program.functions.iter().position(|f| f.name == name) else {
+            return Ok(());
+        };
+        self.call_values(index, Vec::new()).map(drop)
+    }
+
     fn exec_slow(&mut self, op: &Opcode, frame: &mut Frame) -> Flow {
+        if let Err(e) = self.poll_signal() {
+            return Flow::Fail(e);
+        }
         let program = self.program;
         macro_rules! finish {
             ($ret:expr) => {{
@@ -620,6 +643,11 @@ impl<'p> Host<'p> {
             Opcode::CheckDepth => {
                 if self.depth >= MAX_CALL_DEPTH {
                     fail!(depth_error());
+                }
+            }
+            Opcode::Line { line } => {
+                if let Some(lines) = &mut self.coverage {
+                    lines.insert(*line as usize);
                 }
             }
             Opcode::ListRepeat { dst, value, count } => {

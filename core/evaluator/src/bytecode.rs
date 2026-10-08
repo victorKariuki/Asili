@@ -464,6 +464,11 @@ pub enum Opcode {
     /// Where a call was inlined: fail as the call would have if it went one level past the
     /// call-depth limit (`MAX_CALL_DEPTH`), so inlining never changes where that error happens.
     CheckDepth,
+    /// The statement at source line `line` starts (only in programs compiled with
+    /// `CompileOptions::lines`): coverage and the debugger observe it in the host.
+    Line {
+        line: u32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -552,16 +557,32 @@ impl BytecodeProgram {
 // Compiler
 // ---------------------------------------------------------------------------------------------
 
+/// How a program is compiled beyond its meaning.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CompileOptions {
+    /// Mark the start of every statement (`Opcode::Line`), for coverage and the debugger; no
+    /// call is inlined, so every statement of every `kazi` is marked.
+    pub lines: bool,
+}
+
 /// Lower the whole module to bytecode; `None` when some `kazi` cannot be lowered
 /// ([`compile_module_explained`] names it).
 pub fn compile_module(module: &Module) -> Option<BytecodeProgram> {
-    compile_module_inner(module, &mut None)
+    compile_module_inner(module, CompileOptions::default(), &mut None)
 }
 
 /// Every `kazi` lowered to bytecode, or the first `kazi` and source line that could not be.
 pub fn compile_module_explained(module: &Module) -> Result<BytecodeProgram, String> {
+    compile_module_with(module, CompileOptions::default())
+}
+
+/// [`compile_module_explained`] with `options`.
+pub fn compile_module_with(
+    module: &Module,
+    options: CompileOptions,
+) -> Result<BytecodeProgram, String> {
     let mut failed_line = None;
-    let program = compile_module_inner(module, &mut failed_line);
+    let program = compile_module_inner(module, options, &mut failed_line);
     match (program, failed_line) {
         (Some(program), None) => Ok(program),
         (_, Some((function, line))) => Err(format!("kazi '{function}', mstari {line}")),
@@ -571,9 +592,11 @@ pub fn compile_module_explained(module: &Module) -> Result<BytecodeProgram, Stri
 
 fn compile_module_inner(
     module: &Module,
+    options: CompileOptions,
     failed_line: &mut Option<(String, usize)>,
 ) -> Option<BytecodeProgram> {
     let mut program = ProgramCompiler {
+        options,
         failed_line: None,
         constants: Vec::new(),
         functions: HashMap::new(),
@@ -820,6 +843,7 @@ fn inlinable(f: &Function, exprs: &Exprs) -> Option<Inline> {
 }
 
 struct ProgramCompiler {
+    options: CompileOptions,
     /// Innermost statement line that could not be lowered.
     failed_line: Option<usize>,
     constants: Vec<StoredConstant>,
@@ -1317,6 +1341,11 @@ impl<'a> FunctionCompiler<'a> {
     fn block(&mut self, block: &Block) -> Option<()> {
         self.scopes.push(HashMap::new());
         for stmt in &block.statements {
+            if self.program.options.lines {
+                self.emit(Opcode::Line {
+                    line: stmt.line() as u32,
+                });
+            }
             if self.stmt(stmt).is_none() {
                 self.program.failed_line.get_or_insert(stmt.line());
                 return None;
@@ -2527,7 +2556,7 @@ impl<'a> FunctionCompiler<'a> {
             Some(d) if d.ty == ret => d,
             _ => self.temp(ret),
         };
-        if let Some(inline) = inline {
+        if let Some(inline) = inline.filter(|_| !self.program.options.lines) {
             if self.inline_call(&inline, &operands, out).is_some() {
                 return Some(out);
             }

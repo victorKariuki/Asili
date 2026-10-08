@@ -1,6 +1,6 @@
 //! Runtime context for evaluation.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use asili_parser::Module;
@@ -33,12 +33,6 @@ pub(crate) struct Runtime<'a> {
     pub error_traced: bool,
     /// Highest depth reached during this run; for telemetry in development.
     pub peak_depth: usize,
-    /// Source lines of statements actually executed during this run — real line-level coverage,
-    /// recorded by `eval_stmt_impl` as each `Stmt` runs (see `Stmt::line`). `None` when coverage
-    /// tracking wasn't requested (the common case — every `run_function`/`run_main` call site
-    /// that doesn't care about coverage pays no `HashSet` insert cost), `Some` once
-    /// `Runtime::with_coverage` opts in.
-    pub executed_lines: Option<HashSet<usize>>,
     /// A real debugger attached to this run (a `pata-dap` session driving a `RealDebugHook`) —
     /// `None` for every ordinary run (the common case, zero cost). When `Some`, `eval_stmt_impl`
     /// snapshots the current environment into the hook and calls `should_pause` before executing
@@ -76,7 +70,6 @@ impl<'a> Runtime<'a> {
             calls: 0,
             error_traced: false,
             peak_depth: 0,
-            executed_lines: None,
             debug_hook: None,
             metrics: None,
         }
@@ -91,15 +84,9 @@ impl<'a> Runtime<'a> {
             calls: 0,
             error_traced: false,
             peak_depth: 0,
-            executed_lines: None,
             debug_hook: None,
             metrics: None,
         }
-    }
-
-    /// Opt this runtime into line-level coverage tracking.
-    pub fn enable_coverage(&mut self) {
-        self.executed_lines = Some(HashSet::new());
     }
 
     pub fn enable_metrics(&mut self) {
@@ -144,14 +131,6 @@ impl<'a> Runtime<'a> {
     /// `hook` and call `hook.should_pause(line)` before every statement from here on.
     pub fn enable_debug_hook(&mut self, hook: Arc<dyn DebugHook>) {
         self.debug_hook = Some(hook);
-    }
-
-    /// Record that `line` executed, when coverage tracking is enabled — a no-op otherwise, so
-    /// callers (`eval_stmt_impl`) can call this unconditionally without checking first.
-    pub fn record_line(&mut self, line: usize) {
-        if let Some(lines) = &mut self.executed_lines {
-            lines.insert(line);
-        }
     }
 
     /// Update peak depth from current depth. Call after incrementing `depth`.

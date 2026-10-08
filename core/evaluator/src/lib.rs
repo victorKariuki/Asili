@@ -7,6 +7,8 @@ mod asb;
 pub mod builtins;
 pub mod bundle;
 mod bytecode;
+#[cfg(not(target_arch = "wasm32"))]
+mod compiled;
 pub mod debug_hook;
 mod env;
 mod eval;
@@ -32,9 +34,12 @@ pub use asb::{artifact_formats, load_asb, load_asb_bytecode, parse_format, AsbLo
 #[cfg(not(target_arch = "wasm32"))]
 pub use bytecode::run_bytecode_native;
 pub use bytecode::{
-    compile_module, compile_module_explained, run_bytecode, run_bytecode_function,
-    run_bytecode_function_on, BytecodeProgram, Engine, Opcode,
+    compile_module, compile_module_explained, compile_module_with, run_bytecode,
+    run_bytecode_function, run_bytecode_function_on, BytecodeProgram, CompileOptions, Engine,
+    Opcode,
 };
+#[cfg(not(target_arch = "wasm32"))]
+pub use compiled::NativeProgram;
 pub use env::Env;
 pub use eval::eval_expr;
 pub use runtime::EvalMetrics;
@@ -275,9 +280,14 @@ fn test_result(function: &Function, result: Result<Value, EvalError>) -> TestRes
     }
 }
 
-/// Run a single test function (no args). Returns pass/fail from actual execution.
+/// Run a single test function (no args) as native code. Returns pass/fail from actual
+/// execution; a module that cannot be built to native code fails the test with the reason.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run_test_with_module(module: &Module, function: &Function) -> TestResult {
-    test_result(function, run_function(module, &function.name, vec![]))
+    match NativeProgram::build(module) {
+        Ok(program) => test_result(function, program.call(&function.name, vec![])),
+        Err(e) => test_result(function, Err(e)),
+    }
 }
 
 /// Like `run_test_with_module`, but also returns the set of source lines actually executed
@@ -285,22 +295,23 @@ pub fn run_test_with_module(module: &Module, function: &Function) -> TestResult 
 /// (`Stmt::line()` recorded on every statement evaluated), not a function-name presence check.
 /// A test that panics still reports whatever lines ran before the panic, since partial coverage
 /// from a failing test is real coverage, not nothing.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run_test_with_coverage(
     module: &Module,
     function: &Function,
 ) -> (TestResult, std::collections::HashSet<usize>) {
-    let (result, lines) = run_in_fresh_runtime(
-        module,
-        function,
-        vec![],
-        None,
-        |rt| rt.enable_coverage(),
-        |rt| rt.executed_lines.unwrap_or_default(),
-    );
-    (test_result(function, result), lines)
+    let options = bytecode::CompileOptions { lines: true };
+    match NativeProgram::build_with(module, options) {
+        Ok(program) => {
+            let (result, lines) = program.call_with_coverage(&function.name, vec![]);
+            (test_result(function, result), lines)
+        }
+        Err(e) => (test_result(function, Err(e)), Default::default()),
+    }
 }
 
 /// Execute tests by running each function. Each test is tied to its module.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn execute_tests(modules_and_tests: &[(Module, Function)], fail_fast: bool) -> Vec<TestResult> {
     execute_tests_with_timeout(modules_and_tests, fail_fast, None)
 }
@@ -320,6 +331,7 @@ pub fn execute_tests(modules_and_tests: &[(Module, Function)], fail_fast: bool) 
 /// `run_test_with_fixtures`) — every test in this crate's public API that executes tests goes
 /// through this one function, so fixture support reaches `pata jaribu`'s sequential, parallel,
 /// and timed paths alike without each needing its own copy of the setup/teardown logic.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn execute_tests_with_timeout(
     modules_and_tests: &[(Module, Function)],
     fail_fast: bool,
@@ -353,11 +365,16 @@ pub fn execute_tests_with_timeout(
 /// Every `#[baada]` still runs even if an earlier one in the same module panics, and even if the
 /// test body itself failed — teardown functions exist to release resources acquired by setup,
 /// and one broken teardown shouldn't prevent the others from having a chance to run.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run_test_with_fixtures(
     module: &Module,
     function: &Function,
     timeout: Option<std::time::Duration>,
 ) -> TestResult {
+    let program = match NativeProgram::build(module) {
+        Ok(program) => program,
+        Err(e) => return test_result(function, Err(e)),
+    };
     let setup_fns: Vec<&Function> = module
         .functions
         .iter()
@@ -370,7 +387,7 @@ pub fn run_test_with_fixtures(
         .collect();
 
     for setup in &setup_fns {
-        if let Err(e) = run_function(module, &setup.name, vec![]) {
+        if let Err(e) = program.call(&setup.name, vec![]) {
             return TestResult {
                 name: function.name.to_string(),
                 passed: false,
@@ -384,12 +401,12 @@ pub fn run_test_with_fixtures(
     }
 
     let mut result = match timeout {
-        Some(d) => run_test_with_timeout(module, function, d),
-        None => run_test_with_module(module, function),
+        Some(d) => run_test_with_timeout(&program, function, d),
+        None => test_result(function, program.call(&function.name, vec![])),
     };
 
     for teardown in &teardown_fns {
-        if let Err(e) = run_function(module, &teardown.name, vec![]) {
+        if let Err(e) = program.call(&teardown.name, vec![]) {
             // Only overwrite the reported failure reason if the test itself had actually
             // passed — a test that already failed on its own keeps its own failure message,
             // since that's almost certainly the more useful signal, but a teardown failure
@@ -421,20 +438,24 @@ fn fixture_error_message(e: EvalError) -> String {
 /// Run one test with a wall-clock timeout, on a dedicated thread. See
 /// `execute_tests_with_timeout`'s doc comment for what happens on an actual timeout (the thread
 /// is not killed, only no longer waited on).
+#[cfg(not(target_arch = "wasm32"))]
 fn run_test_with_timeout(
-    module: &Module,
+    program: &NativeProgram,
     function: &Function,
     timeout: std::time::Duration,
 ) -> TestResult {
     let test_name = function.name;
-    let module_for_thread = module.clone();
+    let program_for_thread = program.clone();
     let function_for_thread = function.clone();
     let (tx, rx) = std::sync::mpsc::channel();
 
     let spawned = std::thread::Builder::new()
         .name(format!("pata-jaribio-{test_name}"))
         .spawn(move || {
-            let result = run_test_with_module(&module_for_thread, &function_for_thread);
+            let result = test_result(
+                &function_for_thread,
+                program_for_thread.call(&function_for_thread.name, vec![]),
+            );
             let _ = tx.send(result);
         });
 

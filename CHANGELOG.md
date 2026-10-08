@@ -139,6 +139,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`pata jaribu` runs tests as native code**: each module is built once to bytecode and
+  native code (`NativeProgram`), and every test, `#[kabla]`/`#[baada]` fixture and timed test
+  runs on a fresh host. Line coverage comes from native code too: a coverage build marks each
+  statement (`Opcode::Line`, only under `CompileOptions::lines`, with inlining off), so the
+  tree-walker no longer tracks lines.
+
+- **Signal handlers under native code**: a signal registered with `sikiliza_ishara` now runs
+  its `kazi` in native code as well — the host checks for a pending signal whenever native code
+  calls into it (before each instruction it runs and each call it makes); before, only the
+  tree-walker dispatched them.
+
 - **Every construct lowers to bytecode**: pattern `weka (a, b) = e`, module constants computed
   from expressions (`thabiti TAU = 2.0 * PI`, run once by an init function before the first
   call), maps with computed keys, calls to a `kazi` whose name a local shadows, `tupa` of a binding
