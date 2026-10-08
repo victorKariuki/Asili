@@ -1,6 +1,6 @@
 //! Statement evaluation.
 
-use asili_parser::{AssignOp, ForMode, Stmt};
+use asili_parser::{AssignOp, BinaryOp, Expr, ForMode, Stmt};
 
 use crate::runtime::Runtime;
 use crate::signal;
@@ -57,6 +57,31 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
         Stmt::Assign {
             name, op, value, ..
         } => {
+            // `x = x + e` with an `e` that cannot touch `x`: update `x` in place when that gives
+            // the same value (appending to unshared text; see `ops::assign_in_place`).
+            if let (
+                AssignOp::Assign,
+                Expr::Binary {
+                    left,
+                    op: bin @ BinaryOp::Add,
+                    right,
+                    ..
+                },
+            ) = (op, &rt.module[*value])
+            {
+                let module = rt.module;
+                if matches!(&module[*left], Expr::Ident { name: n, .. } if n == name)
+                    && inert(module, *right)
+                    && rt.env.get_ref(*name).is_some()
+                {
+                    let rhs = super::eval_expr_impl(*right, rt)?;
+                    let current = rt.env.get_mut(*name).expect("checked above");
+                    if !super::ops::assign_in_place(bin, current, &rhs) {
+                        *current = super::ops::binary_value(bin, current, &rhs)?;
+                    }
+                    return Ok(EvalOut::Next);
+                }
+            }
             let rhs = super::eval_expr_impl(*value, rt)?;
             // One lookup: the binding is updated in place (no copy of its old value).
             let current = rt
@@ -206,5 +231,19 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
         }
         Stmt::Break { label, .. } => Ok(EvalOut::Break(label.clone())),
         Stmt::Continue { label, .. } => Ok(EvalOut::Continue(label.clone())),
+    }
+}
+
+/// Whether evaluating `id` reads at most names and constants (so it can neither change a
+/// variable nor fail differently when evaluated before its neighbour).
+fn inert(module: &asili_parser::Module, id: asili_parser::ExprId) -> bool {
+    match &module[id] {
+        Expr::String(_) | Expr::Number(_) | Expr::Char(_) | Expr::Bool(_) | Expr::Ident { .. } => {
+            true
+        }
+        Expr::Group(e) | Expr::Cast { expr: e, .. } | Expr::FieldAccess { receiver: e, .. } => {
+            inert(module, *e)
+        }
+        _ => false,
     }
 }

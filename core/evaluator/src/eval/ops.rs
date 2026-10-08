@@ -41,6 +41,19 @@ fn numeric(op: &BinaryOp, l: &Value, r: &Value, op_name: &str) -> Result<Value, 
 
 /// `l op r` for already-evaluated operands. `na`/`au` short-circuiting is the caller's job
 /// (it decides whether `r` is evaluated at all); given both values, they are checked here.
+/// `target = target <op> r` in place, when that gives the same value [`binary_value`] would:
+/// appending text to a `Neno` no other copy shares (amortized, instead of copying the whole
+/// string). `false` when it does not apply — then compute `binary_value` as usual.
+pub(crate) fn assign_in_place(op: &BinaryOp, target: &mut Value, r: &Value) -> bool {
+    match (op, target, r) {
+        (BinaryOp::Add, Value::Neno(s), Value::Neno(t)) if s.is_unique() => {
+            s.push_str(t);
+            true
+        }
+        _ => false,
+    }
+}
+
 pub(crate) fn binary_value(op: &BinaryOp, l: &Value, r: &Value) -> Result<Value, EvalError> {
     // The common case first: two plain numbers.
     if let (Value::Namba(a), Value::Namba(b)) = (l, r) {

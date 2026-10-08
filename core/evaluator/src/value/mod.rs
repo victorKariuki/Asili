@@ -2,6 +2,8 @@
 
 mod json;
 mod numeric;
+mod text;
+pub use text::Text;
 
 use std::cell::{RefCell, UnsafeCell};
 use std::collections::{HashMap, HashSet};
@@ -22,7 +24,7 @@ pub(crate) use numeric::{
 /// text with the value it came from, so looking a key up or listing keys allocates nothing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum MapKey {
-    Neno(Rc<str>),
+    Neno(Text),
     Namba(u64),
     Ukweli(bool),
     Herufi(char),
@@ -106,7 +108,7 @@ pub type Seti = HashSet<MapKey, foldhash::fast::RandomState>;
 pub enum Value {
     Namba(f64),
     /// Text; never changed in place, so copies share it.
-    Neno(Rc<str>),
+    Neno(Text),
     Ukweli(bool),
     Tupu,
     Hamna,
@@ -311,7 +313,7 @@ impl Value {
     }
 
     /// A `Neno` holding `text`.
-    pub fn neno(text: impl Into<Rc<str>>) -> Value {
+    pub fn neno(text: impl Into<Text>) -> Value {
         Value::Neno(text.into())
     }
 

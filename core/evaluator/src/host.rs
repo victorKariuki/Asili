@@ -701,6 +701,15 @@ impl<'p> Host<'p> {
                 frame.nums[*dst as usize] = flag(ops::truthy(&frame.vals[*src as usize]))
             }
             Opcode::ValBinary { op, dst, a, b } => {
+                if dst == a && dst != b {
+                    let [target, r] = frame
+                        .vals
+                        .get_disjoint_mut([*dst as usize, *b as usize])
+                        .expect("distinct registers");
+                    if ops::assign_in_place(op, target, r) {
+                        return Flow::Next;
+                    }
+                }
                 match ops::binary_value(op, &frame.vals[*a as usize], &frame.vals[*b as usize]) {
                     Ok(v) => frame.vals[*dst as usize] = v,
                     Err(e) => fail!(e),

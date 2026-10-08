@@ -1017,3 +1017,30 @@ fn inlined_calls_and_structs_kept_in_registers() {
         ],
     );
 }
+
+#[test]
+fn appending_to_text_never_changes_its_copies() {
+    // `s = s + t` appends in place only when nothing else shares the text.
+    agree(
+        "append",
+        r#"
+        kazi ongeza() -> Orodha<Neno> {
+            weka s = "a"
+            weka nakala = s.clona()
+            weka m: Kamusi<Neno, Namba> = {}
+            m[s.clona()] = 1
+            kwa i kutoka 0 hadi 5 {
+                s = s + "b"
+            }
+            weka sehemu: Orodha<Neno> = [s.clona()]
+            s = s + (7 kama Neno)
+            weka funguo = ""
+            kwa k katika m.funguo() {
+                funguo = funguo + k
+            }
+            rejesha [s, nakala, sehemu[0], funguo]
+        }
+        "#,
+        &["ongeza"],
+    );
+}

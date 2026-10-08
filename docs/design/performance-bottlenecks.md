@@ -36,6 +36,7 @@ is 1–80× off its reference. Calls between numeric functions cost ~2.4× C.
 | F4 | Trace spans cost ~37 instructions per host call with tracing off | `asili_trace::open` in profiles | inline off-check, traced path `#[cold]` | −2% struct loop |
 | F5 | Builtin table built twice at every start | 249 k of 1.08 M start-up instructions | built once, sorted once | 1.08 → 0.98 M |
 | F6 | Small functions called through the host; structs built on the heap per iteration | ~600 instructions per call, ~280 per struct built, ~100 per field read | inlining of `rejesha`-only functions when compiling bytecode (`inlinable`, guarded by `CheckDepth`), then scalar replacement of structs that never leave their function (`scalars.rs`) | struct loop 1,805 M → 9 M instructions, ~150–185 → 3 ms (C 1.9 ms) |
+| F8 | `s = s + t` copied the whole string every time | 45% of the strings workload in `memcpy` | `Neno` storage is `Text` (header + bytes, spare capacity), appended in place when unshared (`ops::assign_in_place`, both engines) | 830 → 427 M instructions, 71 → 60 ms (Python 64) |
 | F7 | x86-64 prologues pushed every callee-saved register | 10 push/pop per call in small functions | push only the registers the function uses (AArch64 already did) | no change on fib (it uses all five); smaller frames elsewhere |
 
 Earlier the same day: token kinds and interned names in the parser and tree-walker, parallel and
@@ -98,7 +99,7 @@ search of names) and then find it (`pure_method`: a `match` over (receiver, name
 *Fix*: resolve the method to an id once — when compiling bytecode (`MethodOp` carries it) and,
 for the tree-walker, when parsing (interned `Name` → id table) — and `match` on the id.
 
-### 6. Building a string by appending is quadratic
+### 6. Building a string by appending is quadratic — fixed (F8)
 
 *Evidence*: `s = s + "ab"` 20,000 times copies 400 MB (45% of the strings workload); `Neno` is an
 immutable `Rc<str>`, so every append copies the whole string. CPython appends in place when the

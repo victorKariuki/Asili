@@ -139,6 +139,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Linear string building**: a `Neno` is now a `Text` — one allocation (counts, length,
+  capacity, then the bytes), one pointer wide, shared by copies like before — that grows in
+  place when no other copy holds it. `s = s + t` appends in place on both engines
+  (`ops::assign_in_place`, one rule for both), so building a string in a loop is amortized
+  linear instead of copying the whole string at every step; a copy, a list entry or a map key
+  sharing the text is never changed. The strings workload: 830 → 427 million instructions,
+  71 → 60 ms (Python 64 ms).
+
 - **Inlining and structs in registers**: when bytecode is compiled, a call to a function whose
   body is a single `rejesha` of a small expression (no calls, methods, indexing or `?`) is
   replaced by that expression, guarded by a new `CheckDepth` instruction so the call-depth

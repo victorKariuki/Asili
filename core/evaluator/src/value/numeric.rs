@@ -70,8 +70,8 @@ pub(crate) fn format_namba(n: f64) -> String {
 }
 
 /// `n kama Neno` as a shared `Neno`: one allocation for whole numbers.
-pub(crate) fn namba_text(n: f64) -> std::rc::Rc<str> {
-    with_namba_text(n, |s| std::rc::Rc::from(s))
+pub(crate) fn namba_text(n: f64) -> super::Text {
+    with_namba_text(n, |s: &str| super::Text::from(s))
 }
 
 /// Call `f` with `n`'s text (whole numbers are written on the stack, not allocated).
@@ -123,21 +123,9 @@ fn with_namba_text<R>(n: f64, f: impl FnOnce(&str) -> R) -> R {
     }
 }
 
-/// `a` followed by `b` as a shared `Neno`, written straight into its one allocation.
-pub(crate) fn concat_text(a: &str, b: &str) -> std::rc::Rc<str> {
-    let mut buf = std::rc::Rc::<[u8]>::new_uninit_slice(a.len() + b.len());
-    let dst = std::rc::Rc::get_mut(&mut buf)
-        .expect("fresh allocation")
-        .as_mut_ptr()
-        .cast::<u8>();
-    // SAFETY: `dst` has room for both; every byte is written before `assume_init`, and the
-    // bytes are two `str`s back to back, so valid UTF-8 (`Rc<[u8]>` and `Rc<str>` share a
-    // layout, as `Rc<str>: From<&str>` itself relies on).
-    unsafe {
-        std::ptr::copy_nonoverlapping(a.as_ptr(), dst, a.len());
-        std::ptr::copy_nonoverlapping(b.as_ptr(), dst.add(a.len()), b.len());
-        std::rc::Rc::from_raw(std::rc::Rc::into_raw(buf.assume_init()) as *const str)
-    }
+/// `a` followed by `b` as a `Neno`, in one allocation.
+pub(crate) fn concat_text(a: &str, b: &str) -> super::Text {
+    super::Text::concat(a, b)
 }
 
 pub(crate) fn to_display_string(v: &Value) -> Option<String> {
