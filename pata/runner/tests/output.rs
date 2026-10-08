@@ -133,3 +133,51 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A standalone executable — this runner with a program appended (`bundle::assemble`) — runs
+/// that program directly, with its native image, every argument going to `kuu`.
+#[test]
+fn standalone_executable_runs_its_program() {
+    let dir = std::env::temp_dir().join(format!("asili-runner-bundle-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = r#"
+kazi mraba(n: Namba) -> Namba {
+    rejesha n * n
+}
+kazi kuu(hoja: Orodha<Neno>) -> Tupu {
+    weka s: Namba = 0
+    kwa i kutoka 0 hadi 1000 {
+        s += mraba(i)
+    }
+    chapisha((s kama Neno) + " " + hoja[0] + " " + (hoja.urefu() kama Neno))
+}
+"#;
+    let tokens = asili_lexer::tokenize(source).expect("tokenize");
+    let module = asili_parser::parse_tokens(&tokens).expect("parse");
+    let asb = asili_evaluator::emit_asb(&module, source);
+    let program = asili_evaluator::load_asb_bytecode(&asb).expect("bytecode");
+    let image = asili_evaluator::nguvu::supported()
+        .then(|| asili_evaluator::nguvu::write_image(&program, &dir, "p").ok())
+        .flatten()
+        .map(|path| std::fs::read(path).unwrap());
+    let runner = std::fs::read(env!("CARGO_BIN_EXE_tenda")).unwrap();
+    let exe = dir.join(format!("p{}", std::env::consts::EXE_SUFFIX));
+    std::fs::write(
+        &exe,
+        asili_evaluator::bundle::assemble(&runner, &asb, image.as_deref()),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let out = Command::new(&exe)
+        .args(["habari", "x"])
+        .env("ASILI_NATIVE_TRACE", "1")
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "332833500 habari 2\n");
+    assert!(out.status.success());
+    let _ = std::fs::remove_dir_all(&dir);
+}

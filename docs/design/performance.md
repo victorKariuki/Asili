@@ -265,8 +265,8 @@ Next steps are the "Remaining gaps" below.
   static runner has its own allocator and memory primitives (musl's locked on every allocation
   and copied bytewise): string building went from 99 to 17 ms (C: 10 ms). Every generic value
   operation still runs in the interpreter, one `exec_slow` dispatch per instruction.
-- The native image is mapped by `pata tenda` or the standalone runner, not a standalone
-  executable. `pata tenda` itself (the full toolchain binary) starts ~3 ms slower than the
+- The native image is mapped at start-up by the runner, from a file beside the artifact or from
+  a standalone executable (`pata jenga --namna release` appends both to the runner). `pata tenda` itself (the full toolchain binary) starts ~3 ms slower than the
   runner; ship programs with the `dist`-profile static runner.
 - `list_push`/`list_remove` are runtime calls (~1M instructions on the benchmark); inlining the
   common case needs a list layout native code may write directly.

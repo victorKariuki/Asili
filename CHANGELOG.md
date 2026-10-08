@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Standalone executables**: `pata jenga --namna release` also writes `kilele/<jina>` (`.exe`
+  on Windows), the static runner with the program's bytecode and native image appended
+  (`asili_evaluator::bundle`; trailing data every executable loader ignores), so `./kilele/jina`
+  runs the program directly with no other files, no `pata`, and no external linker. The runner
+  checks itself for the payload at start-up (the Sudoku solver: 2.2 ms for the whole process,
+  the same as `tenda kilele/sudoku.asb`). `make install` now installs `tenda` beside `pata`,
+  where release builds find it (or set `ASILI_TENDA`).
+
 - **Cross-language Sudoku benchmark** (`examples/sudoku/bench/`): C, Rust and Python solvers
   using the exact MRV algorithm from `examples/sudoku/src/kuu.as`, plus `run.sh`, which builds
   everything and reports the best wall time per implementation after checking that every

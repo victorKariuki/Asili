@@ -349,6 +349,40 @@ impl BuildProfile {
 /// Ahead-of-time compile a bytecode artifact to native machine code next to it
 /// (`<name>.nguvu`, built in-house with no external tools). In `Dev` a platform without a
 /// native backend only means the artifact runs on the VM; `Release` fails instead.
+/// A release build's standalone executable `<target>/<name>` (`.exe` on Windows): the static
+/// runner `tenda` with the artifact and its native image appended
+/// (`asili_evaluator::bundle`), which runs directly. The runner comes from `ASILI_TENDA` or sits
+/// beside `pata`; without one the build only notes that the executable was skipped.
+fn write_standalone(asb: &[u8], target: &Path, name: &str) -> Result<(), CliError> {
+    let exe = format!("tenda{}", std::env::consts::EXE_SUFFIX);
+    let runner = std::env::var_os("ASILI_TENDA")
+        .map(PathBuf::from)
+        .or_else(|| Some(std::env::current_exe().ok()?.parent()?.join(&exe)))
+        .filter(|p| p.is_file());
+    let Some(runner) = runner else {
+        println!(
+            "programu huru haikujengwa: `{exe}` haipatikani kando ya pata (au weka ASILI_TENDA)"
+        );
+        return Ok(());
+    };
+    let runner = fs::read(&runner)
+        .map_err(|e| CliError::new(format!("imeshindwa kusoma {}: {e}", runner.display()), 1))?;
+    let image = fs::read(target.join(asili_evaluator::nguvu::image_file_name(name))).ok();
+    let path = target.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    fs::write(
+        &path,
+        asili_evaluator::bundle::assemble(&runner, asb, image.as_deref()),
+    )
+    .map_err(|e| CliError::new(format!("imeshindwa kuandika {}: {e}", path.display()), 1))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o755));
+    }
+    println!("programu huru: {}", path.display());
+    Ok(())
+}
+
 fn build_native_library(
     asb: &[u8],
     target: &Path,
@@ -423,6 +457,9 @@ pub fn emit_build_artifacts(
     })?;
 
     build_native_library(&asb, &target, &compiled.config.name, profile)?;
+    if profile == BuildProfile::Release {
+        write_standalone(&asb, &target, &compiled.config.name)?;
+    }
 
     let meta = target.join(format!("{}.build.manifest", compiled.config.name));
     let input_hash_line = compiled

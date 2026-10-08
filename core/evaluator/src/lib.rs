@@ -5,6 +5,7 @@ pub mod alloc;
 pub mod aot;
 mod asb;
 pub mod builtins;
+pub mod bundle;
 mod bytecode;
 pub mod debug_hook;
 mod env;
@@ -573,7 +574,23 @@ pub fn run_asb(
 ) -> Result<(), RunAsbError> {
     #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
     let _output = platform::BlockOutput::begin();
-    on_known_stack(|| run_asb_here(bytes, asb_path, args))
+    on_known_stack(|| run_asb_here(bytes, Image::Beside(asb_path), args))
+}
+
+/// Run a program carried inside the running executable ([`bundle`]).
+pub fn run_bundle(bundle: &bundle::Bundle, args: Vec<String>) -> Result<(), RunAsbError> {
+    #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+    let _output = platform::BlockOutput::begin();
+    on_known_stack(|| run_asb_here(&bundle.asb, Image::Bytes(bundle.image.as_deref()), args))
+}
+
+/// Where a bytecode artifact's native image comes from.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+enum Image<'a> {
+    /// `<name>.nguvu` beside the artifact at this path.
+    Beside(Option<&'a std::path::Path>),
+    /// Carried with it (a standalone executable).
+    Bytes(Option<&'a [u8]>),
 }
 
 /// Run `f` on a stack whose size `stacker` knows. Both engines grow the stack on demand
@@ -594,11 +611,7 @@ fn on_known_stack<R>(f: impl FnOnce() -> R) -> R {
     f()
 }
 
-fn run_asb_here(
-    bytes: &[u8],
-    asb_path: Option<&std::path::Path>,
-    args: Vec<String>,
-) -> Result<(), RunAsbError> {
+fn run_asb_here(bytes: &[u8], source: Image<'_>, args: Vec<String>) -> Result<(), RunAsbError> {
     if parse_format(bytes).as_deref() == Some("bytecode") {
         let program = load_asb_bytecode(bytes).map_err(|e| RunAsbError::Load(e.to_string()))?;
         #[cfg(not(target_arch = "wasm32"))]
@@ -606,12 +619,16 @@ fn run_asb_here(
             // Native code beside the artifact: the machine-code image `pata jenga` wrote
             // (`<name>.nguvu`). `ASILI_NGUVU=1` compiles in memory when there is none; otherwise
             // anything missing or stale just means running on the VM.
-            let image = || {
-                let path = asb_path?;
-                let file = path.with_file_name(nguvu::image_file_name(path.file_stem()?.to_str()?));
-                file.is_file()
-                    .then(|| nguvu::load_image(&file, &program).ok())
-                    .flatten()
+            let image = || match source {
+                Image::Beside(path) => {
+                    let path = path?;
+                    let file =
+                        path.with_file_name(nguvu::image_file_name(path.file_stem()?.to_str()?));
+                    file.is_file()
+                        .then(|| nguvu::load_image(&file, &program).ok())
+                        .flatten()
+                }
+                Image::Bytes(bytes) => nguvu::load_image_bytes(bytes?, &program).ok(),
             };
             let in_memory = std::env::var("ASILI_NGUVU").is_ok_and(|v| v == "1");
             let library = if !aot::enabled() || !nguvu::supported() {
@@ -630,7 +647,7 @@ fn run_asb_here(
         }
         #[cfg(target_arch = "wasm32")]
         {
-            let _ = asb_path;
+            let _ = source;
             return run_bytecode(&program, args).map_err(RunAsbError::Run);
         }
     }

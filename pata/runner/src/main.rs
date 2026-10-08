@@ -13,6 +13,15 @@ static ALLOC: asili_evaluator::alloc::AsiliAlloc = asili_evaluator::alloc::Asili
 fn main() {
     // Our memcpy/memmove/memset/memcmp replace musl's in the static build.
     asili_mem::linked();
+    // A standalone executable (`pata jenga` appended the program to this runner): every
+    // argument is the program's own.
+    if let Some(bundle) = asili_evaluator::bundle::embedded() {
+        if let Err(e) = asili_evaluator::run_bundle(&bundle, env::args().skip(1).collect()) {
+            eprintln!("{e}");
+            process::exit(e.exit_code());
+        }
+        return;
+    }
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("matumizi: tenda <path.asb | path.build.manifest> [hoja za kuu...]");

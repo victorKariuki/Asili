@@ -306,7 +306,15 @@ pub fn load_image(
 ) -> Result<crate::aot::NativeLibrary, String> {
     let bytes =
         std::fs::read(path).map_err(|e| format!("imeshindwa kusoma {}: {e}", path.display()))?;
-    Image::from_bytes(&bytes, program)?.load()
+    load_image_bytes(&bytes, program)
+}
+
+/// [`load_image`] from an image already in memory (one carried inside an executable).
+pub fn load_image_bytes(
+    bytes: &[u8],
+    program: &BytecodeProgram,
+) -> Result<crate::aot::NativeLibrary, String> {
+    Image::from_bytes(bytes, program)?.load()
 }
 
 /// Compile every function of `program` to machine code in executable memory.

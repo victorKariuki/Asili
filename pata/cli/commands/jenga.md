@@ -33,6 +33,12 @@ Success:
   register VM — the build does not fail. `ASILI_AOT=0` skips this step. Leftover `<name>.so`/
   `<name>.ll` files from the retired LLVM backend are removed.
 - `--tenda` runs the artifact just built exactly as `pata tenda` would (native code when present)
+- `--namna release` also writes a standalone executable `<pato>/<name>` (`<name>.exe` on
+  Windows), printing `programu huru: <path>`: the static runner `tenda` with the artifact and its
+  native image appended, so `./kilele/<name> [hoja...]` runs the program directly with no other
+  files and no `pata`. The runner is the `tenda` beside `pata` (`make install` puts it there) or
+  the one `ASILI_TENDA` names; without one the build prints `programu huru haikujengwa: ...` and
+  still succeeds
 
 Failures:
 - syntax/type/ownership diagnostics
