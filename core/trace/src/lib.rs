@@ -186,10 +186,17 @@ pub fn phase(name: &str) -> Span {
     open(Tukio::Hatua, name, 0)
 }
 
+#[inline(always)]
 fn open(tukio: Tukio, name: &str, line: u32) -> Span {
     if !on() {
         return Span::none();
     }
+    open_traced(tukio, name, line)
+}
+
+#[cold]
+#[inline(never)]
+fn open_traced(tukio: Tukio, name: &str, line: u32) -> Span {
     let depth = DEPTH.with(|d| {
         let depth = d.get();
         d.set(depth.saturating_add(1));
@@ -215,7 +222,18 @@ impl Span {
 }
 
 impl Drop for Span {
+    #[inline(always)]
     fn drop(&mut self) {
+        if self.name.is_some() {
+            self.close();
+        }
+    }
+}
+
+impl Span {
+    #[cold]
+    #[inline(never)]
+    fn close(&mut self) {
         if let Some(name) = self.name.take() {
             let depth = DEPTH.with(|d| {
                 let depth = d.get().saturating_sub(1);

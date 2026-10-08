@@ -818,21 +818,23 @@ pub(crate) fn mutate(
             let key_val = args_val
                 .first()
                 .ok_or_else(|| EvalError::TypeErr("ingiza inahitaji ufunguo na thamani".into()))?;
-            map.insert(MapKey::try_from_value(key_val)?, arg(1));
+            Rc::make_mut(map).insert(MapKey::try_from_value(key_val)?, arg(1));
             Ok(Value::Tupu)
         }
         (Value::Seti(set), "ongeza") => {
             let v = args_val
                 .first()
                 .ok_or_else(|| EvalError::TypeErr("ongeza inahitaji thamani".into()))?;
-            set.insert(MapKey::try_from_value(v)?);
+            Rc::make_mut(set).insert(MapKey::try_from_value(v)?);
             Ok(Value::Tupu)
         }
         (Value::Seti(set), "ondoa") => {
             let v = args_val
                 .first()
                 .ok_or_else(|| EvalError::TypeErr("ondoa inahitaji thamani".into()))?;
-            Ok(Value::Ukweli(set.remove(&MapKey::try_from_value(v)?)))
+            Ok(Value::Ukweli(
+                Rc::make_mut(set).remove(&MapKey::try_from_value(v)?),
+            ))
         }
         _ => Err(EvalError::Unknown(format!("njia '{method}' haijulikani"))),
     }
@@ -982,10 +984,12 @@ pub(crate) fn cast_value(v: Value, ty: &str) -> Result<Value, EvalError> {
         use crate::value::BigInt;
         let big = match &v {
             Value::NambaKuu(b) => b.clone(),
-            Value::Namba(n) => BigInt::from(*n as i64),
-            _ => value::as_f64(&v)
-                .map(|n| BigInt::from(n as i64))
-                .unwrap_or_default(),
+            Value::Namba(n) => std::rc::Rc::new(BigInt::from(*n as i64)),
+            _ => std::rc::Rc::new(
+                value::as_f64(&v)
+                    .map(|n| BigInt::from(n as i64))
+                    .unwrap_or_default(),
+            ),
         };
         Ok(Value::NambaKuu(big))
     } else if t == "Namba_Sahihi" {
@@ -993,10 +997,12 @@ pub(crate) fn cast_value(v: Value, ty: &str) -> Result<Value, EvalError> {
         use num_traits::FromPrimitive;
         let dec = match &v {
             Value::NambaSahihi(b) => b.clone(),
-            Value::NambaKuu(b) => BigDecimal::from(b.clone()),
-            _ => value::as_f64(&v)
-                .and_then(BigDecimal::from_f64)
-                .unwrap_or_default(),
+            Value::NambaKuu(b) => std::rc::Rc::new(BigDecimal::from((**b).clone())),
+            _ => std::rc::Rc::new(
+                value::as_f64(&v)
+                    .and_then(BigDecimal::from_f64)
+                    .unwrap_or_default(),
+            ),
         };
         Ok(Value::NambaSahihi(dec))
     } else if t == "Neno" {
@@ -1066,7 +1072,8 @@ pub(crate) fn iter_items(v: Value) -> Result<Rc<Vec<Value>>, EvalError> {
     match v {
         Value::Orodha(items) => Ok(items),
         Value::Kamusi(map) => Ok(Rc::new(
-            map.into_iter()
+            Rc::unwrap_or_clone(map)
+                .into_iter()
                 .map(|(k, v)| Value::Jozi(Box::new(k.to_value()), Box::new(v)))
                 .collect(),
         )),

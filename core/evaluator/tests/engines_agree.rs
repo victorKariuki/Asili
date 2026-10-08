@@ -904,3 +904,32 @@ fn list_literal_element_types() {
         &["t"],
     );
 }
+
+#[test]
+fn copies_of_maps_and_sets_stay_independent() {
+    // `Kamusi` and `Seti` share storage between copies until one is written (copy on write).
+    agree(
+        "cow",
+        r#"
+        kazi nakala() -> Orodha<Namba> {
+            weka a: Kamusi<Neno, Namba> = {}
+            a["x"] = 1
+            weka b = a.clona()
+            b["y"] = 2
+            b["x"] = 5
+            weka s = seti()
+            s.ongeza(1)
+            weka t = s.clona()
+            t.ongeza(2)
+            rejesha [a.idadi(), b.idadi(), a.pata("x").angu(0), b.pata("x").angu(0), s.urefu(), t.urefu()]
+        }
+        "#,
+        &["nakala"],
+    );
+}
+
+#[test]
+fn values_stay_small() {
+    // Every `Value` is moved and copied constantly; keep it at four words.
+    assert!(std::mem::size_of::<asili_evaluator::Value>() <= 32);
+}

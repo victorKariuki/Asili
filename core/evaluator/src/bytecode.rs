@@ -442,8 +442,8 @@ pub enum Opcode {
     /// `vals[dst] = Enum::Variant(vals[data])` (no data when `None`).
     MakeEnum {
         dst: Reg,
-        enum_name: String,
-        variant: String,
+        enum_name: asili_parser::Name,
+        variant: asili_parser::Name,
         data: Option<Reg>,
     },
     /// `nums[dst] = vals[src]` matches `pattern` (a `linganisha` arm); on a match the names it
@@ -1864,7 +1864,7 @@ impl<'a> FunctionCompiler<'a> {
                 data,
                 ..
             } => {
-                if !self.program.enums.contains(enum_name) {
+                if !self.program.enums.contains(enum_name.as_str()) {
                     return None;
                 }
                 let data = match data {

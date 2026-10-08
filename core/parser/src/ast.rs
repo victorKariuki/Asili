@@ -537,8 +537,8 @@ pub enum Expr {
         line: usize,
     },
     EnumConstruct {
-        enum_name: String,
-        variant_name: String,
+        enum_name: Name,
+        variant_name: Name,
         data: Option<ExprId>,
         line: usize,
         // column of `variant_name` (line is already the variant name's own line).

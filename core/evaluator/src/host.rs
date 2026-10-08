@@ -52,12 +52,17 @@ pub(crate) struct Host<'p> {
     /// `program.constants` as values, built once: loading one (a shared `Neno` included) is a
     /// reference-count bump.
     consts: Vec<Value>,
+    /// `consts` interned, for the `Neno` constants that name struct fields and types.
+    names: Vec<crate::value::Name>,
     /// This program as other threads receive it (`tenda`, server workers); made on first use
     /// when the host was not started from a shared program.
     shared: Option<crate::spawn::Shared>,
     /// Builtin indices of `tenda`, `mkondo_tumikia` and `mkondo_tumikia_http`, which need the
     /// program itself.
     spawners: [usize; 3],
+    /// Argument buffer for builtin and method calls, reused so a call allocates nothing (see
+    /// [`Host::take_args`]).
+    args: Vec<Value>,
     /// Tree-walkers for mixed mode, reused across calls (a nested tree → native → tree call takes
     /// a second one).
     trees: Vec<crate::TreeContext>,
@@ -199,6 +204,7 @@ impl<'p> Host<'p> {
         Host {
             depth: 0,
             program,
+            args: Vec::new(),
             spawners: crate::builtins::MODULE_BUILTINS
                 .map(|name| table.index.get(name).copied().unwrap_or(usize::MAX)),
             builtins: table.fns,
@@ -209,6 +215,14 @@ impl<'p> Host<'p> {
                 .constants
                 .iter()
                 .map(StoredConstant::to_value)
+                .collect(),
+            names: program
+                .constants
+                .iter()
+                .map(|c| match c {
+                    StoredConstant::Neno(text) => crate::value::Name::new(text),
+                    _ => crate::value::Name::default(),
+                })
                 .collect(),
             trees: Vec::new(),
             native,
@@ -248,12 +262,9 @@ impl<'p> Host<'p> {
             .clone()
     }
 
-    /// The shared text of `Neno` constant `k` (a struct or field name).
+    /// `Neno` constant `k` interned (a struct or field name).
     fn name(&self, k: u32) -> crate::value::Name {
-        match &self.consts[k as usize] {
-            Value::Neno(text) => text.clone(),
-            _ => unreachable!("names are Neno constants"),
-        }
+        self.names[k as usize]
     }
 
     fn frame_for(&mut self, f: &BytecodeFunc) -> Frame {
@@ -420,6 +431,21 @@ impl<'p> Host<'p> {
     }
 
     /// Execute one instruction native code hands over (everything off its numeric fast path).
+    /// Copies of the registers `regs` of `vals`, in the reused argument buffer: hand it back with
+    /// [`Host::give_args`]. A nested call meanwhile simply starts a buffer of its own.
+    fn take_args(&mut self, vals: &[Value], regs: &[Reg]) -> Vec<Value> {
+        let mut args = std::mem::take(&mut self.args);
+        args.extend(regs.iter().map(|r| vals[*r as usize].clone()));
+        args
+    }
+
+    fn give_args(&mut self, mut args: Vec<Value>) {
+        args.clear();
+        if args.capacity() >= self.args.capacity() {
+            self.args = args;
+        }
+    }
+
     fn exec_slow(&mut self, op: &Opcode, frame: &mut Frame) -> Flow {
         let program = self.program;
         macro_rules! finish {
@@ -529,7 +555,7 @@ impl<'p> Host<'p> {
                         Err(e) => return Flow::Fail(e),
                     }
                 }
-                frame.vals[*dst as usize] = Value::Kamusi(m);
+                frame.vals[*dst as usize] = Value::Kamusi(std::rc::Rc::new(m));
                 return Flow::Next;
             }
             _ => {}
@@ -783,11 +809,7 @@ impl<'p> Host<'p> {
                 }
             }
             Opcode::CallBuiltin(call) => {
-                let args: Vec<Value> = call
-                    .args
-                    .iter()
-                    .map(|r| frame.vals[*r as usize].clone())
-                    .collect();
+                let args = self.take_args(&frame.vals, &call.args);
                 let builtin = call.builtin as usize;
                 if asili_trace::on() {
                     let name = self.builtin_index.iter().find(|(_, i)| **i == builtin);
@@ -809,43 +831,38 @@ impl<'p> Host<'p> {
                     }
                     None => (self.builtins[builtin])(&args),
                 };
+                self.give_args(args);
                 match result {
                     Ok(v) => frame.vals[call.dst as usize] = v,
                     Err(e) => fail!(e),
                 }
             }
             Opcode::CallMethod(call) => {
-                let args: Vec<Value> = call
-                    .args
-                    .iter()
-                    .map(|r| frame.vals[*r as usize].clone())
-                    .collect();
+                let mut args = self.take_args(&frame.vals, &call.args);
                 let recv = &frame.vals[call.recv as usize];
                 // A state-free method reads the receiver in place (no copy of a string or list).
                 let result = if methods::is_pure_method(recv, &call.method) {
                     methods::pure_method(recv, &call.method, &args)
                 } else {
                     let recv = recv.clone();
-                    self.call_method(recv, &call.method, args)
+                    self.call_method(recv, &call.method, std::mem::take(&mut args))
                 };
+                self.give_args(args);
                 match result {
                     Ok(v) => frame.vals[call.dst as usize] = v,
                     Err(e) => fail!(e),
                 }
             }
             Opcode::MutMethod(call) => {
-                let args: Vec<Value> = call
-                    .args
-                    .iter()
-                    .map(|r| frame.vals[*r as usize].clone())
-                    .collect();
+                let mut args = self.take_args(&frame.vals, &call.args);
                 let target = &mut frame.vals[call.recv as usize];
                 let result = if methods::is_mutating(target, &call.method) {
                     methods::mutate(target, &call.method, &args)
                 } else {
                     let recv = target.clone();
-                    self.call_method(recv, &call.method, args)
+                    self.call_method(recv, &call.method, std::mem::take(&mut args))
                 };
+                self.give_args(args);
                 match result {
                     Ok(v) => frame.vals[call.dst as usize] = v,
                     Err(e) => fail!(e),

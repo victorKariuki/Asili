@@ -87,7 +87,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             use std::str::FromStr;
             let s = super::arg_str(args, 0);
             match BigInt::from_str(s.trim()) {
-                Ok(n) => Ok(Value::sawa(Value::NambaKuu(n))),
+                Ok(n) => Ok(Value::sawa(Value::NambaKuu(std::rc::Rc::new(n)))),
                 Err(_) => Ok(Value::kosa(format!(
                     "namba_kuu_kutoka: \"{s}\" si namba kamili sahihi"
                 ))),
@@ -101,7 +101,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             use std::str::FromStr;
             let s = super::arg_str(args, 0);
             match BigDecimal::from_str(s.trim()) {
-                Ok(n) => Ok(Value::sawa(Value::NambaSahihi(n))),
+                Ok(n) => Ok(Value::sawa(Value::NambaSahihi(std::rc::Rc::new(n)))),
                 Err(_) => Ok(Value::kosa(format!(
                     "namba_sahihi_kutoka: \"{s}\" si namba ya desimali sahihi"
                 ))),

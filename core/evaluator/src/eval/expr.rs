@@ -244,7 +244,7 @@ fn eval_expr_cold(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Value, EvalError
                 let key = MapKey::try_from_value(&kval)?;
                 m.insert(key, vval);
             }
-            Ok(Value::Kamusi(m))
+            Ok(Value::Kamusi(std::rc::Rc::new(m)))
         }
         Expr::StructLiteral {
             struct_name,

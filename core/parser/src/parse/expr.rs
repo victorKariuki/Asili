@@ -555,8 +555,8 @@ impl<'a> Parser<'a> {
                 self.push_node(
                     m,
                     Expr::EnumConstruct {
-                        enum_name: enum_name.to_string(),
-                        variant_name: variant.lexeme.clone(),
+                        enum_name,
+                        variant_name: Name::new(&variant.lexeme),
                         data: None,
                         line,
                         column,
@@ -740,8 +740,8 @@ impl<'a> Parser<'a> {
                 line,
                 column,
             } => Expr::EnumConstruct {
-                enum_name,
-                variant_name: variant,
+                enum_name: Name::from(enum_name),
+                variant_name: Name::from(variant),
                 data: Some(items.pop().expect("one operand")),
                 line,
                 column,

@@ -15,7 +15,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             for v in args {
                 set.insert(MapKey::try_from_value(v)?);
             }
-            Ok(Value::Seti(set))
+            Ok(Value::Seti(std::rc::Rc::new(set)))
         }),
     );
     m.insert(

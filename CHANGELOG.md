@@ -139,6 +139,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Smaller values**: a `Value` is 32 bytes instead of 56, so every copy, move and drop on
+  both engines is cheaper. Struct, field, enum and variant names in values are interned
+  `Name`s (one pointer, compared by pointer); `Kamusi`, `Seti`, `Namba_Kuu` and `Namba_Sahihi`
+  are shared behind an `Rc` — copying a map or set no longer copies its entries, and writing to
+  a copy copies them once, only while another copy still refers to them (as `Orodha` already
+  did). The host reuses one argument buffer for builtin and method calls, and a trace span costs
+  nothing while tracing is off. Tree-walker Sudoku: 11.53 → 9.95 billion instructions;
+  natively, a map-heavy loop −12%, a struct-heavy loop −11%, string building −6%.
+
 - **Mwalimu re-parses only what an edit touched**: the language server keeps each open
   document's parse (`asili_parser::IncrementalParser`) and, on an edit, re-lexes and re-parses
   only the top-level items whose text changed, reusing the rest; the result is always exactly a

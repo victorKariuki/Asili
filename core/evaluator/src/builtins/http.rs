@@ -379,7 +379,10 @@ fn request_to_value(req: &ParsedRequest) -> Value {
         vec![
             ("njia".into(), Value::neno(req.method.clone())),
             ("anwani".into(), Value::neno(req.path.clone())),
-            ("vichwa".into(), Value::Kamusi(headers_map)),
+            (
+                "vichwa".into(),
+                Value::Kamusi(std::rc::Rc::new(headers_map)),
+            ),
             ("mwili".into(), Value::neno(req.body.clone())),
         ]
         .into(),

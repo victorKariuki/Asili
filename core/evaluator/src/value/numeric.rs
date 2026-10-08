@@ -198,7 +198,7 @@ pub(crate) fn big_numeric_binary_op(
     if both_int {
         let to_bigint = |v: &Value| -> BigInt {
             match v {
-                Value::NambaKuu(n) => n.clone(),
+                Value::NambaKuu(n) => (*n.clone()).clone(),
                 Value::Namba(n) => BigInt::from(*n as i64),
                 _ => unreachable!("both_int guard checked above"),
             }
@@ -207,18 +207,18 @@ pub(crate) fn big_numeric_binary_op(
         let bi = to_bigint(r);
         let zero = BigInt::from(0);
         let result = match op {
-            BinaryOp::Add => Value::NambaKuu(&ai + &bi),
-            BinaryOp::Sub => Value::NambaKuu(&ai - &bi),
-            BinaryOp::Mul => Value::NambaKuu(&ai * &bi),
+            BinaryOp::Add => Value::NambaKuu(std::rc::Rc::new(&ai + &bi)),
+            BinaryOp::Sub => Value::NambaKuu(std::rc::Rc::new(&ai - &bi)),
+            BinaryOp::Mul => Value::NambaKuu(std::rc::Rc::new(&ai * &bi)),
             BinaryOp::Div if bi == zero => return Err(EvalError::DivByZero),
-            BinaryOp::Div => Value::NambaKuu(&ai / &bi),
+            BinaryOp::Div => Value::NambaKuu(std::rc::Rc::new(&ai / &bi)),
             BinaryOp::Rem if bi == zero => return Err(EvalError::DivByZero),
-            BinaryOp::Rem => Value::NambaKuu(&ai % &bi),
+            BinaryOp::Rem => Value::NambaKuu(std::rc::Rc::new(&ai % &bi)),
             BinaryOp::Pow => {
                 let exp: u32 = bi.try_into().map_err(|_| {
                     EvalError::TypeErr("** ya Namba_Kuu inahitaji kipeo kisicho hasi".into())
                 })?;
-                Value::NambaKuu(ai.pow(exp))
+                Value::NambaKuu(std::rc::Rc::new(ai.pow(exp)))
             }
             BinaryOp::Eq => Value::Ukweli(ai == bi),
             BinaryOp::Ne => Value::Ukweli(ai != bi),
@@ -233,8 +233,8 @@ pub(crate) fn big_numeric_binary_op(
 
     let to_bigdecimal = |v: &Value| -> Option<BigDecimal> {
         match v {
-            Value::NambaSahihi(n) => Some(n.clone()),
-            Value::NambaKuu(n) => Some(BigDecimal::from(n.clone())),
+            Value::NambaSahihi(n) => Some((**n).clone()),
+            Value::NambaKuu(n) => Some(BigDecimal::from((**n).clone())),
             Value::Namba(n) => BigDecimal::from_f64(*n),
             _ => None,
         }
@@ -244,13 +244,13 @@ pub(crate) fn big_numeric_binary_op(
     };
     let zero = BigDecimal::from(0);
     let result = match op {
-        BinaryOp::Add => Value::NambaSahihi(&ad + &bd),
-        BinaryOp::Sub => Value::NambaSahihi(&ad - &bd),
-        BinaryOp::Mul => Value::NambaSahihi(&ad * &bd),
+        BinaryOp::Add => Value::NambaSahihi(std::rc::Rc::new(&ad + &bd)),
+        BinaryOp::Sub => Value::NambaSahihi(std::rc::Rc::new(&ad - &bd)),
+        BinaryOp::Mul => Value::NambaSahihi(std::rc::Rc::new(&ad * &bd)),
         BinaryOp::Div if bd == zero => return Err(EvalError::DivByZero),
-        BinaryOp::Div => Value::NambaSahihi(ad / bd),
+        BinaryOp::Div => Value::NambaSahihi(std::rc::Rc::new(ad / bd)),
         BinaryOp::Rem if bd == zero => return Err(EvalError::DivByZero),
-        BinaryOp::Rem => Value::NambaSahihi(&ad % &bd),
+        BinaryOp::Rem => Value::NambaSahihi(std::rc::Rc::new(&ad % &bd)),
         BinaryOp::Pow => {
             // BigDecimal only supports integer exponents (exact decimal arithmetic has no
             // general fractional-power operation); the right operand's own integer value
@@ -261,7 +261,7 @@ pub(crate) fn big_numeric_binary_op(
                 Value::NambaSahihi(n) => n.to_string().parse::<f64>().unwrap_or(0.0) as i64,
                 _ => 0,
             };
-            Value::NambaSahihi(ad.powi(exp))
+            Value::NambaSahihi(std::rc::Rc::new(ad.powi(exp)))
         }
         BinaryOp::Eq => Value::Ukweli(ad == bd),
         BinaryOp::Ne => Value::Ukweli(ad != bd),

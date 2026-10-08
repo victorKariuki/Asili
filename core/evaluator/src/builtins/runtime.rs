@@ -60,7 +60,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
                     map.insert(MapKey::Neno(key.into()), Value::neno(val));
                 }
             }
-            Ok(Value::Kamusi(map))
+            Ok(Value::Kamusi(std::rc::Rc::new(map)))
         }),
     );
     m.insert(

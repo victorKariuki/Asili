@@ -91,8 +91,9 @@ impl SendKey {
 // Faili/Mkondo/Kumbukumbu<T> (resource handles) landed below — see docs/design/
 // faili-mkondo-design.md.
 
-/// A shared identifier (struct and field names in values).
-pub type Name = std::rc::Rc<str>;
+/// An identifier in a value (struct, field, enum and variant names): interned, so one pointer
+/// wide and compared by pointer.
+pub use asili_parser::Name;
 
 /// A `Kamusi`'s storage. `foldhash` is several times faster than std's SipHash on short keys and,
 /// like it, seeded per process, so maps built from untrusted keys (HTTP headers) stay resistant
@@ -118,10 +119,10 @@ pub enum Value {
     /// assigned in place, so the fields are shared (`Rc`): copying a struct is a reference-count
     /// bump, not a copy of its fields.
     Struct(Name, Rc<[(Name, Value)]>),
-    Enum(String, String, Option<Box<Value>>), // enum_name, variant_name, optional_data
+    Enum(Name, Name, Option<Box<Value>>), // enum_name, variant_name, optional_data
     Herufi(char),
     Jozi(Box<Value>, Box<Value>),
-    Kamusi(Kamusi),
+    Kamusi(Rc<Kamusi>),
     /// Time: seconds since Unix epoch (majira module).
     Wakati(f64),
     /// Raw memory address (syscall, kiungo).
@@ -168,12 +169,12 @@ pub enum Value {
     Kumbukumbu(Box<Value>),
     /// Ordered-by-nothing set (`Seti<T>`); reuses the MapKey hashable-key type Kamusi already
     /// uses. Iteration order is HashSet's (unspecified), same tradeoff Kamusi already accepts.
-    Seti(Seti),
+    Seti(Rc<Seti>),
     /// Arbitrary-precision integer (Namba_Kuu). No literal syntax — constructed only via
     /// `namba_kuu_kutoka(neno)` parsing a decimal-digit string, or infallibly cast from `Namba`.
-    NambaKuu(BigInt),
+    NambaKuu(Rc<BigInt>),
     /// Arbitrary-precision decimal (Namba_Sahihi). Same construction story as NambaKuu.
-    NambaSahihi(BigDecimal),
+    NambaSahihi(Rc<BigDecimal>),
     /// Channel sender half (njia). Deliberately `Arc<Mutex<_>>` over `SendValue`, not
     /// `Rc<RefCell<Value>>` like every other interior-mutable Value variant — a channel's
     /// entire purpose is crossing the thread boundary `tenda` spawns, so it's the one justified
@@ -293,7 +294,7 @@ pub enum SendValue {
     Kamusi(HashMap<SendKey, SendValue>),
     Seti(HashSet<SendKey>),
     Struct(String, Vec<(String, SendValue)>),
-    Enum(String, String, Option<Box<SendValue>>),
+    Enum(Name, Name, Option<Box<SendValue>>),
     /// `Value`'s `NjiaTx`/`NjiaRx`/`Fungo` already carry `SendValue` payloads (see their own
     /// doc comments on `Value`), so these clone the `Arc` handle directly — no conversion.
     NjiaTx(Arc<Mutex<std::sync::mpsc::Sender<SendValue>>>),
@@ -337,8 +338,8 @@ impl Value {
             Value::Herufi(c) => SendValue::Herufi(*c),
             Value::Wakati(s) => SendValue::Wakati(*s),
             Value::Anuani(a) => SendValue::Anuani(*a),
-            Value::NambaKuu(n) => SendValue::NambaKuu(n.clone()),
-            Value::NambaSahihi(n) => SendValue::NambaSahihi(n.clone()),
+            Value::NambaKuu(n) => SendValue::NambaKuu((*n.clone()).clone()),
+            Value::NambaSahihi(n) => SendValue::NambaSahihi((*n.clone()).clone()),
             Value::Chaguo(opt) => SendValue::Chaguo(match opt {
                 Some(v) => Some(Box::new(v.try_into_send()?)),
                 None => None,
@@ -358,7 +359,7 @@ impl Value {
             }
             Value::Kamusi(m) => {
                 let mut out = HashMap::with_capacity(m.len());
-                for (k, v) in m {
+                for (k, v) in m.iter() {
                     out.insert(k.to_send(), v.try_into_send()?);
                 }
                 SendValue::Kamusi(out)
@@ -412,8 +413,8 @@ impl SendValue {
             SendValue::Herufi(c) => Value::Herufi(c),
             SendValue::Wakati(s) => Value::Wakati(s),
             SendValue::Anuani(a) => Value::Anuani(a),
-            SendValue::NambaKuu(n) => Value::NambaKuu(n),
-            SendValue::NambaSahihi(n) => Value::NambaSahihi(n),
+            SendValue::NambaKuu(n) => Value::NambaKuu(std::rc::Rc::new(n)),
+            SendValue::NambaSahihi(n) => Value::NambaSahihi(std::rc::Rc::new(n)),
             SendValue::Chaguo(opt) => Value::Chaguo(opt.map(|v| Box::new(v.into_value()))),
             SendValue::Tokeo(res) => Value::Tokeo(match res {
                 Ok(v) => Ok(Box::new(v.into_value())),
@@ -425,12 +426,14 @@ impl SendValue {
             SendValue::Jozi(a, b) => {
                 Value::Jozi(Box::new(a.into_value()), Box::new(b.into_value()))
             }
-            SendValue::Kamusi(m) => Value::Kamusi(
+            SendValue::Kamusi(m) => Value::Kamusi(Rc::new(
                 m.into_iter()
                     .map(|(k, v)| (k.into_key(), v.into_value()))
                     .collect(),
-            ),
-            SendValue::Seti(s) => Value::Seti(s.into_iter().map(SendKey::into_key).collect()),
+            )),
+            SendValue::Seti(s) => {
+                Value::Seti(Rc::new(s.into_iter().map(SendKey::into_key).collect()))
+            }
             SendValue::Struct(name, fields) => Value::Struct(
                 name.into(),
                 fields

@@ -77,7 +77,7 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
         ]),
         Value::Kamusi(map) => {
             let mut out = serde_json::Map::with_capacity(map.len());
-            for (k, v) in map {
+            for (k, v) in map.iter() {
                 out.insert(map_key_to_json_field(k), to_json_depth(v, depth + 1)?);
             }
             J::Object(out)
@@ -101,7 +101,7 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
         }
         Value::Enum(_enum_name, variant, data) => {
             let mut out = serde_json::Map::new();
-            out.insert("aina".to_string(), J::String(variant.clone()));
+            out.insert("aina".to_string(), J::String(variant.to_string()));
             if let Some(d) = data {
                 out.insert("data".to_string(), to_json_depth(d, depth + 1)?);
             }
@@ -210,7 +210,7 @@ fn from_json_depth(j: &serde_json::Value, depth: usize) -> Value {
             // the decoded Kamusi's fields. `fields` is unused for the Kamusi case but kept
             // available for a future rename/typed-decode extension point rather than discarded.
             let _ = fields;
-            Value::Kamusi(out)
+            Value::Kamusi(std::rc::Rc::new(out))
         }
     }
 }
@@ -246,7 +246,9 @@ mod tests {
 
     #[test]
     fn namba_kuu_encodes_as_decimal_string() {
-        let n = Value::NambaKuu(num_bigint::BigInt::from(123456789012345678_i64));
+        let n = Value::NambaKuu(std::rc::Rc::new(num_bigint::BigInt::from(
+            123456789012345678_i64,
+        )));
         let j = n.to_json().unwrap();
         assert_eq!(j, serde_json::json!("123456789012345678"));
     }
@@ -254,7 +256,9 @@ mod tests {
     #[test]
     fn namba_sahihi_encodes_as_decimal_string() {
         use std::str::FromStr;
-        let n = Value::NambaSahihi(bigdecimal::BigDecimal::from_str("3.1415926535").unwrap());
+        let n = Value::NambaSahihi(std::rc::Rc::new(
+            bigdecimal::BigDecimal::from_str("3.1415926535").unwrap(),
+        ));
         let j = n.to_json().unwrap();
         assert_eq!(j, serde_json::json!("3.1415926535"));
     }
@@ -368,7 +372,7 @@ mod tests {
     fn kamusi_round_trips_through_neno_keys() {
         let mut map = crate::value::Kamusi::default();
         map.insert(MapKey::Neno("a".into()), Value::Namba(1.0));
-        let v = Value::Kamusi(map);
+        let v = Value::Kamusi(std::rc::Rc::new(map));
         let j = v.to_json().unwrap();
         assert_eq!(j, serde_json::json!({"a": 1.0}));
     }

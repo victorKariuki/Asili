@@ -1888,7 +1888,7 @@ impl<'a> Analyzer<'a> {
                 if let Some(d) = data {
                     let _ = self.check_expr(*d, scopes, UseMode::Move);
                 }
-                ValueType::Struct(enum_name.clone())
+                ValueType::Struct(enum_name.to_string())
             }
             Expr::Index { base, index, line } => self.check_index(*base, *index, *line, scopes).0,
             Expr::FieldAccess {
