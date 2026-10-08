@@ -562,13 +562,13 @@ fn compile_module_inner(
         impl_methods: module
             .impls
             .iter()
-            .flat_map(|i| i.body.iter().map(|f| f.name.clone()))
+            .flat_map(|i| i.body.iter().map(|f| f.name.to_string()))
             .collect(),
         impl_index: HashMap::new(),
     };
     for (i, function) in module.functions.iter().enumerate() {
         program.functions.insert(
-            function.name.clone(),
+            function.name.to_string(),
             FunctionSig {
                 index: i as u32,
                 params: function
@@ -602,7 +602,7 @@ fn compile_module_inner(
         );
         program
             .impl_index
-            .entry((imp.target.clone(), f.name.clone()))
+            .entry((imp.target.clone(), f.name.to_string()))
             .or_insert(index);
     }
     for constant in &module.constants {
@@ -621,7 +621,7 @@ fn compile_module_inner(
     let all = module
         .functions
         .iter()
-        .map(|f| (f.name.clone(), f))
+        .map(|f| (f.name.to_string(), f))
         .chain(methods.iter().map(|(imp, f)| {
             (
                 impl_function_name(&imp.target, imp.trait_name.as_deref(), &f.name),
@@ -637,7 +637,7 @@ fn compile_module_inner(
             None => {
                 if failed_line.is_none() {
                     *failed_line = Some((
-                        function.name.clone(),
+                        function.name.to_string(),
                         program.failed_line.unwrap_or(function.line),
                     ));
                 }
@@ -870,7 +870,7 @@ impl<'a> FunctionCompiler<'a> {
         f.block(&function.body)?;
         f.emit(Opcode::ReturnTupu);
         Some(BytecodeFunc {
-            name: function.name.clone(),
+            name: function.name.to_string(),
             params,
             ret,
             num_regs: f.num_regs,
@@ -914,7 +914,7 @@ impl<'a> FunctionCompiler<'a> {
             .map(|p| f.declare(&p.name, Ty::from_type_name(&p.ty.name), None))
             .collect();
         BytecodeFunc {
-            name: function.name.clone(),
+            name: function.name.to_string(),
             params,
             ret,
             num_regs: f.num_regs,
@@ -1006,7 +1006,7 @@ impl<'a> FunctionCompiler<'a> {
             Expr::Bool(_) => Ty::Bool,
             Expr::Ident { name, .. } => match self.lookup(name) {
                 Some(local) => local.op.ty,
-                None => match self.program.module_consts.get(name) {
+                None => match self.program.module_consts.get(name.as_str()) {
                     Some((ty, _, _)) => *ty,
                     None => match crate::env::global_constants()
                         .into_iter()
@@ -1053,14 +1053,14 @@ impl<'a> FunctionCompiler<'a> {
                         && args.len() == 1
                         && self.infer(self.node(args[0])) == Ty::Num
                         && self.lookup(name).is_none()
-                        && !self.program.functions.contains_key(name)
+                        && !self.program.functions.contains_key(name.as_str())
                     {
                         Ty::Num
                     } else {
                         // The program's own `kazi` first: it shadows a builtin.
                         self.program
                             .functions
-                            .get(name)
+                            .get(name.as_str())
                             .map(|f| f.ret)
                             .unwrap_or(Ty::Val)
                     }
@@ -1148,7 +1148,7 @@ impl<'a> FunctionCompiler<'a> {
                 None => self
                     .program
                     .module_consts
-                    .get(name)
+                    .get(name.as_str())
                     .map(|(_, _, t)| t.clone()),
             },
             Expr::Cast { ty, .. } if ty.name == "Neno" => Some("Neno".into()),
@@ -1175,9 +1175,11 @@ impl<'a> FunctionCompiler<'a> {
             }
             // The program's own `kazi` (which shadows a builtin of the same name).
             Expr::Call { callee, .. } => match self.node(*callee) {
-                Expr::Ident { name, .. } => {
-                    self.program.functions.get(name).map(|f| f.ret_name.clone())
-                }
+                Expr::Ident { name, .. } => self
+                    .program
+                    .functions
+                    .get(name.as_str())
+                    .map(|f| f.ret_name.clone()),
                 _ => None,
             },
             _ => None,
@@ -1222,7 +1224,7 @@ impl<'a> FunctionCompiler<'a> {
                 self.expr_into(self.node(*value), dst)?;
                 self.scopes
                     .last_mut()?
-                    .insert(name.clone(), Local { op: dst, type_name });
+                    .insert(name.to_string(), Local { op: dst, type_name });
             }
             Stmt::Assign {
                 name, op, value, ..
@@ -1239,7 +1241,7 @@ impl<'a> FunctionCompiler<'a> {
                             AssignOp::Assign => unreachable!(),
                         };
                         let current = Expr::Ident {
-                            name: name.clone(),
+                            name: *name,
                             line: 0,
                             column: 0,
                         };
@@ -1772,7 +1774,7 @@ impl<'a> FunctionCompiler<'a> {
                 if let Some(local) = self.lookup(name) {
                     return Some(local.op);
                 }
-                let (ty, constant) = match self.program.module_consts.get(name) {
+                let (ty, constant) = match self.program.module_consts.get(name.as_str()) {
                     Some((ty, constant, _)) => (*ty, constant.clone()),
                     // The predefined names (`Ukomo`, `PI`, …), as the tree-walker's outermost
                     // scope holds them.
@@ -2271,8 +2273,14 @@ impl<'a> FunctionCompiler<'a> {
             return None;
         }
         // The program's own `kazi` shadows a builtin of the same name.
-        let own = self.program.functions.contains_key(name);
-        if let Some(builtin) = self.program.builtins.get(name).copied().filter(|_| !own) {
+        let own = self.program.functions.contains_key(name.as_str());
+        if let Some(builtin) = self
+            .program
+            .builtins
+            .get(name.as_str())
+            .copied()
+            .filter(|_| !own)
+        {
             if let (Some(out), "orodha_rudia", 2) = (dst, name.as_str(), args.len()) {
                 if out.ty == Ty::List && self.infer(self.node(args[0])) == Ty::Num {
                     let value = self.expr_as(self.node(args[0]), Ty::Num)?.reg;
@@ -2310,7 +2318,7 @@ impl<'a> FunctionCompiler<'a> {
             })));
             return Some(out);
         }
-        let index = self.program.functions.get(name)?.index;
+        let index = self.program.functions.get(name.as_str())?.index;
         {
             let exprs = self.exprs;
             self.call_index(index, args.iter().map(|a| &exprs[*a]), dst)
@@ -2714,8 +2722,8 @@ pub(crate) fn ast_function<'m>(module: &'m Module, name: &str) -> Option<&'m Fun
 fn pattern_names(pat: &Pattern, out: &mut Vec<String>) {
     match pat {
         Pattern::Ident { name, .. } => {
-            if !out.contains(name) {
-                out.push(name.clone());
+            if !out.iter().any(|n| n == name) {
+                out.push(name.to_string());
             }
         }
         Pattern::Struct { fields, .. } => {

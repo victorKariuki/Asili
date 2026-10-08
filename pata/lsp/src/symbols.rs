@@ -105,7 +105,7 @@ pub fn completion_items(source: &str) -> Vec<CompletionItem> {
                 .map(|p| format!("{}: {}", p.name, p.ty.name))
                 .collect();
             items.push(CompletionItem {
-                label: f.name.clone(),
+                label: f.name.to_string(),
                 kind: Some(CompletionItemKind::FUNCTION),
                 detail: Some(format!(
                     "kazi {}({}) -> {}",
@@ -171,7 +171,7 @@ pub fn document_symbols(source: &str) -> Vec<DocumentSymbol> {
         let range = line_range(f.line);
         #[allow(deprecated)]
         syms.push(DocumentSymbol {
-            name: f.name.clone(),
+            name: f.name.to_string(),
             detail: Some(format!("-> {}", f.return_type.name)),
             kind: SymbolKind::FUNCTION,
             tags: None,
@@ -692,7 +692,7 @@ pub fn test_code_lenses(source: &str, uri: &Url) -> Vec<CodeLens> {
                 command: "asili.runTest".to_string(),
                 arguments: Some(vec![
                     serde_json::Value::String(uri.to_string()),
-                    serde_json::Value::String(f.name.clone()),
+                    serde_json::Value::String(f.name.to_string()),
                 ]),
             }),
             data: None,

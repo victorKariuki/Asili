@@ -47,7 +47,7 @@ impl TraitStub {
                         .iter()
                         .enumerate()
                         .map(|(i, ty)| Param {
-                            name: format!("_{i}"),
+                            name: format!("_{i}").into(),
                             ty: TypeExpr {
                                 name: ty.to_string(),
                             },

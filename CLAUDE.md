@@ -153,6 +153,7 @@ the change. The current single sources:
 | LSP raw-source scanning | `pata/lsp/src/scan.rs::code_chars` |
 | `pata-cli` test fixtures | `pata/cli/src/test_support.rs` |
 | Tracing (events, spans, output formats) | the `asili-trace` crate (`emit`/`enter`/`phase`; sinks chosen by `install_spec`) |
+| Identifier interning, Fx hashing | `asili_parser::Name` / `FxHasher` / `FxHashMap` (`core/parser/src/name.rs`) |
 
 Hand-maintained mirrors that cannot share code (the VS Code TextMate grammar, the playground
 highlighter, `lib/std/*.asi` stubs, `extension.ts`'s `findProjectRoot`) must be updated in the

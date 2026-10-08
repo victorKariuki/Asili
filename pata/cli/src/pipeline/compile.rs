@@ -626,7 +626,7 @@ pub fn run_project_tests_parallel(
                                 timeout,
                             );
                             result.into_iter().next().unwrap_or_else(|| TestResult {
-                                name: f.name.clone(),
+                                name: f.name.to_string(),
                                 passed: false,
                                 message: "failed to run test".to_string(),
                             })
@@ -649,7 +649,7 @@ pub fn run_project_tests_parallel(
 pub fn list_project_tests(root: &Path) -> Result<Vec<String>, CliError> {
     Ok(discover_project_tests(root, None)?
         .into_iter()
-        .map(|(_, test)| test.name)
+        .map(|(_, test)| test.name.to_string())
         .collect())
 }
 
@@ -946,7 +946,7 @@ mod tests {
                 .expect("load_asb")
                 .functions
                 .into_iter()
-                .map(|f| f.name)
+                .map(|f| f.name.to_string())
                 .collect()
         };
         assert!(

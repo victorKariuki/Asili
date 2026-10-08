@@ -139,6 +139,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Interned names**: identifiers in the syntax tree (variables, parameters, `kwa` variables,
+  pattern bindings, `kazi` names) are `asili_parser::Name`s — a pointer to the one copy of the
+  text in a process-wide table, with its hash computed once. The tree-walker's scopes compare
+  names by pointer instead of by bytes, and its builtins are found by the precomputed hash
+  instead of SipHash over the text. Syntax trees serialize names as text, so `.asb` files are
+  unchanged. The Sudoku solver with `ASILI_AOT=0`: 13.53 → 11.53 billion instructions (−14.8%);
+  parsing the 60,000-line file also drops to ~17 ms, since repeated names are no longer copied.
+  `FxHasher` moved from the evaluator's `env.rs` to `asili_parser` beside `Name`.
+
 - **Token kinds**: every `Token` now carries a `kind` (`asili_lexer::TokenKind`: one variant per
   keyword and punctuation, plus `Ident`, `Number`, `Str`, `Char`), and the parser compares kinds
   instead of lexeme strings. `tk!("weka")` names a kind at compile time and rejects text that

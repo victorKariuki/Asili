@@ -27,7 +27,7 @@ pub(crate) fn call_body(
     rt.env.push_scope();
     let mut args = args.into_iter();
     for p in &f.params {
-        rt.env.define(&p.name, args.next().unwrap_or(Value::Hamna));
+        rt.env.define(p.name, args.next().unwrap_or(Value::Hamna));
     }
     let out = eval_block_impl(&f.body, rt);
     rt.env.pop_scope();

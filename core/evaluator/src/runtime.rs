@@ -25,7 +25,7 @@ pub struct EvalMetrics {
 pub(crate) struct Runtime<'a> {
     pub env: &'a mut Env,
     pub module: &'a Module,
-    pub builtins: HashMap<String, builtins::BuiltinFn>,
+    pub builtins: Builtins,
     pub depth: usize,
     /// `kazi` calls in progress (bounded by [`MAX_CALL_DEPTH`]).
     pub calls: usize,
@@ -66,16 +66,22 @@ pub(crate) struct NativeHook {
     pub shared: fn(*mut std::ffi::c_void) -> crate::spawn::Shared,
 }
 
+/// The tree-walker's builtins, by interned name.
+pub(crate) type Builtins = asili_parser::FxHashMap<asili_parser::Name, builtins::BuiltinFn>;
+
 /// `builtins` without the names `module` defines as its own `kazi`: a program's `kazi` shadows
 /// an ambient builtin of the same name (as the analyzer and the bytecode compiler assume).
 pub(crate) fn unshadowed(
     mut builtins: HashMap<String, builtins::BuiltinFn>,
     module: &Module,
-) -> HashMap<String, builtins::BuiltinFn> {
+) -> Builtins {
     for f in &module.functions {
         builtins.remove(f.name.as_str());
     }
     builtins
+        .into_iter()
+        .map(|(name, f)| (asili_parser::Name::new(&name), f))
+        .collect()
 }
 
 impl<'a> Runtime<'a> {
@@ -95,11 +101,7 @@ impl<'a> Runtime<'a> {
         }
     }
 
-    pub fn with_builtins(
-        env: &'a mut Env,
-        module: &'a Module,
-        builtins: HashMap<String, builtins::BuiltinFn>,
-    ) -> Self {
+    pub fn with_builtins(env: &'a mut Env, module: &'a Module, builtins: Builtins) -> Self {
         Self {
             env,
             module,

@@ -79,7 +79,7 @@ impl<'a> Analyzer<'a> {
     ) -> Self {
         let mut fn_map = HashMap::new();
         for f in &module.functions {
-            fn_map.insert(f.name.clone(), f);
+            fn_map.insert(f.name.to_string(), f);
         }
         let mut local_constants = HashMap::new();
         for c in &module.constants {
@@ -153,7 +153,7 @@ impl<'a> Analyzer<'a> {
         while let Some(e) = work.pop() {
             let next: Vec<ExprId> = match &self.module[e] {
                 Expr::Ident { name, .. } => {
-                    names.push(name.clone());
+                    names.push(name.to_string());
                     continue;
                 }
                 Expr::Group(e)
@@ -228,7 +228,7 @@ impl<'a> Analyzer<'a> {
                     .unwrap_or(ValueType::Unknown);
                 if let Some(scope) = scopes.last_mut() {
                     scope.insert(
-                        bind_name.clone(),
+                        bind_name.to_string(),
                         Binding::new(ty, true, Span { line, column: 1 }),
                     );
                 }
@@ -271,7 +271,7 @@ impl<'a> Analyzer<'a> {
             {
                 if let Some(scope) = scopes.last_mut() {
                     scope.insert(
-                        bind_name.clone(),
+                        bind_name.to_string(),
                         Binding::new(ty, true, Span { line, column: 1 }),
                     );
                 }
@@ -501,7 +501,7 @@ impl<'a> Analyzer<'a> {
         for p in &f.params {
             let ty = self.type_from_decl(&p.ty.name);
             scopes[0].insert(
-                p.name.clone(),
+                p.name.to_string(),
                 Binding::new(
                     ty,
                     false,
@@ -602,7 +602,7 @@ impl<'a> Analyzer<'a> {
                 }
                 if let Some(scope) = scopes.last_mut() {
                     scope.insert(
-                        name.clone(),
+                        name.to_string(),
                         Binding::new(
                             declared.clone(),
                             *mutable,
@@ -615,7 +615,7 @@ impl<'a> Analyzer<'a> {
                 }
                 if matches!(declared, ValueType::Tokeo(_, _)) {
                     if let Some(set) = self.unconsumed_tokeo.last_mut() {
-                        set.insert(name.clone());
+                        set.insert(name.to_string());
                     }
                 }
             }
@@ -655,7 +655,7 @@ impl<'a> Analyzer<'a> {
                 let rhs_ty = self.check_expr(*value, scopes, UseMode::Return);
                 let mut found = false;
                 for scope in scopes.iter_mut().rev() {
-                    if let Some(b) = scope.get_mut(name) {
+                    if let Some(b) = scope.get_mut(name.as_str()) {
                         found = true;
                         if !b.mutable {
                             self.errors.push(
@@ -821,7 +821,7 @@ impl<'a> Analyzer<'a> {
                 self.dropped_vars.push(HashSet::new());
                 if let Some(scope) = scopes.last_mut() {
                     scope.insert(
-                        var.clone(),
+                        var.to_string(),
                         Binding::new(
                             var_ty,
                             true,
@@ -905,7 +905,7 @@ impl<'a> Analyzer<'a> {
                                     {
                                         if let Some(scope) = scopes.last_mut() {
                                             scope.insert(
-                                                bind_name.clone(),
+                                                bind_name.to_string(),
                                                 Binding::new(
                                                     inner_ty,
                                                     true,
@@ -1017,7 +1017,7 @@ impl<'a> Analyzer<'a> {
                 let mut found = false;
                 let mut already_dropped = false;
                 for scope in scopes.iter_mut().rev() {
-                    if let Some(b) = scope.get_mut(name) {
+                    if let Some(b) = scope.get_mut(name.as_str()) {
                         found = true;
                         if b.dropped_at.is_some() {
                             already_dropped = true;
@@ -1056,7 +1056,7 @@ impl<'a> Analyzer<'a> {
                 } else {
                     // Track this variable as dropped in the current scope
                     if let Some(set) = self.dropped_vars.last_mut() {
-                        set.insert(name.clone());
+                        set.insert(name.to_string());
                     }
                 }
             }
@@ -1391,7 +1391,7 @@ impl<'a> Analyzer<'a> {
             }
             Expr::Call { callee, args, line } => {
                 let callee_name = if let Expr::Ident { name: n, .. } = &module[*callee] {
-                    Some(n.clone())
+                    Some(*n)
                 } else {
                     None
                 };
@@ -1401,7 +1401,7 @@ impl<'a> Analyzer<'a> {
                     self.check_expr(*callee, scopes, UseMode::Move)
                 };
                 if let Some(name) = callee_name {
-                    if let Some(f) = self.fn_map.get(&name).cloned() {
+                    if let Some(f) = self.fn_map.get(name.as_str()).cloned() {
                         let use_mode = UseMode::BorrowImm;
                         for a in args {
                             let _ = self.check_expr(*a, scopes, use_mode);
@@ -1420,14 +1420,14 @@ impl<'a> Analyzer<'a> {
                                 if let Expr::Ident { name: n, .. } = &module[*arg] {
                                     let pt = self.type_from_decl(&param.ty.name);
                                     if matches!(pt, ValueType::Tokeo(_, _)) {
-                                        self.mark_tokeo_consumed(scopes, std::slice::from_ref(n));
+                                        self.mark_tokeo_consumed(scopes, &[n.to_string()]);
                                     }
                                 }
                             }
                         }
                         return self.type_from_decl(&f.return_type.name);
                     }
-                    if let Some(sig) = self.extern_fn_map.get(&name).cloned() {
+                    if let Some(sig) = self.extern_fn_map.get(name.as_str()).cloned() {
                         // TODO: variadic-by-name is a hardcoded special case, not a general
                         // FnContract flag — matches the existing "orodha" precedent rather than
                         // introducing new arity-checking machinery for this one addition.
@@ -1473,7 +1473,7 @@ impl<'a> Analyzer<'a> {
                                 }
                                 if let Expr::Ident { name: n, .. } = &module[args[idx]] {
                                     if matches!(want, ValueType::Tokeo(_, _)) {
-                                        self.mark_tokeo_consumed(scopes, std::slice::from_ref(n));
+                                        self.mark_tokeo_consumed(scopes, &[n.to_string()]);
                                     }
                                 }
                             }

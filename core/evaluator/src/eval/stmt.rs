@@ -42,7 +42,7 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
         } => {
             let v = super::eval_expr_impl(*value, rt)?;
             asili_trace::emit(asili_trace::Tukio::Kigeuzi, name, *line as u32);
-            rt.env.define(name, v);
+            rt.env.define(*name, v);
             Ok(EvalOut::Next)
         }
         Stmt::LetPattern { pattern, value, .. } => {
@@ -61,8 +61,8 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             // One lookup: the binding is updated in place (no copy of its old value).
             let current = rt
                 .env
-                .get_mut(name)
-                .ok_or_else(|| EvalError::UndefinedVar(name.clone()))?;
+                .get_mut(*name)
+                .ok_or_else(|| EvalError::UndefinedVar(name.to_string()))?;
             *current = match op {
                 AssignOp::Assign => rhs,
                 AssignOp::AddAssign => match (&*current, &rhs) {
@@ -87,8 +87,8 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             Ok(EvalOut::Return(v))
         }
         Stmt::Drop { name, .. } => {
-            if !rt.env.drop(name) {
-                return Err(EvalError::UndefinedVar(name.clone()));
+            if !rt.env.drop(*name) {
+                return Err(EvalError::UndefinedVar(name.to_string()));
             }
             Ok(EvalOut::Next)
         }
@@ -152,7 +152,7 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                     let (start_i, end_i) = (start_n as i64, end_n as i64);
                     for i in start_i..end_i {
                         rt.env.push_scope();
-                        rt.env.define(var, Value::Namba(i as f64));
+                        rt.env.define(*var, Value::Namba(i as f64));
                         let out = super::eval_block_impl(body, rt)?;
                         rt.env.pop_scope();
                         match handle_loop_out(my_label.as_ref(), out) {
@@ -175,7 +175,7 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
                         };
                     for item in items {
                         rt.env.push_scope();
-                        rt.env.define(var, item);
+                        rt.env.define(*var, item);
                         let out = super::eval_block_impl(body, rt)?;
                         rt.env.pop_scope();
                         match handle_loop_out(my_label.as_ref(), out) {

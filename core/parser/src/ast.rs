@@ -8,6 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::Name;
+
 /// An expression: an index into its module's [`Exprs`] arena.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ExprId(pub u32);
@@ -190,7 +192,7 @@ pub struct ImplDecl {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Function {
-    pub name: String,
+    pub name: Name,
     pub params: Vec<Param>,
     pub return_type: TypeExpr,
     pub body: Block,
@@ -203,7 +205,7 @@ pub struct Function {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Param {
-    pub name: String,
+    pub name: Name,
     pub ty: TypeExpr,
     pub line: usize,
     pub column: usize,
@@ -223,7 +225,7 @@ pub struct Block {
 pub enum Stmt {
     Let {
         mutable: bool,
-        name: String,
+        name: Name,
         ty: Option<TypeExpr>,
         value: ExprId,
         line: usize,
@@ -238,7 +240,7 @@ pub enum Stmt {
         line: usize,
     },
     Assign {
-        name: String,
+        name: Name,
         op: AssignOp,
         value: ExprId,
         line: usize,
@@ -260,7 +262,7 @@ pub enum Stmt {
     },
     For {
         label: Option<String>,
-        var: String,
+        var: Name,
         var_column: usize,
         mode: ForMode,
         body: Block,
@@ -284,7 +286,7 @@ pub enum Stmt {
         line: usize,
     },
     Drop {
-        name: String,
+        name: Name,
         line: usize,
     },
     Expr {
@@ -412,7 +414,7 @@ pub enum Pattern {
     // position so a match-arm binding (`n` in `Fulani(n) => ...`) can be tracked as a real
     // scoped local by pata/lsp/src/semantic.rs, not just left uncolored.
     Ident {
-        name: String,
+        name: Name,
         line: usize,
         column: usize,
     },
@@ -444,7 +446,7 @@ pub enum Expr {
     // just its declaration site (pata/lsp/src/semantic.rs). If you're touching Expr::Ident call
     // sites elsewhere (attrs.rs extraction, etc.), match with `Expr::Ident { name, .. }`.
     Ident {
-        name: String,
+        name: Name,
         line: usize,
         column: usize,
     },

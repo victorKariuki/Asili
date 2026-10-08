@@ -6,6 +6,7 @@ mod block;
 mod expr;
 mod pattern;
 
+use crate::Name;
 use asili_diagnostics::Diagnostic;
 use std::mem;
 
@@ -472,7 +473,7 @@ impl<'a> Parser<'a> {
         let body = self.parse_body()?;
 
         Some(Function {
-            name: name_tok.lexeme.clone(),
+            name: Name::new(&name_tok.lexeme),
             params,
             return_type,
             body,
@@ -499,7 +500,7 @@ impl<'a> Parser<'a> {
             }
             let ty = self.parse_type();
             params.push(Param {
-                name: name.lexeme.clone(),
+                name: Name::new(&name.lexeme),
                 ty,
                 line: name.line,
                 column: name.column,
@@ -634,7 +635,7 @@ impl<'a> Parser<'a> {
             let line = self.prev().line;
             let ident = self.consume_ident("PAR030", "tupa inahitaji jina")?;
             return Some(Stmt::Drop {
-                name: ident.lexeme.clone(),
+                name: Name::new(&ident.lexeme),
                 line,
             });
         }
@@ -658,7 +659,7 @@ impl<'a> Parser<'a> {
             if let (0, Some(op_tok)) = (depth, after.filter(|&k| compound_op(k).is_some())) {
                 // `name[i] op= v`  →  `name.ingiza(i, name[i] op v)`.
                 let (op_base, op) = compound_op(op_tok).expect("checked above");
-                let name = self.advance().lexeme.clone();
+                let name = Name::new(&self.advance().lexeme);
                 let line = self.prev().line;
                 let column = self.prev().column;
                 self.advance(); // consume [
@@ -699,7 +700,7 @@ impl<'a> Parser<'a> {
                 return Some(Stmt::Expr { expr, line });
             }
             if depth == 0 && after == Some(TokenKind::Assign) {
-                let name = self.advance().lexeme.clone();
+                let name = Name::new(&self.advance().lexeme);
                 let line = self.prev().line;
                 let column = self.prev().column;
                 self.advance(); // consume [
@@ -719,7 +720,7 @@ impl<'a> Parser<'a> {
         }
 
         if self.check_ident() && self.check_n(1, tk!("=")) {
-            let name = self.advance().lexeme.clone();
+            let name = Name::new(&self.advance().lexeme);
             let line = self.prev().line;
             let column = self.prev().column;
             self.advance();
@@ -746,13 +747,13 @@ impl<'a> Parser<'a> {
                 )
             })
         {
-            let name = self.advance().lexeme.clone();
+            let name = Name::new(&self.advance().lexeme);
             let line = self.prev().line;
             let column = self.prev().column;
             let (op_base, op) = compound_op(self.advance().kind).expect("listed above");
             let rhs = self.parse_expression()?;
             let current = self.exprs.add(Expr::Ident {
-                name: name.clone(),
+                name: Name::new(&name),
                 line,
                 column,
             });
@@ -773,7 +774,7 @@ impl<'a> Parser<'a> {
                 )
             })
         {
-            let name = self.advance().lexeme.clone();
+            let name = Name::new(&self.advance().lexeme);
             let line = self.prev().line;
             let column = self.prev().column;
             let op_tok = self.advance().lexeme.clone();
@@ -808,7 +809,7 @@ impl<'a> Parser<'a> {
         let value = self.parse_expression()?;
         Some(Stmt::Let {
             mutable,
-            name: name.lexeme.clone(),
+            name: Name::new(&name.lexeme),
             ty,
             value,
             line: name.line,
@@ -905,7 +906,7 @@ impl<'a> Parser<'a> {
                 methods: vec![TraitMethodSig {
                     name: "soma".to_string(),
                     params: vec![Param {
-                        name: "self".to_string(),
+                        name: Name::new("self"),
                         ty: TypeExpr {
                             name: "Self".to_string(),
                         },
@@ -928,7 +929,7 @@ impl<'a> Parser<'a> {
                     name: "andika".to_string(),
                     params: vec![
                         Param {
-                            name: "self".to_string(),
+                            name: Name::new("self"),
                             ty: TypeExpr {
                                 name: "Self".to_string(),
                             },
@@ -936,7 +937,7 @@ impl<'a> Parser<'a> {
                             column: 0,
                         },
                         Param {
-                            name: "data".to_string(),
+                            name: Name::new("data"),
                             ty: TypeExpr {
                                 name: "Neno".to_string(),
                             },
@@ -996,7 +997,7 @@ fn build_binary(
         return quotient;
     }
     let callee = exprs.add(Expr::Ident {
-        name: "sakafu".to_string(),
+        name: Name::new("sakafu"),
         line,
         column: 0,
     });

@@ -214,7 +214,7 @@ impl SemanticAnalyzer {
 
         for f in &functions {
             self.global_decls
-                .insert(f.name.clone(), (TokenType::Function, 0));
+                .insert(f.name.to_string(), (TokenType::Function, 0));
             // line 0 marks a synthetic/builtin declaration with no real source position
             // (see standard_enums() below) — never emit a token for one of those.
             if f.line > 0 {
@@ -227,9 +227,9 @@ impl SemanticAnalyzer {
                 );
             }
             self.symbol_table.insert(
-                f.name.clone(),
+                f.name.to_string(),
                 SymbolInfo {
-                    name: f.name.clone(),
+                    name: f.name.to_string(),
                     kind: SymbolKind::Function,
                     type_info: Some(TypeInfo {
                         value_type: type_expr_to_value_type(&f.return_type),
@@ -352,11 +352,11 @@ impl SemanticAnalyzer {
     fn collect_tokens(&mut self) {
         let functions = self.module.functions.clone();
         for f in &functions {
-            self.push_scope(Some(f.name.clone()));
+            self.push_scope(Some(f.name.to_string()));
             for param in &f.params {
                 self.current_scope_mut()
-                    .bind(param.name.clone(), type_expr_to_value_type(&param.ty));
-                self.bind_local(param.name.clone(), TokenType::Parameter, 0);
+                    .bind(param.name.to_string(), type_expr_to_value_type(&param.ty));
+                self.bind_local(param.name.to_string(), TokenType::Parameter, 0);
                 self.push_raw(
                     param.line,
                     param.column,
@@ -433,7 +433,8 @@ impl SemanticAnalyzer {
                     }
                     inferred
                 };
-                self.current_scope_mut().bind(name.clone(), inferred_type);
+                self.current_scope_mut()
+                    .bind(name.to_string(), inferred_type);
                 // `thabiti` (mutable == false) gets the Readonly modifier on its declaration
                 // and every later usage — distinguishing it from `weka` bindings is part of
                 // what makes richer editors (rust-analyzer, etc.) feel more colorful than a
@@ -443,7 +444,7 @@ impl SemanticAnalyzer {
                 } else {
                     TokenModifier::Readonly.to_u32()
                 };
-                self.bind_local(name.clone(), TokenType::Variable, modifiers);
+                self.bind_local(name.to_string(), TokenType::Variable, modifiers);
                 self.push_raw(
                     *line,
                     *column,
@@ -513,8 +514,8 @@ impl SemanticAnalyzer {
                     ForMode::Range { .. } => ValueType::Namba,
                 };
                 self.push_scope(self.current_scope().parent_fn.clone());
-                self.current_scope_mut().bind(var.clone(), var_ty);
-                self.bind_local(var.clone(), TokenType::Variable, 0);
+                self.current_scope_mut().bind(var.to_string(), var_ty);
+                self.bind_local(var.to_string(), TokenType::Variable, 0);
                 self.push_raw(
                     *line,
                     *var_column,
@@ -633,7 +634,7 @@ impl SemanticAnalyzer {
     fn scan_pattern(&mut self, pattern: &Pattern) {
         match pattern {
             Pattern::Ident { name, line, column } => {
-                self.bind_local(name.clone(), TokenType::Variable, 0);
+                self.bind_local(name.to_string(), TokenType::Variable, 0);
                 self.push_raw(
                     *line,
                     *column,
@@ -731,11 +732,11 @@ impl SemanticAnalyzer {
                 SymbolKind::Function => {
                     let func = self.module.functions.iter().find(|f| f.name == name)?;
                     Some(HoverInfo::Function {
-                        name: func.name.clone(),
+                        name: func.name.to_string(),
                         params: func
                             .params
                             .iter()
-                            .map(|p| (p.name.clone(), type_expr_to_value_type(&p.ty)))
+                            .map(|p| (p.name.to_string(), type_expr_to_value_type(&p.ty)))
                             .collect(),
                         return_type: type_expr_to_value_type(&func.return_type),
                     })

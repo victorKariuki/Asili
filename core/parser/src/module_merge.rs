@@ -34,7 +34,7 @@ pub fn merge_modules(entrypoint: &Module, resolved: &HashMap<String, Module>) ->
         for f in &module.functions {
             let include = match &names_to_import {
                 None => f.is_public,
-                Some(names) => names.contains(&f.name),
+                Some(names) => names.iter().any(|n| *n == f.name),
             };
             if include && !functions.iter().any(|x| x.name == f.name) {
                 functions.push(exprs.import_function(&module.exprs, f));

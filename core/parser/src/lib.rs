@@ -7,11 +7,13 @@ pub mod attrs;
 pub mod builtins;
 mod cursor;
 mod module_merge;
+mod name;
 mod parse;
 mod semantic;
 pub use ast::*;
 pub use attrs::{item_survives, parse_sharti_predicate, ShartiPredicate, Target};
 pub use module_merge::merge_modules;
+pub use name::{FxHashMap, FxHasher, Name};
 pub use semantic::{format_value_type, parse_value_type};
 
 /// The newest Asili language (spec) version this toolchain implements — what `pata.toml`'s

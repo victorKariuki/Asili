@@ -99,7 +99,7 @@ pub fn run_function(
 /// only pushes a scope for its parameters.
 pub(crate) struct TreeContext {
     env: Env,
-    builtins: HashMap<String, BuiltinFn>,
+    builtins: runtime::Builtins,
 }
 
 impl TreeContext {
@@ -134,7 +134,7 @@ impl TreeContext {
 fn seed_module_constants(module: &Module, rt: &mut runtime::Runtime) -> Result<(), EvalError> {
     for c in &module.constants {
         let val = eval::eval_expr_impl(c.value, rt)?;
-        rt.env.define(&c.name, val);
+        rt.env.define(asili_parser::Name::new(&c.name), val);
     }
     Ok(())
 }
@@ -270,7 +270,7 @@ fn test_result(function: &Function, result: Result<Value, EvalError>) -> TestRes
         Err(e) => (false, e.to_string()),
     };
     TestResult {
-        name: function.name.clone(),
+        name: function.name.to_string(),
         passed,
         message,
     }
@@ -373,7 +373,7 @@ pub fn run_test_with_fixtures(
     for setup in &setup_fns {
         if let Err(e) = run_function(module, &setup.name, vec![]) {
             return TestResult {
-                name: function.name.clone(),
+                name: function.name.to_string(),
                 passed: false,
                 message: format!(
                     "kabla '{}' imeshindwa: {}",
@@ -397,7 +397,7 @@ pub fn run_test_with_fixtures(
             // after an otherwise-passing test is real and must not be silently dropped.
             if result.passed {
                 result = TestResult {
-                    name: function.name.clone(),
+                    name: function.name.to_string(),
                     passed: false,
                     message: format!(
                         "baada '{}' imeshindwa: {}",
@@ -427,7 +427,7 @@ fn run_test_with_timeout(
     function: &Function,
     timeout: std::time::Duration,
 ) -> TestResult {
-    let test_name = function.name.clone();
+    let test_name = function.name;
     let module_for_thread = module.clone();
     let function_for_thread = function.clone();
     let (tx, rx) = std::sync::mpsc::channel();
@@ -445,7 +445,7 @@ fn run_test_with_timeout(
         // records it as a failed TestResult so the rest of the suite keeps running, but the
         // message makes clear this isn't the test's own assertion failing.
         return TestResult {
-            name: test_name,
+            name: test_name.to_string(),
             passed: false,
             message: "imeshindwa kuanzisha uzi wa jaribio (rasilimali za mfumo)".to_string(),
         };
@@ -454,7 +454,7 @@ fn run_test_with_timeout(
     match rx.recv_timeout(timeout) {
         Ok(result) => result,
         Err(_) => TestResult {
-            name: test_name,
+            name: test_name.to_string(),
             passed: false,
             message: format!(
                 "muda umekwisha baada ya {:?} (jaribio limeachwa likiendelea kwa nyuma)",

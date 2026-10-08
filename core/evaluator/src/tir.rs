@@ -89,7 +89,7 @@ pub fn lower_to_tir(module: &Module) -> TypedIrModule {
         .functions
         .iter()
         .map(|f| TypedIrFunction {
-            name: f.name.clone(),
+            name: f.name.to_string(),
             block_count: count_blocks(&f.body),
             stmt_count: count_stmts(&f.body),
         })

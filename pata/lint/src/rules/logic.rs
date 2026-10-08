@@ -66,7 +66,7 @@ fn check_unused_locals(exprs: &Exprs, func: &Function) -> Vec<Diagnostic> {
 fn collect_let_bindings(block: &Block, out: &mut Vec<(String, usize)>) {
     for stmt in &block.statements {
         if let Stmt::Let { name, line, .. } = stmt {
-            out.push((name.clone(), *line));
+            out.push((name.to_string(), *line));
         }
         recurse_into_nested_blocks(stmt, &mut |b| collect_let_bindings(b, out));
     }
@@ -129,7 +129,7 @@ fn recurse_into_nested_blocks(stmt: &Stmt, f: &mut dyn FnMut(&Block)) {
 fn scan_expr(exprs: &Exprs, root: ExprId, out: &mut HashSet<String>) {
     for id in exprs.descendants(root) {
         if let Expr::Ident { name, .. } = &exprs[id] {
-            out.insert(name.clone());
+            out.insert(name.to_string());
         }
     }
 }

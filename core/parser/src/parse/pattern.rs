@@ -4,6 +4,7 @@
 
 use super::strip_string_lexeme_quotes;
 use crate::cursor::Parser;
+use crate::Name;
 use crate::{Expr, Pattern};
 use asili_lexer::{tk, TokenKind};
 
@@ -190,7 +191,11 @@ impl<'a> Parser<'a> {
                     fields: vec![first],
                 }));
             }
-            done.push(Pattern::Ident { name, line, column });
+            done.push(Pattern::Ident {
+                name: Name::new(&name),
+                line,
+                column,
+            });
             return Some(None);
         }
         self.err_here(

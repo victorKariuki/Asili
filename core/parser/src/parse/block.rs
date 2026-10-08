@@ -11,6 +11,7 @@
 
 use super::MAX_NESTING;
 use crate::cursor::Parser;
+use crate::Name;
 use crate::{Block, Expr, ExprId, ForMode, MatchArm, Pattern, Stmt};
 use asili_lexer::{tk, TokenKind};
 
@@ -44,7 +45,7 @@ enum Kind {
     },
     For {
         label: Option<String>,
-        var: String,
+        var: Name,
         var_column: usize,
         mode: ForMode,
         line: usize,
@@ -376,7 +377,7 @@ impl<'a> Parser<'a> {
                 frames,
                 Kind::For {
                     label,
-                    var: var_tok.lexeme.clone(),
+                    var: Name::new(&var_tok.lexeme),
                     var_column: var_tok.column,
                     mode,
                     line,

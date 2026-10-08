@@ -51,7 +51,7 @@ pub fn build_export_table(module: &Module) -> ExportTable {
                 .map(|p| parse_value_type(&p.ty.name))
                 .collect();
             let ret = parse_value_type(&f.return_type.name);
-            functions.insert(f.name.clone(), FnContract { params, ret });
+            functions.insert(f.name.to_string(), FnContract { params, ret });
         }
     }
     for c in &module.constants {

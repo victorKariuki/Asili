@@ -7,6 +7,7 @@
 //! a literal, `ikiwa`) pushes a frame that records where its operands start; its closer collapses
 //! down to that frame and builds the node. Nesting therefore costs heap, never machine stack.
 
+use crate::Name;
 use asili_diagnostics::Diagnostic;
 
 use super::{build_binary, strip_string_lexeme_quotes, MAX_NESTING};
@@ -446,7 +447,7 @@ impl<'a> Parser<'a> {
             self.push_node(
                 m,
                 Expr::Ident {
-                    name: lexeme.to_string(),
+                    name: Name::new(lexeme),
                     line,
                     column,
                 },
@@ -538,13 +539,13 @@ impl<'a> Parser<'a> {
                 self.err_here("PAR082", ":: inahitaji jina la jenum");
                 return None;
             };
-            let enum_name = enum_name.clone();
+            let enum_name = *enum_name;
             let variant = self.consume_ident("PAR080", "jenum kigezo inahitaji jina")?;
             let (line, column) = (variant.line, variant.column);
             m.pop();
             if self.match_tok(tk!("(")) {
                 m.push_open(Open::EnumData {
-                    enum_name,
+                    enum_name: enum_name.to_string(),
                     variant: variant.lexeme.clone(),
                     line,
                     column,
@@ -554,7 +555,7 @@ impl<'a> Parser<'a> {
                 self.push_node(
                     m,
                     Expr::EnumConstruct {
-                        enum_name,
+                        enum_name: enum_name.to_string(),
                         variant_name: variant.lexeme.clone(),
                         data: None,
                         line,
@@ -752,7 +753,7 @@ impl<'a> Parser<'a> {
             // `[thamani; idadi]`: `idadi` copies of `thamani` (`orodha_rudia`).
             Open::Repeat { line } => Expr::Call {
                 callee: self.exprs.add(Expr::Ident {
-                    name: "orodha_rudia".to_string(),
+                    name: Name::new("orodha_rudia"),
                     line,
                     column: 0,
                 }),

@@ -503,7 +503,7 @@ impl<'p> Host<'p> {
                     pattern,
                     &frame.vals[*src as usize],
                     &mut |name, v| {
-                        if let Some((_, reg)) = binds.iter().find(|(n, _)| n == name) {
+                        if let Some((_, reg)) = binds.iter().find(|(n, _)| *n == name) {
                             bound.push((*reg, v.clone()));
                         }
                     },

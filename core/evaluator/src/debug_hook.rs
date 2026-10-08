@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn snapshot_bindings_reflects_real_environment_state() {
         let mut env = Env::new();
-        env.define("x", Value::Namba(42.0));
+        env.define("x".into(), Value::Namba(42.0));
         let hook = RealDebugHook::new(vec![]);
         hook.record_bindings(snapshot_bindings(&env));
 
@@ -194,9 +194,9 @@ mod tests {
     #[test]
     fn snapshot_bindings_respects_inner_scope_shadowing() {
         let mut env = Env::new();
-        env.define("x", Value::Namba(1.0));
+        env.define("x".into(), Value::Namba(1.0));
         env.push_scope();
-        env.define("x", Value::Namba(2.0));
+        env.define("x".into(), Value::Namba(2.0));
         let hook = RealDebugHook::new(vec![]);
         hook.record_bindings(snapshot_bindings(&env));
 

@@ -1,6 +1,6 @@
 //! Expression evaluation and pattern matching.
 
-use asili_parser::{BinaryOp, Expr, ExprId, Pattern, UnaryOp};
+use asili_parser::{BinaryOp, Expr, ExprId, Name, Pattern, UnaryOp};
 
 use crate::runtime::Runtime;
 use crate::value::{parse_number, EvalError, MapKey, Value};
@@ -19,7 +19,7 @@ fn eval_index(
     let read = if as_tokeo { index_value } else { index_element };
     let module = rt.module;
     if let Expr::Ident { name, .. } = &module[base] {
-        if let Some(value) = rt.env.get_ref(name) {
+        if let Some(value) = rt.env.get_ref(*name) {
             return read(value, &i_val);
         }
     }
@@ -32,7 +32,7 @@ fn invoke_named_callback(
     name: &str,
     args: &[Value],
 ) -> Result<Value, EvalError> {
-    if let Some(f) = rt.builtins.get(name) {
+    if let Some(f) = rt.builtins.get(&Name::new(name)) {
         asili_trace::emit(asili_trace::Tukio::MwitoMfumo, name, 0);
         return f(args);
     }
@@ -58,7 +58,7 @@ pub(crate) fn match_and_bind_pattern(pat: &Pattern, v: &Value, rt: &mut Runtime<
 /// Whether `v` matches `pat`, calling `bind` for each name the pattern binds, in order (a later
 /// binding of the same name wins). The single implementation of `linganisha` patterns: the
 /// tree-walker binds into its scope, native code's host into registers.
-pub(crate) fn match_pattern(pat: &Pattern, v: &Value, bind: &mut dyn FnMut(&str, &Value)) -> bool {
+pub(crate) fn match_pattern(pat: &Pattern, v: &Value, bind: &mut dyn FnMut(Name, &Value)) -> bool {
     match pat {
         Pattern::Wildcard => true,
         Pattern::Literal(Expr::Number(s)) => {
@@ -73,7 +73,7 @@ pub(crate) fn match_pattern(pat: &Pattern, v: &Value, bind: &mut dyn FnMut(&str,
         Pattern::Literal(Expr::Hamna) => matches!(v, Value::Hamna | Value::Chaguo(None)),
         Pattern::Literal(Expr::Char(c)) => matches!(v, Value::Herufi(x) if *x == *c),
         Pattern::Ident { name, .. } => {
-            bind(name, v);
+            bind(*name, v);
             true
         }
         Pattern::Struct {
@@ -163,8 +163,8 @@ pub(crate) fn eval_expr_inner(id: ExprId, rt: &mut Runtime<'_>) -> Result<Value,
         Expr::Bool(b) => Ok(Value::Ukweli(*b)),
         Expr::Ident { name, .. } => rt
             .env
-            .get(name)
-            .ok_or_else(|| EvalError::UndefinedVar(name.clone())),
+            .get(*name)
+            .ok_or_else(|| EvalError::UndefinedVar(name.to_string())),
         Expr::Group(e) => super::eval_expr_impl(*e, rt),
         Expr::Index { base, index, .. } => eval_index(*base, *index, rt, false),
         Expr::Binary {
@@ -355,7 +355,7 @@ fn eval_expr_cold(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Value, EvalError
                     return super::call_body(rt, f, args_val);
                 }
                 // Not found as builtin or module function.
-                return Err(EvalError::UndefinedVar(name.clone()));
+                return Err(EvalError::UndefinedVar(name.to_string()));
             }
             Err(EvalError::TypeErr(
                 "kitu kinachoweza kuitwa kinahitajika".into(),
@@ -369,7 +369,7 @@ fn eval_expr_cold(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Value, EvalError
         } => {
             rt.count_method_call();
             let receiver_name = match &module[*receiver] {
-                Expr::Ident { name, .. } => Some(name.as_str()),
+                Expr::Ident { name, .. } => Some(*name),
                 _ => None,
             };
             let mutating_method = matches!(
