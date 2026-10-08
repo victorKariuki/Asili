@@ -89,16 +89,28 @@ fn with_namba_text<R>(n: f64, f: impl FnOnce(&str) -> R) -> R {
     {
         // Whole numbers print as their digits either way; writing the digits directly is much
         // faster than the float (or even the generic integer) formatter.
+        // Two digits per step from a table of "00".."99" (as `itoa` does): half the divisions.
+        const PAIRS: &[u8; 200] = b"0001020304050607080910111213141516171819\
+2021222324252627282930313233343536373839\
+4041424344454647484950515253545556575859\
+6061626364656667686970717273747576777879\
+8081828384858687888990919293949596979899";
         let mut buf = [0u8; 20];
         let mut i = buf.len();
         let mut m = n.abs() as u64;
-        loop {
+        while m >= 100 {
+            let pair = (m % 100) as usize * 2;
+            m /= 100;
+            i -= 2;
+            buf[i..i + 2].copy_from_slice(&PAIRS[pair..pair + 2]);
+        }
+        if m >= 10 {
+            let pair = m as usize * 2;
+            i -= 2;
+            buf[i..i + 2].copy_from_slice(&PAIRS[pair..pair + 2]);
+        } else {
             i -= 1;
-            buf[i] = b'0' + (m % 10) as u8;
-            m /= 10;
-            if m == 0 {
-                break;
-            }
+            buf[i] = b'0' + m as u8;
         }
         if n < 0.0 {
             i -= 1;
