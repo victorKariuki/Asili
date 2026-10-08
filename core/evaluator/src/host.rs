@@ -68,6 +68,8 @@ pub(crate) struct Host<'p> {
     /// Argument buffer for builtin and method calls, reused so a call allocates nothing (see
     /// [`Host::take_args`]).
     args: Vec<Value>,
+    /// Whether `init_constants` has run.
+    constants_ready: bool,
     /// Tree-walkers for mixed mode, reused across calls (a nested tree → native → tree call takes
     /// a second one).
     trees: Vec<crate::TreeContext>,
@@ -268,6 +270,7 @@ impl<'p> Host<'p> {
             native,
             pending: None,
             error_traced: false,
+            constants_ready: false,
         }
     }
 
@@ -277,6 +280,7 @@ impl<'p> Host<'p> {
         name: &str,
         args: Vec<Value>,
     ) -> Result<Value, EvalError> {
+        self.init_constants()?;
         let index = self
             .program
             .functions
@@ -284,6 +288,27 @@ impl<'p> Host<'p> {
             .position(|f| f.name == name)
             .ok_or_else(|| EvalError::UndefinedVar(name.to_string()))?;
         self.call_values(index, args)
+    }
+
+    /// Compute the program's non-literal module constants (once per host, before its first
+    /// call) into the constant slots that stand for them.
+    fn init_constants(&mut self) -> Result<(), EvalError> {
+        let Some(init) = (!std::mem::replace(&mut self.constants_ready, true))
+            .then_some(self.program.init)
+            .flatten()
+        else {
+            return Ok(());
+        };
+        let values = self.call_values(init as usize, Vec::new())?;
+        let Value::Orodha(items) = &values else {
+            unreachable!("the constants function returns an Orodha");
+        };
+        for (k, c) in self.program.constants.iter().enumerate() {
+            if let StoredConstant::Computed(i) = c {
+                self.consts[k] = items[*i as usize].clone();
+            }
+        }
+        Ok(())
     }
 
     /// This program as other threads receive it: the one the host was started from, or else
@@ -469,9 +494,21 @@ impl<'p> Host<'p> {
                 self.callback(name, a.to_vec())
             });
         }
-        Err(EvalError::Unknown(format!(
-            "bytecode method haijaungwa mkono: {method}"
-        )))
+        // A method the program defines on its own `umbo` or `jenum`.
+        let (kind, target) = match &recv {
+            Value::Struct(name, _) => ("umbo", name.to_string()),
+            Value::Enum(name, _, _) => ("jenum", name.to_string()),
+            _ => {
+                return Err(EvalError::TypeErr(format!(
+                    "mwito wa njia '{method}' unahitaji Neno, Orodha, jenum au umbo"
+                )))
+            }
+        };
+        let index = self.program.user_method(kind, &target, method)?;
+        let mut call_args = Vec::with_capacity(args.len() + 1);
+        call_args.push(recv);
+        call_args.extend(args);
+        self.call_values(index, call_args)
     }
 
     /// Execute one instruction native code hands over (everything off its numeric fast path).
@@ -567,6 +604,7 @@ impl<'p> Host<'p> {
                 src,
                 pattern,
                 binds,
+                binding,
             } => {
                 let mut bound: Vec<(Reg, Value)> = Vec::new();
                 let matched = crate::eval::expr::match_pattern(
@@ -582,6 +620,8 @@ impl<'p> Host<'p> {
                     for (reg, v) in bound {
                         frame.vals[reg as usize] = v;
                     }
+                } else if *binding {
+                    return Flow::Fail(crate::eval::stmt::let_pattern_mismatch());
                 }
                 frame.nums[*dst as usize] = flag(matched);
                 return Flow::Next;

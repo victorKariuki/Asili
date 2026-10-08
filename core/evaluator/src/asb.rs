@@ -65,7 +65,7 @@ pub fn emit_asb_bytes(module: &Module, source: &str) -> Vec<u8> {
 
 /// Version of the bytecode payload (its instruction set, and the syntax tree it carries). Artifacts built by an
 /// older `pata jenga` carry a different `version=` and must be rebuilt.
-const BYTECODE_VERSION: &str = "13";
+const BYTECODE_VERSION: &str = "14";
 
 /// Every artifact format this build reads and writes, for build caches: a cached artifact made
 /// under different formats (an older or newer toolchain) must be rebuilt, not loaded.

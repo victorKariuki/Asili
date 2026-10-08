@@ -48,9 +48,7 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
         Stmt::LetPattern { pattern, value, .. } => {
             let value = super::eval_expr_impl(*value, rt)?;
             if !super::expr::match_and_bind_pattern(pattern, &value, rt) {
-                return Err(EvalError::TypeErr(
-                    "muundo wa weka haulingani na thamani".into(),
-                ));
+                return Err(let_pattern_mismatch());
             }
             Ok(EvalOut::Next)
         }
@@ -246,4 +244,9 @@ fn inert(module: &asili_parser::Module, id: asili_parser::ExprId) -> bool {
         }
         _ => false,
     }
+}
+
+/// `acha <pattern> = e` where the value does not match the pattern (every engine's error).
+pub(crate) fn let_pattern_mismatch() -> EvalError {
+    EvalError::TypeErr("muundo wa weka haulingani na thamani".into())
 }

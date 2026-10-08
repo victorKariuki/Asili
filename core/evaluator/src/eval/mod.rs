@@ -3,7 +3,7 @@
 pub(crate) mod expr;
 pub(crate) mod methods;
 pub(crate) mod ops;
-mod stmt;
+pub(crate) mod stmt;
 
 use asili_parser::{Block, ExprId, Function, Module};
 

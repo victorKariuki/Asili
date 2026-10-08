@@ -447,12 +447,14 @@ pub enum Opcode {
         data: Option<Reg>,
     },
     /// `nums[dst] = vals[src]` matches `pattern` (a `linganisha` arm); on a match the names it
-    /// binds are stored in their `vals` registers.
+    /// binds are stored in their `vals` registers. `binding` (`acha (a, b) = e`): no match is
+    /// an error instead of a false flag.
     MatchPattern {
         dst: Reg,
         src: Reg,
         pattern: Box<Pattern>,
         binds: Box<[(String, Reg)]>,
+        binding: bool,
     },
     /// `vals[dst] = { vals[k]: vals[v], … }`.
     MakeMap {
@@ -479,6 +481,14 @@ pub struct BytecodeProgram {
     /// tree-walker (`Opcode::Interpreted`), and where native code cannot be built (no backend for
     /// this platform, or `ASILI_AOT=0`) the tree-walker runs the whole program.
     pub ast: Option<asili_parser::Module>,
+    /// Every type a `shughuli ya` block is written for, even an empty one (for the error a
+    /// method call on that type gives when no such method exists).
+    #[serde(default)]
+    pub impl_targets: Vec<String>,
+    /// The function computing the module constants that are not literals, in order, as one
+    /// `Orodha` (`StoredConstant::Computed(i)` is its `i`th item).
+    #[serde(default)]
+    pub init: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -489,6 +499,9 @@ pub enum StoredConstant {
     Hamna,
     Ukweli(bool),
     Herufi(char),
+    /// The value of the program's `n`th computed module constant (`thabiti TAU = 2.0 * PI`),
+    /// filled in from `BytecodeProgram::init` before the program's first call.
+    Computed(u32),
 }
 
 impl StoredConstant {
@@ -499,6 +512,7 @@ impl StoredConstant {
             StoredConstant::Namba(n) => Value::Namba(*n),
             StoredConstant::Ukweli(b) => Value::Ukweli(*b),
             StoredConstant::Herufi(c) => Value::Herufi(*c),
+            StoredConstant::Computed(_) => Value::Tupu,
             StoredConstant::Tupu => Value::Tupu,
             StoredConstant::Hamna => Value::Hamna,
         }
@@ -508,6 +522,36 @@ impl StoredConstant {
 impl BytecodeProgram {
     pub fn find_function(&self, name: &str) -> Option<&BytecodeFunc> {
         self.functions.iter().find(|f| f.name == name)
+    }
+
+    /// `recv.method(…)` on a value of the program's own type `target` (a `umbo` or `jenum`):
+    /// the index of the method's function, an inherent method before a trait's (methods are
+    /// laid out that way, see `impl_methods`), or the error such a call gives.
+    pub(crate) fn user_method(
+        &self,
+        kind: &str,
+        target: &str,
+        method: &str,
+    ) -> Result<usize, EvalError> {
+        let inherent = impl_function_name(target, None, method);
+        let trait_suffix = format!(">::{method}");
+        self.functions
+            .iter()
+            .position(|f| {
+                f.name == inherent
+                    || (f.name.starts_with(target)
+                        && f.name[target.len()..].starts_with('<')
+                        && f.name.ends_with(&trait_suffix))
+            })
+            .ok_or_else(|| {
+                if self.impl_targets.iter().any(|t| t == target) {
+                    EvalError::TypeErr(format!("njia '{method}' haijulikani kwa {kind} '{target}'"))
+                } else {
+                    EvalError::TypeErr(format!(
+                        "{kind} '{target}' hauna shughuli yoyote iliyofafanuliwa"
+                    ))
+                }
+            })
     }
 }
 
@@ -610,8 +654,18 @@ fn compile_module_inner(
             .entry((imp.target.clone(), f.name.to_string()))
             .or_insert(index);
     }
+    let mut computed = Vec::new();
     for constant in &module.constants {
-        let stored = literal(&module.exprs, &module[constant.value])?;
+        let Some(stored) = literal(&module.exprs, &module[constant.value]) else {
+            // Computed once, before the program's first call (see `init_function`).
+            let stored = StoredConstant::Computed(computed.len() as u32);
+            computed.push(constant);
+            program.module_consts.insert(
+                constant.name.clone(),
+                (Ty::Val, stored, constant.ty.name.clone()),
+            );
+            continue;
+        };
         let ty = match (&stored, Ty::from_type_name(&constant.ty.name)) {
             (StoredConstant::Namba(_), _) => Ty::Num,
             (StoredConstant::Ukweli(_), _) => Ty::Bool,
@@ -666,6 +720,20 @@ fn compile_module_inner(
             }
         }
     }
+    let init = if computed.is_empty() {
+        None
+    } else {
+        match FunctionCompiler::init_function(&mut program, &module.exprs, &computed) {
+            Some(f) => {
+                functions.push(f);
+                Some((functions.len() - 1) as u32)
+            }
+            None => {
+                *failed_line = Some(("thabiti".to_string(), program.failed_line.unwrap_or(0)));
+                return None;
+            }
+        }
+    };
     if std::env::var_os("ASILI_BYTECODE_DUMP").is_some() {
         // Debugging aid: the instructions of every compiled `kazi`.
         for f in &functions {
@@ -680,6 +748,8 @@ fn compile_module_inner(
         functions,
         entry: "kuu".to_string(),
         ast: Some(module.clone()),
+        impl_targets: module.impls.iter().map(|i| i.target.clone()).collect(),
+        init,
     })
 }
 
@@ -812,6 +882,8 @@ struct Local {
 
 struct LoopState {
     label: Option<String>,
+    /// `scopes.len()` where the loop starts: bindings of scopes below it outlive its iterations.
+    depth: usize,
     breaks: Vec<usize>,
     continues: Vec<usize>,
 }
@@ -944,6 +1016,53 @@ impl<'a> FunctionCompiler<'a> {
             name: function.name.to_string(),
             params,
             ret,
+            num_regs: f.num_regs,
+            list_regs: f.list_regs,
+            val_regs: f.val_regs,
+            num_consts: f.num_consts,
+            code: f.code,
+        })
+    }
+
+    /// The module constants that are not literals, computed in order (each sees the ones
+    /// before it) and returned as one `Orodha`.
+    fn init_function(
+        program: &'a mut ProgramCompiler,
+        exprs: &'a Exprs,
+        constants: &[&asili_parser::Constant],
+    ) -> Option<BytecodeFunc> {
+        let mut f = FunctionCompiler {
+            program,
+            exprs,
+            scopes: vec![HashMap::new()],
+            code: Vec::new(),
+            num_regs: 0,
+            list_regs: 0,
+            val_regs: 0,
+            num_consts: Vec::new(),
+            const_regs: HashMap::new(),
+            loops: Vec::new(),
+            ret: Ty::Val,
+        };
+        let mut items = Vec::with_capacity(constants.len());
+        for constant in constants {
+            let dst = f.declare(&constant.name, Ty::Val, Some(constant.ty.name.clone()));
+            if f.expr_into(f.node(constant.value), dst).is_none() {
+                f.program.failed_line.get_or_insert(constant.line);
+                return None;
+            }
+            items.push(dst.reg);
+        }
+        let out = f.temp(Ty::Val);
+        f.emit(Opcode::MakeList {
+            dst: out.reg,
+            items: items.into_boxed_slice(),
+        });
+        f.emit(Opcode::Return { src: out });
+        Some(BytecodeFunc {
+            name: "<thabiti>".to_string(),
+            params: Vec::new(),
+            ret: Ty::Val,
             num_regs: f.num_regs,
             list_regs: f.list_regs,
             val_regs: f.val_regs,
@@ -1375,6 +1494,7 @@ impl<'a> FunctionCompiler<'a> {
                 let exits = self.cond_false_jumps(self.node(*cond))?;
                 self.loops.push(LoopState {
                     label: label.clone(),
+                    depth: self.scopes.len(),
                     breaks: Vec::new(),
                     continues: Vec::new(),
                 });
@@ -1429,6 +1549,7 @@ impl<'a> FunctionCompiler<'a> {
                         src: src.reg,
                         pattern: Box::new(arm.pattern.clone()),
                         binds: binds.into_boxed_slice(),
+                        binding: false,
                     });
                     let skip = self.emit(Opcode::JumpIfFalse {
                         cond: flag.reg,
@@ -1446,9 +1567,17 @@ impl<'a> FunctionCompiler<'a> {
                 }
             }
             Stmt::Drop { name, .. } => {
-                // Only a binding of the innermost scope: the drop then runs at most once per
-                // declaration, so the tree-walker's "already dropped" error cannot arise.
-                let local = self.scopes.last_mut()?.remove(name.as_str())?;
+                // The innermost binding of `name`. Not one declared outside an enclosing loop:
+                // there a second iteration's drop is the tree-walker's "already dropped" error,
+                // which a static drop cannot give.
+                let scope = self
+                    .scopes
+                    .iter()
+                    .rposition(|s| s.contains_key(name.as_str()))?;
+                if self.loops.iter().any(|l| l.depth > scope) {
+                    return None;
+                }
+                let local = self.scopes[scope].remove(name.as_str())?;
                 let reg = local.op.reg;
                 match local.op.ty {
                     Ty::Num | Ty::Bool => {}
@@ -1464,7 +1593,28 @@ impl<'a> FunctionCompiler<'a> {
                     }
                 }
             }
-            Stmt::LetPattern { .. } => return None,
+            Stmt::LetPattern { pattern, value, .. } => {
+                // The value is evaluated before the pattern's names are visible; a value the
+                // pattern does not match is an error.
+                let src = self.expr_as(self.node(*value), Ty::Val)?;
+                let mut names = Vec::new();
+                pattern_names(pattern, &mut names);
+                let binds: Vec<(String, Reg)> = names
+                    .into_iter()
+                    .map(|n| {
+                        let reg = self.declare(&n, Ty::Val, None).reg;
+                        (n, reg)
+                    })
+                    .collect();
+                let flag = self.temp(Ty::Bool);
+                self.emit(Opcode::MatchPattern {
+                    dst: flag.reg,
+                    src: src.reg,
+                    pattern: Box::new(pattern.clone()),
+                    binds: binds.into_boxed_slice(),
+                    binding: true,
+                });
+            }
         }
         Some(())
     }
@@ -1543,6 +1693,7 @@ impl<'a> FunctionCompiler<'a> {
                 }
                 self.loops.push(LoopState {
                     label,
+                    depth: self.scopes.len(),
                     breaks: Vec::new(),
                     continues: Vec::new(),
                 });
@@ -1635,6 +1786,7 @@ impl<'a> FunctionCompiler<'a> {
                 }
                 self.loops.push(LoopState {
                     label,
+                    depth: self.scopes.len(),
                     breaks: Vec::new(),
                     continues: Vec::new(),
                 });
@@ -2187,8 +2339,30 @@ impl<'a> FunctionCompiler<'a> {
                 args,
                 ..
             } => self.method_call(self.node(*receiver), method_name, args, dst),
-            // A map with computed keys (see the literal-key case above).
-            Expr::Map { .. } => None,
+            // A map with computed keys: each key is checked as its entry is added, after the
+            // entry is evaluated and before the next one is (the tree-walker's order), through
+            // the shared `ingiza`. Built in a fresh register, so an entry may read `dst`.
+            Expr::Map { entries, .. } => {
+                let map = self.temp(Ty::Val);
+                self.emit(Opcode::MakeMap {
+                    dst: map.reg,
+                    entries: Box::new([]),
+                });
+                let discard = self.temp(Ty::Val);
+                for (k, v) in entries {
+                    let k = self.expr_as(self.node(*k), Ty::Val)?.reg;
+                    let v = self.expr_as(self.node(*v), Ty::Val)?.reg;
+                    self.emit(Opcode::MutMethod(Box::new(MutMethodOp {
+                        method: asili_parser::Name::new("ingiza"),
+                        recv: map.reg,
+                        args: vec![k, v],
+                        dst: discard.reg,
+                    })));
+                }
+                let out = self.dst_or_temp(dst, Ty::Val);
+                self.convert(map, out)?;
+                Some(out)
+            }
         }
     }
 
@@ -2340,9 +2514,7 @@ impl<'a> FunctionCompiler<'a> {
         let Expr::Ident { name, .. } = callee else {
             return None;
         };
-        if self.lookup(name).is_some() {
-            return None;
-        }
+        // A call names a `kazi` or builtin; a local of the same name does not shadow it.
         // The program's own `kazi` shadows a builtin of the same name.
         let own = self.program.functions.contains_key(name.as_str());
         if let Some(builtin) = self
@@ -2488,15 +2660,20 @@ impl<'a> FunctionCompiler<'a> {
         dst: Option<Operand>,
     ) -> Option<Operand> {
         if self.program.impl_methods.contains(method) {
-            // A user method: called directly when the receiver's `umbo` is known here.
-            let target = self.type_name(receiver)?;
-            let index = *self.program.impl_index.get(&(target, method.to_string()))?;
-            let exprs = self.exprs;
-            return self.call_index(
-                index,
-                std::iter::once(receiver).chain(args.iter().map(|a| &exprs[*a])),
-                dst,
-            );
+            // A user method: called directly when the receiver's `umbo` is known here, else
+            // dispatched on the receiver at run time (below).
+            let index = self
+                .type_name(receiver)
+                .and_then(|target| self.program.impl_index.get(&(target, method.to_string())))
+                .copied();
+            if let Some(index) = index {
+                let exprs = self.exprs;
+                return self.call_index(
+                    index,
+                    std::iter::once(receiver).chain(args.iter().map(|a| &exprs[*a])),
+                    dst,
+                );
+            }
         }
         let recv_ty = self.infer(receiver);
         // Numeric-list fast paths.
@@ -2592,12 +2769,8 @@ impl<'a> FunctionCompiler<'a> {
                 reg: out,
             });
         }
-        let supported = methods::is_pure_method(&probe, method)
-            || methods::is_mutating(&probe, method)
-            || methods::is_callback_method(&probe, method);
-        if !supported {
-            return None;
-        }
+        // Everything else (including a method the type does not have, an error at run time)
+        // through the shared method table.
         self.emit_call_method(receiver, method, args, dst)
     }
 
@@ -2610,9 +2783,6 @@ impl<'a> FunctionCompiler<'a> {
         args: &[ExprId],
         dst: Option<Operand>,
     ) -> Option<Operand> {
-        if !methods::is_shared_method_name(method) {
-            return None;
-        }
         let local = match receiver {
             Expr::Ident { name, .. } => self.lookup(name).map(|l| l.op),
             _ => None,

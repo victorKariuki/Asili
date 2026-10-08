@@ -188,8 +188,7 @@ pub(crate) fn is_pure_name(recv: &Value, method: Name) -> bool {
 
 /// [`is_mutating`] for an interned name.
 pub(crate) fn is_mutating_name(recv: &Value, method: Name) -> bool {
-    receiver_kind(recv)
-        .is_some_and(|kind| method_names().mutating[kind as usize].contains(&method))
+    receiver_kind(recv).is_some_and(|kind| method_names().mutating[kind as usize].contains(&method))
 }
 
 fn receiver_kind(recv: &Value) -> Option<Kind> {
@@ -1042,26 +1041,6 @@ pub(crate) fn iter_items(v: Value) -> Result<Rc<Vec<Value>>, EvalError> {
             "kwa...katika inashughulikia Orodha na Kamusi tu".to_string(),
         )),
     }
-}
-
-/// Whether any receiver type has a shared method called `method` (used by native code's host to
-/// dispatch at run time when a receiver's type is not known statically).
-pub(crate) fn is_shared_method_name(method: &str) -> bool {
-    let probes = [
-        Value::neno(String::new()),
-        Value::list(Vec::new()),
-        Value::Kamusi(Default::default()),
-        Value::Seti(Default::default()),
-        Value::Chaguo(None),
-        Value::sawa(Value::Tupu),
-        Value::Jozi(Box::new(Value::Tupu), Box::new(Value::Tupu)),
-        Value::Wakati(0.0),
-        Value::Kumbukumbu(Box::new(Value::Tupu)),
-    ];
-    PURE_METHODS.iter().any(|names| names.contains(&method))
-        || probes
-            .iter()
-            .any(|p| is_mutating(p, method) || is_callback_method(p, method))
 }
 
 #[cfg(test)]

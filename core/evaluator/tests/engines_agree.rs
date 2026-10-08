@@ -3,8 +3,7 @@
 //! semantics are shared code (`eval::ops`, `eval::methods`), and these tests keep it that way.
 
 use asili_evaluator::{
-    compile_module, compile_module_explained, run_bytecode_function_on, run_function, Engine,
-    Opcode, Value,
+    compile_module_explained, run_bytecode_function_on, run_function, Engine, Value,
 };
 use asili_lexer::tokenize;
 use asili_parser::parse_tokens;
@@ -26,22 +25,6 @@ fn agree(name: &str, source: &str, functions: &[&str]) {
     let module = parse_tokens(&tokens).unwrap_or_else(|e| panic!("{name}: parse: {e:?}"));
     let program = compile_module_explained(&module)
         .unwrap_or_else(|why| panic!("{name}: expected bytecode lowering, blocked at {why}"));
-    agree_program(name, &module, &program, functions);
-}
-
-/// Like `agree`, for a program whose `kazi` are only partly lowered (mixed mode: the rest run
-/// on the tree-walker, called from and calling into bytecode).
-fn agree_mixed(name: &str, source: &str, functions: &[&str]) {
-    let tokens = tokenize(source).expect("tokenize");
-    let module = parse_tokens(&tokens).unwrap_or_else(|e| panic!("{name}: parse: {e:?}"));
-    let program = compile_module(&module).expect("mixed program");
-    assert!(
-        program
-            .functions
-            .iter()
-            .any(|f| matches!(f.code.first(), Some(Opcode::Interpreted { .. }))),
-        "{name}: expected some kazi left to the tree-walker"
-    );
     agree_program(name, &module, &program, functions);
 }
 
@@ -377,7 +360,7 @@ fn number_list_representations_match_the_tree_walker() {
 
 #[test]
 fn mixed_programs_agree() {
-    agree_mixed(
+    agree(
         "mixed",
         r#"
         umbo Nukta {
@@ -595,7 +578,7 @@ fn linganisha_patterns() {
 fn user_methods_named_like_builtins_stay_user_methods() {
     // `ongeza`/`urefu` are also builtin method names: a call on a `umbo` value must reach the
     // user's `shughuli ya` method on every tier.
-    agree_mixed(
+    agree(
         "impl_clash",
         r#"
         umbo Mfuko {
@@ -683,7 +666,7 @@ fn methods_dispatch_like_the_tree_walker() {
         ),
         &["t"],
     );
-    agree_mixed(
+    agree(
         "methods_mixed",
         &format!(
             "{METHODS}{}",
@@ -1086,5 +1069,105 @@ fn appending_to_numeric_lists() {
         }
         "#,
         &["sukuma"],
+    );
+}
+
+#[test]
+fn pattern_bindings() {
+    agree(
+        "pattern_bindings",
+        r#"
+        kazi jozi_mbili() -> Namba {
+            weka (a, b) = jozi(3, 4)
+            weka (c, d) = jozi(a + 1, b * 2)
+            c += 10
+            rejesha a + b + c + d
+        }
+        kazi ndani() -> Neno {
+            weka (n, (m, k)) = jozi("a", jozi("b", "c"))
+            rejesha n + m + k
+        }
+        kazi haulingani() -> Namba {
+            weka (a, b) = 5
+            rejesha a
+        }
+        "#,
+        &["jozi_mbili", "ndani", "haulingani"],
+    );
+}
+
+#[test]
+fn computed_module_constants() {
+    agree(
+        "computed_constants",
+        r#"
+        thabiti MSINGI = 3
+        thabiti MARA_MBILI = MSINGI * 2
+        thabiti JINA: Neno = "asili" + "-" + (MARA_MBILI kama Neno)
+        thabiti ORODHA = orodha(MSINGI, MARA_MBILI)
+        kazi t() -> Neno {
+            rejesha JINA + (ORODHA.urefu() kama Neno) + ((MARA_MBILI + 1) kama Neno)
+        }
+        kazi kosa_ndani() -> Namba {
+            rejesha MARA_MBILI / 0
+        }
+        "#,
+        &["t", "kosa_ndani"],
+    );
+}
+
+#[test]
+fn maps_with_computed_keys() {
+    agree(
+        "computed_map_keys",
+        r#"
+        kazi t() -> Neno {
+            weka a = "x"
+            weka m = { a + "1": 1, a + "2": 2 }
+            m = { "n": m.idadi(), a: m.pata("x1").angu(0) }
+            rejesha (m.pata("n").angu(0) kama Neno) + (m.pata("x").angu(0) kama Neno)
+        }
+        kazi ufunguo_mbaya() -> Namba {
+            weka m = { orodha(1): 1 }
+            rejesha 0
+        }
+        "#,
+        &["t", "ufunguo_mbaya"],
+    );
+}
+
+#[test]
+fn calls_ignore_locals_of_the_same_name() {
+    agree(
+        "call_vs_local",
+        r#"
+        kazi mara_mbili(n: Namba) -> Namba {
+            rejesha n * 2
+        }
+        kazi t() -> Namba {
+            weka mara_mbili = 5
+            weka urefu = 1
+            rejesha mara_mbili(mara_mbili) + urefu
+        }
+        "#,
+        &["t"],
+    );
+}
+
+#[test]
+fn tupa_of_an_outer_binding() {
+    agree(
+        "tupa_outer",
+        r#"
+        kazi t() -> Namba {
+            weka x = orodha(1, 2, 3)
+            weka n = x.urefu()
+            ikiwa n > 2 {
+                tupa x
+            }
+            rejesha n
+        }
+        "#,
+        &["t"],
     );
 }

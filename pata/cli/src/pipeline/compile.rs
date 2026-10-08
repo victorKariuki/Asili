@@ -735,10 +735,10 @@ mod tests {
         let root = temp_dir("release-ast");
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(root.join("pata.toml"), crate::test_support::MANIFEST).unwrap();
-        // A pattern `weka` isn't lowered to bytecode yet.
+        // `tupa` of a binding declared outside an enclosing loop isn't lowered to bytecode.
         fs::write(
             root.join("src/kuu.as"),
-            "kazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    weka (a, b) = jozi(1, 2)\n}\n",
+            "kazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    weka x = 1\n    kwa i kutoka 0 hadi 1 {\n        tupa x\n    }\n}\n",
         )
         .unwrap();
         let compiled = compile_project(&root, None).expect("compiles");
