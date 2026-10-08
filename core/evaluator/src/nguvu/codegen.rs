@@ -313,16 +313,34 @@ impl<'f> Gen<'f> {
             };
             self.asm.movups_store(m, Xmm(x));
         }
-        // Incoming arguments: park them in their home slots first (their allocated registers
-        // may be other argument registers), then load each where it lives.
-        for (i, r) in self.abi.args.iter().take(4).enumerate() {
-            self.asm.store(self.slot(VReg(i as u32)), *r);
+        // Incoming arguments. One that lives in a callee-saved register moves straight there
+        // (no argument register is callee-saved, so nothing is overwritten) and needs no home
+        // slot: calls take it from that register. The others are parked in their home slots
+        // first (their allocated registers may be other argument registers), then loaded.
+        let args: Vec<Gpr> = self.abi.args.iter().take(4).copied().collect();
+        for (i, r) in args.iter().enumerate() {
+            if let Some(home) = self.kept(VReg(i as u32)) {
+                self.asm.mov_rr(home, *r);
+            }
+        }
+        for (i, r) in args.iter().enumerate() {
+            if self.kept(VReg(i as u32)).is_none() {
+                self.asm.store(self.slot(VReg(i as u32)), *r);
+            }
         }
         for i in 0..4 {
             let v = VReg(i);
-            if let Loc::Gpr(r) = self.loc(v) {
+            if let (Loc::Gpr(r), None) = (self.loc(v), self.kept(v)) {
                 self.asm.load(r, self.slot(v));
             }
+        }
+    }
+
+    /// The callee-saved register holding integer `v` across calls, if it has one.
+    fn kept(&self, v: VReg) -> Option<Gpr> {
+        match self.loc(v) {
+            Loc::Gpr(r) if self.pushed.contains(&r) => Some(r),
+            _ => None,
         }
     }
 
@@ -698,7 +716,7 @@ impl<'f> Gen<'f> {
             self.save(*v);
         }
         for a in args {
-            if !across.contains(a) {
+            if !across.contains(a) && self.kept(*a).is_none() {
                 self.save(*a);
             }
         }
@@ -723,7 +741,11 @@ impl<'f> Gen<'f> {
             };
             match (self.func.class(*a), constant) {
                 (Class::Int, Some(bits)) => self.asm.mov_ri(self.abi.args[i], bits),
-                (Class::Int, None) => self.asm.load(self.abi.args[i], self.slot(*a)),
+                // A callee-saved register is never an argument register: no move clobbers it.
+                (Class::Int, None) => match self.kept(*a) {
+                    Some(r) => self.asm.mov_rr(self.abi.args[i], r),
+                    None => self.asm.load(self.abi.args[i], self.slot(*a)),
+                },
                 // `r11` is caller-saved and never an argument register.
                 (Class::Float, Some(bits)) => {
                     self.asm.mov_ri(Gpr::R11, bits);
@@ -1082,9 +1104,13 @@ impl<'f> Gen<'f> {
                 ret32,
             } => {
                 let across = self.save_for_call(bi, ii, args);
-                // The runtime table pointer comes from its home slot (the prologue stores it
-                // there): runtime calls read it implicitly, so its register need not be live.
-                self.asm.load(Rax, self.slot(super::ir::RT));
+                // The runtime table pointer: its callee-saved register, else its home slot
+                // (the prologue parks it there; runtime calls read it implicitly, so its
+                // register need not be live).
+                match self.kept(super::ir::RT) {
+                    Some(r) => self.asm.mov_rr(Rax, r),
+                    None => self.asm.load(Rax, self.slot(super::ir::RT)),
+                }
                 self.load_call_args(args);
                 self.asm.call_mem(Mem {
                     base: Rax,
