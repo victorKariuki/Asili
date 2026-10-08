@@ -44,11 +44,9 @@ pub(crate) struct Runtime {
     pub float_to_int_sat: extern "C" fn(f64) -> i64,
     /// The language's shift amount (`f64 as i32`, outside `0..=63` → 0).
     pub shift_amount: extern "C" fn(f64) -> i64,
-    /// Lowest stack address direct native calls may run below (see [`rt_stack_limit`]).
-    pub stack_limit: extern "C" fn() -> usize,
     /// `(host, function, nums) -> status`: make a direct call through the host's call path (when
     /// the call depth or the stack would not allow a direct one); the result lands after the
-    /// callee's registers, as a direct call leaves it.
+    /// callee's registers.
     pub call_host: extern "C" fn(*mut c_void, u32, *mut f64) -> u64,
     /// `(host) -> STATUS_FAIL`: a `CheckDepth` found the call depth at its limit; the error is
     /// left pending.
@@ -90,8 +88,11 @@ pub(crate) extern "C" fn rt_val_mov(frame: *mut Frame, dst: u32, src: u32) {
     val_mov(unsafe { &mut *frame }, dst, src)
 }
 
-/// Byte offset of the host's call-depth counter (`Host` is `repr(C)` with `depth` first).
+/// Byte offsets into the host (`Host` is `repr(C)` and starts with these): the call-depth
+/// counter, the runtime table, and the stack limit for direct calls (see [`stack_limit`]).
 pub(crate) const DEPTH_OFFSET: i32 = 0;
+pub(crate) const RT_OFFSET: i32 = 8;
+pub(crate) const LIMIT_OFFSET: i32 = 16;
 
 /// Stack headroom kept free below a direct native call: generated frames and the runtime
 /// functions they call fit well inside it.
@@ -100,7 +101,7 @@ pub(crate) const DIRECT_CALL_HEADROOM: usize = 256 * 1024;
 /// The lowest stack address at which native code may still make a direct call (a stack pointer
 /// at or below it takes the host's call path, which can grow the stack), or `usize::MAX`
 /// when the stack's extent is unknown (every call then takes that path).
-pub(crate) extern "C" fn rt_stack_limit() -> usize {
+pub(crate) fn stack_limit() -> usize {
     let marker = 0u8;
     let sp = std::hint::black_box(&marker) as *const u8 as usize;
     match stacker::remaining_stack() {

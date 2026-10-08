@@ -105,13 +105,15 @@ pub fn allocate(func: &Func, target: &Target) -> Allocation {
     };
     let mut uses = vec![0u32; n];
 
-    // Loop depth from retreating edges in the layout order.
+    // Loop depth from retreating edges in the layout order. Cold blocks are laid out last, so
+    // a cold block rejoining hot code (a slow path) jumps backwards without closing a loop.
     let mut depth = vec![0u32; nb];
     let mut loop_head = vec![false; nb];
     for &b in &order {
         for s in func.blocks[b].term.successors() {
             let s = s.0 as usize;
-            if rank[s] <= rank[b] {
+            let slow_path_rejoins = func.cold[b] && !func.cold[s];
+            if rank[s] <= rank[b] && !slow_path_rejoins {
                 loop_head[s] = !func.cold[s];
                 for &m in &order[rank[s]..=rank[b]] {
                     depth[m] += 1;
@@ -236,7 +238,8 @@ pub fn allocate(func: &Func, target: &Target) -> Allocation {
                 find(&mut leader, src.0 as usize),
             );
             // The incoming arguments keep their own units (the prologue stores them first).
-            if x == y || x < 4 || y < 4 || overlaps(&ranges[x], &ranges[y]) {
+            let arg = |v: usize| func.args.contains(&VReg(v as u32));
+            if x == y || arg(x) || arg(y) || overlaps(&ranges[x], &ranges[y]) {
                 continue;
             }
             let (keep, gone) = (x.min(y), x.max(y));
@@ -309,7 +312,9 @@ pub fn allocate(func: &Func, target: &Target) -> Allocation {
     }
     // Home slots only for registers that can be read from one: the incoming arguments (parked
     // by the prologue), anything not given a register, and values saved around calls.
-    let mut needs_slot: Vec<bool> = (0..n).map(|v| v < 4 || loc[v] == Loc::Slot).collect();
+    let mut needs_slot: Vec<bool> = (0..n)
+        .map(|v| func.args.contains(&VReg(v as u32)) || loc[v] == Loc::Slot)
+        .collect();
     for v in live_across.values().flatten() {
         needs_slot[v.0 as usize] = true;
     }

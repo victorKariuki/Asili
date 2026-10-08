@@ -139,6 +139,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Leaner calls between numeric functions**: a direct native entry now takes two arguments
+  (host, registers) instead of four, reads the runtime table and its stack limit from the host
+  only when it needs them, and returns its number in a float register with status 0 instead of
+  through memory. Slow paths that rejoin hot code are no longer mistaken for loops (which
+  aligned them with executed padding and over-weighted register choices after them), and
+  `a + b` / `a * b` compute straight into `b`'s register when it is the destination. Recursive
+  `fib(30)`: 178.7 → 132.9 million instructions, 13.4 → 11.0 ms; a list loop −8%. Native ABI 11.
+
 - **List pushes in place**: native code appends to a numeric list itself when the list has room
   — one store, and the new length written into the list (`NumList` is `repr(C)`, length first) —
   and calls the runtime only to grow it, which then hands over all of the new allocation as

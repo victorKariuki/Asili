@@ -235,6 +235,14 @@ pub fn generate(func: &Func, abi: &'static Abi) -> super::Code {
                 g.asm.mov_rr(Gpr::Rax, r);
                 g.epilogue();
             }
+            Term::ReturnNum(v) => {
+                let x = g.float_in(*v, X0);
+                if x != X0 {
+                    g.asm.movapd(X0, x);
+                }
+                g.asm.alu_rr(Alu::Xor, Gpr::Rax, Gpr::Rax);
+                g.epilogue();
+            }
         }
     }
     super::Code {
@@ -317,21 +325,30 @@ impl<'f> Gen<'f> {
         // (no argument register is callee-saved, so nothing is overwritten) and needs no home
         // slot: calls take it from that register. The others are parked in their home slots
         // first (their allocated registers may be other argument registers), then loaded.
-        let args: Vec<Gpr> = self.abi.args.iter().take(4).copied().collect();
-        for (i, r) in args.iter().enumerate() {
-            if let Some(home) = self.kept(VReg(i as u32)) {
-                self.asm.mov_rr(home, *r);
+        let args: Vec<(VReg, Gpr)> = self
+            .func
+            .args
+            .iter()
+            .copied()
+            .zip(self.abi.args.iter().copied())
+            .collect();
+        for &(v, r) in &args {
+            if let Some(home) = self.kept(v) {
+                self.asm.mov_rr(home, r);
             }
         }
-        for (i, r) in args.iter().enumerate() {
-            if self.kept(VReg(i as u32)).is_none() {
-                self.asm.store(self.slot(VReg(i as u32)), *r);
+        for &(v, r) in &args {
+            if self.kept(v).is_none() {
+                self.asm.store(self.slot(v), r);
             }
         }
-        for i in 0..4 {
-            let v = VReg(i);
-            if let (Loc::Gpr(r), None) = (self.loc(v), self.kept(v)) {
-                self.asm.load(r, self.slot(v));
+        for &(v, incoming) in &args {
+            match (self.loc(v), self.kept(v)) {
+                // Already there (and no other argument lives in it, since each register is
+                // given to one argument at a time).
+                (Loc::Gpr(r), None) if r == incoming => {}
+                (Loc::Gpr(r), None) => self.asm.load(r, self.slot(v)),
+                _ => {}
             }
         }
     }
@@ -890,11 +907,15 @@ impl<'f> Gen<'f> {
                 self.put_int(*ovf, Rdx);
             }
             Inst::Float { op, dst, a, b } => {
+                let d = self.float_target(*dst, X0);
+                // `+` and `*` commute (no program can see which NaN payload wins): with `b`
+                // already in the destination, add `a` to it in place.
+                let (a, b) = match (op, self.loc(*b)) {
+                    (FloatOp::Add | FloatOp::Mul, Loc::Xmm(x)) if x == d && a != b => (b, a),
+                    _ => (a, b),
+                };
                 let xb = self.float_in(*b, X1);
-                let mut d = self.float_target(*dst, X0);
-                if d == xb && a != b {
-                    d = X0;
-                }
+                let d = if d == xb && a != b { X0 } else { d };
                 let xa = self.float_in(*a, d);
                 self.asm.movapd(d, xa);
                 let sse = match op {
@@ -1087,29 +1108,35 @@ impl<'f> Gen<'f> {
                 self.asm.lea(d, self.call_buffer());
                 self.put_int(*dst, d);
             }
-            Inst::CallDirect { func, args, dst } => {
+            Inst::CallDirect {
+                func,
+                args,
+                dst,
+                result,
+            } => {
                 let across = self.save_for_call(bi, ii, args);
                 self.load_call_args(args);
                 let at = self.asm.call_rel32();
                 self.calls.push((at, *func));
                 self.put_int(*dst, Rax);
+                self.put_float(*result, X0);
                 for v in &across {
                     self.restore(*v);
                 }
             }
             Inst::Call {
+                table,
                 target,
                 args,
                 dst,
                 ret32,
             } => {
                 let across = self.save_for_call(bi, ii, args);
-                // The runtime table pointer: its callee-saved register, else its home slot
-                // (the prologue parks it there; runtime calls read it implicitly, so its
-                // register need not be live).
-                match self.kept(super::ir::RT) {
-                    Some(r) => self.asm.mov_rr(Rax, r),
-                    None => self.asm.load(Rax, self.slot(super::ir::RT)),
+                // The runtime table pointer, in `rax` (which loading the arguments leaves
+                // alone).
+                let t = self.int_in(*table, Rax);
+                if t != Rax {
+                    self.asm.mov_rr(Rax, t);
                 }
                 self.load_call_args(args);
                 self.asm.call_mem(Mem {

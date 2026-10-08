@@ -246,7 +246,7 @@ fn successors_out(ctx: &Ctx, func: &Func, b: usize, mut s: State) -> Vec<(usize,
             let (t, f) = ctx.edge_states(&s, &func.blocks[b].insts, cond);
             vec![(then_.0 as usize, t), (else_.0 as usize, f)]
         }
-        Term::Return(_) => vec![],
+        Term::Return(_) | Term::ReturnNum(_) => vec![],
     }
 }
 

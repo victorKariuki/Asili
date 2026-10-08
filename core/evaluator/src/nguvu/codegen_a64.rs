@@ -147,6 +147,14 @@ pub fn generate(func: &Func) -> Result<super::Code, String> {
                 g.asm.mov(0, r);
                 g.epilogue();
             }
+            Term::ReturnNum(v) => {
+                let d = g.float_in(*v, 0);
+                if d != 0 {
+                    g.asm.fmov(0, d);
+                }
+                g.asm.mov_imm(0, 0);
+                g.epilogue();
+            }
         }
     }
     Ok(super::Code {
@@ -230,13 +238,13 @@ impl<'f> Gen<'f> {
                 self.str_at(r, SP, off);
             }
         }
-        // Incoming `rt, host, frame, nums` (x0–x3): park them in their home slots first (their
-        // allocated registers may be other argument registers), then load each where it lives.
-        for i in 0..4u32 {
-            self.str_at(i as u8, SP, self.slot(VReg(i)));
+        // Incoming arguments (x0 on): park them in their home slots first (their allocated
+        // registers may be other argument registers), then load each where it lives.
+        let args = self.func.args;
+        for (i, &v) in args.iter().enumerate() {
+            self.str_at(i as u8, SP, self.slot(v));
         }
-        for i in 0..4u32 {
-            let v = VReg(i);
+        for &v in args {
             if let Loc::Int(r) = self.loc(v) {
                 self.ldr_at(r, SP, self.slot(v));
             }
@@ -725,26 +733,35 @@ impl<'f> Gen<'f> {
                 }
                 self.put_int(*dst, d);
             }
-            Inst::CallDirect { func, args, dst } => {
+            Inst::CallDirect {
+                func,
+                args,
+                dst,
+                result,
+            } => {
                 let across = self.save_for_call(bi, ii, args);
                 self.load_call_args(args);
                 let at = self.asm.bl_placeholder();
                 self.calls.push((at, *func));
                 self.put_int(*dst, 0);
+                self.put_float(*result, 0);
                 for v in &across {
                     self.restore(*v);
                 }
             }
             Inst::Call {
+                table,
                 target,
                 args,
                 dst,
                 ret32,
             } => {
                 let across = self.save_for_call(bi, ii, args);
-                // The runtime table pointer comes from its home slot (the prologue stores it
-                // there): runtime calls read it implicitly, so its register need not be live.
-                self.ldr_at(CALL, SP, self.slot(super::ir::RT));
+                // The runtime table pointer, in a register loading the arguments leaves alone.
+                let t = self.int_in(*table, CALL);
+                if t != CALL {
+                    self.asm.mov(CALL, t);
+                }
                 self.load_call_args(args);
                 self.asm.ldr(CALL, CALL, 8 * (*target as u32));
                 self.asm.blr(CALL);

@@ -14,8 +14,8 @@ a few lines and easy to recreate from the descriptions):
 |---|---|---|---|---|
 | desimali | 20 M iterations of float multiply-add | 146 ms | 6.9 s | C −O2 146 ms |
 | ungo | sieve of 5 M | 24 ms | 5.4 s | C −O2 56 ms |
-| orodha | push 1 M numbers, sum with `kwa x katika` | 15–17 ms | 435 ms | C −O2 12 ms |
-| fib | recursive `fib(30)`, 1.35 M calls | 14 ms | 796 ms | C −O2 5.9 ms |
+| orodha | push 1 M numbers, sum with `kwa x katika` | 8 ms (was 15–17) | 435 ms | C −O2 12 ms |
+| fib | recursive `fib(30)`, 1.35 M calls | 11 ms (was 14) | 796 ms | C −O2 5.9 ms |
 | umbo | build a 2-field `umbo` 1 M times through a `kazi` | 3 ms (was 150–185 ms) | 590 ms | C −O2 1.9 ms |
 | kamusi | 300 k `Kamusi` updates with `Neno` keys | ~70 ms (was 75–90) | 184 ms | Python 66 ms |
 | maneno | 300 k numbers to text + join; 20 k `s = s + "ab"` | 60 ms (was 71–79) | 105 ms | Python 64 ms |
@@ -24,7 +24,7 @@ Sudoku (`examples/sudoku/bench/run.sh`): asili-nguvu 5.2 ms, clang −O2 5.9 ms,
 
 Summary: numeric code compiled by nguvu is at or above C. Everything that touches non-numeric
 values (structs, maps, strings, methods) leaves native code for the host on every operation and
-is 1–80× off its reference. Calls between numeric functions cost ~2.4× C.
+is 1–80× off its reference. Calls between numeric functions cost ~1.9× C.
 
 ## Fixed in this round
 
@@ -40,6 +40,9 @@ is 1–80× off its reference. Calls between numeric functions cost ~2.4× C.
 | F9 | Boxing numbers, copying values and loading constants each went through the host's general instruction path | ~100 instructions of dispatch per instruction | direct runtime calls from native code (`BoxNum`, `BoxBool`, `ValMov`, `ConstVal`) | map loop −9%, strings −6% |
 | F10 | Every list push called the runtime | ~85 instructions per push | inline append when there is room, the length stored into the list; runtime only to grow | list workload 119.6 → 37.8 M instructions |
 | F11 | x86-64 parked every incoming argument on the stack and reloaded every call argument from it | 4 stores + 4 loads per entry, a load per pointer argument per call | arguments kept in callee-saved registers move register to register | Sudoku 23.66 → 22.87 M instructions |
+| F12 | Direct entries took four pointer arguments and returned their number through memory | prologue parked `rt` and the stack limit, every call reloaded them; 5 callee-saved pushes in `fib` | direct entries take `(host, registers)`, read the runtime table and stack limit from the host (`RT_OFFSET`, `LIMIT_OFFSET`; `run_native` sets the limit), return the number in `xmm0`/`d0` with status 0; runtime calls name their table register (`Inst::Call::table`) | fib 170.6 → 138.3 M instructions, 3 pushes instead of 5 |
+| F13 | Slow paths rejoining hot code counted as loops | executed alignment padding after every direct call; loop-depth weights inflated for everything after | a backward edge from a cold block to a hot one does not close a loop | fib 178.7 → 170.6 M, list loop 37.8 → 34.8 M, Sudoku 22.87 → 22.75 M |
+| F14 | `a + b` into `b`'s register went through a scratch register | two extra moves per such operation | `+` and `*` commute into the destination | fib 138.3 → 132.9 M |
 | F7 | x86-64 prologues pushed every callee-saved register | 10 push/pop per call in small functions | push only the registers the function uses (AArch64 already did) | no change on fib (it uses all five); smaller frames elsewhere |
 
 Earlier the same day: token kinds and interned names in the parser and tree-walker, parallel and
@@ -47,18 +50,20 @@ reproducible native builds, incremental LSP parsing (see `CHANGELOG.md`).
 
 ## Open, ranked by impact
 
-### 1. Direct calls between numeric functions (fib: 2.4× C)
+### 1. Direct calls between numeric functions (fib: 1.9× C)
 
-*Evidence*: 133 instructions per call in generated code (C: ~15). Per call the caller writes the
-arguments to a memory buffer, the callee spills its four pointer arguments to the stack and
-reloads them, saves all five callee-saved registers whatever it uses, reads parameters back from
-memory, writes the result to memory, and the caller checks a status word and loads the result.
+*Done* (F11–F14): two pointer arguments, the result in a register, only the callee-saved
+registers used, no padding after calls. ~49 instructions per call remain (C: ~15).
 
-*Fix*: a register calling convention for direct entries — `f64` arguments in `xmm0–7`/`v0–7`,
-the result in `xmm0`/`v0`, the status in `rax`/`x0`; write the buffer only on the cold host-call
-path (depth or stack limit); save only the callee-saved registers the function uses. Touches
-`lower.rs`, `codegen.rs`, `codegen_a64.rs`, `regalloc.rs`; bumps `ABI_VERSION`. Expected ~2× on
-call-heavy numeric code.
+*Evidence for the rest*: arguments still go through a memory buffer (caller store, callee
+load); the depth counter is loaded, checked, incremented and restored around every call, and
+the stack pointer compared with the host's limit; float constants are rematerialized after each
+call (every `xmm` register is caller-saved on System V); the whole prologue and epilogue run
+even on the base case.
+
+*Fix*: `f64` arguments in `xmm0–7`/`v0–7` with a register-to-register parallel move at call
+sites (the buffer written only on the cold host-call path); constants as memory operands from a
+per-function pool; shrink-wrapping (save callee-saved registers only on paths that use them).
 
 ### 2. Every non-numeric operation is a round trip to the host (umbo 78×, kamusi, maneno)
 
@@ -156,7 +161,7 @@ a register-to-register parallel move); a stack-allocated argument array for host
 saves). Whole-process Sudoku (minimum of 20 runs): C 4.18 ms, `tenda` 4.20 ms, the standalone
 executable 3.97 ms — level within noise; Asili takes ~120 more page faults (~0.1 ms) at start.
 
-Remaining, all structural: a direct-call convention with fewer pointer arguments (fib, ~25 %
-expected); method ids resolved at compile time instead of name matching (~10 % on map- and
-string-heavy code); local slots and closure compilation for the tree-walker (2–4×, REPL and
-wasm).
+Done since: the leaner direct-call convention (F12–F14, fib −26 % in instructions, 13.4 →
+11.0 ms). Remaining, all structural: method ids resolved at compile time instead of name
+matching (~10 % on map- and string-heavy code); local slots and closure compilation for the
+tree-walker (2–4×, REPL and wasm); register arguments for direct calls (above).

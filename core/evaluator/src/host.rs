@@ -40,11 +40,16 @@ pub(crate) enum Ret {
     Val(Value),
 }
 
-// `repr(C)` with `depth` first: native code's direct calls count themselves in it at offset 0
-// (`native::DEPTH_OFFSET`), so the call-depth limit is the same on every tier.
+// `repr(C)`, starting with what native code reads by offset (`native::DEPTH_OFFSET` and the
+// next two): direct calls count themselves in `depth`, so the call-depth limit is the same on
+// every tier, and direct entries find the runtime table and their stack limit here.
 #[repr(C)]
 pub(crate) struct Host<'p> {
     depth: usize,
+    runtime: &'static crate::native::Runtime,
+    /// Lowest stack address at which native code may make a direct call, for the stack
+    /// segment the current native call runs on (set by `run_native`).
+    stack_limit: usize,
     program: &'p BytecodeProgram,
     builtins: Vec<BuiltinFn>,
     builtin_index: HashMap<String, usize>,
@@ -74,6 +79,13 @@ pub(crate) struct Host<'p> {
     error_traced: bool,
 }
 
+const _: () = {
+    use crate::native::{DEPTH_OFFSET, LIMIT_OFFSET, RT_OFFSET};
+    assert!(std::mem::offset_of!(Host<'static>, depth) == DEPTH_OFFSET as usize);
+    assert!(std::mem::offset_of!(Host<'static>, runtime) == RT_OFFSET as usize);
+    assert!(std::mem::offset_of!(Host<'static>, stack_limit) == LIMIT_OFFSET as usize);
+};
+
 pub(crate) static NATIVE_RUNTIME: crate::native::Runtime = crate::native::Runtime {
     exec: native_exec,
     list_ptr: crate::native::list_ptr,
@@ -88,7 +100,6 @@ pub(crate) static NATIVE_RUNTIME: crate::native::Runtime = crate::native::Runtim
     ceil: crate::native::rt_ceil,
     float_to_int_sat: crate::native::rt_float_to_int_sat,
     shift_amount: crate::native::rt_shift_amount,
-    stack_limit: crate::native::rt_stack_limit,
     call_host: native_call_host,
     depth_error: native_depth_error,
     box_num: crate::native::rt_box_num,
@@ -230,6 +241,8 @@ impl<'p> Host<'p> {
         let table = crate::builtins::BuiltinTable::new();
         Host {
             depth: 0,
+            runtime: &NATIVE_RUNTIME,
+            stack_limit: usize::MAX,
             program,
             args: Vec::new(),
             spawners: crate::builtins::MODULE_BUILTINS
@@ -396,7 +409,11 @@ impl<'p> Host<'p> {
         // SAFETY: `native` was compiled from `program.functions[index]` for exactly this frame
         // layout (`frame_for` sized every register file), and the frame is not resized while
         // the call runs.
-        let status = unsafe { native(&NATIVE_RUNTIME, host, &mut frame, nums) };
+        // Direct calls check against the limit of the stack this call runs on (`invoke` may
+        // have moved it to a new segment); the caller's limit is back in force after.
+        let outer = std::mem::replace(&mut self.stack_limit, crate::native::stack_limit());
+        let status = unsafe { native(self.runtime, host, &mut frame, nums) };
+        self.stack_limit = outer;
         let pc = (status & 0xffff_ffff) as usize;
         let result = match status >> 32 {
             crate::native::STATUS_RETURN => Ok(match &self.program.functions[index].code[pc] {

@@ -94,16 +94,14 @@ pub enum RtFn {
     FloatToIntSat = 11,
     /// The language's shift amount: `f64 as i32`, anything outside `0..=63` → 0.
     ShiftAmount = 12,
-    /// Lowest stack address a direct call may run below.
-    StackLimit = 13,
     /// Make a direct call through the host's call path (see `native::Runtime::call_host`).
-    CallHost = 14,
+    CallHost = 13,
     /// Report the call-depth error (see `native::Runtime::depth_error`).
-    DepthError = 15,
-    BoxNum = 16,
-    BoxBool = 17,
-    ValMov = 18,
-    ConstVal = 19,
+    DepthError = 14,
+    BoxNum = 15,
+    BoxBool = 16,
+    ValMov = 17,
+    ConstVal = 18,
 }
 
 #[derive(Clone, Debug)]
@@ -239,20 +237,23 @@ pub enum Inst {
         index: VReg,
         kind: Kind,
     },
-    /// Call a runtime function; integer arguments and result follow the C ABI by class.
-    /// `ret32` marks a `u32` result that must be zero-extended.
+    /// Call a runtime function through the table at `table`; integer arguments and result
+    /// follow the C ABI by class. `ret32` marks a `u32` result that must be zero-extended.
     Call {
+        table: VReg,
         target: RtFn,
         args: Vec<VReg>,
         dst: Option<VReg>,
         ret32: bool,
     },
-    /// Call the direct entry of program function `func` (four pointer-sized arguments, a
-    /// status result), linked when the image is laid out.
+    /// Call the direct entry of program function `func` (pointer-sized arguments), linked
+    /// when the image is laid out: `dst` is its status (0: returned), `result` the number it
+    /// returned (in the first float return register).
     CallDirect {
         func: u32,
         args: Vec<VReg>,
         dst: VReg,
+        result: VReg,
     },
     /// The machine stack pointer.
     StackPointer {
@@ -276,6 +277,9 @@ pub enum Term {
     },
     /// Return the 64-bit status word.
     Return(VReg),
+    /// A direct entry's return of a number: `value` in the first float return register,
+    /// status 0.
+    ReturnNum(VReg),
 }
 
 #[derive(Clone, Debug)]
@@ -284,8 +288,8 @@ pub struct BlockData {
     pub term: Term,
 }
 
-/// One native function. Virtual registers `0..4` are the incoming `rt`, `host`, `frame` and
-/// `nums` arguments.
+/// One native function. Virtual registers `0..4` are reserved for `rt`, `host`, `frame` and
+/// `nums`; [`Func::args`] says which of them arrive as arguments.
 #[derive(Clone, Debug)]
 pub struct Func {
     pub classes: Vec<Class>,
@@ -294,6 +298,9 @@ pub struct Func {
     pub cold: Vec<bool>,
     /// Bytes of frame space for direct calls' register buffers (0: no direct calls).
     pub call_buffer: u32,
+    /// The registers holding the incoming arguments, in order ([`ENTRY_ARGS`] or
+    /// [`DIRECT_ARGS`]).
+    pub args: &'static [VReg],
 }
 
 /// Division by a constant `d > 1` as a multiply: for every integer register value (all are
@@ -312,6 +319,12 @@ pub const RT: VReg = VReg(0);
 pub const HOST: VReg = VReg(1);
 pub const FRAME: VReg = VReg(2);
 pub const NUMS: VReg = VReg(3);
+
+/// An ordinary entry's arguments: `(runtime table, host, frame, numeric registers)`.
+pub const ENTRY_ARGS: &[VReg] = &[RT, HOST, FRAME, NUMS];
+/// A direct entry's: `(host, numeric registers)`; it reads the runtime table and the stack
+/// limit from the host when it needs them.
+pub const DIRECT_ARGS: &[VReg] = &[HOST, NUMS];
 
 /// What a call site may assume about a register's home slot without storing it first.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -348,7 +361,7 @@ impl Func {
         }
         (0..self.classes.len())
             .map(|i| match (defs[i], constant[i]) {
-                (0, _) if i < 4 => Home::Current,
+                (0, _) if self.args.contains(&VReg(i as u32)) => Home::Current,
                 (1, Some(bits)) => Home::Const(bits),
                 _ => Home::Unknown,
             })
@@ -395,7 +408,8 @@ impl Inst {
             Inst::StoreIndex {
                 src, base, index, ..
             } => vec![*src, *base, *index],
-            Inst::Call { args, .. } | Inst::CallDirect { args, .. } => args.clone(),
+            Inst::Call { table, args, .. } => std::iter::once(*table).chain(args.clone()).collect(),
+            Inst::CallDirect { args, .. } => args.clone(),
             Inst::StackPointer { .. } | Inst::CallBuffer { .. } => vec![],
         }
     }
@@ -427,7 +441,10 @@ impl Inst {
             Inst::StoreIndex {
                 src, base, index, ..
             } => vec![src, base, index],
-            Inst::Call { args, .. } | Inst::CallDirect { args, .. } => args.iter_mut().collect(),
+            Inst::Call { table, args, .. } => {
+                std::iter::once(table).chain(args.iter_mut()).collect()
+            }
+            Inst::CallDirect { args, .. } => args.iter_mut().collect(),
             Inst::StackPointer { .. } | Inst::CallBuffer { .. } => vec![],
         }
     }
@@ -458,9 +475,8 @@ impl Inst {
             Inst::MulOverflow { dst, ovf, .. } => vec![*dst, *ovf],
             Inst::Store { .. } | Inst::StoreIndex { .. } => vec![],
             Inst::Call { dst, .. } => dst.iter().copied().collect(),
-            Inst::CallDirect { dst, .. }
-            | Inst::StackPointer { dst }
-            | Inst::CallBuffer { dst } => vec![*dst],
+            Inst::CallDirect { dst, result, .. } => vec![*dst, *result],
+            Inst::StackPointer { dst } | Inst::CallBuffer { dst } => vec![*dst],
         }
     }
 }
@@ -470,7 +486,7 @@ impl Term {
         match self {
             Term::Jump(_) => vec![],
             Term::Branch { cond, .. } => vec![*cond],
-            Term::Return(v) => vec![*v],
+            Term::Return(v) | Term::ReturnNum(v) => vec![*v],
         }
     }
 
@@ -478,7 +494,7 @@ impl Term {
         match self {
             Term::Jump(_) => vec![],
             Term::Branch { cond, .. } => vec![cond],
-            Term::Return(v) => vec![v],
+            Term::Return(v) | Term::ReturnNum(v) => vec![v],
         }
     }
 
@@ -486,7 +502,7 @@ impl Term {
         match self {
             Term::Jump(b) => vec![*b],
             Term::Branch { then_, else_, .. } => vec![*then_, *else_],
-            Term::Return(_) => vec![],
+            Term::Return(_) | Term::ReturnNum(_) => vec![],
         }
     }
 }
@@ -594,6 +610,7 @@ impl Builder {
                 blocks: Vec::new(),
                 cold: Vec::new(),
                 call_buffer: 0,
+                args: ENTRY_ARGS,
             },
             current: None,
             insts: Vec::new(),

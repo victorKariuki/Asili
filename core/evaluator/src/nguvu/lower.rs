@@ -20,8 +20,8 @@ pub struct Ctx<'a> {
     pub program: &'a BytecodeProgram,
     /// Functions with a direct native entry: calls to them skip the host.
     pub direct: &'a HashSet<usize>,
-    /// Lower the direct entry — arguments `(rt, host, stack limit, registers)`, the result stored
-    /// after the registers — instead of the ordinary one.
+    /// Lower the direct entry — arguments `(host, registers)`, the result returned in a float
+    /// register with status 0 — instead of the ordinary one.
     pub entry_direct: bool,
 }
 
@@ -56,9 +56,6 @@ fn reachable(code: &[Opcode]) -> Vec<bool> {
     seen
 }
 
-/// A direct entry's third argument: the stack limit (the ordinary entry's is the frame).
-const LIMIT_ARG: VReg = VReg(2);
-
 const SIGN: i64 = i64::MIN;
 const ABS_MASK: i64 = i64::MAX;
 
@@ -89,8 +86,6 @@ struct Lower<'a> {
     failed: bool,
     /// Instructions some path from the entry reaches.
     reachable: Vec<bool>,
-    /// Stack limit for direct calls (an argument of direct entries, fetched on entry otherwise).
-    limit: Option<VReg>,
     /// Largest register buffer a direct call site needs, in bytes.
     call_buffer: u32,
     /// Numeric registers live on entry to each instruction (bytecode liveness).
@@ -218,7 +213,6 @@ pub fn lower(index: usize, function: &BytecodeFunc, ctx: &Ctx) -> Option<super::
         ctx,
         failed: false,
         reachable: reachable(code),
-        limit: None,
         call_buffer: 0,
     };
     let entry = l.b.block();
@@ -228,14 +222,6 @@ pub fn lower(index: usize, function: &BytecodeFunc, ctx: &Ctx) -> Option<super::
     }
     l.b.switch_to(entry);
     l.prologue();
-    if ctx.entry_direct {
-        l.limit = Some(LIMIT_ARG);
-    } else if code
-        .iter()
-        .any(|op| matches!(op, Opcode::Call(c) if l.direct_callee(c).is_some()))
-    {
-        l.limit = l.call(RtFn::StackLimit, vec![], Some(Class::Int), false);
-    }
     let first = l.label(0);
     l.b.terminate(Term::Jump(first));
     l.lower_range(0, code.len());
@@ -272,6 +258,11 @@ pub fn lower(index: usize, function: &BytecodeFunc, ctx: &Ctx) -> Option<super::
     let call_buffer = l.call_buffer;
     let mut func = l.b.finish();
     func.call_buffer = call_buffer;
+    func.args = if ctx.entry_direct {
+        super::ir::DIRECT_ARGS
+    } else {
+        super::ir::ENTRY_ARGS
+    };
     Some(func)
 }
 
@@ -395,12 +386,12 @@ impl<'a> Lower<'a> {
     }
 
     /// A call to a function with a direct entry: its registers go in a buffer in this frame,
-    /// and native code calls native code. When the call depth reaches the limit or the stack is
-    /// low, the call goes through the host's call path instead (`RtFn::CallHost`: it grows
-    /// the stack, or reports the depth error, and still runs the callee's native code).
+    /// and native code calls native code, which returns the number in a register. When the
+    /// call depth reaches the limit or the stack is low, the call goes through the host's call
+    /// path instead (`RtFn::CallHost`: it grows the stack, or reports the depth error, still
+    /// runs the callee's native code, and stores the number after the callee's registers).
     fn direct_call(&mut self, pc: usize, _op: &Opcode, call: &CallOp) {
         let callee = self.direct_callee(call).expect("direct callee");
-        let limit = self.limit.expect("stack limit fetched on entry");
         let result_offset = 8 * callee.num_regs as i32;
         self.call_buffer = self.call_buffer.max(8 * (callee.num_regs + 1));
         let buf = self.vreg(Class::Int);
@@ -421,8 +412,9 @@ impl<'a> Lower<'a> {
         });
         let max = self.b.iconst(crate::host::MAX_CALL_DEPTH as i64);
         let via_vm = self.b.cold_block();
-        let status = self.vreg(Class::Int);
-        let returned = self.b.block();
+        let result = self.vreg(Class::Float);
+        let got = self.b.block();
+        let fail = self.b.cold_block();
         // Two compare-and-branch pairs (each fuses), not one branch on their conjunction.
         let shallow = self.icmp(ICond::Lt, depth, max);
         let next = self.b.block();
@@ -432,6 +424,12 @@ impl<'a> Lower<'a> {
             else_: via_vm,
         });
         self.b.switch_to(next);
+        let limit = self.vreg(Class::Int);
+        self.push(Inst::Load {
+            dst: limit,
+            base: HOST,
+            offset: crate::native::LIMIT_OFFSET,
+        });
         let sp = self.vreg(Class::Int);
         self.push(Inst::StackPointer { dst: sp });
         let roomy = self.icmp(ICond::Ult, limit, sp);
@@ -442,16 +440,31 @@ impl<'a> Lower<'a> {
             else_: via_vm,
         });
 
+        // Through the host: anything but a plain return is a failure to pass on.
         self.b.switch_to(via_vm);
         let f = self.b.iconst(call.function as i64);
         let s = self
             .call(RtFn::CallHost, vec![HOST, f, buf], Some(Class::Int), false)
             .expect("status");
-        self.push(Inst::Mov {
-            dst: status,
-            src: s,
+        self.push(Inst::Load {
+            dst: result,
+            base: buf,
+            offset: result_offset,
         });
-        self.b.terminate(Term::Jump(returned));
+        let kind = self.vreg(Class::Int);
+        self.push(Inst::IntImm {
+            op: IntOp::Sar,
+            dst: kind,
+            a: s,
+            imm: 32,
+        });
+        let ret = self.b.iconst(crate::native::STATUS_RETURN as i64);
+        let ok = self.icmp(ICond::Eq, kind, ret);
+        self.b.terminate(Term::Branch {
+            cond: ok,
+            then_: got,
+            else_: fail,
+        });
 
         self.b.switch_to(fast);
         let one = self.b.iconst(1);
@@ -464,49 +477,28 @@ impl<'a> Lower<'a> {
             })
         };
         set_depth(self, deeper);
-        let s = self.vreg(Class::Int);
+        let status = self.vreg(Class::Int);
         self.push(Inst::CallDirect {
             func: call.function,
-            args: vec![super::ir::RT, HOST, limit, buf],
-            dst: s,
+            args: vec![HOST, buf],
+            dst: status,
+            result,
         });
         set_depth(self, depth);
-        self.push(Inst::Mov {
-            dst: status,
-            src: s,
-        });
-        self.b.terminate(Term::Jump(returned));
-
-        // Anything but a plain return is a failure to pass on.
-        self.b.switch_to(returned);
-        let kind = self.vreg(Class::Int);
-        self.push(Inst::IntImm {
-            op: IntOp::Sar,
-            dst: kind,
-            a: status,
-            imm: 32,
-        });
-        let ret = self.b.iconst(crate::native::STATUS_RETURN as i64);
-        let ok = self.icmp(ICond::Eq, kind, ret);
-        let got = self.b.block();
-        let fail = self.b.cold_block();
+        let z = self.b.iconst(0);
+        let ok = self.icmp(ICond::Eq, status, z);
         self.b.terminate(Term::Branch {
             cond: ok,
             then_: got,
             else_: fail,
         });
+
         self.b.switch_to(fail);
         let status = self.b.iconst(((STATUS_FAIL << 32) | pc as u64) as i64);
         self.b.terminate(Term::Return(status));
 
         self.b.switch_to(got);
-        let v = self.vreg(Class::Float);
-        self.push(Inst::Load {
-            dst: v,
-            base: buf,
-            offset: result_offset,
-        });
-        self.set_f(call.dst.reg, v);
+        self.set_f(call.dst.reg, result);
     }
 
     fn label(&self, pc: usize) -> Block {
@@ -627,13 +619,35 @@ impl<'a> Lower<'a> {
         ret32: bool,
     ) -> Option<VReg> {
         let dst = ret.map(|c| self.vreg(c));
+        self.call_into(target, args, dst, ret32);
+        dst
+    }
+
+    /// Call runtime function `target`, its result (if any) into `dst`.
+    fn call_into(&mut self, target: RtFn, args: Vec<VReg>, dst: Option<VReg>, ret32: bool) {
+        let table = self.runtime_table();
         self.push(Inst::Call {
+            table,
             target,
             args,
             dst,
             ret32,
         });
-        dst
+    }
+
+    /// The runtime table: an ordinary entry's first argument; a direct entry reads it from the
+    /// host (only on the paths that call the runtime).
+    fn runtime_table(&mut self) -> VReg {
+        if !self.ctx.entry_direct {
+            return super::ir::RT;
+        }
+        let rt = self.vreg(Class::Int);
+        self.push(Inst::Load {
+            dst: rt,
+            base: HOST,
+            offset: crate::native::RT_OFFSET,
+        });
+        rt
     }
 
     fn int_op(&mut self, op: IntOp, a: VReg, b: VReg) -> VReg {
@@ -718,12 +732,7 @@ impl<'a> Lower<'a> {
         let reg = self.b.iconst(r as i64);
         let kind = self.list_kinds[r as usize];
         let want = self.b.iconst(kind.code() as i64);
-        self.push(Inst::Call {
-            target: RtFn::ListPtr,
-            args: vec![FRAME, reg, want],
-            dst: Some(p),
-            ret32: false,
-        });
+        self.call_into(RtFn::ListPtr, vec![FRAME, reg, want], Some(p), false);
         if kind != Kind::F64 {
             // The analysis saw every value stored into this list, so each fits `kind` and the
             // runtime always hands back a pointer. Null would mean that proof was wrong: stop
@@ -744,25 +753,10 @@ impl<'a> Lower<'a> {
             self.b.terminate(Term::Return(status));
             self.b.switch_to(fine);
         }
-        self.push(Inst::Call {
-            target: RtFn::ListLen,
-            args: vec![FRAME, reg],
-            dst: Some(l),
-            ret32: false,
-        });
+        self.call_into(RtFn::ListLen, vec![FRAME, reg], Some(l), false);
         if let Some((head, room)) = self.list_room[r as usize] {
-            self.push(Inst::Call {
-                target: RtFn::ListHead,
-                args: vec![FRAME, reg],
-                dst: Some(head),
-                ret32: false,
-            });
-            self.push(Inst::Call {
-                target: RtFn::ListRoom,
-                args: vec![FRAME, reg],
-                dst: Some(room),
-                ret32: false,
-            });
+            self.call_into(RtFn::ListHead, vec![FRAME, reg], Some(head), false);
+            self.call_into(RtFn::ListRoom, vec![FRAME, reg], Some(room), false);
         }
     }
 
@@ -1336,25 +1330,10 @@ impl<'a> Lower<'a> {
                 self.b.switch_to(grow);
                 let v = self.get_f(*src);
                 let reg = self.b.iconst(*list as i64);
-                self.push(Inst::Call {
-                    target: RtFn::ListPush,
-                    args: vec![FRAME, reg, v],
-                    dst: Some(p),
-                    ret32: false,
-                });
+                self.call_into(RtFn::ListPush, vec![FRAME, reg, v], Some(p), false);
                 self.push(Inst::Mov { dst: l, src: n });
-                self.push(Inst::Call {
-                    target: RtFn::ListHead,
-                    args: vec![FRAME, reg],
-                    dst: Some(head),
-                    ret32: false,
-                });
-                self.push(Inst::Call {
-                    target: RtFn::ListRoom,
-                    args: vec![FRAME, reg],
-                    dst: Some(room),
-                    ret32: false,
-                });
+                self.call_into(RtFn::ListHead, vec![FRAME, reg], Some(head), false);
+                self.call_into(RtFn::ListRoom, vec![FRAME, reg], Some(room), false);
                 self.b.terminate(Term::Jump(done));
                 self.b.switch_to(done);
             }
@@ -1381,12 +1360,7 @@ impl<'a> Lower<'a> {
                 });
                 self.b.switch_to(yes);
                 let reg = self.b.iconst(*list as i64);
-                self.push(Inst::Call {
-                    target: RtFn::ListRemove,
-                    args: vec![FRAME, reg, i],
-                    dst: Some(len),
-                    ret32: false,
-                });
+                self.call_into(RtFn::ListRemove, vec![FRAME, reg, i], Some(len), false);
                 self.b.terminate(Term::Jump(done));
                 self.b.switch_to(done);
             }
@@ -1440,15 +1414,8 @@ impl<'a> Lower<'a> {
             }
             Opcode::Return { src } if self.ctx.entry_direct => {
                 if matches!(src.ty, Ty::Num | Ty::Bool) {
-                    // The caller reads the result after the callee's registers.
                     let v = self.get_f(src.reg);
-                    self.push(Inst::Store {
-                        src: v,
-                        base: NUMS,
-                        offset: 8 * self.function.num_regs as i32,
-                    });
-                    let status = self.b.iconst(((STATUS_RETURN << 32) | pc as u64) as i64);
-                    self.b.terminate(Term::Return(status));
+                    self.b.terminate(Term::ReturnNum(v));
                 } else {
                     self.failed = true;
                     self.ret_status(STATUS_FAIL, pc);
