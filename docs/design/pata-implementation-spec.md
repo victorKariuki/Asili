@@ -1996,6 +1996,20 @@ Verified with 10 new tests (6 in `doc_store.rs` proving real cache hits/misses v
 `#[cfg(test)]` recompute counter per this section's own acceptance-check note, 4 in
 `workspace.rs` proving scoped invalidation against real on-disk project directories).
 
+**Since then — per-item reparsing:** within one document, an edit now re-lexes and re-parses
+only the top-level items whose text changed. `asili_parser::IncrementalParser`
+(`core/parser/src/incremental.rs`) cuts the source before each line that starts (column 1) with
+`kazi`/`umma`/`leta`/`umbo`/`jenum`/`sifa`/`shughuli`/`thabiti` (attribute lines above an item
+belong to it), caches each piece's tokens and tree by its text, renumbers a piece's lines when it
+moves, and appends the pieces' trees (`Module::append`). The cut is trusted only when every piece
+lexes, balances its brackets, parses without error and leaves no attribute pending — then the
+result is exactly the full parse; otherwise the whole document is parsed as before. `DocStore`
+keeps one parser per open document (`DocStore::parse`), and the diagnostics path
+(`diagnostics::run_parsed`) lints that same tree (`pata_lint::lint_module_with_config`) instead
+of lexing and parsing the text a second time. On a 2,260-line file a one-line edit parses in
+~0.7 ms instead of ~2.3 ms; an edit that moves every item (a line inserted at the top) costs
+about a full parse. Verified against full parses on 874 files under 9,705 random line edits.
+
 **Decision made:** not a full salsa-style incremental-computation framework (pulling in the
 `salsa` crate and restructuring the entire LSP around query-based recomputation is a rewrite, not
 an incremental improvement, and risks the same "more than this fix needs" trap `workspace.rs`'s own

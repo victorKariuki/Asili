@@ -2,11 +2,8 @@
 
 use crate::workspace::WorkspaceIndex;
 use asili_diagnostics::Diagnostic as AsiliDiagnostic;
-use asili_lexer::tokenize;
-use asili_parser::{
-    extern_env_from_imports, merge_modules, parse_tokens, semantic_check_with_env_and_modules,
-};
-use pata_lint::{config::LintConfig, lint_source_with_config};
+use asili_parser::{extern_env_from_imports, merge_modules, semantic_check_with_env_and_modules};
+use pata_lint::{config::LintConfig, lint_module_with_config};
 use std::path::Path;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 
@@ -128,23 +125,29 @@ pub fn asili_diagnostics_to_lsp_with_source(
 /// (walking upward via `LintConfig::find_and_load`) so LSP-published lint diagnostics respect
 /// the same per-rule severity/options `pata-lint`'s CLI does — `None` (e.g. an unsaved buffer
 /// with no on-disk path) lints with every rule at its default settings.
+#[cfg(test)]
 pub fn run_lex_parse(
     text: &str,
     workspace: Option<&WorkspaceIndex>,
     file_path: Option<&Path>,
 ) -> Vec<AsiliDiagnostic> {
+    let parsed = asili_parser::IncrementalParser::new().parse(text);
+    run_parsed(text, parsed, workspace, file_path)
+}
+
+/// [`run_lex_parse`] for a document already lexed and parsed (`parsed`: its tree, or its lexer
+/// or parser errors) — the editor path, which parses incrementally (see `DocStore::parse`).
+pub fn run_parsed(
+    text: &str,
+    parsed: Result<asili_parser::Module, Vec<AsiliDiagnostic>>,
+    workspace: Option<&WorkspaceIndex>,
+    file_path: Option<&Path>,
+) -> Vec<AsiliDiagnostic> {
     let mut out = Vec::new();
-    let tokens = match tokenize(text) {
-        Ok(t) => t,
-        Err(lex_errors) => {
-            out.extend(lex_errors);
-            return out;
-        }
-    };
-    let module = match parse_tokens(&tokens) {
+    let module = match parsed {
         Ok(m) => m,
-        Err(parse_errors) => {
-            out.extend(parse_errors);
+        Err(errors) => {
+            out.extend(errors);
             return out;
         }
     };
@@ -162,6 +165,7 @@ pub fn run_lex_parse(
     // also fixes a real gap the previous function/constant-only merge had: it used to expose
     // every project-local function to every file regardless of whether that file actually
     // imported it, so a missing `leta` was never caught.
+    let merged;
     let (semantic_module, resolved_modules) = match workspace {
         Some(ws) => {
             let module_map = ws
@@ -169,15 +173,13 @@ pub fn run_lex_parse(
                 .iter()
                 .map(|(k, v)| (k.clone(), v.module.clone()))
                 .collect();
-            (
-                merge_modules(&module, &module_map),
-                ws.resolved_module_names(),
-            )
+            merged = merge_modules(&module, &module_map);
+            (&merged, ws.resolved_module_names())
         }
-        None => (module, Default::default()),
+        None => (&module, Default::default()),
     };
     if let Err(sem_errors) = semantic_check_with_env_and_modules(
-        &semantic_module,
+        semantic_module,
         false,
         extern_fns,
         extern_consts,
@@ -190,9 +192,7 @@ pub fn run_lex_parse(
     let lint_config = file_path
         .and_then(|p| LintConfig::find_and_load(p).ok())
         .unwrap_or_default();
-    if let Ok(lint_diags) = lint_source_with_config(text, &lint_config) {
-        out.extend(lint_diags);
-    }
+    out.extend(lint_module_with_config(&module, text, &lint_config));
 
     out
 }

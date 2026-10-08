@@ -84,7 +84,7 @@ impl std::ops::Index<ExprId> for Module {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Module {
     /// Every expression of the module (see the module documentation).
     pub exprs: Exprs,
@@ -95,6 +95,37 @@ pub struct Module {
     pub structs: Vec<StructDecl>,
     pub traits: Vec<TraitDecl>,
     pub impls: Vec<ImplDecl>,
+}
+
+impl Module {
+    /// Append `other`'s items after this module's and its expressions after this arena's (their
+    /// ids offset): exactly the module that parsing the two sources one after the other gives.
+    pub fn append(&mut self, other: &Module) {
+        let base = u32::try_from(self.exprs.len()).expect("fewer than 2^32 expressions");
+        let shift = |id: ExprId| ExprId(id.0 + base);
+        self.exprs
+            .0
+            .extend(other.exprs.0.iter().map(|e| e.map_children(shift)));
+        let function = |f: &Function| {
+            let mut f = f.clone();
+            f.body.map_expr_roots(&mut |id| shift(id));
+            f
+        };
+        self.imports.extend(other.imports.iter().cloned());
+        self.constants
+            .extend(other.constants.iter().map(|c| Constant {
+                value: shift(c.value),
+                ..c.clone()
+            }));
+        self.enums.extend(other.enums.iter().cloned());
+        self.functions.extend(other.functions.iter().map(function));
+        self.structs.extend(other.structs.iter().cloned());
+        self.traits.extend(other.traits.iter().cloned());
+        self.impls.extend(other.impls.iter().map(|i| ImplDecl {
+            body: i.body.iter().map(function).collect(),
+            ..i.clone()
+        }));
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

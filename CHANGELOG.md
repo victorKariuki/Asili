@@ -139,6 +139,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Mwalimu re-parses only what an edit touched**: the language server keeps each open
+  document's parse (`asili_parser::IncrementalParser`) and, on an edit, re-lexes and re-parses
+  only the top-level items whose text changed, reusing the rest; the result is always exactly a
+  full parse (anything it cannot prove safe — a half-typed item — is parsed whole). Linting
+  reuses that tree (`pata_lint::lint_module_with_config`) instead of parsing the document a
+  second time. A one-line edit in a 2,260-line file: ~2.3 → ~0.7 ms to parse.
+
 - **Faster, reproducible native builds**: nguvu lowers and compiles each function on its own
   thread (up to one per core, threads taking the next function as they finish, the image laid
   out in the same order as before). The range analysis joins block states in place instead of

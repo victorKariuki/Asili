@@ -35,6 +35,15 @@ fn strip_string_lexeme_quotes(lexeme: &str) -> String {
 
 impl<'a> Parser<'a> {
     pub(crate) fn parse_module(&mut self) -> Module {
+        let (mut module, _) = self.parse_items();
+        module.enums.extend(self.standard_enums());
+        module.traits.extend(self.standard_traits());
+        module
+    }
+
+    /// The source's own items, without the standard enums and traits every module gets, and
+    /// whether attributes (or a `#[jaribio]` mark) were left waiting for an item at the end.
+    pub(crate) fn parse_items(&mut self) -> (Module, bool) {
         let mut imports = Vec::new();
         let mut constants = Vec::new();
         let mut enums = Vec::new();
@@ -135,10 +144,7 @@ impl<'a> Parser<'a> {
             self.skip_top_level();
         }
 
-        enums.extend(self.standard_enums());
-        traits.extend(self.standard_traits());
-
-        Module {
+        let module = Module {
             exprs: std::mem::take(&mut self.exprs),
             imports,
             constants,
@@ -147,7 +153,8 @@ impl<'a> Parser<'a> {
             structs,
             traits,
             impls,
-        }
+        };
+        (module, pending_test || !pending_attrs.is_empty())
     }
 
     fn parse_module_constant(&mut self, line: usize) -> Option<Constant> {

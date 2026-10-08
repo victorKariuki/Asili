@@ -36,6 +36,9 @@ pub(crate) fn hash_text(text: &str) -> u64 {
 pub struct DocStore {
     inner: RwLock<HashMap<String, String>>,
     cache: RwLock<HashMap<String, CachedAnalysis>>,
+    /// Each open document's parse, kept between edits so an edit re-parses only the items it
+    /// touched (`asili_parser::IncrementalParser`).
+    parsers: std::sync::Mutex<HashMap<String, asili_parser::IncrementalParser>>,
     /// `#[cfg(test)]`-only counter of how many times `compute_or_reuse_diagnostics`'s closure
     /// actually ran (a real recomputation, not a cache hit) — the only way to observe "was this
     /// actually re-analyzed" from outside, per Section 19's own acceptance-check note, since a
@@ -50,6 +53,7 @@ impl DocStore {
         Self {
             inner: RwLock::new(HashMap::new()),
             cache: RwLock::new(HashMap::new()),
+            parsers: Default::default(),
             #[cfg(test)]
             recompute_count: std::sync::atomic::AtomicUsize::new(0),
         }
@@ -69,6 +73,26 @@ impl DocStore {
     pub async fn remove(&self, uri: &str) {
         self.inner.write().await.remove(uri);
         self.cache.write().await.remove(uri);
+        self.lock_parsers().remove(uri);
+    }
+
+    /// `text`'s syntax tree (or its lexer or parser errors) as the document `uri`, re-parsing only
+    /// what changed since its last parse — the same result as a full parse.
+    pub fn parse(
+        &self,
+        uri: &str,
+        text: &str,
+    ) -> Result<asili_parser::Module, Vec<asili_diagnostics::Diagnostic>> {
+        self.lock_parsers()
+            .entry(uri.to_string())
+            .or_default()
+            .parse(text)
+    }
+
+    fn lock_parsers(
+        &self,
+    ) -> std::sync::MutexGuard<'_, HashMap<String, asili_parser::IncrementalParser>> {
+        self.parsers.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Return all (uri, text) pairs currently stored.

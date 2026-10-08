@@ -36,12 +36,22 @@ pub fn lint_source_with_config(
         Ok(m) => m,
         Err(diags) => return Err(format!("uchanganuzi umeshindwa: makosa {}", diags.len())),
     };
+    Ok(lint_module_with_config(&module, source, config))
+}
 
+/// Lint an already-parsed `module` (whose text is `source`) against `config` — what
+/// [`lint_source_with_config`] does after parsing, for callers that already hold the tree (the
+/// LSP, which parses incrementally).
+pub fn lint_module_with_config(
+    module: &asili_parser::Module,
+    source: &str,
+    config: &LintConfig,
+) -> Vec<Diagnostic> {
     let mut lints = Vec::new();
 
     if config.is_enabled("LINT001") || config.is_enabled("LINT002") || config.is_enabled("LINT003")
     {
-        lints.extend(rules::naming::check_naming_conventions(&module));
+        lints.extend(rules::naming::check_naming_conventions(module));
     }
     if config.is_enabled("LINT101") {
         let line_limit = config
@@ -49,15 +59,15 @@ pub fn lint_source_with_config(
             .and_then(|n| usize::try_from(n).ok())
             .unwrap_or(rules::style::DEFAULT_LINE_LIMIT);
         lints.extend(rules::style::check_style_issues_with_limit(
-            &module, line_limit,
+            module, line_limit,
         ));
     }
     if config.is_enabled("LINT201") || config.is_enabled("LINT202") || config.is_enabled("LINT203")
     {
-        lints.extend(rules::best_practices::check_best_practices(&module, source));
+        lints.extend(rules::best_practices::check_best_practices(module, source));
     }
     if config.is_enabled("LINT301") {
-        lints.extend(rules::logic::check_logic_errors(&module));
+        lints.extend(rules::logic::check_logic_errors(module));
     }
 
     // Rule-level `is_enabled` above already skips whole check functions when every code they
@@ -66,7 +76,7 @@ pub fn lint_source_with_config(
     // LINT001/LINT003 from the same `check_naming_conventions` call.
     lints.retain(|d| config.is_enabled(d.code));
 
-    Ok(lints)
+    lints
 }
 
 #[cfg(test)]
