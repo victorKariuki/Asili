@@ -4,6 +4,11 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Syntax ([03-syntax.md](03-syntax.md)): `;` may separate statements (never required); a trailing
+  comma is allowed before the closing bracket of every comma-separated list (literals, calls,
+  parameters, `umbo` fields, `jenum` variants); `[thamani; idadi]` builds a list of `idadi`
+  copies of `thamani`.
+
 - Architecture and roadmap ([02-architecture-and-files.md](02-architecture-and-files.md),
   [07-execution-and-roadmap.md](07-execution-and-roadmap.md)): native code comes from Asili's
   own backend (`nguvu`, x86-64 and AArch64, a `<name>.nguvu` image beside the `.asb`) instead of

@@ -22,6 +22,16 @@ Previous: [Architecture and Files](02-architecture-and-files.md) | [Overview](..
 | Error propagation | `jaribu` | Try / propagate (`?` operator) |
 | Panic | `paparika` | Unrecoverable abort (panic) |
 
+Separators:
+
+- **Statements** end at the end of their syntax; `;` may separate statements on one line
+  (`weka a = 1; weka b = 2`) or follow one, and is never required.
+- **Lists of items** — list and map literals, call arguments, parameters, `umbo` fields (in
+  declarations and literals), `jenum` variants and `linganisha` arms — are comma-separated, and a
+  trailing comma before the closing bracket is allowed.
+- **`[thamani; idadi]`** is a list of `idadi` copies of `thamani` (`orodha_rudia(thamani,
+  idadi)`): `[0; 500]`.
+
 ---
 
 ## Operator catalog

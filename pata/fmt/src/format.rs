@@ -45,8 +45,8 @@ pub fn canonical_format_with_indent(input: &str, indent_unit: &str) -> String {
 /// identifier or a closing `)`/`]` — otherwise they're a grouping expression (`1 + (2 * 3)`) or
 /// an array literal (`weka a = [1, 2, 3]`), which keep the space a preceding operator/keyword
 /// already gets. See `Printer::hugs_previous`.
-const NO_SPACE_BEFORE: &[&str] = &[")", "]", ",", ";", ":", ".", "?"];
-const NO_SPACE_AFTER: &[&str] = &["(", "[", ".", "#"];
+const NO_SPACE_BEFORE: &[&str] = &[")", "]", ",", ";", ":", ".", "?", "::"];
+const NO_SPACE_AFTER: &[&str] = &["(", "[", ".", "#", "::"];
 /// Opens a new indented block; the matching close dedents before printing.
 const OPENERS: &[&str] = &["{"];
 const CLOSERS: &[&str] = &["}"];
@@ -56,6 +56,9 @@ struct Printer<'a> {
     comments: &'a [Comment],
     out: String,
     depth: usize,
+    /// Open `(`/`[` around the current token: a `;` inside them (`[0; 500]`) is not a
+    /// statement separator.
+    inline: usize,
     /// Comments already emitted (`after_token_index`), so a comment isn't printed twice when
     /// multiple comments share the same anchor.
     next_comment: usize,
@@ -76,6 +79,7 @@ impl<'a> Printer<'a> {
             comments,
             out: String::new(),
             depth: 0,
+            inline: 0,
             next_comment: 0,
             generic_brackets,
             indent_unit: indent_unit.to_string(),
@@ -139,11 +143,16 @@ impl<'a> Printer<'a> {
         }
 
         self.out.push_str(lex);
+        match lex {
+            "(" | "[" => self.inline += 1,
+            ")" | "]" => self.inline = self.inline.saturating_sub(1),
+            _ => {}
+        }
 
         if OPENERS.contains(&lex) {
             self.depth += 1;
             self.newline_indent();
-        } else if lex == ";" || self.starts_new_line_after(idx) {
+        } else if (lex == ";" && self.inline == 0) || self.starts_new_line_after(idx) {
             // A gap of 2+ source lines between tokens means the author left at least one blank
             // line — preserve exactly one, so paragraph breaks between top-level declarations
             // survive instead of being silently deleted.
@@ -649,6 +658,15 @@ weka c = 'x'"#;
         let input = "kazi kuu() -> Tupu {\nweka x = 1\n}\n";
         let output = canonical_format_with_indent(input, "\t");
         assert!(output.contains("\n\tweka x = 1"), "got: {output:?}");
+    }
+
+    #[test]
+    fn repeat_lists_and_paths_stay_on_one_line() {
+        let input = "kazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    weka a: Orodha<Namba> = [0; 500]; weka r = Rangi::Kijani\n}\n";
+        let output = canonical_format(input);
+        assert!(output.contains("= [0; 500];\n"), "{output}");
+        assert!(output.contains("weka r = Rangi::Kijani"), "{output}");
+        assert_eq!(canonical_format(&output), output);
     }
 
     #[test]

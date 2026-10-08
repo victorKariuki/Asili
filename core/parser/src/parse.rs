@@ -106,8 +106,21 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
-            self.err_here("PAR000", "token isiyotegemewa kwenye kiwango cha juu");
+            if self.match_tok(";") {
+                continue;
+            }
+            // Right after an item that failed to parse, its own error already points here.
+            let here = (self.peek().line, self.peek().column);
+            let reported = self
+                .errors
+                .last()
+                .and_then(|d| d.span.as_ref())
+                .is_some_and(|sp| (sp.line, sp.column) == here);
+            if !reported {
+                self.err_here("PAR000", "token isiyotegemewa kwenye kiwango cha juu");
+            }
             self.pos += 1;
+            self.skip_top_level();
         }
 
         enums.extend(self.standard_enums());
@@ -549,6 +562,10 @@ impl<'a> Parser<'a> {
         self.consume("{", "PAR020", "kizuizi inahitaji '{'")?;
         let mut statements = Vec::new();
         while !self.is_eof() && !self.check("}") {
+            // `;` may separate statements (`weka a = 1; weka b = 2`); it is never required.
+            if self.match_tok(";") {
+                continue;
+            }
             if self.check("weka") || self.check("thabiti") {
                 statements.extend(self.parse_let_group()?);
             } else if let Some(stmt) = self.parse_stmt() {
@@ -1209,15 +1226,7 @@ impl<'a> Parser<'a> {
 
     /// Parse comma-separated expressions until ")", then consume ")". Call after consuming "(".
     fn parse_paren_args(&mut self, close_code: &'static str, close_msg: &str) -> Option<Vec<Expr>> {
-        let mut args = Vec::new();
-        while !self.check(")") {
-            args.push(self.parse_expression()?);
-            if !self.match_tok(",") {
-                break;
-            }
-        }
-        self.consume(")", close_code, close_msg)?;
-        Some(args)
+        self.comma_list(")", close_code, close_msg, |p| p.parse_expression())
     }
 
     fn parse_postfix(&mut self) -> Option<Expr> {
@@ -1332,40 +1341,40 @@ impl<'a> Parser<'a> {
         }
 
         if self.match_tok("[") {
-            let mut elements = Vec::new();
-            if !self.match_tok("]") {
-                loop {
-                    elements.push(self.parse_expression()?);
-                    if !self.match_tok(",") {
-                        break;
-                    }
+            let line = self.prev().line;
+            // `[thamani; idadi]`: `idadi` copies of `thamani` (`orodha_rudia`).
+            if !self.check("]") {
+                let save = self.pos;
+                let value = self.parse_expression()?;
+                if self.match_tok(";") {
+                    let count = self.parse_expression()?;
+                    self.consume("]", "PAR079", "orodha inahitaji ']'")?;
+                    return Some(Expr::Call {
+                        callee: Box::new(Expr::Ident {
+                            name: "orodha_rudia".to_string(),
+                            line,
+                            column: 0,
+                        }),
+                        args: vec![value, count],
+                        line,
+                    });
                 }
-                self.consume("]", "PAR079", "orodha inahitaji ']'")?;
+                self.pos = save;
             }
-            return Some(Expr::List {
-                elements,
-                line: self.prev().line,
-            });
+            let elements = self.comma_list("]", "PAR079", "orodha inahitaji ']'", |p| {
+                p.parse_expression()
+            })?;
+            return Some(Expr::List { elements, line });
         }
 
         if self.match_tok("{") {
-            let mut entries = Vec::new();
-            if !self.match_tok("}") {
-                loop {
-                    let key = self.parse_expression()?;
-                    self.consume(":", "PAR053", "kamusi inahitaji ':'")?;
-                    let val = self.parse_expression()?;
-                    entries.push((key, val));
-                    if !self.match_tok(",") {
-                        break;
-                    }
-                }
-                self.consume("}", "PAR053", "kamusi inahitaji '}'")?;
-            }
-            return Some(Expr::Map {
-                entries,
-                line: self.prev().line,
-            });
+            let line = self.prev().line;
+            let entries = self.comma_list("}", "PAR053", "kamusi inahitaji '}'", |p| {
+                let key = p.parse_expression()?;
+                p.consume(":", "PAR053", "kamusi inahitaji ':'")?;
+                Some((key, p.parse_expression()?))
+            })?;
+            return Some(Expr::Map { entries, line });
         }
 
         if self.peek().lexeme.starts_with("CHAR:") {
@@ -1429,51 +1438,6 @@ impl<'a> Parser<'a> {
                 return None;
             }
             return Some(Expr::Number(lexeme));
-        }
-
-        // [] list literal → Expr::List
-        if self.match_tok("[") {
-            let line = self.prev().line;
-            let mut elements = Vec::new();
-            while !self.check("]") && !self.is_eof() {
-                elements.push(self.parse_expression()?);
-                if !self.match_tok(",") {
-                    break;
-                }
-            }
-            self.consume("]", "PAR090", "orodha literal inahitaji ']'")?;
-            return Some(Expr::List { elements, line });
-        }
-
-        // {} / { k: v, ... } map literal → Expr::Map
-        if self.check("{") {
-            let first_inside = self.tokens.get(self.pos + 1).map(|u| u.lexeme.as_str());
-            let second_inside = self.tokens.get(self.pos + 2).map(|u| u.lexeme.as_str());
-            let is_empty_map = first_inside == Some("}");
-            let is_map_lit = !is_empty_map && second_inside == Some(":");
-            if is_empty_map || is_map_lit {
-                let line = self.peek().line;
-                self.advance(); // consume {
-                let mut entries: Vec<(Expr, Expr)> = Vec::new();
-                loop {
-                    if self.check("}") || self.is_eof() {
-                        break;
-                    }
-                    let k = self.parse_expression()?;
-                    self.consume(
-                        ":",
-                        "PAR092",
-                        "kamusi literal inahitaji ':' kati ya ufunguo na thamani",
-                    )?;
-                    let v = self.parse_expression()?;
-                    entries.push((k, v));
-                    if !self.match_tok(",") {
-                        break;
-                    }
-                }
-                self.consume("}", "PAR093", "kamusi literal inahitaji '}'")?;
-                return Some(Expr::Map { entries, line });
-            }
         }
 
         if self.check_ident() {
@@ -1561,13 +1525,40 @@ impl<'a> Parser<'a> {
         Some((fields, field_positions))
     }
 
+    /// Skip to the next thing that can start a top-level item, after an error, so one mistake
+    /// is reported once rather than once per remaining token.
     fn skip_top_level(&mut self) {
         while !self.is_eof() {
-            if self.check("kazi") || self.check("umma") || self.check("leta") {
+            let t = self.peek();
+            let item = matches!(
+                t.lexeme.as_str(),
+                "kazi" | "umma" | "leta" | "umbo" | "jenum" | "sifa" | "shughuli"
+            ) || (t.column == 1 && matches!(t.lexeme.as_str(), "thabiti" | "#"));
+            if item {
                 break;
             }
             self.pos += 1;
         }
+    }
+
+    /// Items `item` parses, separated by `,` and ending with `close` (consumed); a trailing comma
+    /// before `close` is allowed, so multi-line lists can end every line with one.
+    fn comma_list<T>(
+        &mut self,
+        close: &str,
+        code: &'static str,
+        msg: &str,
+        mut item: impl FnMut(&mut Self) -> Option<T>,
+    ) -> Option<Vec<T>> {
+        let mut items = Vec::new();
+        while !self.check(close) && !self.is_eof() {
+            items.push(item(self)?);
+            if !self.match_tok(",") {
+                break;
+            }
+        }
+        self.consume(close, code, msg)?;
+        Some(items)
     }
 
     pub(crate) fn standard_enums(&self) -> Vec<EnumDecl> {

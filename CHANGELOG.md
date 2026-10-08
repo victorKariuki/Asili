@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Separators**: `;` may separate statements (`weka a = 1; weka b = 2`), never required; a
+  trailing comma is allowed in every comma-separated list (list and map literals, call
+  arguments, parameters, `umbo` fields, `jenum` variants); `[thamani; idadi]` builds `idadi`
+  copies of `thamani` (`[0; 500]`, compiled to the same list-repeat instruction as
+  `orodha_rudia`). These lists share one parser routine (`comma_list`), and a dead second copy
+  of the list and map literal parsers is gone.
+
 - **Standalone executables**: `pata jenga --namna release` also writes `kilele/<jina>` (`.exe`
   on Windows), the static runner with the program's bytecode and native image appended
   (`asili_evaluator::bundle`; trailing data every executable loader ignores), so `./kilele/jina`
@@ -302,6 +309,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `kama Neno` does (`Siyo_Namba`, `Ukomo`, `-Ukomo`) instead of Rust's `NaN`/`inf`.
 
 ### Fixed
+
+- **One syntax error per mistake**: after an item fails to parse, the parser resumes at the next
+  top-level item instead of reporting `PAR000` for every remaining token (a stray `+*` used to
+  produce 29 errors). `pata nadhifu` keeps `[0; 500]` on one line and no longer spaces `::`
+  (`Rangi::Kijani` stayed `Rangi :: Kijani`).
 
 - **Calls on the static runner no longer thrash stack segments**: musl's main thread reports
   only its committed stack, so the VM's (and the tree-walker's) grow-on-demand check mapped and

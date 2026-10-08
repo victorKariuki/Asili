@@ -367,3 +367,66 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     let module = parse_tokens(&tokenize(src).unwrap()).unwrap();
     semantic_check(&module).expect("fields of a umbo inside Orodha<...>");
 }
+
+#[test]
+fn trailing_commas_semicolons_and_repeat_lists() {
+    let src = r#"
+umbo Nukta {
+    x: Namba,
+    y: Namba,
+}
+jenum Rangi {
+    Nyekundu,
+    Kijani,
+}
+kazi jumla(
+    a: Namba,
+    b: Namba,
+) -> Namba {
+    rejesha a + b
+}
+kazi kuu(hoja: Orodha<Neno>) -> Tupu {
+    weka a = [1, 2, 3,]
+    weka b = 5; weka c = 6;
+    weka m = { "x": 1, "y": 2, }
+    weka p = Nukta { x: 1, y: 2, }
+    weka sifuri: Orodha<Namba> = [0; 500];
+    chapisha(jumla(
+        p.x,
+        p.y,
+    ) kama Neno);
+};
+"#;
+    let module = parse_tokens(&tokenize(src).unwrap()).expect("parses");
+    semantic_check(&module).expect("checks");
+    let kuu = module.functions.iter().find(|f| f.name == "kuu").unwrap();
+    // `;` separates statements but adds none.
+    assert_eq!(kuu.body.statements.len(), 7);
+    // `[0; 500]` is `orodha_rudia(0, 500)`.
+    match &kuu.body.statements[5] {
+        Stmt::Let {
+            value: Expr::Call { callee, args, .. },
+            ..
+        } => {
+            assert!(matches!(&**callee, Expr::Ident { name, .. } if name == "orodha_rudia"));
+            assert_eq!(args.len(), 2);
+        }
+        other => panic!("expected orodha_rudia call, got {other:?}"),
+    }
+    match &kuu.body.statements[0] {
+        Stmt::Let {
+            value: Expr::List { elements, .. },
+            ..
+        } => assert_eq!(elements.len(), 3),
+        other => panic!("expected a list, got {other:?}"),
+    }
+}
+
+#[test]
+fn one_syntax_error_per_mistake() {
+    // Each broken function is reported once; the parser resumes at the next item instead of
+    // flagging every remaining token.
+    let src = "kazi mbaya() -> Namba {\n    weka a = (1 + \n    rejesha a\n}\n\nkazi kuu(hoja: Orodha<Neno>) -> Tupu {\n    weka b = 5 +* 3\n    chapisha(\"x\")\n}\n";
+    let errors = parse_tokens(&tokenize(src).unwrap()).unwrap_err();
+    assert_eq!(errors.len(), 2, "{errors:?}");
+}

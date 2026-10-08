@@ -12,6 +12,11 @@ weka namba = orodha(10, 20, 30)       # list of three numbers
 weka maneno = orodha("a", "b", "c")   # list of strings
 weka mseto = [1, 2, 3]                # list literal syntax
 weka sifuri = orodha_rudia(0, 9)      # list containing nine zeroes
+weka bafa = [0; 9]                    # the same: nine zeroes (`[thamani; idadi]`)
+weka mistari = [
+    "moja",
+    "mbili",                          # a trailing comma is allowed
+]
 ```
 
 ### Njia (Methods)
