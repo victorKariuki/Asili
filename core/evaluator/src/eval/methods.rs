@@ -156,6 +156,41 @@ pub(crate) fn is_pure_method(recv: &Value, method: &str) -> bool {
 use asili_parser::builtins::{
     MethodReceiver as Kind, CALLBACK_METHODS, MUTATING_METHODS, PURE_METHODS,
 };
+use asili_parser::Name;
+
+/// [`PURE_METHODS`] and [`MUTATING_METHODS`] as interned names, built once: bytecode names its
+/// methods with `Name`s, so classifying a call there compares pointers, not strings.
+struct MethodNames {
+    pure: Vec<Vec<Name>>,
+    mutating: Vec<Vec<Name>>,
+}
+
+fn method_names() -> &'static MethodNames {
+    static NAMES: std::sync::OnceLock<MethodNames> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| {
+        let intern = |table: &[&[&str]]| -> Vec<Vec<Name>> {
+            table
+                .iter()
+                .map(|names| names.iter().map(|n| Name::new(n)).collect())
+                .collect()
+        };
+        MethodNames {
+            pure: intern(&PURE_METHODS),
+            mutating: intern(&MUTATING_METHODS),
+        }
+    })
+}
+
+/// [`is_pure_method`] for an interned name.
+pub(crate) fn is_pure_name(recv: &Value, method: Name) -> bool {
+    receiver_kind(recv).is_some_and(|kind| method_names().pure[kind as usize].contains(&method))
+}
+
+/// [`is_mutating`] for an interned name.
+pub(crate) fn is_mutating_name(recv: &Value, method: Name) -> bool {
+    receiver_kind(recv)
+        .is_some_and(|kind| method_names().mutating[kind as usize].contains(&method))
+}
 
 fn receiver_kind(recv: &Value) -> Option<Kind> {
     Some(match recv {

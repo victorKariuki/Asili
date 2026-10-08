@@ -794,7 +794,7 @@ impl<'p> Host<'p> {
                     .collect();
                 let list = std::mem::take(&mut frame.lists[call.recv as usize]);
                 let mut value = Value::list(list.iter().map(Value::Namba).collect());
-                let result = methods::mutate(&mut value, &call.method, &args);
+                let result = methods::mutate(&mut value, call.method.as_str(), &args);
                 match list_from_value(&value) {
                     Ok(list) => frame.lists[call.recv as usize] = list,
                     Err(e) => fail!(e),
@@ -899,11 +899,11 @@ impl<'p> Host<'p> {
                 let mut args = self.take_args(&frame.vals, &call.args);
                 let recv = &frame.vals[call.recv as usize];
                 // A state-free method reads the receiver in place (no copy of a string or list).
-                let result = if methods::is_pure_method(recv, &call.method) {
-                    methods::pure_method(recv, &call.method, &args)
+                let result = if methods::is_pure_name(recv, call.method) {
+                    methods::pure_method(recv, call.method.as_str(), &args)
                 } else {
                     let recv = recv.clone();
-                    self.call_method(recv, &call.method, std::mem::take(&mut args))
+                    self.call_method(recv, call.method.as_str(), std::mem::take(&mut args))
                 };
                 self.give_args(args);
                 match result {
@@ -914,11 +914,11 @@ impl<'p> Host<'p> {
             Opcode::MutMethod(call) => {
                 let mut args = self.take_args(&frame.vals, &call.args);
                 let target = &mut frame.vals[call.recv as usize];
-                let result = if methods::is_mutating(target, &call.method) {
-                    methods::mutate(target, &call.method, &args)
+                let result = if methods::is_mutating_name(target, call.method) {
+                    methods::mutate(target, call.method.as_str(), &args)
                 } else {
                     let recv = target.clone();
-                    self.call_method(recv, &call.method, std::mem::take(&mut args))
+                    self.call_method(recv, call.method.as_str(), std::mem::take(&mut args))
                 };
                 self.give_args(args);
                 match result {

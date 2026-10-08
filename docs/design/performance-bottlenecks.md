@@ -101,11 +101,15 @@ without the host once the layout is fixed.
 
 ### 5. Method dispatch by string
 
-*Evidence*: ~250 instructions per method call to decide it is pure (`is_pure_method`: a linear
-search of names) and then find it (`pure_method`: a `match` over (receiver, name string)).
+*Partly done*: bytecode method instructions carry an interned `Name`, and the host classifies
+a call (`is_pure_name`, `is_mutating_name`) by pointer comparison against interned copies of
+the method tables — map loop −3.5%, strings −2.4%. Measured and ruled out: moving arguments out
+of their registers for the call instead of copying them (putting them back costs more than the
+reference counts saved; map loop +14%).
 
-*Fix*: resolve the method to an id once — when compiling bytecode (`MethodOp` carries it) and,
-for the tree-walker, when parsing (interned `Name` → id table) — and `match` on the id.
+*Still open*: the implementation is still found by a `match` over (receiver, name string), and
+the tree-walker classifies by string. *Fix*: a method id resolved once (bytecode compile; for
+the tree-walker, at parse time) and a `match` on it.
 
 ### 6. Building a string by appending is quadratic — fixed (F8)
 

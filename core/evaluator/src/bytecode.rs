@@ -122,7 +122,7 @@ pub struct BuiltinOp {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MethodOp {
-    pub method: String,
+    pub method: asili_parser::Name,
     pub recv: Reg,
     pub args: Vec<Reg>,
     pub dst: Reg,
@@ -131,7 +131,7 @@ pub struct MethodOp {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// An in-place method (`ongeza`, `ingiza`, ...) on a generic local.
 pub struct MutMethodOp {
-    pub method: String,
+    pub method: asili_parser::Name,
     pub recv: Reg,
     pub args: Vec<Reg>,
     pub dst: Reg,
@@ -2547,7 +2547,7 @@ impl<'a> FunctionCompiler<'a> {
                     let regs = self.val_args(args)?;
                     let out = self.dst_or_temp(dst, Ty::Val);
                     self.emit(Opcode::ListMutate(Box::new(MutMethodOp {
-                        method: method.to_string(),
+                        method: asili_parser::Name::new(method),
                         recv: list.reg,
                         args: regs,
                         dst: out.reg,
@@ -2642,7 +2642,7 @@ impl<'a> FunctionCompiler<'a> {
         let args = self.val_args(args)?;
         let out = self.dst_or_temp(dst, Ty::Val);
         self.emit(Opcode::MutMethod(Box::new(MutMethodOp {
-            method: method.to_string(),
+            method: asili_parser::Name::new(method),
             recv,
             args,
             dst: out.reg,
@@ -2662,7 +2662,7 @@ impl<'a> FunctionCompiler<'a> {
         let args = self.val_args(args)?;
         let out = self.dst_or_temp(dst, Ty::Val);
         self.emit(Opcode::CallMethod(Box::new(MethodOp {
-            method: method.to_string(),
+            method: asili_parser::Name::new(method),
             recv,
             args,
             dst: out.reg,

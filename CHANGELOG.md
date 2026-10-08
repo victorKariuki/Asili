@@ -139,6 +139,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Method calls classified by pointer**: bytecode method instructions carry the method's
+  interned `Name` (encoded as before), and the host decides whether a method is a pure or an
+  in-place one by comparing it against interned copies of the method tables instead of
+  comparing strings. Map loop −3.5%, string building −2.4% (instructions).
+
 - **Leaner calls between numeric functions**: a direct native entry now takes two arguments
   (host, registers) instead of four, reads the runtime table and its stack limit from the host
   only when it needs them, and returns its number in a float register with status 0 instead of
