@@ -58,21 +58,21 @@ pub(crate) fn eval_stmt_impl(stmt: &Stmt, rt: &mut Runtime<'_>) -> Result<EvalOu
             name, op, value, ..
         } => {
             let rhs = super::eval_expr_impl(*value, rt)?;
+            // One lookup: the binding is updated in place (no copy of its old value).
             let current = rt
                 .env
-                .get(name)
+                .get_mut(name)
                 .ok_or_else(|| EvalError::UndefinedVar(name.clone()))?;
-            let new_val = match op {
+            *current = match op {
                 AssignOp::Assign => rhs,
-                AssignOp::AddAssign => match (&current, &rhs) {
+                AssignOp::AddAssign => match (&*current, &rhs) {
                     (Value::Neno(s1), Value::Neno(s2)) => Value::Neno(value::concat_text(s1, s2)),
-                    _ => assign_f64_op(&current, &rhs, "+=", |a, b| a + b)?,
+                    _ => assign_f64_op(current, &rhs, "+=", |a, b| a + b)?,
                 },
-                AssignOp::SubAssign => assign_f64_op(&current, &rhs, "-=", |a, b| a - b)?,
-                AssignOp::MulAssign => assign_f64_op(&current, &rhs, "*=", |a, b| a * b)?,
-                AssignOp::DivAssign => assign_f64_op(&current, &rhs, "/=", |a, b| a / b)?,
+                AssignOp::SubAssign => assign_f64_op(current, &rhs, "-=", |a, b| a - b)?,
+                AssignOp::MulAssign => assign_f64_op(current, &rhs, "*=", |a, b| a * b)?,
+                AssignOp::DivAssign => assign_f64_op(current, &rhs, "/=", |a, b| a / b)?,
             };
-            rt.env.set(name, new_val);
             Ok(EvalOut::Next)
         }
         Stmt::Expr { expr, .. } => {

@@ -169,28 +169,6 @@ pub(crate) fn args_f64_2(args: &[Value], fn_name: &str) -> Result<(f64, f64), Ev
     Ok((a, b))
 }
 
-pub(crate) fn binary_f64(
-    l: &Value,
-    r: &Value,
-    op_name: &str,
-    f: impl Fn(f64, f64) -> f64,
-) -> Result<Value, EvalError> {
-    let a = as_f64(l).ok_or_else(|| EvalError::TypeErr(format!("{op_name} inahitaji Namba")))?;
-    let b = as_f64(r).ok_or_else(|| EvalError::TypeErr(format!("{op_name} inahitaji Namba")))?;
-    Ok(Value::Namba(f(a, b)))
-}
-
-pub(crate) fn binary_f64_cmp(
-    l: &Value,
-    r: &Value,
-    op_name: &str,
-    f: impl Fn(f64, f64) -> bool,
-) -> Result<Value, EvalError> {
-    let a = as_f64(l).ok_or_else(|| EvalError::TypeErr(format!("{op_name} inahitaji Namba")))?;
-    let b = as_f64(r).ok_or_else(|| EvalError::TypeErr(format!("{op_name} inahitaji Namba")))?;
-    Ok(Value::Ukweli(f(a, b)))
-}
-
 /// Namba_Kuu/Namba_Sahihi arithmetic and comparison. A `Namba` operand widens infallibly to
 /// match the other side's type (`Namba` -> `Namba_Kuu` truncates toward zero if the other side
 /// is `Namba_Kuu`, since an integer type can't represent a fraction; `Namba` -> `Namba_Sahihi`
@@ -298,9 +276,10 @@ pub(crate) fn big_numeric_binary_op(
 
 /// Lexicographic comparison for Neno. Returns Some(Ukweli) when both are strings, else None.
 pub(crate) fn binary_cmp_neno(l: &Value, r: &Value, f: impl Fn(Ordering) -> bool) -> Option<Value> {
-    let s1 = as_string(l)?;
-    let s2 = as_string(r)?;
-    Some(Value::Ukweli(f(s1.cmp(&s2))))
+    match (l, r) {
+        (Value::Neno(s1), Value::Neno(s2)) => Some(Value::Ukweli(f(s1.cmp(s2)))),
+        _ => None,
+    }
 }
 
 pub(crate) fn assign_f64_op(

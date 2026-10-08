@@ -152,16 +152,61 @@ pub(crate) fn match_pattern(pat: &Pattern, v: &Value, bind: &mut dyn FnMut(&str,
     }
 }
 
-pub(crate) fn eval_expr_inner(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Value, EvalError> {
+/// Evaluate an expression. The common nodes (literals, variables, operators, indexing) are
+/// handled here, in a small function with a small stack frame; everything else goes to
+/// [`eval_expr_cold`], so a number or a variable does not pay for the largest arm's frame.
+#[inline]
+pub(crate) fn eval_expr_inner(id: ExprId, rt: &mut Runtime<'_>) -> Result<Value, EvalError> {
+    let module = rt.module;
+    match &module[id] {
+        Expr::Number(s) => Ok(Value::Namba(parse_number(s))),
+        Expr::Bool(b) => Ok(Value::Ukweli(*b)),
+        Expr::Ident { name, .. } => rt
+            .env
+            .get(name)
+            .ok_or_else(|| EvalError::UndefinedVar(name.clone())),
+        Expr::Group(e) => super::eval_expr_impl(*e, rt),
+        Expr::Index { base, index, .. } => eval_index(*base, *index, rt, false),
+        Expr::Binary {
+            left, op, right, ..
+        } => {
+            let l = super::eval_expr_impl(*left, rt)?;
+            let r = match op {
+                BinaryOp::And => {
+                    if let Value::Ukweli(false) = &l {
+                        return Ok(Value::Ukweli(false));
+                    }
+                    super::eval_expr_impl(*right, rt)?
+                }
+                BinaryOp::Or => {
+                    if let Value::Ukweli(true) = &l {
+                        return Ok(Value::Ukweli(true));
+                    }
+                    super::eval_expr_impl(*right, rt)?
+                }
+                _ => super::eval_expr_impl(*right, rt)?,
+            };
+            super::ops::binary_value(op, &l, &r)
+        }
+        _ => eval_expr_cold(id, rt),
+    }
+}
+
+/// Every other expression (see [`eval_expr_inner`]).
+#[inline(never)]
+fn eval_expr_cold(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Value, EvalError> {
     let module = rt.module;
     let expr = &module[expr];
     match expr {
-        Expr::Number(s) => Ok(Value::Namba(parse_number(s))),
+        Expr::Number(_)
+        | Expr::Bool(_)
+        | Expr::Ident { .. }
+        | Expr::Group(_)
+        | Expr::Index { .. }
+        | Expr::Binary { .. } => unreachable!("eval_expr_inner handles these"),
         Expr::String(s) => Ok(Value::neno(s.clone())),
-        Expr::Bool(b) => Ok(Value::Ukweli(*b)),
         Expr::Char(c) => Ok(Value::Herufi(*c)),
         Expr::Hamna => Ok(Value::Hamna),
-        Expr::Group(e) => super::eval_expr_impl(*e, rt),
         Expr::If {
             cond,
             then_expr,
@@ -184,10 +229,6 @@ pub(crate) fn eval_expr_inner(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Valu
                 }
             }
         }
-        Expr::Ident { name, .. } => rt
-            .env
-            .get(name)
-            .ok_or_else(|| EvalError::UndefinedVar(name.clone())),
         Expr::List { elements, .. } => {
             let vals: Vec<Value> = elements
                 .iter()
@@ -255,7 +296,6 @@ pub(crate) fn eval_expr_inner(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Valu
             let recv = super::eval_expr_impl(*receiver, rt)?;
             super::methods::field_of(&recv, field)
         }
-        Expr::Index { base, index, .. } => eval_index(*base, *index, rt, false),
         Expr::Unary { op, expr, .. } => {
             let v = match (op, &module[*expr]) {
                 // `jaribu b[i]`: unwrap the index's `Tokeo`, not a plain element.
@@ -265,27 +305,6 @@ pub(crate) fn eval_expr_inner(expr: ExprId, rt: &mut Runtime<'_>) -> Result<Valu
                 _ => super::eval_expr_impl(*expr, rt)?,
             };
             super::ops::unary_value(op, v)
-        }
-        Expr::Binary {
-            left, op, right, ..
-        } => {
-            let l = super::eval_expr_impl(*left, rt)?;
-            let r = match op {
-                BinaryOp::And => {
-                    if let Value::Ukweli(false) = &l {
-                        return Ok(Value::Ukweli(false));
-                    }
-                    super::eval_expr_impl(*right, rt)?
-                }
-                BinaryOp::Or => {
-                    if let Value::Ukweli(true) = &l {
-                        return Ok(Value::Ukweli(true));
-                    }
-                    super::eval_expr_impl(*right, rt)?
-                }
-                _ => super::eval_expr_impl(*right, rt)?,
-            };
-            super::ops::binary_value(op, &l, &r)
         }
         Expr::Cast { expr, ty, .. } => {
             let v = super::eval_expr_impl(*expr, rt)?;

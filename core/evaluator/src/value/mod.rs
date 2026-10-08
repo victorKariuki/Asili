@@ -13,8 +13,8 @@ pub use num_bigint::BigInt;
 
 pub(crate) use numeric::{
     arg_f64, args_f64_2, as_char, as_f64, as_string, as_u64, assign_f64_op, big_numeric_binary_op,
-    binary_cmp_neno, binary_f64, binary_f64_cmp, concat_text, format_namba, handle_loop_out,
-    namba_text, parse_number, to_display_string,
+    binary_cmp_neno, concat_text, format_namba, handle_loop_out, namba_text, parse_number,
+    to_display_string,
 };
 
 /// Hashable key for Kamusi. Only Neno, Namba, Ukweli, Herufi are allowed as map keys.

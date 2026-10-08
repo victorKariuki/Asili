@@ -53,16 +53,29 @@ pub(crate) fn call_body(
     }
 }
 
-/// Evaluate a block (`depth` tracks nesting for telemetry; the stack grows on demand).
-pub(crate) fn eval_block_impl(block: &Block, rt: &mut Runtime<'_>) -> Result<EvalOut, EvalError> {
+/// Nesting levels (blocks and expressions) between stack checks: the 256 KiB red zone covers
+/// this many levels many times over, even in debug builds, so checking at every level (which
+/// cost ~7% of the tree-walker's time) is unnecessary.
+const STACK_CHECK_EVERY: usize = 16;
+
+/// Run `f` one nesting level deeper (`depth` also tracks nesting for telemetry), growing the
+/// stack on demand.
+#[inline(always)]
+fn nested<R>(rt: &mut Runtime<'_>, f: impl FnOnce(&mut Runtime<'_>) -> R) -> R {
     rt.depth += 1;
     rt.update_peak_depth();
-    // Red zone widened from the original 32KB: debug builds (no inlining, full stack slots) have
-    // much larger frames than release, and 32KB left too little margin before an actual stack
-    // overflow on some nested-expression shapes (e.g. deep `Expr::Group` chains).
-    let result = stacker::maybe_grow(256 * 1024, 2 * 1024 * 1024, || eval_block_inner(block, rt));
+    let result = if rt.depth % STACK_CHECK_EVERY == 0 {
+        stacker::maybe_grow(256 * 1024, 2 * 1024 * 1024, || f(rt))
+    } else {
+        f(rt)
+    };
     rt.depth -= 1;
     result
+}
+
+/// Evaluate a block.
+pub(crate) fn eval_block_impl(block: &Block, rt: &mut Runtime<'_>) -> Result<EvalOut, EvalError> {
+    nested(rt, |rt| eval_block_inner(block, rt))
 }
 
 fn eval_block_inner(block: &Block, rt: &mut Runtime<'_>) -> Result<EvalOut, EvalError> {
@@ -107,17 +120,11 @@ pub fn eval_expr(
     eval_expr_impl(expr, &mut rt)
 }
 
+#[inline]
 pub(crate) fn eval_expr_impl(
     expr: ExprId,
     rt: &mut Runtime<'_>,
 ) -> Result<crate::value::Value, EvalError> {
     rt.count_expression();
-    rt.depth += 1;
-    rt.update_peak_depth();
-    // See the matching comment in eval_block_impl above for why the red zone was widened.
-    let result = stacker::maybe_grow(256 * 1024, 2 * 1024 * 1024, || {
-        expr::eval_expr_inner(expr, rt)
-    });
-    rt.depth -= 1;
-    result
+    nested(rt, |rt| expr::eval_expr_inner(expr, rt))
 }

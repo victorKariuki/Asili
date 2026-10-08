@@ -7,13 +7,47 @@
 use asili_parser::{BinaryOp, UnaryOp};
 use std::cmp::Ordering;
 
-use crate::value::{
-    self, big_numeric_binary_op, binary_cmp_neno, binary_f64, binary_f64_cmp, EvalError, Value,
-};
+use crate::value::{self, big_numeric_binary_op, binary_cmp_neno, EvalError, Value};
+
+/// `a op b` on two numbers: the one definition of arithmetic and comparison on `Namba` values
+/// (`None` for operators that are not arithmetic or comparison).
+#[inline]
+fn number_op(op: &BinaryOp, a: f64, b: f64) -> Option<Value> {
+    Some(match op {
+        BinaryOp::Add => Value::Namba(a + b),
+        BinaryOp::Sub => Value::Namba(a - b),
+        BinaryOp::Mul => Value::Namba(a * b),
+        BinaryOp::Div => Value::Namba(a / b),
+        BinaryOp::Rem => Value::Namba(a % b),
+        BinaryOp::Pow => Value::Namba(a.powf(b)),
+        BinaryOp::Gt => Value::Ukweli(a > b),
+        BinaryOp::Lt => Value::Ukweli(a < b),
+        BinaryOp::Ge => Value::Ukweli(a >= b),
+        BinaryOp::Le => Value::Ukweli(a <= b),
+        BinaryOp::Eq => Value::Ukweli(a == b),
+        BinaryOp::Ne => Value::Ukweli(a != b),
+        _ => return None,
+    })
+}
+
+/// `l op r` with both sides read as numbers (`Namba`, `Wakati`, `Anuani`), else the operator's
+/// type error.
+fn numeric(op: &BinaryOp, l: &Value, r: &Value, op_name: &str) -> Result<Value, EvalError> {
+    let err = || EvalError::TypeErr(format!("{op_name} inahitaji Namba"));
+    let a = value::as_f64(l).ok_or_else(err)?;
+    let b = value::as_f64(r).ok_or_else(err)?;
+    Ok(number_op(op, a, b).expect("an arithmetic or comparison operator"))
+}
 
 /// `l op r` for already-evaluated operands. `na`/`au` short-circuiting is the caller's job
 /// (it decides whether `r` is evaluated at all); given both values, they are checked here.
 pub(crate) fn binary_value(op: &BinaryOp, l: &Value, r: &Value) -> Result<Value, EvalError> {
+    // The common case first: two plain numbers.
+    if let (Value::Namba(a), Value::Namba(b)) = (l, r) {
+        if let Some(v) = number_op(op, *a, *b) {
+            return Ok(v);
+        }
+    }
     // Namba_Kuu/Namba_Sahihi arithmetic short-circuits before the plain-f64 path below —
     // a Namba operand mixed with either widens (infallibly) to match, matching the cast
     // direction documented for these types (Namba -> Namba_Kuu/Namba_Sahihi is
@@ -29,33 +63,23 @@ pub(crate) fn binary_value(op: &BinaryOp, l: &Value, r: &Value) -> Result<Value,
         BinaryOp::Add => match (l, r) {
             // One allocation of exactly the result's size; neither operand is copied first.
             (Value::Neno(s1), Value::Neno(s2)) => Ok(Value::Neno(value::concat_text(s1, s2))),
-            (l, r) => binary_f64(l, r, "+", |a, b| a + b),
+            (l, r) => numeric(op, l, r, "+"),
         },
-        BinaryOp::Sub => binary_f64(&l, &r, "-", |a, b| a - b),
-        BinaryOp::Mul => binary_f64(&l, &r, "*", |a, b| a * b),
-        BinaryOp::Div => {
-            let a =
-                value::as_f64(&l).ok_or_else(|| EvalError::TypeErr("/ inahitaji Namba".into()))?;
-            let b =
-                value::as_f64(&r).ok_or_else(|| EvalError::TypeErr("/ inahitaji Namba".into()))?;
-            Ok(Value::Namba(a / b))
-        }
-        BinaryOp::Rem => binary_f64(&l, &r, "%", |a, b| a % b),
-        BinaryOp::Pow => binary_f64(&l, &r, "**", |a, b| a.powf(b)),
+        BinaryOp::Sub => numeric(op, l, r, "-"),
+        BinaryOp::Mul => numeric(op, l, r, "*"),
+        BinaryOp::Div => numeric(op, l, r, "/"),
+        BinaryOp::Rem => numeric(op, l, r, "%"),
+        BinaryOp::Pow => numeric(op, l, r, "**"),
         BinaryOp::Eq => Ok(Value::Ukweli(l == r)),
         BinaryOp::Ne => Ok(Value::Ukweli(l != r)),
-        BinaryOp::Gt => binary_cmp_neno(&l, &r, |o| o == Ordering::Greater)
-            .map(Ok)
-            .unwrap_or_else(|| binary_f64_cmp(&l, &r, ">", |a, b| a > b)),
-        BinaryOp::Lt => binary_cmp_neno(&l, &r, |o| o == Ordering::Less)
-            .map(Ok)
-            .unwrap_or_else(|| binary_f64_cmp(&l, &r, "<", |a, b| a < b)),
-        BinaryOp::Ge => binary_cmp_neno(&l, &r, |o| o != Ordering::Less)
-            .map(Ok)
-            .unwrap_or_else(|| binary_f64_cmp(&l, &r, ">=", |a, b| a >= b)),
-        BinaryOp::Le => binary_cmp_neno(&l, &r, |o| o != Ordering::Greater)
-            .map(Ok)
-            .unwrap_or_else(|| binary_f64_cmp(&l, &r, "<=", |a, b| a <= b)),
+        BinaryOp::Gt => binary_cmp_neno(l, r, |o| o == Ordering::Greater)
+            .map_or_else(|| numeric(op, l, r, ">"), Ok),
+        BinaryOp::Lt => binary_cmp_neno(l, r, |o| o == Ordering::Less)
+            .map_or_else(|| numeric(op, l, r, "<"), Ok),
+        BinaryOp::Ge => binary_cmp_neno(l, r, |o| o != Ordering::Less)
+            .map_or_else(|| numeric(op, l, r, ">="), Ok),
+        BinaryOp::Le => binary_cmp_neno(l, r, |o| o != Ordering::Greater)
+            .map_or_else(|| numeric(op, l, r, "<="), Ok),
         BinaryOp::And => {
             let a = match &l {
                 Value::Ukweli(x) => *x,
