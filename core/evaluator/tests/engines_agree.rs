@@ -1044,3 +1044,47 @@ fn appending_to_text_never_changes_its_copies() {
         &["ongeza"],
     );
 }
+
+#[test]
+fn appending_to_numeric_lists() {
+    // Pushes that fit are made in place by native code; the runtime grows the list otherwise.
+    agree(
+        "push",
+        r#"
+        kazi urefu_wa(a: Orodha<Namba>) -> Namba {
+            rejesha a.urefu()
+        }
+        kazi jumla_ya(a: Orodha<Namba>) -> Namba {
+            weka s = 0
+            kwa x katika a {
+                s = s + x
+            }
+            rejesha s
+        }
+        kazi sukuma() -> Orodha<Namba> {
+            weka a: Orodha<Namba> = []
+            weka b: Orodha<Namba> = [1, 2]
+            weka r: Orodha<Namba> = []
+            kwa i kutoka 0 hadi 300 {
+                a.ongeza(i % 7)
+                b.ongeza(i * 1000)
+                ikiwa i % 50 == 0 {
+                    r.ongeza(urefu_wa(a) + jumla_ya(b))
+                    a.ondoa(0)
+                }
+            }
+            weka c: Orodha<Namba> = []
+            kwa i kutoka 0 hadi 40 {
+                c.ongeza(i / 4)
+            }
+            r.ongeza(a.urefu())
+            r.ongeza(jumla_ya(a))
+            r.ongeza(b.urefu())
+            r.ongeza(jumla_ya(b))
+            r.ongeza(jumla_ya(c))
+            rejesha r
+        }
+        "#,
+        &["sukuma"],
+    );
+}

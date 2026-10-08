@@ -73,6 +73,9 @@ struct Lower<'a> {
     regs: Vec<VReg>,
     /// List register → (data pointer, length) virtual registers.
     lists: Vec<(VReg, VReg)>,
+    /// For lists this function appends to: (the list's address, bytes of storage) — pushes
+    /// that fit are made in place.
+    list_room: Vec<Option<(VReg, VReg)>>,
     labels: HashMap<usize, Block>,
     leaders: std::collections::BTreeSet<usize>,
     cur_pc: usize,
@@ -173,6 +176,20 @@ pub fn lower(index: usize, function: &BytecodeFunc, ctx: &Ctx) -> Option<super::
     let lists = (0..function.list_regs)
         .map(|_| (b.vreg(Class::Int), b.vreg(Class::Int)))
         .collect();
+    let pushed: std::collections::BTreeSet<Reg> = code
+        .iter()
+        .filter_map(|op| match op {
+            Opcode::ListPush { list, .. } => Some(*list),
+            _ => None,
+        })
+        .collect();
+    let list_room = (0..function.list_regs)
+        .map(|r| {
+            pushed
+                .contains(&r)
+                .then(|| (b.vreg(Class::Int), b.vreg(Class::Int)))
+        })
+        .collect();
     let written: std::collections::BTreeSet<Reg> = code.iter().flat_map(writes).collect();
     let consts: HashMap<Reg, f64> = function
         .num_consts
@@ -189,6 +206,7 @@ pub fn lower(index: usize, function: &BytecodeFunc, ctx: &Ctx) -> Option<super::
         safe_index: analysis.safe_index,
         regs,
         lists,
+        list_room,
         labels: HashMap::default(),
         leaders: leaders.clone(),
         cur_pc: 0,
@@ -555,6 +573,17 @@ impl<'a> Lower<'a> {
                 let (p, l) = self.lists[r as usize];
                 self.push(Inst::IConst { dst: p, value: 0 });
                 self.push(Inst::IConst { dst: l, value: 0 });
+                if let Some((head, room)) = self.list_room[r as usize] {
+                    // No room yet: the first push goes through the runtime, which sets both.
+                    self.push(Inst::IConst {
+                        dst: head,
+                        value: 0,
+                    });
+                    self.push(Inst::IConst {
+                        dst: room,
+                        value: 0,
+                    });
+                }
             }
         }
     }
@@ -668,6 +697,22 @@ impl<'a> Lower<'a> {
         self.set_f(r, t);
     }
 
+    /// Register `src` as stored in a list of `kind`: the float, or (the analysis having proved
+    /// it an exact integer of that kind) the integer.
+    fn list_value(&mut self, kind: Kind, src: Reg) -> VReg {
+        if kind == Kind::F64 {
+            self.get_f(src)
+        } else if self.int(src) {
+            self.get_i(src)
+        } else {
+            // The analysis proved the value an exact integer: truncation is exact.
+            let f = self.get_f(src);
+            let t = self.vreg(Class::Int);
+            self.push(Inst::FloatToInt { dst: t, src: f });
+            t
+        }
+    }
+
     fn refresh_list(&mut self, r: Reg) {
         let (p, l) = self.lists[r as usize];
         let reg = self.b.iconst(r as i64);
@@ -705,6 +750,20 @@ impl<'a> Lower<'a> {
             dst: Some(l),
             ret32: false,
         });
+        if let Some((head, room)) = self.list_room[r as usize] {
+            self.push(Inst::Call {
+                target: RtFn::ListHead,
+                args: vec![FRAME, reg],
+                dst: Some(head),
+                ret32: false,
+            });
+            self.push(Inst::Call {
+                target: RtFn::ListRoom,
+                args: vec![FRAME, reg],
+                dst: Some(room),
+                ret32: false,
+            });
+        }
     }
 
     /// `dst = cond` (0/1).
@@ -1230,17 +1289,7 @@ impl<'a> Lower<'a> {
             Opcode::ListSet { list, idx, src } => {
                 let i = self.element(*list, *idx, pc, op);
                 let kind = self.list_kinds[*list as usize];
-                let v = if kind == Kind::F64 {
-                    self.get_f(*src)
-                } else if self.int(*src) {
-                    self.get_i(*src)
-                } else {
-                    // The analysis proved the value an exact integer: truncation is exact.
-                    let f = self.get_f(*src);
-                    let t = self.vreg(Class::Int);
-                    self.push(Inst::FloatToInt { dst: t, src: f });
-                    t
-                };
+                let v = self.list_value(kind, *src);
                 let (base, _) = self.lists[*list as usize];
                 self.push(Inst::StoreIndex {
                     src: v,
@@ -1250,8 +1299,42 @@ impl<'a> Lower<'a> {
                 });
             }
             Opcode::ListPush { list, src } => {
-                let v = self.get_f(*src);
                 let (p, l) = self.lists[*list as usize];
+                let (head, room) = self.list_room[*list as usize].expect("pushed list");
+                let kind = self.list_kinds[*list as usize];
+                let one = self.b.iconst(1);
+                let n = self.int_op(IntOp::Add, l, one);
+                let width = self.b.iconst(kind.width() as i64);
+                let need = self.int_op(IntOp::Mul, n, width);
+                let fits = self.icmp(ICond::Ule, need, room);
+                let fast = self.b.block();
+                let grow = self.b.cold_block();
+                let done = self.b.block();
+                self.b.terminate(Term::Branch {
+                    cond: fits,
+                    then_: fast,
+                    else_: grow,
+                });
+                // Room left: store after the last element and record the new length in the
+                // list itself (the value fits `kind`, as for `ListSet`).
+                self.b.switch_to(fast);
+                let v = self.list_value(kind, *src);
+                self.push(Inst::StoreIndex {
+                    src: v,
+                    base: p,
+                    index: l,
+                    kind,
+                });
+                self.push(Inst::Mov { dst: l, src: n });
+                self.push(Inst::Store {
+                    src: l,
+                    base: head,
+                    offset: 0,
+                });
+                self.b.terminate(Term::Jump(done));
+                // Full: the runtime grows the storage and appends.
+                self.b.switch_to(grow);
+                let v = self.get_f(*src);
                 let reg = self.b.iconst(*list as i64);
                 self.push(Inst::Call {
                     target: RtFn::ListPush,
@@ -1259,13 +1342,21 @@ impl<'a> Lower<'a> {
                     dst: Some(p),
                     ret32: false,
                 });
-                let one = self.b.iconst(1);
-                self.push(Inst::Int {
-                    op: IntOp::Add,
-                    dst: l,
-                    a: l,
-                    b: one,
+                self.push(Inst::Mov { dst: l, src: n });
+                self.push(Inst::Call {
+                    target: RtFn::ListHead,
+                    args: vec![FRAME, reg],
+                    dst: Some(head),
+                    ret32: false,
                 });
+                self.push(Inst::Call {
+                    target: RtFn::ListRoom,
+                    args: vec![FRAME, reg],
+                    dst: Some(room),
+                    ret32: false,
+                });
+                self.b.terminate(Term::Jump(done));
+                self.b.switch_to(done);
             }
             Opcode::ListRemove { list, idx } => {
                 // Out-of-range removal is a no-op, as in the language.

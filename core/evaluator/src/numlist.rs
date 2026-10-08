@@ -121,11 +121,14 @@ impl Kind {
     }
 }
 
+/// `repr(C)` with `len` first: native code appends in place and stores the new length at the
+/// list's address (see `native::list_head`).
 #[derive(Clone, Debug)]
+#[repr(C)]
 pub(crate) struct NumList {
+    len: usize,
     /// Element storage, 8-byte aligned: element `i` occupies bytes `i * width ..`.
     words: Vec<u64>,
-    len: usize,
     kind: Kind,
     /// `kind.width()`.
     width: usize,
@@ -253,7 +256,10 @@ impl NumList {
     pub(crate) fn push(&mut self, v: f64) {
         self.admit(v);
         if words_for(self.len + 1, self.width) > self.words.len() {
+            // Grow, and hand native code the whole allocation as room to append in place.
             self.words.push(0);
+            let cap = self.words.capacity();
+            self.words.resize(cap, 0);
         }
         self.len += 1;
         self.write(self.len - 1, v);
@@ -283,6 +289,11 @@ impl NumList {
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = f64> + '_ {
         (0..self.len).map(|i| self.read(i))
+    }
+
+    /// Bytes of element storage (elements fit while `len * width` stays within it).
+    pub(crate) fn room(&self) -> usize {
+        8 * self.words.len()
     }
 
     /// Data pointer in the current representation.

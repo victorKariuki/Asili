@@ -10,7 +10,7 @@ use crate::bytecode::BytecodeProgram;
 use crate::native::NativeFn;
 
 /// Version of the calling convention between generated code and its host (`host.rs`).
-pub(crate) const ABI_VERSION: u32 = 9;
+pub(crate) const ABI_VERSION: u32 = 10;
 
 /// FNV-1a over the serialized program: identifies the exact bytecode native code was built from.
 pub fn program_hash(program: &BytecodeProgram) -> u64 {

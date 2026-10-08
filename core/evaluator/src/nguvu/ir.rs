@@ -82,26 +82,28 @@ pub enum RtFn {
     Exec = 0,
     ListPtr = 1,
     ListLen = 2,
-    ListPush = 3,
-    ListRemove = 4,
-    Fmod = 5,
-    Pow = 6,
-    Floor = 7,
-    Ceil = 8,
+    ListHead = 3,
+    ListRoom = 4,
+    ListPush = 5,
+    ListRemove = 6,
+    Fmod = 7,
+    Pow = 8,
+    Floor = 9,
+    Ceil = 10,
     /// Rust's saturating `f64 as i64` (NaN → 0).
-    FloatToIntSat = 9,
+    FloatToIntSat = 11,
     /// The language's shift amount: `f64 as i32`, anything outside `0..=63` → 0.
-    ShiftAmount = 10,
+    ShiftAmount = 12,
     /// Lowest stack address a direct call may run below.
-    StackLimit = 11,
+    StackLimit = 13,
     /// Make a direct call through the host's call path (see `native::Runtime::call_host`).
-    CallHost = 12,
+    CallHost = 14,
     /// Report the call-depth error (see `native::Runtime::depth_error`).
-    DepthError = 13,
-    BoxNum = 14,
-    BoxBool = 15,
-    ValMov = 16,
-    ConstVal = 17,
+    DepthError = 15,
+    BoxNum = 16,
+    BoxBool = 17,
+    ValMov = 18,
+    ConstVal = 19,
 }
 
 #[derive(Clone, Debug)]

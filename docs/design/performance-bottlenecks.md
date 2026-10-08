@@ -38,6 +38,7 @@ is 1–80× off its reference. Calls between numeric functions cost ~2.4× C.
 | F6 | Small functions called through the host; structs built on the heap per iteration | ~600 instructions per call, ~280 per struct built, ~100 per field read | inlining of `rejesha`-only functions when compiling bytecode (`inlinable`, guarded by `CheckDepth`), then scalar replacement of structs that never leave their function (`scalars.rs`) | struct loop 1,805 M → 9 M instructions, ~150–185 → 3 ms (C 1.9 ms) |
 | F8 | `s = s + t` copied the whole string every time | 45% of the strings workload in `memcpy` | `Neno` storage is `Text` (header + bytes, spare capacity), appended in place when unshared (`ops::assign_in_place`, both engines) | 830 → 427 M instructions, 71 → 60 ms (Python 64) |
 | F9 | Boxing numbers, copying values and loading constants each went through the host's general instruction path | ~100 instructions of dispatch per instruction | direct runtime calls from native code (`BoxNum`, `BoxBool`, `ValMov`, `ConstVal`) | map loop −9%, strings −6% |
+| F10 | Every list push called the runtime | ~85 instructions per push | inline append when there is room, the length stored into the list; runtime only to grow | list workload 119.6 → 37.8 M instructions |
 | F7 | x86-64 prologues pushed every callee-saved register | 10 push/pop per call in small functions | push only the registers the function uses (AArch64 already did) | no change on fib (it uses all five); smaller frames elsewhere |
 
 Earlier the same day: token kinds and interned names in the parser and tree-walker, parallel and
@@ -147,7 +148,6 @@ reports `SEM040`, and a test checks the engines implement every listed method.
 
 ## Next
 
-In order: inline list pushes when there is room (`orodha`: one runtime call of ~85
-instructions per push; needs a list layout the host and native code share); the direct-call
+In order (list pushes are done, F10): the direct-call
 convention (fib); method ids instead of name matching; local slots and closure compilation for
 the tree-walker.

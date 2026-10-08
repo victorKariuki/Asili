@@ -139,6 +139,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **List pushes in place**: native code appends to a numeric list itself when the list has room
+  — one store, and the new length written into the list (`NumList` is `repr(C)`, length first) —
+  and calls the runtime only to grow it, which then hands over all of the new allocation as
+  room. Building a 1 M-element list and summing it: 119.6 → 37.8 million instructions. Native ABI
+  10.
+
 - **Direct calls for simple value instructions**: native code boxes numbers and booleans,
   copies values and loads constants (`BoxNum`, `BoxBool`, `ValMov`, `ConstVal`) by calling one
   small runtime function each, instead of a round trip through the host's general instruction

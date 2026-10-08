@@ -78,6 +78,8 @@ pub(crate) static NATIVE_RUNTIME: crate::native::Runtime = crate::native::Runtim
     exec: native_exec,
     list_ptr: crate::native::list_ptr,
     list_len: crate::native::list_len,
+    list_head: crate::native::list_head,
+    list_room: crate::native::list_room,
     list_push: crate::native::list_push,
     list_remove: crate::native::list_remove,
     fmod: crate::native::rt_fmod,

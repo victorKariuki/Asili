@@ -27,6 +27,10 @@ pub(crate) struct Runtime {
     pub exec: extern "C" fn(*mut c_void, *mut Frame, u32, u32) -> u32,
     pub list_ptr: extern "C" fn(*mut Frame, u32, u32) -> *mut u64,
     pub list_len: extern "C" fn(*mut Frame, u32) -> i64,
+    /// The list's address, where its length is stored (`NumList` is `repr(C)`, `len` first).
+    pub list_head: extern "C" fn(*mut Frame, u32) -> *mut u8,
+    /// Bytes of element storage the list has.
+    pub list_room: extern "C" fn(*mut Frame, u32) -> i64,
     /// Append; returns the (possibly moved) data pointer.
     pub list_push: extern "C" fn(*mut Frame, u32, f64) -> *mut u64,
     /// Remove at an in-range index; returns the new length.
@@ -142,6 +146,18 @@ pub(crate) extern "C" fn list_ptr(frame: *mut Frame, reg: u32, kind: u32) -> *mu
     // time to be below the function's `list_regs`.
     let frame = unsafe { &mut *frame };
     frame.lists[reg as usize].ensure(Kind::from_code(kind))
+}
+
+pub(crate) extern "C" fn list_head(frame: *mut Frame, reg: u32) -> *mut u8 {
+    // SAFETY: as in `list_ptr`; the frame's list registers are not resized during the call.
+    let frame = unsafe { &mut *frame };
+    &mut frame.lists[reg as usize] as *mut crate::numlist::NumList as *mut u8
+}
+
+pub(crate) extern "C" fn list_room(frame: *mut Frame, reg: u32) -> i64 {
+    // SAFETY: as in `list_ptr`.
+    let frame = unsafe { &*frame };
+    frame.lists[reg as usize].room() as i64
 }
 
 pub(crate) extern "C" fn list_len(frame: *mut Frame, reg: u32) -> i64 {
