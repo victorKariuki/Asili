@@ -17,8 +17,8 @@ a few lines and easy to recreate from the descriptions):
 | orodha | push 1 M numbers, sum with `kwa x katika` | 15–17 ms | 435 ms | C −O2 12 ms |
 | fib | recursive `fib(30)`, 1.35 M calls | 14 ms | 796 ms | C −O2 5.9 ms |
 | umbo | build a 2-field `umbo` 1 M times through a `kazi` | 3 ms (was 150–185 ms) | 590 ms | C −O2 1.9 ms |
-| kamusi | 300 k `Kamusi` updates with `Neno` keys | 75 ms | 184 ms | Python 66 ms |
-| maneno | 300 k numbers to text + join; 20 k `s = s + "ab"` | 71 ms | 105 ms | Python 64 ms |
+| kamusi | 300 k `Kamusi` updates with `Neno` keys | ~70 ms (was 75–90) | 184 ms | Python 66 ms |
+| maneno | 300 k numbers to text + join; 20 k `s = s + "ab"` | 60 ms (was 71–79) | 105 ms | Python 64 ms |
 
 Sudoku (`examples/sudoku/bench/run.sh`): asili-nguvu 5.2 ms, clang −O2 5.9 ms, 90,665 attempts.
 
@@ -37,6 +37,7 @@ is 1–80× off its reference. Calls between numeric functions cost ~2.4× C.
 | F5 | Builtin table built twice at every start | 249 k of 1.08 M start-up instructions | built once, sorted once | 1.08 → 0.98 M |
 | F6 | Small functions called through the host; structs built on the heap per iteration | ~600 instructions per call, ~280 per struct built, ~100 per field read | inlining of `rejesha`-only functions when compiling bytecode (`inlinable`, guarded by `CheckDepth`), then scalar replacement of structs that never leave their function (`scalars.rs`) | struct loop 1,805 M → 9 M instructions, ~150–185 → 3 ms (C 1.9 ms) |
 | F8 | `s = s + t` copied the whole string every time | 45% of the strings workload in `memcpy` | `Neno` storage is `Text` (header + bytes, spare capacity), appended in place when unshared (`ops::assign_in_place`, both engines) | 830 → 427 M instructions, 71 → 60 ms (Python 64) |
+| F9 | Boxing numbers, copying values and loading constants each went through the host's general instruction path | ~100 instructions of dispatch per instruction | direct runtime calls from native code (`BoxNum`, `BoxBool`, `ValMov`, `ConstVal`) | map loop −9%, strings −6% |
 | F7 | x86-64 prologues pushed every callee-saved register | 10 push/pop per call in small functions | push only the registers the function uses (AArch64 already did) | no change on fib (it uses all five); smaller frames elsewhere |
 
 Earlier the same day: token kinds and interned names in the parser and tree-walker, parallel and
@@ -137,10 +138,16 @@ Hover, inlay hints, semantic tokens and symbols each lex and parse the full text
 A `kazi` the bytecode compiler cannot lower runs ~200× slower, silently, in debug builds (release
 builds refuse, naming the `kazi`). *Fix*: a warning from `pata jenga` naming each such `kazi`.
 
-## Accuracy finding
+## Accuracy finding — fixed
 
-The semantic analyzer accepts a call to a method that does not exist: `a.panga()` on an
-`Orodha<Namba>` compiles and then fails at run time with a misleading message ("requires Neno,
-Orodha, enum or struct" — it is an `Orodha`). *Fix*: method signatures in one table in
-`core/parser/src/builtins.rs` (the single source for builtin signatures), checked by the
-analyzer and used by the engines.
+The semantic analyzer accepted a call to a method that does not exist (`a.panga()` on an
+`Orodha<Namba>` compiled, then failed at run time with a misleading message). Fixed in
+`0e60649` (issue #76): the method lists live once in `asili_parser::builtins`, the analyzer
+reports `SEM040`, and a test checks the engines implement every listed method.
+
+## Next
+
+In order: inline list pushes when there is room (`orodha`: one runtime call of ~85
+instructions per push; needs a list layout the host and native code share); the direct-call
+convention (fib); method ids instead of name matching; local slots and closure compilation for
+the tree-walker.
