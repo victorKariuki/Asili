@@ -1,6 +1,6 @@
 //! Nguvu: Asili's own native code generator. Compiles register bytecode straight to machine
-//! code — no external compiler, assembler or linker — which the VM runs through
-//! [`crate::aot::NativeLibrary`].
+//! code — no external compiler, assembler or linker — the only way bytecode runs, through
+//! [`crate::aot::NativeLibrary`] and its host (`host.rs`).
 //!
 //! Pipeline: [`lower`] (bytecode → [`ir`]) → [`opt`] (with [`range`]) → [`regalloc`] and
 //! [`schedule`] (shared by every target) → [`codegen`] (x86-64 via [`x64`]) or
@@ -49,8 +49,8 @@ pub struct Code {
     pub calls: Vec<(usize, u32)>,
 }
 
-/// Functions that get a direct entry: numeric signature, and a body that lowers without the
-/// interpreter given that exactly these functions are callable directly (an optimistic
+/// Functions that get a direct entry: numeric signature, and a body that lowers without calls
+/// into the host given that exactly these functions are callable directly (an optimistic
 /// fixpoint, so mutually recursive functions qualify together).
 fn direct_entries(program: &BytecodeProgram) -> std::collections::HashSet<usize> {
     let mut direct: std::collections::HashSet<usize> = program

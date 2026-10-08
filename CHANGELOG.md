@@ -319,7 +319,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `Orodha.jiunge`/`kwa_neno` (and string building) now print NaN and infinities the same way as
   `kama Neno` does (`Siyo_Namba`, `Ukomo`, `-Ukomo`) instead of Rust's `NaN`/`inf`.
 
+### Removed
+
+- **The register VM**: bytecode no longer has an interpreter. Every bytecode program runs as
+  `nguvu` native code — the image `pata jenga` wrote, or compiled in memory at start-up when it
+  is missing or stale (`ASILI_NGUVU=1` is no longer needed) — with generic operations calling
+  back into its host (`host.rs`, split out of `bytecode.rs`: frames, `exec_slow`, builtins,
+  calls; the interpreter loop is deleted). Where no backend exists (wasm, other CPUs,
+  `ASILI_AOT=0`) the tree-walker runs the program: bytecode artifacts now always carry the
+  syntax tree (`.asb` bytecode version 11). Native speed is unchanged and every benchmark prints
+  the same output on both engines; the fallback is ~10× slower than the VM was (Sudoku 0.95 s
+  vs 0.09 s). `Engine::Interpreter` is now `Engine::Tree`; the Sudoku benchmark's `asili-vm` row
+  is `asili-mti`. `pata jenga` now says `kilele kitaendeshwa bila msimbo asilia` when native code
+  was not built.
+
 ### Fixed
+
+- **Tree-walker call depth**: its `undani mno` limit counted every nested block and expression
+  (1,000, about 200 `kazi` calls deep), so deep recursion failed there long before native code's
+  10,000-call limit. It now counts calls only, at the same 10,000, through one shared call path
+  (`eval::call_body`, replacing five copies of the scope/bind/run/return sequence); nesting needs
+  no limit since the stack grows on demand.
 
 - **One syntax error per mistake**: after an item fails to parse, the parser resumes at the next
   top-level item instead of reporting `PAR000` for every remaining token (a stray `+*` used to

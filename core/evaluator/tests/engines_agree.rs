@@ -1,10 +1,10 @@
-//! Differential tests: the tree-walking evaluator and every bytecode tier (the VM interpreter
-//! and the native `nguvu` code) must agree on each snippet — values
-//! and error messages alike. Operator, cast, method, unwrapping, iteration and display
+//! Differential tests: the tree-walking evaluator and the native `nguvu` code built from the
+//! program's bytecode must agree on each snippet — values and error messages alike. Operator, cast, method, unwrapping, iteration and display
 //! semantics are shared code (`eval::ops`, `eval::methods`), and these tests keep it that way.
 
 use asili_evaluator::{
-    compile_module, compile_module_explained, run_bytecode_function_on, run_function, Engine, Value,
+    compile_module, compile_module_explained, run_bytecode_function_on, run_function, Engine,
+    Opcode, Value,
 };
 use asili_lexer::tokenize;
 use asili_parser::parse_tokens;
@@ -36,7 +36,10 @@ fn agree_mixed(name: &str, source: &str, functions: &[&str]) {
     let module = parse_tokens(&tokens).unwrap_or_else(|e| panic!("{name}: parse: {e:?}"));
     let program = compile_module(&module).expect("mixed program");
     assert!(
-        program.ast.is_some(),
+        program
+            .functions
+            .iter()
+            .any(|f| matches!(f.code.first(), Some(Opcode::Interpreted { .. }))),
         "{name}: expected some kazi left to the tree-walker"
     );
     agree_program(name, &module, &program, functions);
@@ -58,15 +61,15 @@ fn agree_program(
     };
     for function in functions {
         let tree = show(run_function(module, function, vec![]));
-        let vm = |engine| show(run_bytecode_function_on(engine, program, function, vec![]));
+        let host = |engine| show(run_bytecode_function_on(engine, program, function, vec![]));
         assert_eq!(
-            vm(Engine::Interpreter),
+            host(Engine::Tree),
             tree,
-            "{name}::{function}: VM vs tree-walker"
+            "{name}::{function}: the program's own syntax tree vs tree-walker"
         );
         if let Some(own) = &own {
             assert_eq!(
-                vm(Engine::Native(own)),
+                host(Engine::Native(own)),
                 tree,
                 "{name}::{function}: nguvu vs tree-walker"
             );

@@ -594,71 +594,31 @@ fn execute_tests_with_timeout_continues_past_a_timed_out_test() {
 
 #[test]
 fn recursion_depth_limit_eval() {
-    use asili_parser::{Block, Expr, Function, Module, Stmt, TypeExpr};
-    // Exceed MAX_EVAL_DEPTH (1000) so we get "undani mno" before stack overflow
-    let mut inner = Expr::Number("1".into());
-    for _ in 0..1001 {
-        inner = Expr::Group(Box::new(inner));
-    }
-    let block = Block {
-        statements: vec![Stmt::Expr {
-            expr: inner,
-            line: 1,
-        }],
-    };
-    let deep_fn = Function {
-        name: "deep".into(),
-        params: vec![],
-        return_type: TypeExpr {
-            name: "Namba".into(),
-        },
-        body: block,
-        is_test: false,
-        is_public: false,
-        line: 1,
-        column: 1,
-        attrs: vec![],
-    };
-    let kuu = Function {
-        name: "kuu".into(),
-        params: vec![asili_parser::Param {
-            name: "hoja".into(),
-            ty: TypeExpr {
-                name: "Orodha<Neno>".into(),
-            },
-            line: 1,
-            column: 1,
-        }],
-        return_type: TypeExpr {
-            name: "Tupu".into(),
-        },
-        body: Block { statements: vec![] },
-        is_test: false,
-        is_public: false,
-        line: 1,
-        column: 1,
-        attrs: vec![],
-    };
-    let module = Module {
-        imports: vec![],
-        constants: vec![],
-        enums: vec![],
-        functions: vec![kuu, deep_fn],
-        structs: vec![],
-        traits: vec![],
-        impls: vec![],
-    };
-    let result = run_function(&module, "deep", vec![]);
-    assert!(
-        result.is_err(),
-        "eval should fail when recursion depth exceeded"
+    // The limit counts `kazi` calls (10,000, as in native code), not nesting: deeply nested
+    // expressions evaluate (the stack grows on demand), runaway recursion fails cleanly.
+    let nested = format!("{}1{}", "(".repeat(900), ")".repeat(900));
+    let source = format!(
+        "kazi kina() -> Namba {{ rejesha {nested} }}
+        kazi chini(n: Namba) -> Namba {{
+            ikiwa n == 0 {{ rejesha 0 }}
+            rejesha 1 + chini(n - 1)
+        }}
+        kazi hakuna_mwisho(n: Namba) -> Namba {{ rejesha hakuna_mwisho(n + 1) }}
+        kazi kuu(hoja: Orodha<Neno>) -> Tupu {{ }}"
     );
-    let err = result.unwrap_err();
-    let msg = err.to_string();
+    let module = parse_only(&source);
+    assert_eq!(
+        run_function(&module, "kina", vec![]).unwrap(),
+        Value::Namba(1.0)
+    );
+    assert_eq!(
+        run_function(&module, "chini", vec![Value::Namba(9000.0)]).unwrap(),
+        Value::Namba(9000.0)
+    );
+    let err = run_function(&module, "hakuna_mwisho", vec![Value::Namba(0.0)]).unwrap_err();
     assert!(
-        msg.contains("undani mno"),
-        "expected 'undani mno' in error, got: {}",
-        msg
+        err.to_string().contains("undani mno"),
+        "expected 'undani mno' in error, got: {err}"
     );
 }
 

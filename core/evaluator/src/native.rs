@@ -1,12 +1,13 @@
-//! Support for ahead-of-time native code (`aot.rs`), kept separate from the LLVM emitter: the
-//! calling convention between machine code and the VM, per-instruction register effects used to
-//! spill/reload around interpreter callbacks, and the integer range analysis.
+//! Support for native code (`aot.rs`, `nguvu/`): the calling convention between machine code and
+//! its host (`host.rs`), per-instruction register effects used to spill/reload around calls back
+//! into the host, and the integer range analysis.
 
-use crate::bytecode::{CmpOp, Frame, Opcode, Reg, Ty};
+use crate::bytecode::{CmpOp, Opcode, Reg, Ty};
+use crate::host::Frame;
 use crate::numlist::Kind;
 use std::ffi::c_void;
 
-/// `fn(runtime, vm, frame, nums) -> status << 32 | pc`.
+/// `fn(runtime, host, frame, nums) -> status << 32 | pc`.
 pub(crate) type NativeFn =
     unsafe extern "C" fn(*const Runtime, *mut c_void, *mut Frame, *mut f64) -> u64;
 
@@ -20,8 +21,8 @@ pub(crate) const STATUS_RETURN: u64 = 3;
 /// code loads them by offset (`nguvu::ir::RtFn`).
 #[repr(C)]
 pub(crate) struct Runtime {
-    /// `(vm, frame, function, pc) -> 0 | STATUS_FINISH | STATUS_FAIL`: run one instruction in
-    /// the interpreter.
+    /// `(host, frame, function, pc) -> 0 | STATUS_FINISH | STATUS_FAIL`: run one instruction
+    /// native code does not compile, in the host.
     pub exec: extern "C" fn(*mut c_void, *mut Frame, u32, u32) -> u32,
     pub list_ptr: extern "C" fn(*mut Frame, u32, u32) -> *mut u64,
     pub list_len: extern "C" fn(*mut Frame, u32) -> i64,
@@ -36,25 +37,25 @@ pub(crate) struct Runtime {
     pub ceil: extern "C" fn(f64) -> f64,
     /// Rust's saturating `f64 as i64` (NaN → 0).
     pub float_to_int_sat: extern "C" fn(f64) -> i64,
-    /// The interpreter's shift amount (`f64 as i32`, outside `0..=63` → 0).
+    /// The language's shift amount (`f64 as i32`, outside `0..=63` → 0).
     pub shift_amount: extern "C" fn(f64) -> i64,
     /// Lowest stack address direct native calls may run below (see [`rt_stack_limit`]).
     pub stack_limit: extern "C" fn() -> usize,
-    /// `(vm, function, nums) -> status`: make a direct call through the VM's call path (when
+    /// `(host, function, nums) -> status`: make a direct call through the host's call path (when
     /// the call depth or the stack would not allow a direct one); the result lands after the
     /// callee's registers, as a direct call leaves it.
-    pub call_vm: extern "C" fn(*mut c_void, u32, *mut f64) -> u64,
+    pub call_host: extern "C" fn(*mut c_void, u32, *mut f64) -> u64,
 }
 
-/// Byte offset of the VM's call-depth counter (`Vm` is `repr(C)` with `depth` first).
-pub(crate) const VM_DEPTH_OFFSET: i32 = 0;
+/// Byte offset of the host's call-depth counter (`Host` is `repr(C)` with `depth` first).
+pub(crate) const DEPTH_OFFSET: i32 = 0;
 
 /// Stack headroom kept free below a direct native call: generated frames and the runtime
 /// functions they call fit well inside it.
 pub(crate) const DIRECT_CALL_HEADROOM: usize = 256 * 1024;
 
 /// The lowest stack address at which native code may still make a direct call (a stack pointer
-/// at or below it takes the interpreter's call path, which can grow the stack), or `usize::MAX`
+/// at or below it takes the host's call path, which can grow the stack), or `usize::MAX`
 /// when the stack's extent is unknown (every call then takes that path).
 pub(crate) extern "C" fn rt_stack_limit() -> usize {
     let marker = 0u8;

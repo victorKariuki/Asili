@@ -121,7 +121,6 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
         let out = Command::new(env!("CARGO_BIN_EXE_tenda"))
             .arg(&asb)
             .env("ASILI_AOT", aot)
-            .env("ASILI_NGUVU", "1")
             .output()
             .unwrap();
         // fib(20) + fib(21) + fib(22) + fib(23)

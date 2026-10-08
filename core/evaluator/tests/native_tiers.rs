@@ -1,5 +1,6 @@
-//! Differential tests: every snippet must produce bit-identical results on the register VM's
-//! interpreter and the native `nguvu` code (loaded through its on-disk image).
+//! Differential tests: every snippet must produce bit-identical results on the tree-walking
+//! evaluator (the reference semantics) and the native `nguvu` code (loaded through its on-disk
+//! image).
 //! The snippets target the places where native code could diverge from `f64` semantics:
 //! -0.0, NaN, infinities, integers beyond 2^53 (which stay floats), remainders and
 //! floor division of negatives, out-of-range shifts, and out-of-bounds list access.
@@ -40,11 +41,11 @@ fn check(name: &str, source: &str, functions: &[&str]) {
                 .map(|v| canon(&v))
                 .unwrap_or_else(|e| format!("ERR {e}"))
         };
-        let interpreted = run(Engine::Interpreter);
+        let tree = run(Engine::Tree);
         if let Some(own) = &own {
             assert_eq!(
                 run(Engine::Native(own)),
-                interpreted,
+                tree,
                 "{name}::{function}: nguvu differs"
             );
         }
@@ -596,7 +597,7 @@ fn direct_native_calls_keep_interpreter_semantics() {
             rejesha r
         }
         kazi mno() -> Namba {
-            # deeper than the VM allows: the same error on every tier
+            # deeper than the 10,000-call limit: the same error on every engine
             rejesha ngazi_chini(20000)
         }
         kazi ukingoni() -> Namba {

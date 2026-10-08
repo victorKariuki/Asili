@@ -5,25 +5,46 @@ pub(crate) mod methods;
 pub(crate) mod ops;
 mod stmt;
 
-use asili_parser::{Block, Expr, Module};
+use asili_parser::{Block, Expr, Module, Param};
 
-use crate::runtime::{Runtime, MAX_EVAL_DEPTH};
-use crate::value::{EvalError, EvalOut};
+use crate::runtime::{Runtime, MAX_CALL_DEPTH};
+use crate::value::{EvalError, EvalOut, Value};
 
-// TODO: depth is incremented on every block entry (if/while/for/match arms), not just function
-// calls. This means MAX_EVAL_DEPTH is not a true recursion limit. See runtime.rs for details.
+/// Call a `kazi` or method body: `args` bound to `params` in a fresh scope (a missing argument is
+/// `Hamna`). The tree-walker's one call path, and the one place its call depth is counted —
+/// the same limit native code has. Deep nesting within a call needs no limit: every block and
+/// expression grows the stack on demand.
+pub(crate) fn call_body(
+    rt: &mut Runtime<'_>,
+    params: &[Param],
+    args: impl IntoIterator<Item = Value>,
+    body: &Block,
+) -> Result<Value, EvalError> {
+    if rt.calls >= MAX_CALL_DEPTH {
+        return Err(EvalError::Unknown("undani mno".into()));
+    }
+    rt.calls += 1;
+    rt.env.push_scope();
+    let mut args = args.into_iter();
+    for p in params {
+        rt.env.define(&p.name, args.next().unwrap_or(Value::Hamna));
+    }
+    let out = eval_block_impl(body, rt);
+    rt.env.pop_scope();
+    rt.calls -= 1;
+    match out? {
+        EvalOut::Return(v) => Ok(v),
+        _ => Ok(Value::Tupu),
+    }
+}
+
+/// Evaluate a block (`depth` tracks nesting for telemetry; the stack grows on demand).
 pub(crate) fn eval_block_impl(block: &Block, rt: &mut Runtime<'_>) -> Result<EvalOut, EvalError> {
     rt.depth += 1;
     rt.update_peak_depth();
-    if rt.depth > MAX_EVAL_DEPTH {
-        rt.depth -= 1;
-        return Err(EvalError::Unknown("undani mno".into()));
-    }
     // Red zone widened from the original 32KB: debug builds (no inlining, full stack slots) have
-    // much larger per-call frames than release, and 32KB left too little margin before an actual
-    // stack overflow could race ahead of the MAX_EVAL_DEPTH check on some nested-expression shapes
-    // (e.g. deep `Expr::Group` chains) — confirmed by this exact recursion depth test overflowing
-    // in `cargo test` (debug) while passing cleanly under `--release`.
+    // much larger frames than release, and 32KB left too little margin before an actual stack
+    // overflow on some nested-expression shapes (e.g. deep `Expr::Group` chains).
     let result = stacker::maybe_grow(256 * 1024, 2 * 1024 * 1024, || eval_block_inner(block, rt));
     rt.depth -= 1;
     result
@@ -78,10 +99,6 @@ pub(crate) fn eval_expr_impl(
     rt.count_expression();
     rt.depth += 1;
     rt.update_peak_depth();
-    if rt.depth > MAX_EVAL_DEPTH {
-        rt.depth -= 1;
-        return Err(EvalError::Unknown("undani mno".into()));
-    }
     // See the matching comment in eval_block_impl above for why the red zone was widened.
     let result = stacker::maybe_grow(256 * 1024, 2 * 1024 * 1024, || {
         expr::eval_expr_inner(expr, rt)

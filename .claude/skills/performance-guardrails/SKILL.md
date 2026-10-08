@@ -11,13 +11,14 @@ silently: a change can keep every functional test green while making the hot loo
 or while making the native tier disagree with the interpreter on one edge case. This skill is
 the checklist that stops that. `docs/design/performance.md` has the full design and history.
 
-## The execution tiers (one semantics, three engines)
+## The execution tiers (one semantics, two engines)
 
 | Tier | Where | When it runs |
 |---|---|---|
-| Tree-walking evaluator | `core/evaluator/src/eval/` | REPL, `pata jaribu`, AST `.asb` artifacts, any program the bytecode compiler can't lower |
-| Typed register VM | `core/evaluator/src/bytecode.rs` | `.asb` bytecode artifacts without native code (`ASILI_AOT=0`, a platform without a backend, wasm) |
-| Native code (`nguvu`) | `core/evaluator/src/nguvu/` (+ `native.rs` analysis, `aot.rs` hash/ABI) | `pata jenga` writes `kilele/<name>.nguvu`; `pata tenda`/`jenga --tenda`/runner map it if its hash, ABI, architecture and CPU features match |
+| Tree-walking evaluator | `core/evaluator/src/eval/` | REPL, `pata jaribu`, AST `.asb` artifacts, `kazi` the bytecode compiler can't lower, and whole bytecode programs where there is no native code (`ASILI_AOT=0`, a platform without a backend, wasm) — bytecode artifacts carry the syntax tree for this |
+| Native code (`nguvu`) | `core/evaluator/src/nguvu/` (+ `native.rs` analysis, `aot.rs` hash/ABI, `host.rs` the runtime it calls back into) | every bytecode program: `pata jenga` writes `kilele/<name>.nguvu`; `pata tenda`/`jenga --tenda`/runner map it if its hash, ABI, architecture and CPU features match, else compile in memory |
+
+There is no bytecode interpreter: bytecode (`bytecode.rs`) is only the native backend's input.
 
 No external tool is involved anywhere: not to build `pata`, not in `pata jenga`, not to run.
 
@@ -35,9 +36,10 @@ cargo test -p asili-evaluator --target aarch64-unknown-linux-gnu`).
 
 1. **One implementation of every semantic rule.** Operators, casts, `?`/`jaribu`, truthiness,
    indexing, formatting, iteration and every method live in `eval/ops.rs` / `eval/methods.rs`;
-   numeric opcode semantics live in `bytecode.rs::numeric_op` (used by both the interpreter loop
-   and `exec_slow`). The VM and AOT call these; they never re-implement them. Generic-`Value`
-   instructions in native code call back into `Vm::exec_slow` through the runtime ABI table.
+   numeric opcode semantics live in `host.rs::numeric_op` (the reference native code must match
+   bit for bit). Native code and its host call these; they never re-implement them.
+   Generic-`Value` instructions in native code call back into `Host::exec_slow` through the
+   runtime ABI table.
    If you find yourself writing a second `match` over `BinaryOp` semantics, stop and call the
    shared function instead.
 2. **One native backend.** `nguvu`, in-house, ahead of time. No external compiler/assembler/
@@ -59,13 +61,13 @@ cargo test -p asili-evaluator --target aarch64-unknown-linux-gnu`).
    stale fact: silent miscompilation.
 5. **Formats are versioned.** Changing `Opcode`'s serialized shape → bump `BYTECODE_VERSION`
    in `asb.rs`. Changing the runtime ABI struct, a native function signature, or anything the
-   generated code assumes about the VM → bump `ABI_VERSION` in `aot.rs`. Changing what code
+   generated code assumes about its host → bump `ABI_VERSION` in `aot.rs`. Changing what code
    `nguvu` generates → bump `IMAGE_VERSION` in `nguvu/mod.rs`. A stale image must be rejected,
    never loaded.
 6. **Unsupported means fallback, never crash.** When the bytecode compiler can't lower a
    construct it returns `None` and `pata jenga` emits the AST artifact
-   (`compile_module_explained` says which `kazi`/line blocked it). The VM must never hit an
-   "unsupported" error at run time for something it accepted at compile time.
+   (`compile_module_explained` says which `kazi`/line blocked it). Native code and its host must
+   never hit an "unsupported" error at run time for something the compiler accepted.
 7. **The hot path stays unboxed.** Numeric instructions touch only the `nums` (`f64`) and
    `lists` (`Vec<f64>`) register files — no `Value` construction, no allocation, no `HashMap`
    lookups per instruction. Fused instructions (`JumpIfNot` compare-and-branch, `ForStep`,
@@ -77,14 +79,14 @@ cargo test -p asili-evaluator --target aarch64-unknown-linux-gnu`).
 
 ## Required tests for engine changes
 
-- `cargo test -p asili-evaluator --test engines_agree` — each snippet on tree-walker, VM and
+- `cargo test -p asili-evaluator --test engines_agree` — each snippet on the tree-walker and
   native code; values *and error messages* must match. Add a snippet for every new operator, method,
   builtin or syntax form.
 - `cargo test -p asili-evaluator --test native_tiers` — interpreter vs native code (through the
   on-disk image), bit-for-bit (NaN bit patterns excluded: Asili can't observe them).
   Add edge cases for anything numeric: `-0.0`, NaN, ±∞, ±2^53 and beyond (must stay floats),
   negative `%`/`//`, shifts outside `0..=63`, out-of-range indices.
-- `cargo test -p asili-evaluator --test bytecode` — compiler/VM unit behaviour.
+- `cargo test -p asili-evaluator --test bytecode` — compiler unit behaviour (run as native code).
 - A new `nguvu` transform needs a snippet that exercises it — check by breaking the transform
   on purpose and watching the test fail (a test that still passes covers nothing).
 
@@ -99,14 +101,13 @@ example (which fails if the program falls back to the tree-walker or native code
 built), and checks every implementation reports `Majaribio: 90665` before timing it.
 
 Reference (2026-09, this container, standalone runner): gcc C 8.0 ms · clang C 6.4 ms · Rust
-7.0 ms · **asili-nguvu 7.1 ms** · asili-vm 111 ms · Python 304 ms. Process start-up is ~3.3 ms
+7.0 ms · **asili-nguvu 7.1 ms** · Python 304 ms (2026-10: asili-mti, the tree-walker fallback, ≈ 945 ms). Process start-up is ~3.3 ms
 of every figure here; solve-only (run minus an empty run): nguvu ≈ 3.0 ms, clang -O2 C
 ≈ 3.1 ms, gcc -O2 C ≈ 4.7 ms.
 
 **Thresholds** — treat any of these as a regression to fix before finishing:
 - asili-nguvu slower than clang C on the solve, or more than ~1 ms slower than its previous
   figure;
-- asili-vm above ~130 ms;
 - any "wrong result" (attempt count ≠ 90,665) — that is a correctness bug, not noise.
 
 Timings on shared machines jitter by a millisecond or two; rerun before concluding. Record the
@@ -114,8 +115,7 @@ new figures in `docs/design/performance.md` when they change meaningfully.
 
 ## Debugging a regression
 
-1. `ASILI_AOT=0` vs default: if only native code slowed down, it's `nguvu` or the analysis; if
-   both did, it's the bytecode compiler or VM. If native code is barely faster than the VM,
+1. Did the bytecode compiler or `nguvu` change? If native code slowed down,
    check that `analyze_numbers` converged: a function it gives up on (100,000 steps) runs
    entirely on floats — `ASILI_NGUVU_IR` shows `FAdd`/`FloatToIntSat` where `Add` was expected.
 2. Did the program still lower to bytecode? `compile_module_explained` reports the first
@@ -123,7 +123,7 @@ new figures in `docs/design/performance.md` when they change meaningfully.
 3. `ASILI_NGUVU_IR=<file>` dumps the optimized IR with register locations and loop depth;
    `ASILI_NGUVU_DUMP=<file>` writes the machine code (`objdump -D -b binary -mi386:x86-64`),
    its function offsets and load address (`.offsets`/`.base`, to line up with profiler
-   addresses). Both need an in-memory compile: `ASILI_NGUVU=1` with the `.nguvu` moved away.
+   addresses). Both need an in-memory compile: move the `.nguvu` away (`tenda` then compiles in memory).
    Look for runtime `Call`s (`Exec` spills) in hot blocks, `FloatToInt`/`IntToFloat` pairs where
    a register should have stayed integer, and spilled (`mem`) registers at high depth.
 4. Instruction counts beat wall time for small deltas:
@@ -141,11 +141,11 @@ VS Code grammar and `asili_lexer::KEYWORDS` (the single keyword list LSP and for
 
 **Adding a builtin:** implement once in `builtins/*.rs` (use `Value::sawa`/`Value::kosa` and
 `arg_str`/`value::arg_f64`); declare its contract in `core/parser/src/builtins.rs` (the analyzer
-*and* LSP completion read it); the VM reaches it through `BuiltinTable` automatically. If it is
+*and* LSP completion read it); native code's host reaches it through `BuiltinTable` automatically. If it is
 hot and numeric, consider a dedicated opcode (as `sakafu`/`dari` have).
 
 **Adding a method:** add it to `eval/methods.rs` only (pure, mutating or callback, plus the
-matching `is_*` predicate); the evaluator, VM and AOT all pick it up from there.
+matching `is_*` predicate); the evaluator and native code all pick it up from there.
 
 **Adding an `Expr`/`Stmt` variant:** update `Expr::children` in `ast.rs` (linters, LSP and the
 parser's own checks walk the tree through it); the bytecode compiler returns `None` for it until

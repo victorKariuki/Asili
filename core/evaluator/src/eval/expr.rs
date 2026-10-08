@@ -3,7 +3,7 @@
 use asili_parser::{BinaryOp, Expr, Pattern, UnaryOp};
 
 use crate::runtime::Runtime;
-use crate::value::{parse_number, EvalError, EvalOut, MapKey, Value};
+use crate::value::{parse_number, EvalError, MapKey, Value};
 
 use super::methods::{index_element, index_value};
 
@@ -34,8 +34,8 @@ fn invoke_named_callback(
     if let Some(f) = rt.builtins.get(name) {
         return f(args);
     }
-    if let Some(hook) = rt.vm {
-        if let Some(result) = (hook.call)(hook.vm, name, args) {
+    if let Some(hook) = rt.host {
+        if let Some(result) = (hook.call)(hook.host, name, args) {
             return result;
         }
     }
@@ -43,18 +43,7 @@ fn invoke_named_callback(
     let Some(f) = module.functions.iter().find(|x| x.name == name) else {
         return Err(EvalError::TypeErr(format!("kazi haijulikani: {name}")));
     };
-    rt.env.push_scope();
-    for (i, p) in f.params.iter().enumerate() {
-        rt.env
-            .define(&p.name, args.get(i).cloned().unwrap_or(Value::Hamna));
-    }
-    let out = super::eval_block_impl(&f.body, rt);
-    rt.env.pop_scope();
-    match out {
-        Ok(EvalOut::Return(v)) => Ok(v),
-        Ok(_) => Ok(Value::Tupu),
-        Err(e) => Err(e),
-    }
+    super::call_body(rt, &f.params, args.iter().cloned(), &f.body)
 }
 
 /// Whether `v` matches `pat`, binding the pattern's names in the tree-walker's current scope.
@@ -66,7 +55,7 @@ pub(crate) fn match_and_bind_pattern(pat: &Pattern, v: &Value, rt: &mut Runtime<
 
 /// Whether `v` matches `pat`, calling `bind` for each name the pattern binds, in order (a later
 /// binding of the same name wins). The single implementation of `linganisha` patterns: the
-/// tree-walker binds into its scope, the VM into registers.
+/// tree-walker binds into its scope, native code's host into registers.
 pub(crate) fn match_pattern(pat: &Pattern, v: &Value, bind: &mut dyn FnMut(&str, &Value)) -> bool {
     match pat {
         Pattern::Wildcard => true,
@@ -313,9 +302,9 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                     .position(|b| b == name)
                     .filter(|_| !rt.module.functions.iter().any(|f| f.name == *name))
                 {
-                    let shared = match rt.vm {
-                        // Mixed mode: the VM's program, bytecode and native code.
-                        Some(hook) => (hook.shared)(hook.vm),
+                    let shared = match rt.host {
+                        // Mixed mode: the host's program, bytecode and native code.
+                        Some(hook) => (hook.shared)(hook.host),
                         None => crate::spawn::Shared::Tree(std::sync::Arc::new(rt.module.clone())),
                     };
                     return match which {
@@ -327,9 +316,9 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 if let Some(f) = rt.builtins.get(name) {
                     return f(&args_val);
                 }
-                // Mixed mode: a `kazi` the VM runs goes back to it (and its native code).
-                if let Some(hook) = rt.vm {
-                    if let Some(result) = (hook.call)(hook.vm, name, &args_val) {
+                // Mixed mode: a `kazi` that is native code goes back to it.
+                if let Some(hook) = rt.host {
+                    if let Some(result) = (hook.call)(hook.host, name, &args_val) {
                         return result;
                     }
                 }
@@ -337,18 +326,7 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                 // for the body — no clone of the function's AST per call.
                 let module = rt.module;
                 if let Some(f) = module.functions.iter().find(|x| x.name == *name) {
-                    rt.env.push_scope();
-                    for (i, p) in f.params.iter().enumerate() {
-                        let val = args_val.get(i).cloned().unwrap_or(Value::Hamna);
-                        rt.env.define(&p.name, val);
-                    }
-                    let out = super::eval_block_impl(&f.body, rt);
-                    rt.env.pop_scope();
-                    return match out {
-                        Ok(EvalOut::Return(v)) => Ok(v),
-                        Ok(_) => Ok(Value::Tupu),
-                        Err(e) => Err(e),
-                    };
+                    return super::call_body(rt, &f.params, args_val, &f.body);
                 }
                 // Not found as builtin or module function.
                 return Err(EvalError::UndefinedVar(name.clone()));
@@ -464,8 +442,8 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                             }
                         })?;
 
-                    // Mixed mode: a method the VM compiled runs there (and in native code).
-                    if let Some(hook) = rt.vm {
+                    // Mixed mode: a method compiled to native code runs there.
+                    if let Some(hook) = rt.host {
                         let qualified = crate::bytecode::impl_function_name(
                             &imp.target,
                             imp.trait_name.as_deref(),
@@ -474,26 +452,12 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                         let mut call_args = Vec::with_capacity(args_val.len() + 1);
                         call_args.push(recv.clone());
                         call_args.extend(args_val.iter().cloned());
-                        if let Some(result) = (hook.call)(hook.vm, &qualified, &call_args) {
+                        if let Some(result) = (hook.call)(hook.host, &qualified, &call_args) {
                             return result;
                         }
                     }
-                    rt.env.push_scope();
-                    for (i, p) in method.params.iter().enumerate() {
-                        let val = if i == 0 {
-                            recv.clone()
-                        } else {
-                            args_val.get(i - 1).cloned().unwrap_or(Value::Hamna)
-                        };
-                        rt.env.define(&p.name, val);
-                    }
-                    let out = super::eval_block_impl(&method.body, rt);
-                    rt.env.pop_scope();
-                    match out {
-                        Ok(EvalOut::Return(v)) => Ok(v),
-                        Ok(_) => Ok(Value::Tupu),
-                        Err(e) => Err(e),
-                    }
+                    let args = std::iter::once(recv.clone()).chain(args_val);
+                    super::call_body(rt, &method.params, args, &method.body)
                 }
                 // Built-in methods on Tokeo-as-Enum (e.g. Tokeo::Sawa(x).ni_kosa())
                 (Value::Enum(enum_name, _, _), _) => {
@@ -529,22 +493,8 @@ pub(crate) fn eval_expr_inner(expr: &Expr, rt: &mut Runtime<'_>) -> Result<Value
                             }
                         })?;
 
-                    rt.env.push_scope();
-                    for (i, p) in method.params.iter().enumerate() {
-                        let val = if i == 0 {
-                            recv.clone()
-                        } else {
-                            args_val.get(i - 1).cloned().unwrap_or(Value::Hamna)
-                        };
-                        rt.env.define(&p.name, val);
-                    }
-                    let out = super::eval_block_impl(&method.body, rt);
-                    rt.env.pop_scope();
-                    match out {
-                        Ok(EvalOut::Return(v)) => Ok(v),
-                        Ok(_) => Ok(Value::Tupu),
-                        Err(e) => Err(e),
-                    }
+                    let args = std::iter::once(recv.clone()).chain(args_val);
+                    super::call_body(rt, &method.params, args, &method.body)
                 }
                 _ => Err(EvalError::TypeErr(format!(
                     "mwito wa njia '{method_name}' unahitaji Neno, Orodha, jenum au umbo"

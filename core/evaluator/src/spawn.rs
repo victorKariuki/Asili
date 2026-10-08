@@ -1,13 +1,14 @@
 //! The program as other threads receive it: `tenda` and the server workers
 //! (`mkondo_tumikia`, `mkondo_tumikia_http`) run the program's `kazi` on threads of their own.
-//! A bytecode program (and its native code) is plain shared data, so those threads run it on
-//! the same engine as the thread that started them — the VM and native code — instead of the
-//! tree-walker; each thread builds its engine once and reuses it for every call.
+//! A bytecode program and its native code are plain shared data, so those threads run the same
+//! machine code as the thread that started them; each thread builds its host once and reuses it
+//! for every call.
 
 use std::sync::Arc;
 
 use asili_parser::Module;
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::bytecode::BytecodeProgram;
 use crate::value::{EvalError, Value};
 
@@ -16,11 +17,11 @@ use crate::value::{EvalError, Value};
 pub(crate) enum Shared {
     /// Run on the tree-walker (an AST artifact, or a caller that is itself tree-walking).
     Tree(Arc<Module>),
-    /// Run on the bytecode VM, with native code where it was built.
+    /// Run as native code built from this bytecode.
+    #[cfg(not(target_arch = "wasm32"))]
     Code {
         program: Arc<BytecodeProgram>,
-        #[cfg(not(target_arch = "wasm32"))]
-        native: Option<Arc<crate::aot::NativeLibrary>>,
+        native: Arc<crate::aot::NativeLibrary>,
     },
 }
 
@@ -32,12 +33,13 @@ impl Shared {
     pub(crate) fn has_kazi(&self, name: &str) -> bool {
         match self {
             Shared::Tree(module) => module.functions.iter().any(|f| f.name == name),
+            #[cfg(not(target_arch = "wasm32"))]
             Shared::Code { program, .. } => program.find_function(name).is_some(),
         }
     }
 
     /// Run `body` with a caller for this program's `kazi` on the current thread. The engine (a
-    /// VM with its frame pool and native code, or a tree-walker with its builtins and module
+    /// native-code host with its frame pool, or a tree-walker with its builtins and module
     /// constants) is built once here and serves every call `body` makes.
     pub(crate) fn with_caller<R>(&self, body: impl FnOnce(&mut Caller<'_>) -> R) -> R {
         match self {
@@ -53,16 +55,10 @@ impl Shared {
                     tree.call(module, f, args, None)
                 })
             }
-            Shared::Code {
-                program,
-                #[cfg(not(target_arch = "wasm32"))]
-                native,
-            } => {
-                #[cfg(not(target_arch = "wasm32"))]
-                let mut vm = crate::bytecode::Vm::shared(program, native.as_deref(), self.clone());
-                #[cfg(target_arch = "wasm32")]
-                let mut vm = crate::bytecode::Vm::shared(program, self.clone());
-                body(&mut |name: &str, args: Vec<Value>| vm.call_by_name(name, args))
+            #[cfg(not(target_arch = "wasm32"))]
+            Shared::Code { program, native } => {
+                let mut host = crate::host::Host::new(program, native, Some(self.clone()));
+                body(&mut |name: &str, args: Vec<Value>| host.call_by_name(name, args))
             }
         }
     }

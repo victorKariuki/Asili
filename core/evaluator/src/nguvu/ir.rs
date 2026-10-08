@@ -90,12 +90,12 @@ pub enum RtFn {
     Ceil = 8,
     /// Rust's saturating `f64 as i64` (NaN → 0).
     FloatToIntSat = 9,
-    /// The interpreter's shift amount: `f64 as i32`, anything outside `0..=63` → 0.
+    /// The language's shift amount: `f64 as i32`, anything outside `0..=63` → 0.
     ShiftAmount = 10,
     /// Lowest stack address a direct call may run below.
     StackLimit = 11,
-    /// Make a direct call through the VM's call path (see `native::Runtime::call_vm`).
-    CallVm = 12,
+    /// Make a direct call through the host's call path (see `native::Runtime::call_host`).
+    CallHost = 12,
 }
 
 #[derive(Clone, Debug)]
@@ -276,7 +276,7 @@ pub struct BlockData {
     pub term: Term,
 }
 
-/// One native function. Virtual registers `0..4` are the incoming `rt`, `vm`, `frame` and
+/// One native function. Virtual registers `0..4` are the incoming `rt`, `host`, `frame` and
 /// `nums` arguments.
 #[derive(Clone, Debug)]
 pub struct Func {
@@ -301,7 +301,7 @@ pub fn div_magic(d: u32) -> (u64, u8) {
 }
 
 pub const RT: VReg = VReg(0);
-pub const VM: VReg = VReg(1);
+pub const HOST: VReg = VReg(1);
 pub const FRAME: VReg = VReg(2);
 pub const NUMS: VReg = VReg(3);
 

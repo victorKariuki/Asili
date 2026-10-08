@@ -9,8 +9,8 @@ Previous: [Tooling and Ecosystem](06-tooling-and-ecosystem.md) | [Overview](../S
 1. **Source** — `.as` and `.asi` (UTF-8).
 2. **Lexer / Parser** — Written in Rust; produces AST.
 3. **Type checker** — Strict-but-inferred (TypeScript-style).
-4. **Bytecode** — Emit `.asb` for the VM.
-5. **Execution** — VM for Terminal/Web; **Pata Jenga** produces native machine code with Asili's own backend (`nguvu`: x86-64 and AArch64 today, no external compiler).
+4. **Bytecode** — Emit `.asb`, the native backend's input (it carries the syntax tree too).
+5. **Execution** — Native machine code from Asili's own backend (`nguvu`: x86-64 and AArch64 today, no external compiler; **Pata Jenga** builds it ahead of time); the tree-walking evaluator where there is no backend (Web/wasm, other CPUs) and in the REPL.
 
 **Attributes (`#[...]`):** Resolved in the compiler pipeline after parse, before or during codegen. Conditional compilation (`#[sharti(...)]`) determines which code is included per target.
 
@@ -42,7 +42,7 @@ These concerns are **Friction** at the **Execution** layer, not deficiencies in 
 | Component | EDP layer | Role |
 |-----------|-----------|------|
 | **Syntax / Types** | **Signal** | Defines what *can* be expressed (Turing completeness). |
-| **Runtime / VM** | **Execution** | Manages the friction of infinite loops (time). |
+| **Runtime** | **Execution** | Manages the friction of infinite loops (time). |
 | **Allocator** | **Substrate** | Manages the friction of finite resources (space). |
 
 ### Halt condition (telemetry)

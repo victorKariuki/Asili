@@ -11,6 +11,8 @@ pub mod debug_hook;
 mod env;
 mod eval;
 #[cfg(not(target_arch = "wasm32"))]
+mod host;
+#[cfg(not(target_arch = "wasm32"))]
 mod native;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod nguvu;
@@ -110,29 +112,21 @@ impl TreeContext {
         Ok(TreeContext { env, builtins })
     }
 
-    /// Run `f` (a function of `module`) on the tree-walker; its calls to `kazi` the VM runs go
-    /// through `hook` (none: every `kazi` runs here).
+    /// Run `f` (a function of `module`) on the tree-walker; its calls to `kazi` that run as
+    /// native code go through `hook` (none: every `kazi` runs here).
     pub(crate) fn call(
         &mut self,
         module: &Module,
         f: &Function,
         args: Vec<Value>,
-        hook: Option<runtime::VmHook>,
+        hook: Option<runtime::NativeHook>,
     ) -> Result<Value, EvalError> {
         let builtins = std::mem::take(&mut self.builtins);
         let mut rt = runtime::Runtime::with_builtins(&mut self.env, module, builtins);
-        rt.vm = hook;
-        rt.env.push_scope();
-        for (p, val) in f.params.iter().zip(args) {
-            rt.env.define(&p.name, val);
-        }
-        let out = eval::eval_block_impl(&f.body, &mut rt);
-        rt.env.pop_scope();
+        rt.host = hook;
+        let out = eval::call_body(&mut rt, &f.params, args, &f.body);
         self.builtins = std::mem::take(&mut rt.builtins);
-        match out? {
-            EvalOut::Return(v) => Ok(v),
-            _ => Ok(Value::Tupu),
-        }
+        out
     }
 }
 
@@ -186,18 +180,8 @@ fn run_in_fresh_runtime<T>(
         None => runtime::Runtime::new(&mut env, module),
     };
     setup(&mut rt);
-    let result = seed_module_constants(module, &mut rt).and_then(|()| {
-        rt.env.push_scope();
-        for (p, val) in f.params.iter().zip(args) {
-            rt.env.define(&p.name, val);
-        }
-        let out = eval::eval_block_impl(&f.body, &mut rt);
-        rt.env.pop_scope();
-        match out? {
-            EvalOut::Return(v) => Ok(v),
-            _ => Ok(Value::Tupu),
-        }
-    });
+    let result = seed_module_constants(module, &mut rt)
+        .and_then(|()| eval::call_body(&mut rt, &f.params, args, &f.body));
     (result, report(rt))
 }
 
@@ -563,9 +547,10 @@ pub fn run_artifact(path: &std::path::Path, args: Vec<String>) -> Result<(), Run
     run_asb(&bytes, Some(&asb), args)
 }
 
-/// Run an `.asb` artifact's `kuu`. Bytecode artifacts use the ahead-of-time native library
-/// `pata jenga` built next to them (`<name>.so`/`.dylib`/`.dll`) when it exists and was built
-/// from exactly this bytecode, and otherwise the register VM; serialized-AST artifacts use the
+/// Run an `.asb` artifact's `kuu`. Bytecode artifacts run as native code: the image `pata jenga`
+/// built next to them (`<name>.nguvu`) when it exists and was built from exactly this bytecode,
+/// else compiled in memory; where this platform has no backend (or `ASILI_AOT=0`) the
+/// tree-walker runs the syntax tree the artifact carries. Serialized-AST artifacts use the
 /// tree-walking evaluator.
 pub fn run_asb(
     bytes: &[u8],
@@ -617,8 +602,8 @@ fn run_asb_here(bytes: &[u8], source: Image<'_>, args: Vec<String>) -> Result<()
         #[cfg(not(target_arch = "wasm32"))]
         {
             // Native code beside the artifact: the machine-code image `pata jenga` wrote
-            // (`<name>.nguvu`). `ASILI_NGUVU=1` compiles in memory when there is none; otherwise
-            // anything missing or stale just means running on the VM.
+            // (`<name>.nguvu`). When it is missing or stale, native code is compiled in memory
+            // (`run_shared_program`), or the tree-walker runs the program.
             let image = || match source {
                 Image::Beside(path) => {
                     let path = path?;
@@ -630,11 +615,8 @@ fn run_asb_here(bytes: &[u8], source: Image<'_>, args: Vec<String>) -> Result<()
                 }
                 Image::Bytes(bytes) => nguvu::load_image_bytes(bytes?, &program).ok(),
             };
-            let in_memory = std::env::var("ASILI_NGUVU").is_ok_and(|v| v == "1");
             let library = if !aot::enabled() || !nguvu::supported() {
                 None
-            } else if in_memory {
-                image().or_else(|| nguvu::compile(&program).ok())
             } else {
                 image()
             };
@@ -655,7 +637,7 @@ fn run_asb_here(bytes: &[u8], source: Image<'_>, args: Vec<String>) -> Result<()
     run_main(&module, args).map_err(RunAsbError::Run)
 }
 
-/// The `.asb` for a program: bytecode (run by the VM and native code) whenever the whole
+/// The `.asb` for a program: bytecode (compiled to native code) whenever the whole
 /// module lowers to it, else the serialized AST for the tree-walker.
 pub fn emit_asb(module: &Module, source: &str) -> Vec<u8> {
     match bytecode::compile_module(module) {

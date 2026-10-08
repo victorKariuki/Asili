@@ -1,7 +1,7 @@
-//! Operator semantics shared by the tree-walking evaluator and the bytecode VM.
+//! Operator semantics shared by the tree-walking evaluator and native code's host.
 //!
-//! Both engines evaluate operands their own way (the VM also keeps fast paths for typed
-//! registers), but every operation on generic `Value`s goes through these functions so the two
+//! Both engines evaluate operands their own way (native code compiles typed
+//! registers itself), but every operation on generic `Value`s goes through these functions so the two
 //! can never disagree.
 
 use asili_parser::{BinaryOp, UnaryOp};

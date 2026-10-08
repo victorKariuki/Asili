@@ -1,6 +1,6 @@
 //! Receiver methods that need no interpreter state.
 //!
-//! Shared by the tree-walking evaluator and the bytecode VM so both execution paths agree on
+//! Shared by the tree-walking evaluator and native code's host so both execution paths agree on
 //! behaviour and error text.
 
 use std::rc::Rc;
@@ -936,7 +936,7 @@ pub(crate) fn callback_method(
     }
 }
 
-/// `expr kama ty` conversion, shared by the evaluator and the bytecode VM.
+/// `expr kama ty` conversion, shared by the evaluator and native code's host.
 pub(crate) fn cast_value(v: Value, ty: &str) -> Result<Value, EvalError> {
     // The common `n kama Neno`, before any type-name handling.
     if let (Value::Namba(n), "Neno") = (&v, ty) {
@@ -1076,7 +1076,7 @@ pub(crate) fn iter_items(v: Value) -> Result<Rc<Vec<Value>>, EvalError> {
     }
 }
 
-/// Whether any receiver type has a shared method called `method` (used by the bytecode VM to
+/// Whether any receiver type has a shared method called `method` (used by native code's host to
 /// dispatch at run time when a receiver's type is not known statically).
 pub(crate) fn is_shared_method_name(method: &str) -> bool {
     let probes = [

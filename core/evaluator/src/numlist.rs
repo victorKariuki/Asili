@@ -1,4 +1,4 @@
-//! `Orodha<Namba>` storage for the register VM and native code.
+//! `Orodha<Namba>` storage for native code.
 //!
 //! A list stores all its elements in one representation, the narrowest that holds every element
 //! exactly: signed integers of 1, 2, 4 or 8 bytes while every element is an integer in range (no
@@ -103,7 +103,7 @@ impl Kind {
     /// The representation native code uses for the integers `lo..=hi` (which lie within ±2^53):
     /// the narrowest that holds them, skipping 16-bit elements — measured, a 16-bit store read
     /// back soon after (a swap loop) runs twice as slow as a 32-bit one, while bytes and 32-bit
-    /// words cost the same as 64-bit words. Lists the interpreter builds still use 16 bits.
+    /// words cost the same as 64-bit words. Lists the host builds still use 16 bits.
     pub(crate) fn for_range(lo: f64, hi: f64) -> Kind {
         ALL.into_iter()
             .filter(|k| k.width() != 2)

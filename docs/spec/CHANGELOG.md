@@ -4,6 +4,14 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Execution ([02-architecture-and-files.md](02-architecture-and-files.md),
+  [07-execution-and-roadmap.md](07-execution-and-roadmap.md)): the register VM is gone. `.asb`
+  bytecode is the native backend's input and always carries the program's syntax tree; it runs
+  as native code (built by `pata jenga`, or compiled in memory at start-up), and the
+  tree-walking evaluator runs it where there is no backend. The call-depth limit is 10,000
+  `kazi` calls on every engine (the tree-walker no longer counts nested blocks and
+  expressions).
+
 - Syntax ([03-syntax.md](03-syntax.md)): `;` may separate statements (never required); a trailing
   comma is allowed before the closing bracket of every comma-separated list (literals, calls,
   parameters, `umbo` fields, `jenum` variants); `[thamani; idadi]` builds a list of `idadi`

@@ -155,20 +155,21 @@ Researched, decided, not built.
 - [ ] `kiungo` (FFI) is a documented stub: `core/evaluator/src/builtins/kiungo.rs`
       unconditionally returns `Err` from both exported functions, with a `TODO(Phase IV)`
       comment about `libloading`. Correctly scoped to this phase, not a surprise gap.
-- [x] **Bytecode VM and ahead-of-time native code (`nguvu`)** — `core/evaluator/src/bytecode.rs`
+- [x] **Bytecode and native code (`nguvu`)** — `core/evaluator/src/bytecode.rs`
       lowers most of the language (everything except `linganisha`, `tupa`, pattern `weka`, map
-      and struct literals, enum construction and field access) to a typed register VM with
-      separate `f64`, number-list and `Value` register files. `pata jenga` then compiles the
-      bytecode ahead of time to x86-64 or AArch64 machine code with Asili's own backend
-      (`core/evaluator/src/nguvu/`, no external compiler) into `<name>.nguvu`; on other
-      platforms the bytecode runs on the VM. A flow-sensitive integer
+      and struct literals, enum construction and field access) to typed register bytecode with
+      separate `f64`, number-list and `Value` register files. Bytecode only ever runs as x86-64
+      or AArch64 machine code from Asili's own backend (`core/evaluator/src/nguvu/`, no
+      external compiler): `pata jenga` writes `<name>.nguvu`, the runner compiles in memory when
+      it is missing, and there is no bytecode interpreter (the register VM was removed). Where
+      no backend exists (wasm, other CPUs, `ASILI_AOT=0`) the tree-walker runs the syntax tree
+      every bytecode artifact carries. A flow-sensitive integer
       range analysis (`native.rs`) keeps provably whole-number `Namba` registers in `i64` (never
-      by speculation: a register it cannot bound stays `f64`, and native code never resumes the
-      VM part-way through a call), and drops provably in-range list bounds checks. All engines share one implementation of
+      by speculation: a register it cannot bound stays `f64`), and drops provably in-range list bounds checks. All engines share one implementation of
       the language's value semantics (`eval/ops.rs`, `eval/methods.rs`); `tests/engines_agree.rs`
-      and `tests/native_tiers.rs` check that the tree-walker, VM and native code agree
+      and `tests/native_tiers.rs` check that the tree-walker and native code agree
       bit-for-bit. The Arto Inkala Sudoku (90,665 attempts, 10,041 backtracks) solves in
-      ~2.6 ms native (clang `-O2` C: ~3.1 ms, gcc `-O2` C: ~4.7 ms), ~110 ms VM, vs. 3.4 s on
+      ~2.6 ms native (clang `-O2` C: ~3.1 ms, gcc `-O2` C: ~4.7 ms), vs. ~0.95 s on
       the tree-walker and 0.3 s in CPython. See [performance.md](performance.md). Remaining: a `kazi` using `tupa`, pattern
       `weka`, computed-key maps, `shughuli ya` method calls on receivers of statically unknown `umbo`, or the
       thread-starting builtins runs

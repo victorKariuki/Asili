@@ -18,7 +18,8 @@ this container is ~3.3 ms for anything).
 | C, clang -O2 | ≈ 3.1 ms | 6.5 ms |
 | C, gcc -O2 | ≈ 4.7 ms | 8.1 ms |
 | Rust -O | — | 6.8 ms |
-| Asili register VM | ~110 ms | 118 ms |
+| Asili register VM (removed) | ~110 ms | 118 ms |
+| Asili tree-walker (today's fallback, no native backend) | — | ≈ 945 ms |
 | Python 3 | — | 302 ms |
 | Asili LLVM AOT (retired) | 4.8 ms | 10 ms |
 | Asili tree-walker (before) | 3.4 s | — |
@@ -62,7 +63,7 @@ resolution).
 Six small programs, each with a line-for-line C port (`gcc -O2`), whole-process best of 9 on the
 `dist`/musl runner:
 
-| Program | What it stresses | C | Before | Asili native | VM | Native / C |
+| Program | What it stresses | C | Before | Asili native | VM (removed) | Native / C |
 |---|---|---|---|---|---|---|
 | `fib(32)` | 7M scalar calls | 12 ms | 1706 ms | 26 ms | 306 ms | 2.2× |
 | Mandelbrot 400×300 | float loops | 21 ms | 33 ms | 27 ms | 280 ms | 1.3× |
@@ -109,11 +110,12 @@ read, and fixed the static runner's stack handling (the VM's `fib(32)` spent 5�
 stack segments on musl's main thread). What is left: `fib` still passes arguments and results
 through memory and keeps the VM's depth count on every call (an experiment passing them in
 registers measured slower; dropping the depth traffic entirely would gain only ~7 %); every
-generic-value instruction runs in the interpreter. See *Remaining gaps*.
+generic-value instruction runs in the host (`host.rs`). See *Remaining gaps*.
 
 ## Techniques, and how Asili uses them
 
-**Typed register VM.** Stack VMs spend most of their time moving operands; register VMs (Lua 5,
+**Typed register bytecode.** (It was interpreted by a register VM until October 2026; now it is
+only the native backend's input.) Stack VMs spend most of their time moving operands; register VMs (Lua 5,
 Dalvik, wasm3) name operands in the instruction, roughly halving instruction count. Asili goes
 further and types the register files: `nums` (`f64`, also holding `Ukweli` as 0/1), `lists`
 (`NumList` for `Orodha<Namba>`: integer words while every element is an exact integer, `f64`
@@ -125,19 +127,19 @@ registers.
 
 **One source of truth for semantics.** Every operation on a generic `Value` — operators, casts,
 methods, `?`/`jaribu`, iteration, display — is a function in `eval/ops.rs` / `eval/methods.rs`
-that both the tree-walker and the VM call; unboxed numeric opcodes share one
-`bytecode.rs::numeric_op` between the interpreter loop and `exec_slow` (the path native code
-calls back into). Differential tests (`tests/engines_agree.rs`) run each
+that both the tree-walker and native code's host (`host.rs`) call; `host.rs::numeric_op` is
+the reference numeric semantics native code must match bit for bit. Differential tests (`tests/engines_agree.rs`) run each
 snippet on every engine and require identical values and error text.
 
 **Native code: one in-house backend, `nguvu`.** `pata jenga` compiles each bytecode function
 to machine code itself — no C source, no LLVM, no external compiler, assembler or linker — and
 writes it next to the `.asb` as `<name>.nguvu`, stamped with the bytecode hash, ABI and image
 versions, architecture and the CPU features it relies on, so a stale or foreign image is never
-mapped. Generic-value instructions call back into the interpreter's single-step function
-(`exec_slow`) through a small runtime table, spilling and reloading only the registers that
-instruction touches, so native code never changes behaviour. Without a backend for the platform
-(or with `ASILI_AOT=0`) the bytecode runs on the register VM.
+mapped; when it is missing or stale the runner compiles in memory. Generic-value instructions
+call back into the host's single-step function (`Host::exec_slow`) through a small runtime
+table, spilling and reloading only the registers that instruction touches, so native code never
+changes behaviour. There is no bytecode interpreter: without a backend for the platform (or
+with `ASILI_AOT=0`) the tree-walker runs the syntax tree every bytecode artifact carries.
 
 Pipeline (`core/evaluator/src/nguvu/`):
 - `lower.rs`: bytecode → a typed IR of virtual registers (integer or float class, chosen by the
@@ -191,7 +193,7 @@ Two refinements keep the counters that used to need a guess provable:
   most three rounds). This bounds Sudoku's attempt counter and the sieve's `hesabu`.
 
 A direct native-to-native call that is too deep, or would run out of native stack, goes through
-the VM's own call path (`RtFn::CallVm`), which grows the stack, reports the depth error, and
+the host's own call path (`RtFn::CallHost`), which grows the stack, reports the depth error, and
 still runs the callee's native code. Loop headers are aligned to 32 bytes (one x86-64 fetch
 window), so a loop's speed no longer depends on where unrelated code shifted it.
 
@@ -200,10 +202,10 @@ window), so a loop's speed no longer depends on where unrelated code shifted it.
 The full checklist — invariants, required tests, benchmark thresholds, how to debug a
 regression — is the `performance-guardrails` skill (`.claude/skills/performance-guardrails/`).
 
-- `tests/engines_agree.rs`: tree-walker vs VM vs native code, values and error messages
+- `tests/engines_agree.rs`: tree-walker vs native code, values and error messages
   (including list representations: `-0.0` in an integer list, huge integers, lists switching
   to floats, lists across calls).
-- `tests/native_tiers.rs`: interpreter vs native code (through the on-disk image) bit-for-bit
+- `tests/native_tiers.rs`: tree-walker vs native code (through the on-disk image) bit-for-bit
   on the numeric edge cases (`-0.0`, NaN, ±∞, 2^53, negative `%` and floor division, shifts
   outside `0..=63`, out-of-bounds reads and writes, recursion, labelled loops, callbacks,
   unrolled loops with `vunja`/`endelea`, popcount, small-range division, the full Sudoku).
@@ -238,16 +240,20 @@ The plan this work followed, in order, and where each step stands:
    external tool.
 10. The LLVM/clang backend removed; `nguvu` for AArch64. Done.
 11. Stop guessing: speculation and deoptimization removed from `nguvu`, replaced by stronger
-    proofs (square-root narrowing, loop-accumulator caps) and a VM call path for deep direct
+    proofs (square-root narrowing, loop-accumulator caps) and a host call path for deep direct
     calls. Done — every benchmark at parity or faster (sieve 20.7 → 18.7 ms, Sudoku whole
     process 2.3 ms, solve below clang `-O2` C).
+12. Remove the VM: bytecode only runs as native code (compiled in memory when no image was
+    built); the tree-walker is the fallback where there is no backend, with the same
+    10,000-call depth limit as native code and no nesting limit. Done — native speed
+    unchanged; the fallback is ~10× slower than the VM was (Sudoku ≈ 0.95 s).
 
 Next steps are the "Remaining gaps" below.
 
 ## Knobs
 
-- `ASILI_AOT=0` — don't build (at `pata jenga`) or load (at run time) native code.
-- `ASILI_NGUVU=1` — compile in memory at load time when no `.nguvu` image was built.
+- `ASILI_AOT=0` — don't build (at `pata jenga`) or load or compile (at run time) native code:
+  the tree-walker runs the program.
 - `ASILI_BYTECODE_REPORT=1` / `ASILI_BYTECODE_DUMP=1` (at `pata jenga`) — list the `kazi` left
   to the tree-walker / print every compiled `kazi`'s instructions.
 - `ASILI_NGUVU_IR=<file>` / `ASILI_NGUVU_DUMP=<file>` — dump the optimized IR with register
@@ -259,31 +265,33 @@ Next steps are the "Remaining gaps" below.
   enclosing scope, pattern `weka`,
   maps with computed keys, `shughuli ya` method calls on a receiver whose `umbo` is not known
   where the call is compiled) runs on the tree-walker; `ASILI_BYTECODE_REPORT=1 pata jenga` lists each such `kazi` and line; the rest of the program stays bytecode and native code (mixed mode:
-  `Opcode::Interpreted` stubs, `BytecodeProgram::ast`, and a `VmHook` that sends the
-  tree-walker's calls to compiled `kazi` back to the VM). Lowering those constructs would move
+  `Opcode::Interpreted` stubs, `BytecodeProgram::ast`, and a `NativeHook` that sends the
+  tree-walker's calls to compiled `kazi` back to native code). Lowering those constructs would move
   the remaining functions onto the fast path; `compile_module_explained` reports the first one
   and its line.
 - Threads (`tenda`) and server workers (`mkondo_tumikia`, `mkondo_tumikia_http`) share the
-  bytecode program and its native code (`spawn::Shared`) and build one VM per thread; only a
+  bytecode program and its native code (`spawn::Shared`) and build one host per thread; only a
   program built as a syntax-tree artifact still runs them on the tree-walker.
 - Native-to-native calls are direct only for scalar (`Namba`/`Buliani`) functions without
-  lists or generic values; others go through the interpreter's call path. Direct calls pass
+  lists or generic values; others go through the host's call path. Direct calls pass
   arguments as `f64` through a memory buffer, so `fib(32)` is ~40 ms against C's ~11 ms;
   arguments and results in registers, and inlining small helpers (`sanduku_la(r, c)`), would
   close most of that.
 - Lists store integers in 1, 2, 4 or 8 bytes (`numlist.rs`), and native code uses 1-, 4- or
   8-byte elements chosen from the range analysis, so the sieve now moves bytes like C (23 ms
-  against 17 ms). The rest of that gap is the VM call that builds the list
+  against 17 ms). The rest of that gap is the host call that builds the list
   (`orodha_rudia`) and the bounds checks the analysis cannot drop.
 - `Neno`, `Orodha` and `umbo` values are shared (`Rc`) and copied only when written, and the
   static runner has its own allocator and memory primitives (musl's locked on every allocation
   and copied bytewise): string building went from 99 to 17 ms (C: 10 ms). Every generic value
-  operation still runs in the interpreter, one `exec_slow` dispatch per instruction.
+  operation still runs in the host, one `exec_slow` dispatch per instruction.
 - The native image is mapped at start-up by the runner, from a file beside the artifact or from
   a standalone executable (`pata jenga --namna release` appends both to the runner). `pata tenda` itself (the full toolchain binary) starts ~3 ms slower than the
   runner; ship programs with the `dist`-profile static runner.
 - `list_push`/`list_remove` are runtime calls (~1M instructions on the benchmark); inlining the
   common case needs a list layout native code may write directly.
 - Platforms: x86-64 (System V and Windows x64) and AArch64 (Linux, macOS) are supported;
-  Windows on ARM64 and 32-bit targets run on the VM. A hardened-runtime macOS app needs the
-  `com.apple.security.cs.allow-jit` entitlement for native code (without it, the VM).
+  Windows on ARM64, 32-bit targets and wasm run on the tree-walker (≈ 10× slower than the
+  removed VM was; a backend or a faster fallback would close it). A hardened-runtime macOS app
+  needs the `com.apple.security.cs.allow-jit` entitlement for native code (without it, the
+  tree-walker).

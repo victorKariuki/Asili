@@ -9,10 +9,9 @@ use crate::builtins;
 use crate::debug_hook::DebugHook;
 use crate::env::Env;
 
-// MAX_EVAL_DEPTH limits evaluation depth to prevent stack overflow.
-// NOTE: This counter includes both block nesting and expression depth, not just function call frames.
-// A proper implementation would separate call-depth from block-nesting-depth.
-pub(crate) const MAX_EVAL_DEPTH: usize = 1000;
+/// Deepest chain of `kazi` calls a program may make, on every engine (the tree-walker and native
+/// code count it the same way); one more fails with `undani mno`.
+pub(crate) const MAX_CALL_DEPTH: usize = 10_000;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EvalMetrics {
@@ -28,6 +27,8 @@ pub(crate) struct Runtime<'a> {
     pub module: &'a Module,
     pub builtins: HashMap<String, builtins::BuiltinFn>,
     pub depth: usize,
+    /// `kazi` calls in progress (bounded by [`MAX_CALL_DEPTH`]).
+    pub calls: usize,
     /// Highest depth reached during this run; for telemetry in development.
     pub peak_depth: usize,
     /// Source lines of statements actually executed during this run — real line-level coverage,
@@ -43,23 +44,23 @@ pub(crate) struct Runtime<'a> {
     /// resumes it.
     pub debug_hook: Option<Arc<dyn DebugHook>>,
     pub metrics: Option<EvalMetrics>,
-    /// The bytecode VM running this program, when the tree-walker runs only some of its `kazi`
-    /// (mixed mode): calls to the others go back to the VM and native code.
-    pub vm: Option<VmHook>,
+    /// The native-code host running this program, when the tree-walker runs only some of its
+    /// `kazi` (mixed mode): calls to the others go back to native code.
+    pub host: Option<NativeHook>,
 }
 
-/// A call from the tree-walker into the VM that started it. `call` returns `None` when the VM
-/// does not run that `kazi` itself (it is one of the tree-walker's own).
+/// A call from the tree-walker into the native-code host that started it. `call` returns `None`
+/// when that `kazi` is not native code (it is one of the tree-walker's own).
 #[derive(Clone, Copy)]
-pub(crate) struct VmHook {
-    pub vm: *mut std::ffi::c_void,
+pub(crate) struct NativeHook {
+    pub host: *mut std::ffi::c_void,
     pub call: fn(
         *mut std::ffi::c_void,
         &str,
         &[crate::value::Value],
     ) -> Option<Result<crate::value::Value, crate::value::EvalError>>,
-    /// The VM's program as its threads receive it (so `tenda` and the server loops called
-    /// from tree-walked code still run their `kazi` on bytecode and native code).
+    /// The host's program as its threads receive it (so `tenda` and the server loops called
+    /// from tree-walked code still run their `kazi` as native code).
     pub shared: fn(*mut std::ffi::c_void) -> crate::spawn::Shared,
 }
 
@@ -82,11 +83,12 @@ impl<'a> Runtime<'a> {
             module,
             builtins: unshadowed(builtins::builtins(), module),
             depth: 0,
+            calls: 0,
             peak_depth: 0,
             executed_lines: None,
             debug_hook: None,
             metrics: None,
-            vm: None,
+            host: None,
         }
     }
 
@@ -100,11 +102,12 @@ impl<'a> Runtime<'a> {
             module,
             builtins,
             depth: 0,
+            calls: 0,
             peak_depth: 0,
             executed_lines: None,
             debug_hook: None,
             metrics: None,
-            vm: None,
+            host: None,
         }
     }
 

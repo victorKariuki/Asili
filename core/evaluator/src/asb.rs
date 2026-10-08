@@ -1,7 +1,7 @@
 //! ASB (Asili bytecode) serialized format: header + payload for run-from-.asb.
 //
 // HACK: The "ASB" format currently serializes the parsed AST (Module) via bincode, not real bytecode.
-// Running an .asb file re-interprets the AST through the tree-walk evaluator, not a VM.
+// Running a serialized-AST .asb file re-interprets the AST through the tree-walk evaluator.
 // This means .asb files carry the full AST, not a compact instruction stream, and "compilation"
 // provides no performance benefit over re-parsing source.
 // TODO(Phase II): Replace with a real bytecode format: lower AST -> TIR -> BytecodeProgram,
@@ -63,9 +63,9 @@ pub fn emit_asb_bytes(module: &Module, source: &str) -> Vec<u8> {
     out
 }
 
-/// Version of the bytecode payload (the register-VM instruction set). Artifacts built by an
+/// Version of the bytecode payload (its instruction set, and the syntax tree it carries). Artifacts built by an
 /// older `pata jenga` carry a different `version=` and must be rebuilt.
-const BYTECODE_VERSION: &str = "10";
+const BYTECODE_VERSION: &str = "11";
 
 /// Emit a real bytecode artifact.  The header remains intentionally simple and textual so older
 /// runners can reject it cleanly, while the payload is the same deterministic bincode envelope

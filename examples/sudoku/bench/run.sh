@@ -4,7 +4,8 @@
 #
 # Asili tiers run on the standalone runner (`tenda`, built as it ships — see below):
 # asili-nguvu = native code built in-house by `pata jenga` (no external tools),
-# asili-vm = register-VM interpreter (ASILI_AOT=0). clang is only used here to build the
+# asili-mti = the tree-walking evaluator, the fallback where there is no native backend
+# (ASILI_AOT=0). clang is only used here to build the
 # C comparison, when installed.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -24,7 +25,7 @@ else
   cargo build --profile dist -q -p asili-runner --manifest-path "$root/Cargo.toml"
   runner="$root/target/dist/tenda"
 fi
-# release: fail instead of silently benchmarking the VM when native code cannot be built.
+# release: fail instead of silently benchmarking the tree-walker when native code cannot be built.
 (cd "$here/.." && "$root/target/release/pata-cli" jenga --namna release >/dev/null)
 gcc -O2 -o "$out/sudoku_c" "$here/sudoku.c"
 command -v clang >/dev/null && clang -O2 -o "$out/sudoku_clang" "$here/sudoku.c"
@@ -56,4 +57,4 @@ best rust "$out/sudoku_rs"
 command -v python3 >/dev/null && best python python3 "$here/sudoku.py"
 asb="$here/../kilele/sudoku.asb"
 best asili-nguvu "$runner" "$asb"
-ASILI_AOT=0 best asili-vm "$runner" "$asb"
+ASILI_AOT=0 best asili-mti "$runner" "$asb"

@@ -29,7 +29,7 @@ The repository follows a Linux-kernel–style modular layout. Each directory is 
 | **.asi** | Asili interface (headers / Sifa declarations) | Author |
 | **pata.toml** | Project manifest (metadata, dependencies) | Author |
 | **pata.lock** | Lockfile for deterministic builds | Tool |
-| **.asb** | Asili bytecode (VM input) | Tool |
+| **.asb** | Asili bytecode (native backend input) | Tool |
 | **.asm** | Asili assembly (debug / `pata jenga --nguvu`) | Tool |
 | **.asdoc** | Documentation templates for `pata maelezo` | Author / Tool |
 
@@ -41,13 +41,16 @@ The repository follows a Linux-kernel–style modular layout. Each directory is 
 
 - **lexer/** — Tokenizes Swahili input from `.as` and `.asi` files.
 - **parser/** — Generates the AST; split into cursor (token stream), parse (statements/expressions), and semantic (types + analyzer). Integration tests live in `tests/`.
-- **evaluator/** — Executes `.asb` artifacts. Programs the bytecode compiler can lower run on a
-  typed register VM (`bytecode.rs`); `pata jenga` additionally compiles that bytecode ahead of
-  time to x86-64 or AArch64 machine code with Asili's own backend (`nguvu/`, no external
-  compiler; a `<name>.nguvu` next to the `.asb`), run instead of the interpreter when present;
-  on other platforms the program runs on the VM. `native.rs` holds the runtime ABI and the integer range analysis
-  (proofs only: native code never speculates or deoptimizes). Programs using constructs the VM does not lower keep the serialized-AST artifact and
-  the tree-walking evaluator. All engines share one implementation of operators, methods, casts
+- **evaluator/** — Executes `.asb` artifacts. Programs the bytecode compiler can lower
+  (`bytecode.rs`) run as x86-64 or AArch64 machine code from Asili's own backend (`nguvu/`, no
+  external compiler): `pata jenga` writes it ahead of time as `<name>.nguvu` next to the `.asb`,
+  and the runner compiles it in memory when that is missing. There is no bytecode interpreter:
+  native code calls back into its host (`host.rs`) for generic operations, and where no backend
+  exists (wasm, other CPUs, `ASILI_AOT=0`) the tree-walking evaluator runs the syntax tree every
+  bytecode artifact carries. `native.rs` holds the runtime ABI and the integer range analysis
+  (proofs only: native code never speculates or deoptimizes). Programs using constructs the
+  bytecode compiler does not lower keep the serialized-AST artifact and the tree-walking
+  evaluator. All engines share one implementation of operators, methods, casts
   and iteration (`eval/ops.rs`, `eval/methods.rs`). Integration tests live in `tests/`.
 - **diagnostics/** — The "Mwalimu" error reporting system (Context Map).
 

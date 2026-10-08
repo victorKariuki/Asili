@@ -324,7 +324,7 @@ pub fn compile_single_file(
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BuildProfile {
     /// Best effort: bytecode when the program benefits, native code where the platform has a
-    /// native backend, otherwise the artifact runs on the VM (or the tree-walker) with a note.
+    /// native backend, otherwise the artifact runs on the tree-walker with a note.
     #[default]
     Dev,
     /// What ships must run as native code: the program must compile to bytecode and its native
@@ -348,7 +348,7 @@ impl BuildProfile {
 
 /// Ahead-of-time compile a bytecode artifact to native machine code next to it
 /// (`<name>.nguvu`, built in-house with no external tools). In `Dev` a platform without a
-/// native backend only means the artifact runs on the VM; `Release` fails instead.
+/// native backend only means the artifact runs on the tree-walker; `Release` fails instead.
 /// A release build's standalone executable `<target>/<name>` (`.exe` on Windows): the static
 /// runner `tenda` with the artifact and its native image appended
 /// (`asili_evaluator::bundle`), which runs directly. The runner comes from `ASILI_TENDA` or sits
@@ -420,7 +420,7 @@ fn build_native_library(
             1,
         ));
     }
-    println!("msimbo asilia haukujengwa ({failure}); kilele kitaendeshwa na VM");
+    println!("msimbo asilia haukujengwa ({failure}); kilele kitaendeshwa bila msimbo asilia");
     Ok(())
 }
 

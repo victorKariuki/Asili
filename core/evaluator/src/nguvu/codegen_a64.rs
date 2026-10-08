@@ -230,7 +230,7 @@ impl<'f> Gen<'f> {
                 self.str_at(r, SP, off);
             }
         }
-        // Incoming `rt, vm, frame, nums` (x0–x3): park them in their home slots first (their
+        // Incoming `rt, host, frame, nums` (x0–x3): park them in their home slots first (their
         // allocated registers may be other argument registers), then load each where it lives.
         for i in 0..4u32 {
             self.str_at(i as u8, SP, self.slot(VReg(i)));

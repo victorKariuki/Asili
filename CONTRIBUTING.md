@@ -37,7 +37,7 @@ To build it locally:
 ## Project structure
 
 - **core/** — Language core: `diagnostics` (shared error/diagnostic types), `lexer`, `parser`
-  (includes the semantic analyzer), `evaluator` (tree-walking interpreter, register VM and the in-house `nguvu` native backend sharing
+  (includes the semantic analyzer), `evaluator` (tree-walking interpreter and the in-house `nguvu` native backend sharing
   one implementation of the semantics, plus built-ins). Add or
   extend built-ins under `core/evaluator/src/builtins/`. `core/` never depends on `pata/` — a
   type `core/` needs to expose to `pata/` (e.g. the `DebugHook` trait `pata-dap` drives) is
@@ -74,7 +74,7 @@ To build it locally:
   `cargo run -p pata-cli -- jenga --tenda`
   
   to confirm it builds and runs.
-- **Engines agree** (any change to the evaluator, VM, native code or operator/method semantics):  
+- **Engines agree** (any change to the evaluator, native code or operator/method semantics):  
   `cargo test -p asili-evaluator --test engines_agree --test native_tiers`  
   (on x86-64 or AArch64; changes to `nguvu` code generation should also be run for the other
   architecture — CI runs arm64 natively, or locally under qemu as the `performance-guardrails`

@@ -109,15 +109,16 @@ separate follow-up task.
 ## Keep Asili at C speed — engines agree, benchmark proves it
 
 Asili runs the Sudoku benchmark (`examples/sudoku/bench/run.sh`) at C speed through native
-code from its own backend (`nguvu`, no external compiler), with a typed register VM as the
-fallback where no backend exists and the tree-walker for everything else. Whenever a change
+code from its own backend (`nguvu`, no external compiler) — the only way bytecode runs; there
+is no bytecode interpreter. The tree-walker runs everything else, and whole programs where no
+backend exists (wasm, other CPUs, `ASILI_AOT=0`). Whenever a change
 touches `core/evaluator/` (`bytecode.rs`, `nguvu/`, `aot.rs`, `native.rs`, `eval/ops.rs`, `eval/methods.rs`, `builtins/`), parser lowering/desugaring, the
 `.asb` format, or adds an operator/builtin/method/opcode/AST variant, invoke the
 `performance-guardrails` skill before considering the work done. Non-negotiables it enforces:
 
 - **One semantics source.** Operators, casts, methods, indexing, `?`/`jaribu`, formatting and
   iteration are implemented once (`eval/ops.rs`, `eval/methods.rs`, `bytecode.rs::numeric_op`)
-  and called by every engine. Never re-implement a rule inside the VM or the native backend.
+  and called by every engine. Never re-implement a rule inside the native backend or its host (`host.rs`).
 - **One native backend** — `nguvu`, in-house: bytecode → IR → machine code, written by
   `pata jenga` as `kilele/<name>.nguvu`. No external compiler, assembler or linker, no C
   transpiler, no JIT at run time.
@@ -143,7 +144,7 @@ the change. The current single sources:
 | Language keywords | `asili_lexer::KEYWORDS` (LSP completion/hover/rename, formatter) |
 | Expression-tree shape | `Expr::children` in `core/parser/src/ast.rs` (lint, LSP, parser checks) |
 | Builtin signatures | `core/parser/src/builtins.rs` export tables (analyzer, LSP completion); `BUILTIN_MODULE_NAMES` for the module whitelist |
-| Builtin implementations | `core/evaluator/src/builtins/*` via `register_all`/`BuiltinTable` (evaluator and VM); `Value::sawa`/`Value::kosa`, `arg_str` for results/arguments |
+| Builtin implementations | `core/evaluator/src/builtins/*` via `register_all`/`BuiltinTable` (evaluator and native code's host); `Value::sawa`/`Value::kosa`, `arg_str` for results/arguments |
 | Value semantics and methods | `eval/ops.rs`, `eval/methods.rs` |
 | Running a tree-walker function | `run_in_fresh_runtime` in `core/evaluator/src/lib.rs` |
 | Running an artifact | `asili_evaluator::run_artifact` (`pata tenda`, `jenga --tenda`, runner) |

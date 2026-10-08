@@ -1,11 +1,11 @@
 //! Bytecode → IR, driven by the range analysis (`native::analyze_numbers`): registers proven to
 //! hold exact integers become `Int` virtual registers, proven in-range list accesses skip their
 //! bounds check, and every instruction the backend doesn't lower runs through `Runtime::exec`.
-//! Nothing is speculated: native code never hands a call back to the interpreter part-way, so
+//! Nothing is speculated: native code never hands a call back to anything else part-way, so
 //! every decision here is a proof.
 
 use super::ir::{
-    Block, Builder, Class, FCond, FloatOp, ICond, Inst, IntOp, RtFn, Term, VReg, FRAME, NUMS, VM,
+    Block, Builder, Class, FCond, FloatOp, ICond, Inst, IntOp, RtFn, Term, VReg, FRAME, HOST, NUMS,
 };
 use crate::bytecode::{BytecodeFunc, BytecodeProgram, CallOp, CmpOp, Opcode, Reg, Ty};
 use crate::native::{
@@ -18,9 +18,9 @@ use std::collections::{HashMap, HashSet};
 /// What the function being lowered may assume about the rest of the program.
 pub struct Ctx<'a> {
     pub program: &'a BytecodeProgram,
-    /// Functions with a direct native entry: calls to them skip the interpreter.
+    /// Functions with a direct native entry: calls to them skip the host.
     pub direct: &'a HashSet<usize>,
-    /// Lower the direct entry — arguments `(rt, vm, stack limit, registers)`, the result stored
+    /// Lower the direct entry — arguments `(rt, host, stack limit, registers)`, the result stored
     /// after the registers — instead of the ordinary one.
     pub entry_direct: bool,
 }
@@ -82,7 +82,7 @@ struct Lower<'a> {
     /// How each list register's elements are stored (`NumAnalysis::list_kinds`).
     list_kinds: Vec<Kind>,
     ctx: &'a Ctx<'a>,
-    /// A direct entry reached something only the interpreter can do: no direct entry.
+    /// A direct entry reached something only the host can do: no direct entry.
     failed: bool,
     /// Instructions some path from the entry reaches.
     reachable: Vec<bool>,
@@ -155,7 +155,7 @@ fn liveness(code: &[Opcode]) -> Vec<std::collections::BTreeSet<Reg>> {
 }
 
 /// Lower one function, or `None` if its jump targets are malformed (or, for a direct entry,
-/// if some instruction needs the interpreter).
+/// if some instruction needs the host).
 pub fn lower(index: usize, function: &BytecodeFunc, ctx: &Ctx) -> Option<super::ir::Func> {
     if ctx.entry_direct && !direct_signature(function) {
         return None;
@@ -377,8 +377,8 @@ impl<'a> Lower<'a> {
     }
 
     /// A call to a function with a direct entry: its registers go in a buffer in this frame,
-    /// and native code calls native code. When the call depth reaches the VM's limit or the
-    /// stack is low, the call goes through the VM's call path instead (`RtFn::CallVm`: it grows
+    /// and native code calls native code. When the call depth reaches the limit or the stack is
+    /// low, the call goes through the host's call path instead (`RtFn::CallHost`: it grows
     /// the stack, or reports the depth error, and still runs the callee's native code).
     fn direct_call(&mut self, pc: usize, _op: &Opcode, call: &CallOp) {
         let callee = self.direct_callee(call).expect("direct callee");
@@ -398,10 +398,10 @@ impl<'a> Lower<'a> {
         let depth = self.vreg(Class::Int);
         self.push(Inst::Load {
             dst: depth,
-            base: VM,
-            offset: crate::native::VM_DEPTH_OFFSET,
+            base: HOST,
+            offset: crate::native::DEPTH_OFFSET,
         });
-        let max = self.b.iconst(crate::bytecode::MAX_CALL_DEPTH as i64);
+        let max = self.b.iconst(crate::host::MAX_CALL_DEPTH as i64);
         let via_vm = self.b.cold_block();
         let status = self.vreg(Class::Int);
         let returned = self.b.block();
@@ -427,7 +427,7 @@ impl<'a> Lower<'a> {
         self.b.switch_to(via_vm);
         let f = self.b.iconst(call.function as i64);
         let s = self
-            .call(RtFn::CallVm, vec![VM, f, buf], Some(Class::Int), false)
+            .call(RtFn::CallHost, vec![HOST, f, buf], Some(Class::Int), false)
             .expect("status");
         self.push(Inst::Mov {
             dst: status,
@@ -441,15 +441,15 @@ impl<'a> Lower<'a> {
         let set_depth = |l: &mut Self, v: VReg| {
             l.push(Inst::Store {
                 src: v,
-                base: VM,
-                offset: crate::native::VM_DEPTH_OFFSET,
+                base: HOST,
+                offset: crate::native::DEPTH_OFFSET,
             })
         };
         set_depth(self, deeper);
         let s = self.vreg(Class::Int);
         self.push(Inst::CallDirect {
             func: call.function,
-            args: vec![super::ir::RT, VM, limit, buf],
+            args: vec![super::ir::RT, HOST, limit, buf],
             dst: s,
         });
         set_depth(self, depth);
@@ -767,10 +767,10 @@ impl<'a> Lower<'a> {
         self.b.terminate(Term::Return(v));
     }
 
-    /// Run instruction `pc` in the interpreter; leave the function if it ended the call.
+    /// Run instruction `pc` in the host; leave the function if it ended the call.
     fn slow(&mut self, pc: usize, op: &Opcode) {
         if self.ctx.entry_direct {
-            self.failed = true; // direct entries have no interpreter frame to run it in
+            self.failed = true; // direct entries have no host frame to run it in
         }
         for r in num_reads(op) {
             self.spill(r);
@@ -778,7 +778,7 @@ impl<'a> Lower<'a> {
         let f = self.b.iconst(self.index as i64);
         let p = self.b.iconst(pc as i64);
         let s = self
-            .call(RtFn::Exec, vec![VM, FRAME, f, p], Some(Class::Int), true)
+            .call(RtFn::Exec, vec![HOST, FRAME, f, p], Some(Class::Int), true)
             .expect("status");
         let z = self.b.iconst(0);
         let c = self.icmp(ICond::Ne, s, z);
@@ -804,7 +804,7 @@ impl<'a> Lower<'a> {
         }
     }
 
-    /// Bounds-checked element index into `list` (out of range: the interpreter raises the
+    /// Bounds-checked element index into `list` (out of range: the host raises the
     /// exact error and the function returns).
     fn element(&mut self, list: Reg, idx: Reg, pc: usize, op: &Opcode) -> VReg {
         let i0 = self.get_i(idx);
@@ -1268,7 +1268,7 @@ impl<'a> Lower<'a> {
                 });
             }
             Opcode::ListRemove { list, idx } => {
-                // Out-of-range removal is a no-op, like the interpreter.
+                // Out-of-range removal is a no-op, as in the language.
                 let i0 = self.get_i(*idx);
                 let z = self.b.iconst(0);
                 let neg = self.icmp(ICond::Lt, i0, z);

@@ -15,7 +15,7 @@ Jenga mradi kutoka pata.toml au faili moja (bila mradi).
 Chagua:
   --tenda            Baada ya kujenga, tenda kazi kuu na hoja zinazofuata.
   --pato <njia>      Mahali pa kuweka kilele (default: kilele/).
-  --namna <dev|release>        dev (chaguo-msingi): msimbo asilia ukiwezekana, vinginevyo VM.
+  --namna <dev|release>        dev (chaguo-msingi): msimbo asilia ukiwezekana, vinginevyo bila.
                                 release: lazima bytecode na msimbo asilia, la sivyo kosa.
   --lengo <lengo>    Lengo la kujenga (mf. "native", "wasm"). Hupita
                      [jenga] lengo katika pata.toml; default "native".

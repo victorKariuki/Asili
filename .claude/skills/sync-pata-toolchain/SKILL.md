@@ -25,7 +25,7 @@ that plus the rest of the toolchain surface that can silently go stale the same 
 | A change to `pata.toml` schema (including `[eneo-kazi]` workspaces) or dependency resolution | `pata/package/src/*`, `docs/design/package-manager-design.md`, wiki's `Package-Management` page | `pata.toml` is the one manifest file/format for both leaf and workspace-root projects (real TOML parsing in `pata-cli`'s `load_project_config`) — independent of `core/`, but its own schema changes need the same doc/wiki sync as anything else user-facing. |
 | A keyword added/removed | `asili_lexer::KEYWORDS` (the one list LSP completion/hover/rename and the formatter read), the VS Code grammar (`extensions/vscode/syntaxes/asili.tmLanguage.json`) and the playground highlighter (`examples/playground/main.js`) | The two editor grammars are regex/JS and cannot import the Rust list — update them by hand in the same change. |
 | An `Expr` variant added/changed | `Expr::children` in `core/parser/src/ast.rs` | Lint's unused-binding rule, LSP semantic highlighting and the parser's own `expr_has_call` walk the tree through it; a variant missing there is invisible to all of them. |
-| Anything touching execution (evaluator, VM, AOT, `.asb`) | The `performance-guardrails` skill | Engines must agree bit-for-bit and the Sudoku benchmark must stay at C speed. |
+| Anything touching execution (evaluator, native code, `.asb`) | The `performance-guardrails` skill | Engines must agree bit-for-bit and the Sudoku benchmark must stay at C speed. |
 
 `pata-lsp` does **not** need manual builtin-name updates — it consumes builtin/module tables
 through the same `asili_parser::builtins` re-export the CLI uses (verified; completion lists every

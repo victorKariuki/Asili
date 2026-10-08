@@ -25,7 +25,7 @@ pub type BuiltinFn = Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>;
 
 /// Builtins that need the running program (they run its named `kazi` on other threads), so each
 /// engine dispatches them itself, passing the program as a `spawn::Shared`, rather than through
-/// the plain builtin table. The bytecode VM hands threads its own bytecode and native code.
+/// the plain builtin table. Native code's host hands threads its own bytecode and native code.
 pub const MODULE_BUILTINS: [&str; 3] = ["tenda", "mkondo_tumikia", "mkondo_tumikia_http"];
 
 /// Every builtin module's registrations: the single list of what exists.
@@ -80,7 +80,7 @@ pub fn builtin_names() -> Vec<String> {
     names
 }
 
-/// Builtins indexed as in [`builtin_names`], plus a by-name index (the bytecode VM's table).
+/// Builtins indexed as in [`builtin_names`], plus a by-name index (native code's host's table).
 pub struct BuiltinTable {
     pub fns: Vec<BuiltinFn>,
     pub index: HashMap<String, usize>,
