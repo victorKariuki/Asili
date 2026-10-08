@@ -87,9 +87,11 @@ pub fn run(args: &[String]) -> CliResult {
                     1,
                 )
             })?;
-            if parse_format(&asb_bytes).as_deref() != Some("bytecode") {
-                let module = load_asb(&asb_bytes)
-                    .map_err(|e| CliError::new(format!("kuipakia asb: {e}"), 1))?;
+            // An artifact this build cannot read is rebuilt, not an error.
+            let cached = (parse_format(&asb_bytes).as_deref() != Some("bytecode"))
+                .then(|| load_asb(&asb_bytes).ok())
+                .flatten();
+            if let Some(module) = cached {
                 let artifact = target.join(format!("{name}.asb"));
                 fs::write(&artifact, &asb_bytes).map_err(|e| {
                     CliError::new(

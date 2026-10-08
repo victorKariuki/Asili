@@ -749,3 +749,128 @@ pub fn builtin_module_exports(name: &str) -> Option<BuiltinExportTable> {
         _ => None,
     }
 }
+
+/// Types with built-in methods (the receivers of `x.njia(...)` that are not a `umbo` or
+/// `jenum`). The method tables below are indexed by it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MethodReceiver {
+    Neno,
+    Orodha,
+    Kamusi,
+    Seti,
+    Chaguo,
+    Tokeo,
+    Jozi,
+    Wakati,
+    KashaGC,
+    KashaGCDhaifu,
+    Faili,
+    Mkondo,
+    Kumbukumbu,
+    NjiaTx,
+    NjiaRx,
+    Fungo,
+}
+
+/// Built-in methods that only read their receiver, per [`MethodReceiver`]. The one list: the
+/// semantic analyzer accepts exactly these (with [`MUTATING_METHODS`] and
+/// [`CALLBACK_METHODS`]), and both engines dispatch on them.
+pub const PURE_METHODS: [&[&str]; 16] = [
+    &[
+        "clona",
+        "urefu",
+        "herufi_kwa",
+        "biti_ngapi",
+        "unganisha",
+        "kata",
+        "tafuta",
+        "kwa_herufi_ndogo",
+        "kwa_herufi_kubwa",
+        "tupu",
+        "ina",
+        "hesabu",
+        "rudia",
+        "anza_na",
+        "maliza_na",
+        "gawanya",
+        "badilisha",
+    ],
+    &[
+        "clona",
+        "urefu",
+        "pata",
+        "unganisha",
+        "jiunge",
+        "kwa_neno",
+        "vipande",
+    ],
+    &["clona", "idadi", "pata", "funguo", "vipo"],
+    &["ina", "urefu", "clona", "orodha"],
+    &["angu", "ni_tupu", "ni_po", "hakikisha"],
+    &["ni_kosa", "ni_sawa", "kosa", "angu"],
+    &["clona", "kwanza", "pili"],
+    &["sekunde"],
+    &["pata", "weka", "idadi", "shirikisha"],
+    &["imarisha"],
+    &["soma", "andika", "funga"],
+    &["soma", "andika", "funga", "soma_bailisi"],
+    &["pata"],
+    &["tuma"],
+    &["pokea"],
+    &["funga", "fungua", "pata", "weka"],
+];
+
+/// Built-in methods that change their receiver in place, per [`MethodReceiver`].
+pub const MUTATING_METHODS: [&[&str]; 16] = [
+    &[],
+    &["ongeza", "ingiza", "ondoa", "badilisha"],
+    &["ingiza", "weka_key"],
+    &["ongeza", "ondoa"],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+];
+
+/// Built-in methods that call a `kazi` (or builtin) named by their first argument, per element.
+pub const CALLBACK_METHODS: [&[&str]; 16] = [
+    &[],
+    &[
+        "ramani",
+        "chuja",
+        "hesabu",
+        "chunguza",
+        "kila_na_fahirisi",
+        "kila_mmoja",
+    ],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+    &[],
+];
+
+/// Whether `receiver` has a built-in method `name`.
+pub fn has_builtin_method(receiver: MethodReceiver, name: &str) -> bool {
+    let i = receiver as usize;
+    [&PURE_METHODS, &MUTATING_METHODS, &CALLBACK_METHODS]
+        .iter()
+        .any(|table| table[i].contains(&name))
+}

@@ -28,7 +28,7 @@ mod tir;
 mod value;
 
 pub use crate::builtins::BuiltinFn;
-pub use asb::{load_asb, load_asb_bytecode, parse_format, AsbLoadError};
+pub use asb::{artifact_formats, load_asb, load_asb_bytecode, parse_format, AsbLoadError};
 #[cfg(not(target_arch = "wasm32"))]
 pub use bytecode::run_bytecode_native;
 pub use bytecode::{

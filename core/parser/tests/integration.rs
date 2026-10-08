@@ -482,3 +482,26 @@ fn input_ending_mid_expression_is_an_error_not_a_crash() {
         assert!(parse_tokens(&tokenize(src).unwrap()).is_err(), "{src}");
     }
 }
+
+#[test]
+fn unknown_builtin_method_is_a_compile_error() {
+    let check = |body: &str| {
+        let src = format!(
+            "kazi kuu(hoja: Orodha<Neno>) -> Tupu {{\n    weka a: Orodha<Namba> = [3, 1]\n    {body}\n}}\n"
+        );
+        let tokens = tokenize(&src).expect("tokenize");
+        let module = parse_tokens(&tokens).expect("parse");
+        semantic_check(&module)
+            .err()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| (d.code, d.message))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        check("weka b = a.panga()"),
+        vec![("SEM040", "njia 'panga' haipo kwa 'Orodha'".to_string())]
+    );
+    assert!(check("weka n = a.urefu()").is_empty());
+    assert!(check("a.ongeza(2)").is_empty());
+}

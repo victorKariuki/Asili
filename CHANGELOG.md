@@ -443,6 +443,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Unknown built-in methods are compile errors**: a call to a method no built-in type has —
+  `a.panga()` on an `Orodha` — compiled and only failed when the program ran, with a misleading
+  message. The analyzer now reports `SEM040` ("njia 'panga' haipo kwa 'Orodha'"). The method
+  lists live once in `asili_parser::builtins` (`PURE_METHODS`, `MUTATING_METHODS`,
+  `CALLBACK_METHODS`); the analyzer checks against them and both engines dispatch on them, and a
+  test checks the engines implement every listed method.
+
+- **Stale build cache after a toolchain upgrade**: the `pata jenga` dev cache was keyed only by
+  the sources and the target, so after an artifact format change it loaded an old artifact and
+  failed with `kuipakia asb: asb decode: …`. The cache key now includes the artifact formats
+  and compiler version (`asili_evaluator::artifact_formats`), and an unreadable cached artifact
+  is rebuilt instead of reported.
+
 - **Parser crash at end of input**: source ending mid-expression (`weka x = g(`, `a.`, an
   unclosed list or `linganisha` arm) indexed past the last token and panicked; it is now a
   syntax error.

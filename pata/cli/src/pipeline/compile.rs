@@ -33,6 +33,7 @@ pub fn cache_key(name: &str, source: &str, target: &str) -> String {
     hasher.update(name.as_bytes());
     hasher.update(source.as_bytes());
     hasher.update(target.as_bytes());
+    hasher.update(asili_evaluator::artifact_formats().as_bytes());
     let result = hasher.finalize();
     format!(
         "{:016x}",
@@ -80,6 +81,7 @@ pub fn project_input_hash(
     entry_path.display().to_string().hash(&mut h);
     entry_content.hash(&mut h);
     target.0.hash(&mut h);
+    asili_evaluator::artifact_formats().hash(&mut h);
     let mut pairs: Vec<(String, String)> = Vec::new();
     // Any fixed order works for a fingerprint; sorted names don't depend on import structure.
     let mut names: Vec<&String> = program.resolved.keys().collect();
@@ -165,9 +167,11 @@ pub fn compile_project(root: &Path, cli_target: Option<&str>) -> Result<CompileO
                         1,
                     )
                 })?;
-                if parse_format(&bytes).as_deref() != Some("bytecode") {
-                    let module = load_asb(&bytes)
-                        .map_err(|e| CliError::new(format!("kuipakia asb: {e}"), 1))?;
+                // An artifact this build cannot read is rebuilt, not an error.
+                let cached = (parse_format(&bytes).as_deref() != Some("bytecode"))
+                    .then(|| load_asb(&bytes).ok())
+                    .flatten();
+                if let Some(module) = cached {
                     return Ok(CompileOutput {
                         module,
                         source,

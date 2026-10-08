@@ -153,26 +153,9 @@ pub(crate) fn is_pure_method(recv: &Value, method: &str) -> bool {
     receiver_kind(recv).is_some_and(|kind| PURE_METHODS[kind as usize].contains(&method))
 }
 
-/// Receiver kinds with methods, indexing [`PURE_METHODS`].
-#[derive(Clone, Copy)]
-enum Kind {
-    Neno,
-    Orodha,
-    Kamusi,
-    Seti,
-    Chaguo,
-    Tokeo,
-    Jozi,
-    Wakati,
-    KashaGC,
-    KashaGCDhaifu,
-    Faili,
-    Mkondo,
-    Kumbukumbu,
-    NjiaTx,
-    NjiaRx,
-    Fungo,
-}
+use asili_parser::builtins::{
+    MethodReceiver as Kind, CALLBACK_METHODS, MUTATING_METHODS, PURE_METHODS,
+};
 
 fn receiver_kind(recv: &Value) -> Option<Kind> {
     Some(match recv {
@@ -197,54 +180,6 @@ fn receiver_kind(recv: &Value) -> Option<Kind> {
         _ => return None,
     })
 }
-
-/// The state-free methods of each receiver kind ([`pure_method`] implements them) — the one
-/// list, also consulted by name alone for receivers whose type is not known where a call is
-/// compiled ([`is_shared_method_name`]).
-const PURE_METHODS: [&[&str]; 16] = [
-    &[
-        "clona",
-        "urefu",
-        "herufi_kwa",
-        "biti_ngapi",
-        "unganisha",
-        "kata",
-        "tafuta",
-        "kwa_herufi_ndogo",
-        "kwa_herufi_kubwa",
-        "tupu",
-        "ina",
-        "hesabu",
-        "rudia",
-        "anza_na",
-        "maliza_na",
-        "gawanya",
-        "badilisha",
-    ],
-    &[
-        "clona",
-        "urefu",
-        "pata",
-        "unganisha",
-        "jiunge",
-        "kwa_neno",
-        "vipande",
-    ],
-    &["clona", "idadi", "pata", "funguo", "vipo"],
-    &["ina", "urefu", "clona", "orodha"],
-    &["angu", "ni_tupu", "ni_po", "hakikisha"],
-    &["ni_kosa", "ni_sawa", "kosa", "angu"],
-    &["clona", "kwanza", "pili"],
-    &["sekunde"],
-    &["pata", "weka", "idadi", "shirikisha"],
-    &["imarisha"],
-    &["soma", "andika", "funga"],
-    &["soma", "andika", "funga", "soma_bailisi"],
-    &["pata"],
-    &["tuma"],
-    &["pokea"],
-    &["funga", "fungua", "pata", "weka"],
-];
 
 /// Evaluate a state-free method. Callers must check [`is_pure_method`] first.
 pub(crate) fn pure_method(
@@ -753,12 +688,7 @@ pub(crate) fn pure_method(
 /// Whether `method` mutates `recv` in place (`ongeza`, `ingiza`, `ondoa`, `weka_key`,
 /// `badilisha` on the collection types that have them).
 pub(crate) fn is_mutating(recv: &Value, method: &str) -> bool {
-    match recv {
-        Value::Orodha(_) => matches!(method, "ongeza" | "ingiza" | "ondoa" | "badilisha"),
-        Value::Kamusi(_) => matches!(method, "ingiza" | "weka_key"),
-        Value::Seti(_) => matches!(method, "ongeza" | "ondoa"),
-        _ => false,
-    }
+    receiver_kind(recv).is_some_and(|kind| MUTATING_METHODS[kind as usize].contains(&method))
 }
 
 fn index_arg(args_val: &[Value]) -> Option<usize> {
@@ -859,11 +789,7 @@ pub(crate) type CallByName<'a> = dyn FnMut(&str, &[Value]) -> Result<Value, Eval
 
 /// `Orodha` methods that take the name of a `kazi` (or builtin) to call per element.
 pub(crate) fn is_callback_method(recv: &Value, method: &str) -> bool {
-    matches!(recv, Value::Orodha(_))
-        && matches!(
-            method,
-            "ramani" | "chuja" | "hesabu" | "chunguza" | "kila_na_fahirisi" | "kila_mmoja"
-        )
+    receiver_kind(recv).is_some_and(|kind| CALLBACK_METHODS[kind as usize].contains(&method))
 }
 
 /// Run a callback method; `call(name, args)` invokes a builtin or `kazi` by name the way the
@@ -1167,6 +1093,69 @@ mod tests {
         }
         for n in samples {
             assert_eq!(value::format_namba(n), n.to_string(), "{n:?}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod method_table_tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    /// One value of each receiver kind that can be built without I/O.
+    fn samples() -> Vec<(Kind, Value)> {
+        let gc = Rc::new(RefCell::new(Value::Namba(1.0)));
+        vec![
+            (Kind::Neno, Value::neno("abc")),
+            (Kind::Orodha, Value::list(vec![Value::Namba(1.0)])),
+            (Kind::Kamusi, Value::Kamusi(Rc::default())),
+            (Kind::Seti, Value::Seti(Rc::default())),
+            (
+                Kind::Chaguo,
+                Value::Chaguo(Some(Box::new(Value::Namba(1.0)))),
+            ),
+            (Kind::Tokeo, Value::Tokeo(Ok(Box::new(Value::Namba(1.0))))),
+            (
+                Kind::Jozi,
+                Value::Jozi(Box::new(Value::Namba(1.0)), Box::new(Value::Hamna)),
+            ),
+            (Kind::Wakati, Value::Wakati(0.0)),
+            (
+                Kind::KashaGCDhaifu,
+                Value::KashaGCDhaifu(Rc::downgrade(&gc)),
+            ),
+            (Kind::KashaGC, Value::KashaGC(gc)),
+            (
+                Kind::Kumbukumbu,
+                Value::Kumbukumbu(Box::new(Value::Namba(1.0))),
+            ),
+        ]
+    }
+
+    fn unknown(r: &Result<Value, EvalError>, method: &str) -> bool {
+        matches!(r, Err(EvalError::Unknown(m)) if *m == format!("njia '{method}' haijulikani"))
+    }
+
+    #[test]
+    fn every_listed_method_is_implemented() {
+        let args = [Value::Namba(0.0), Value::Namba(1.0)];
+        for (kind, recv) in samples() {
+            for method in PURE_METHODS[kind as usize] {
+                assert!(is_pure_method(&recv, method));
+                let r = pure_method(&recv, method, &args);
+                assert!(
+                    !unknown(&r, method),
+                    "{kind:?}.{method} is listed but not implemented"
+                );
+            }
+            for method in MUTATING_METHODS[kind as usize] {
+                let mut target = recv.clone();
+                let r = mutate(&mut target, method, &args);
+                assert!(
+                    !unknown(&r, method),
+                    "{kind:?}.{method} is listed but not implemented"
+                );
+            }
         }
     }
 }

@@ -67,6 +67,15 @@ pub fn emit_asb_bytes(module: &Module, source: &str) -> Vec<u8> {
 /// older `pata jenga` carry a different `version=` and must be rebuilt.
 const BYTECODE_VERSION: &str = "13";
 
+/// Every artifact format this build reads and writes, for build caches: a cached artifact made
+/// under different formats (an older or newer toolchain) must be rebuilt, not loaded.
+pub fn artifact_formats() -> String {
+    format!(
+        "{ASB_HEADER_PREFIX}bytecode={BYTECODE_VERSION};compiler={}",
+        env!("CARGO_PKG_VERSION")
+    )
+}
+
 /// Emit a real bytecode artifact.  The header remains intentionally simple and textual so older
 /// runners can reject it cleanly, while the payload is the same deterministic bincode envelope
 /// used by the AST fallback.

@@ -1587,6 +1587,26 @@ impl<'a> Analyzer<'a> {
                     for arg in args {
                         let _ = self.check_expr(*arg, scopes, UseMode::Move);
                     }
+                    // A method no built-in type has (and no `shughuli` block defines) is an error
+                    // here, not a failure when the program runs.
+                    let known = method_receiver(&receiver_ty)
+                        .is_none_or(|r| crate::builtins::has_builtin_method(r, method_name))
+                        || self
+                            .module
+                            .impls
+                            .iter()
+                            .any(|i| i.body.iter().any(|f| f.name == *method_name));
+                    if !known {
+                        self.errors.push(
+                            Diagnostic::new(
+                                "SEM040",
+                                format!("njia '{}' haipo kwa '{}'", method_name, receiver_ty_name),
+                            )
+                            .with_stage("semantiki")
+                            .with_span(*line, 1),
+                        );
+                        return ValueType::Unknown;
+                    }
                     return match (receiver_ty, method_name.as_str()) {
                         (ValueType::Neno, "clona") => ValueType::Neno,
                         (ValueType::Neno, "urefu" | "biti_ngapi") => ValueType::Namba,
@@ -2309,4 +2329,27 @@ pub(crate) fn run_semantic_check_with_modules(
     );
     a.run();
     std::mem::take(&mut a.errors)
+}
+
+/// The built-in method table a receiver type uses, if it has one.
+fn method_receiver(ty: &ValueType) -> Option<crate::builtins::MethodReceiver> {
+    use crate::builtins::MethodReceiver as R;
+    Some(match ty {
+        ValueType::Neno => R::Neno,
+        ValueType::Orodha(_) => R::Orodha,
+        ValueType::Kamusi(_, _) => R::Kamusi,
+        ValueType::Seti(_) => R::Seti,
+        ValueType::Chaguo(_) => R::Chaguo,
+        ValueType::Tokeo(_, _) => R::Tokeo,
+        ValueType::Jozi(_, _) => R::Jozi,
+        ValueType::KashaGC(_) => R::KashaGC,
+        ValueType::KashaGCDhaifu(_) => R::KashaGCDhaifu,
+        ValueType::Faili => R::Faili,
+        ValueType::Mkondo => R::Mkondo,
+        ValueType::Kumbukumbu(_) => R::Kumbukumbu,
+        ValueType::NjiaTx(_) | ValueType::NjiaTxBounded(_) => R::NjiaTx,
+        ValueType::NjiaRx(_) | ValueType::NjiaRxBounded(_) => R::NjiaRx,
+        ValueType::Fungo(_) => R::Fungo,
+        _ => return None,
+    })
 }
