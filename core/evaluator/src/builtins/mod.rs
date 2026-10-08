@@ -76,8 +76,13 @@ pub fn builtins() -> HashMap<String, BuiltinFn> {
 /// refers to builtins by position in this list.
 pub fn builtin_names() -> Vec<String> {
     let mut names: Vec<String> = builtins().into_keys().collect();
-    names.sort_by(|a, b| (a != "chapisha", a).cmp(&(b != "chapisha", b)));
+    names.sort_by(|a, b| index_order(a).cmp(&index_order(b)));
     names
+}
+
+/// The sort key of [`builtin_names`]' order.
+fn index_order(name: &str) -> (bool, &str) {
+    (name != "chapisha", name)
 }
 
 /// Builtins indexed as in [`builtin_names`], plus a by-name index (native code's host's table).
@@ -88,14 +93,13 @@ pub struct BuiltinTable {
 
 impl BuiltinTable {
     pub fn new() -> Self {
-        let mut all = builtins();
+        let mut all: Vec<(String, BuiltinFn)> = builtins().into_iter().collect();
+        all.sort_by(|(a, _), (b, _)| index_order(a).cmp(&index_order(b)));
         let mut fns = Vec::with_capacity(all.len());
         let mut index = HashMap::with_capacity(all.len());
-        for (i, name) in builtin_names().into_iter().enumerate() {
-            if let Some(f) = all.remove(&name) {
-                fns.push(f);
-                index.insert(name, i);
-            }
+        for (i, (name, f)) in all.into_iter().enumerate() {
+            fns.push(f);
+            index.insert(name, i);
         }
         BuiltinTable { fns, index }
     }
