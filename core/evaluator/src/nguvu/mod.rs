@@ -52,8 +52,8 @@ pub struct Code {
 /// Functions that get a direct entry: numeric signature, and a body that lowers without calls
 /// into the host given that exactly these functions are callable directly (an optimistic
 /// fixpoint, so mutually recursive functions qualify together).
-fn direct_entries(program: &BytecodeProgram) -> std::collections::HashSet<usize> {
-    let mut direct: std::collections::HashSet<usize> = program
+fn direct_entries(program: &BytecodeProgram) -> asili_parser::FxHashSet<usize> {
+    let mut direct: asili_parser::FxHashSet<usize> = program
         .functions
         .iter()
         .enumerate()
@@ -61,17 +61,21 @@ fn direct_entries(program: &BytecodeProgram) -> std::collections::HashSet<usize>
         .map(|(i, _)| i)
         .collect();
     loop {
-        let failing: Vec<usize> = direct
+        let mut candidates: Vec<usize> = direct.iter().copied().collect();
+        candidates.sort_unstable();
+        let lowers = par_map(&candidates, |&i| {
+            let ctx = lower::Ctx {
+                program,
+                direct: &direct,
+                entry_direct: true,
+            };
+            lower::lower(i, &program.functions[i], &ctx).is_some()
+        });
+        let failing: Vec<usize> = candidates
             .iter()
-            .copied()
-            .filter(|&i| {
-                let ctx = lower::Ctx {
-                    program,
-                    direct: &direct,
-                    entry_direct: true,
-                };
-                lower::lower(i, &program.functions[i], &ctx).is_none()
-            })
+            .zip(lowers)
+            .filter(|(_, ok)| !ok)
+            .map(|(&i, _)| i)
             .collect();
         if failing.is_empty() {
             return direct;
@@ -80,6 +84,40 @@ fn direct_entries(program: &BytecodeProgram) -> std::collections::HashSet<usize>
             direct.remove(&i);
         }
     }
+}
+
+/// `f` applied to every item, on up to one thread per core, results in the items' order. Threads
+/// claim the next item as they finish one, so one large function does not hold up the rest.
+fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(items.len());
+    if threads <= 1 {
+        return items.iter().map(f).collect();
+    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut done: Vec<(usize, R)> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut out = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(item) = items.get(i) else {
+                            return out;
+                        };
+                        out.push((i, f(item)));
+                    }
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|w| w.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
+            .collect()
+    });
+    done.sort_unstable_by_key(|(i, _)| *i);
+    done.into_iter().map(|(_, r)| r).collect()
 }
 
 fn compile_function(func: &mut ir::Func) -> Result<Code, String> {
@@ -96,27 +134,32 @@ pub fn generate(program: &BytecodeProgram) -> Result<Image, String> {
         return Err("nguvu: mfumo huu bado hauungwi mkono".into());
     }
     let direct = direct_entries(program);
-    // Ordinary entries first (function `i` at `offsets[i]`), then the direct entries.
-    let mut units: Vec<(Option<usize>, Code)> = Vec::new(); // (direct entry of, code)
-    for entry_direct in [false, true] {
-        for (index, function) in program.functions.iter().enumerate() {
-            if entry_direct && !direct.contains(&index) {
-                continue;
-            }
-            let ctx = lower::Ctx {
-                program,
-                direct: &direct,
-                entry_direct,
-            };
-            let mut func = lower::lower(index, function, &ctx)
-                .ok_or_else(|| format!("nguvu: kazi '{}' haikuweza kutafsiriwa", function.name))?;
-            let code = compile_function(&mut func)?;
-            units.push((entry_direct.then_some(index), code));
-        }
+    // Ordinary entries first (function `i` at `offsets[i]`), then the direct entries. Each is
+    // lowered and compiled on its own, in parallel; the image is laid out in this order.
+    let mut jobs: Vec<(bool, usize)> = (0..program.functions.len()).map(|i| (false, i)).collect();
+    jobs.extend(
+        (0..program.functions.len())
+            .filter(|i| direct.contains(i))
+            .map(|i| (true, i)),
+    );
+    let compiled = par_map(&jobs, |&(entry_direct, index)| {
+        let function = &program.functions[index];
+        let ctx = lower::Ctx {
+            program,
+            direct: &direct,
+            entry_direct,
+        };
+        let mut func = lower::lower(index, function, &ctx)
+            .ok_or_else(|| format!("nguvu: kazi '{}' haikuweza kutafsiriwa", function.name))?;
+        compile_function(&mut func)
+    });
+    let mut units: Vec<(Option<usize>, Code)> = Vec::with_capacity(jobs.len()); // (direct entry of, code)
+    for (&(entry_direct, index), code) in jobs.iter().zip(compiled) {
+        units.push((entry_direct.then_some(index), code?));
     }
     let mut code = Vec::new();
     let mut offsets = Vec::with_capacity(program.functions.len());
-    let mut direct_at: std::collections::HashMap<usize, usize> = Default::default();
+    let mut direct_at: asili_parser::FxHashMap<usize, usize> = Default::default();
     let mut placed = Vec::with_capacity(units.len());
     for (of, unit) in &units {
         while code.len() % regalloc::LOOP_ALIGN != 0 {

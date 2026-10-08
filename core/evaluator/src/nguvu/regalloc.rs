@@ -13,7 +13,7 @@
 //! register-resident ones are saved there around runtime calls when caller-saved.
 
 use super::ir::{Class, Func, Inst, VReg};
-use std::collections::HashMap;
+use asili_parser::FxHashMap as HashMap;
 
 /// Where a virtual register lives: a machine register by its target number, or its stack slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -145,7 +145,7 @@ pub fn allocate(func: &Func, target: &Target) -> Allocation {
     // `2i + 1`; the terminator reads at the block's last position.
     let mut ranges: Vec<Vec<(u32, u32)>> = vec![Vec::new(); n];
     let mut calls: Vec<u32> = Vec::new();
-    let mut live_across = HashMap::new();
+    let mut live_across = HashMap::default();
     let mut pos = 0u32;
     for &b in &order {
         let block = &func.blocks[b];
@@ -266,7 +266,7 @@ pub fn allocate(func: &Func, target: &Target) -> Allocation {
             .then(a.cmp(&b))
     });
     // Ranges assigned to each physical register (kept sorted and merged).
-    let mut taken: HashMap<(bool, u8), Vec<(u32, u32)>> = HashMap::new();
+    let mut taken: HashMap<(bool, u8), Vec<(u32, u32)>> = HashMap::default();
     let mut loc = vec![Loc::Slot; n];
     for v in todo {
         let rs = &ranges[v];

@@ -9,7 +9,7 @@
 //! terminates; comparisons it decides become constants for `fold_constants` to turn into jumps.
 
 use super::ir::{Func, ICond, Inst, IntOp, Term, VReg};
-use std::collections::HashMap;
+use asili_parser::FxHashMap as HashMap;
 
 type Range = (i64, i64);
 type State = HashMap<VReg, Range>;
@@ -305,7 +305,7 @@ fn analyze(func: &Func, ctx: &Ctx) -> Option<Vec<Option<State>>> {
     }
     let mut ins: Vec<Option<State>> = vec![None; nb];
     let mut visits = vec![0u32; nb];
-    ins[0] = Some(State::new());
+    ins[0] = Some(State::default());
     let mut work = std::collections::BTreeSet::from([0usize]);
     let mut steps = 0;
     while let Some(b) = work.pop_first() {

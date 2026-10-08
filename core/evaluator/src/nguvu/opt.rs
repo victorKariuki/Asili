@@ -16,7 +16,7 @@
 //! * **Dead code elimination**: pure instructions whose results are never read are dropped.
 
 use super::ir::{Class, Func, ICond, Inst, IntOp, Term, VReg};
-use std::collections::HashMap;
+use asili_parser::FxHashMap as HashMap;
 
 pub fn optimize(func: &mut Func) {
     fold_all_constants(func);
@@ -48,12 +48,12 @@ pub fn optimize(func: &mut Func) {
 /// written once).
 fn constants(func: &Func) -> HashMap<VReg, i64> {
     // Optimistic fixpoint: `None` = not constant; copies resolve once their source does.
-    let mut value: HashMap<VReg, Option<i64>> = HashMap::new();
+    let mut value: HashMap<VReg, Option<i64>> = HashMap::default();
     for round in 0.. {
         if round == 16 {
-            return HashMap::new(); // not settled: assume nothing
+            return HashMap::default(); // not settled: assume nothing
         }
-        let mut next: HashMap<VReg, Option<i64>> = HashMap::new();
+        let mut next: HashMap<VReg, Option<i64>> = HashMap::default();
         let mut merge = |d: VReg, v: Option<i64>| {
             let e = next.entry(d).or_insert(v);
             if *e != v {
@@ -190,7 +190,7 @@ impl<'a> Known<'a> {
     fn new(global: &'a HashMap<VReg, i64>) -> Self {
         Known {
             global,
-            local: HashMap::new(),
+            local: HashMap::default(),
         }
     }
 
@@ -444,9 +444,9 @@ fn reuse_values(func: &mut Func) {
 }
 
 fn hoist_wide_constants(func: &mut Func) {
-    use std::collections::HashSet;
+    use asili_parser::FxHashSet as HashSet;
     // Single-definition constants only: the value is the same wherever the register is read.
-    let mut defs: HashMap<VReg, u32> = HashMap::new();
+    let mut defs: HashMap<VReg, u32> = HashMap::default();
     for block in &func.blocks {
         for inst in &block.insts {
             for d in inst.defs() {
@@ -455,14 +455,14 @@ fn hoist_wide_constants(func: &mut Func) {
         }
     }
     // Only constants read on hot paths: cold exits keep building theirs locally.
-    let mut hot: HashSet<VReg> = HashSet::new();
+    let mut hot: HashSet<VReg> = HashSet::default();
     for (b, block) in func.blocks.iter().enumerate() {
         if !func.cold[b] {
             hot.extend(block.insts.iter().flat_map(|i| i.uses()));
             hot.extend(block.term.uses());
         }
     }
-    let mut value: HashMap<VReg, (Class, u64)> = HashMap::new();
+    let mut value: HashMap<VReg, (Class, u64)> = HashMap::default();
     for block in &func.blocks {
         for inst in &block.insts {
             let (dst, key) = match inst {
@@ -482,7 +482,7 @@ fn hoist_wide_constants(func: &mut Func) {
     if value.is_empty() {
         return;
     }
-    let mut shared: HashMap<(Class, u64), VReg> = HashMap::new();
+    let mut shared: HashMap<(Class, u64), VReg> = HashMap::default();
     let mut entry = Vec::new();
     let mut keys: Vec<(Class, u64)> = value
         .values()
@@ -621,7 +621,7 @@ fn if_convert(func: &mut Func) {
             continue;
         }
         // Compute into fresh registers, then commit each written register with a select.
-        let mut renamed: HashMap<VReg, VReg> = HashMap::new();
+        let mut renamed: HashMap<VReg, VReg> = HashMap::default();
         let mut moved = Vec::new();
         for mut inst in std::mem::take(&mut func.blocks[side].insts) {
             for u in inst.uses_mut() {
@@ -665,8 +665,8 @@ fn if_convert(func: &mut Func) {
 fn select_to_arith(func: &mut Func) {
     for block in &mut func.blocks {
         // Registers holding 0/1 flags / `v + 1` results, as last defined in this block.
-        let mut flag: std::collections::HashSet<VReg> = Default::default();
-        let mut plus_one: HashMap<VReg, VReg> = HashMap::new();
+        let mut flag: asili_parser::FxHashSet<VReg> = Default::default();
+        let mut plus_one: HashMap<VReg, VReg> = HashMap::default();
         for inst in &mut block.insts {
             if let Inst::Select { dst, cond, a, b } = *inst {
                 if b == dst && flag.contains(&cond) && plus_one.get(&a) == Some(&dst) {

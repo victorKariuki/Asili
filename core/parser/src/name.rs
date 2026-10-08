@@ -40,13 +40,27 @@ impl Hasher for FxHasher {
     }
 
     #[inline]
+    fn write_u32(&mut self, n: u32) {
+        self.write_u64(n as u64);
+    }
+
+    #[inline]
+    fn write_usize(&mut self, n: usize) {
+        self.write_u64(n as u64);
+    }
+
+    #[inline]
     fn finish(&self) -> u64 {
         self.0
     }
 }
 
-/// A `HashMap` with [`FxHasher`].
+/// A `HashMap` with [`FxHasher`]: faster than the default for small keys, and its iteration
+/// order depends only on what was inserted, so output built by iterating one is reproducible.
 pub type FxHashMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
+
+/// A `HashSet` with [`FxHasher`] (see [`FxHashMap`]).
+pub type FxHashSet<T> = std::collections::HashSet<T, BuildHasherDefault<FxHasher>>;
 
 struct Entry {
     hash: u64,

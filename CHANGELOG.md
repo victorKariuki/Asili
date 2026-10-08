@@ -139,6 +139,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Faster, reproducible native builds**: nguvu lowers and compiles each function on its own
+  thread (up to one per core, threads taking the next function as they finish, the image laid
+  out in the same order as before). The range analysis joins block states in place instead of
+  allocating a merged copy per edge, and finds widening thresholds by binary search. Native
+  images were not reproducible — the backend iterated `HashMap`s seeded randomly per process,
+  so two builds of the same program could differ — and now use `FxHashMap` throughout, so the
+  same program always gives the same bytes. Images are identical to the sequential build for
+  every example. Sudoku: the native phase 32 → 22 ms, `pata jenga --namna release` ~50 → ~40
+  ms; a 27-function program 816 → ~200 ms on 4 cores.
+
 - **Interned names**: identifiers in the syntax tree (variables, parameters, `kwa` variables,
   pattern bindings, `kazi` names) are `asili_parser::Name`s — a pointer to the one copy of the
   text in a process-wide table, with its hash computed once. The tree-walker's scopes compare

@@ -13,7 +13,7 @@ use crate::native::{
     STATUS_FAIL, STATUS_RETURN,
 };
 use crate::numlist::Kind;
-use std::collections::{HashMap, HashSet};
+use asili_parser::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 /// What the function being lowered may assume about the rest of the program.
 pub struct Ctx<'a> {
@@ -68,7 +68,7 @@ struct Lower<'a> {
     index: usize,
     facts: Vec<NumFact>,
     ints: Vec<bool>,
-    safe_index: std::collections::HashSet<usize>,
+    safe_index: asili_parser::FxHashSet<usize>,
     /// Bytecode numeric register → its virtual register.
     regs: Vec<VReg>,
     /// List register → (data pointer, length) virtual registers.
@@ -189,7 +189,7 @@ pub fn lower(index: usize, function: &BytecodeFunc, ctx: &Ctx) -> Option<super::
         safe_index: analysis.safe_index,
         regs,
         lists,
-        labels: HashMap::new(),
+        labels: HashMap::default(),
         leaders: leaders.clone(),
         cur_pc: 0,
         result_range: (f64::NEG_INFINITY, f64::INFINITY),
@@ -510,8 +510,8 @@ impl<'a> Lower<'a> {
     fn prologue(&mut self) {
         let f = self.function;
         let consts: HashMap<Reg, f64> = f.num_consts.iter().copied().collect();
-        let mut num_params = std::collections::HashSet::new();
-        let mut list_params = std::collections::HashSet::new();
+        let mut num_params = asili_parser::FxHashSet::default();
+        let mut list_params = asili_parser::FxHashSet::default();
         for p in &f.params {
             match p.ty {
                 Ty::Num | Ty::Bool => {

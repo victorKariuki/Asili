@@ -510,7 +510,7 @@ pub(crate) struct NumAnalysis {
     /// Join of every value each numeric register can hold.
     pub regs: Vec<NumFact>,
     /// `ListGet`/`ListSet` instructions whose index is proven in bounds.
-    pub safe_index: std::collections::HashSet<usize>,
+    pub safe_index: asili_parser::FxHashSet<usize>,
     /// Per list register: how native code stores its elements (see `NumList`) — integers of
     /// the narrowest width holding every element it can ever hold when all are exact integers
     /// (within ±2^53), else `f64` bits.
@@ -536,11 +536,11 @@ struct Accumulator {
 /// Find the loop accumulators of `code` (structure only; [`accumulator_caps`] bounds them).
 fn accumulators(
     code: &[Opcode],
-    params: &std::collections::HashSet<Reg>,
+    params: &asili_parser::FxHashSet<Reg>,
     leaders: &std::collections::BTreeSet<usize>,
 ) -> Vec<Accumulator> {
-    use std::collections::HashMap;
-    let mut writes: HashMap<Reg, Vec<usize>> = HashMap::new();
+    use asili_parser::FxHashMap as HashMap;
+    let mut writes: HashMap<Reg, Vec<usize>> = HashMap::default();
     for (pc, op) in code.iter().enumerate() {
         for r in num_writes(op) {
             writes.entry(r).or_default().push(pc);
@@ -622,8 +622,8 @@ fn accumulators(
 fn accumulator_caps(
     accs: &[Accumulator],
     before: &dyn Fn(usize) -> Option<Vec<NumFact>>,
-) -> std::collections::HashMap<Reg, NumFact> {
-    let mut caps = std::collections::HashMap::new();
+) -> asili_parser::FxHashMap<Reg, NumFact> {
+    let mut caps = asili_parser::FxHashMap::default();
     for acc in accs {
         let Some(at_guard) = before(acc.guard) else {
             continue;
@@ -681,25 +681,25 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
         return give_up();
     };
     // Frame entry: constants, parameters, and zero for everything else.
-    let consts: std::collections::HashMap<Reg, f64> = f.num_consts.iter().copied().collect();
-    let num_params: std::collections::HashSet<Reg> = f
+    let consts: asili_parser::FxHashMap<Reg, f64> = f.num_consts.iter().copied().collect();
+    let num_params: asili_parser::FxHashSet<Reg> = f
         .params
         .iter()
         .filter(|p| matches!(p.ty, Ty::Num | Ty::Bool))
         .map(|p| p.reg)
         .collect();
     let accs = accumulators(code, &num_params, &leaders);
-    let mut caps: std::collections::HashMap<Reg, NumFact> = Default::default();
+    let mut caps: asili_parser::FxHashMap<Reg, NumFact> = Default::default();
     let mut cap_rounds = 0;
     let starts: Vec<usize> = leaders.into_iter().filter(|&l| l < code.len()).collect();
     let block_of = |pc: usize| starts.partition_point(|&s| s <= pc) - 1;
-    let params: std::collections::HashSet<Reg> = f
+    let params: asili_parser::FxHashSet<Reg> = f
         .params
         .iter()
         .filter(|p| matches!(p.ty, Ty::Num | Ty::Bool))
         .map(|p| p.reg)
         .collect();
-    let list_params: std::collections::HashSet<Reg> = f
+    let list_params: asili_parser::FxHashSet<Reg> = f
         .params
         .iter()
         .filter(|p| p.ty == Ty::List)
@@ -748,21 +748,20 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
     }
     thresholds.sort_by(f64::total_cmp);
     thresholds.dedup();
+    // The largest threshold at or below `lo`, and the smallest at or above `hi` (binary
+    // searches: `thresholds` is sorted).
     let widen = |m: &mut NumFact, o: &NumFact| {
         if m.lo < o.lo {
-            m.lo = thresholds
-                .iter()
-                .rev()
-                .find(|t| **t <= m.lo)
-                .copied()
-                .unwrap_or(f64::NEG_INFINITY);
+            let i = thresholds.partition_point(|t| *t <= m.lo);
+            m.lo = if i > 0 {
+                thresholds[i - 1]
+            } else {
+                f64::NEG_INFINITY
+            };
         }
         if m.hi > o.hi {
-            m.hi = thresholds
-                .iter()
-                .find(|t| **t >= m.hi)
-                .copied()
-                .unwrap_or(f64::INFINITY);
+            let i = thresholds.partition_point(|t| *t < m.hi);
+            m.hi = thresholds.get(i).copied().unwrap_or(f64::INFINITY);
         }
     };
     for _outer in 0..32 {
@@ -874,37 +873,37 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
                     continue;
                 }
                 let t = block_of(target_pc);
-                let merged = match &in_states[t] {
-                    None => out,
-                    Some(old) => {
-                        let mut merged: Vec<NumFact> =
-                            old.iter().zip(&out).map(|(a, b)| a.join(*b)).collect();
-                        if merged == *old {
-                            continue;
-                        }
-                        // Widen only registers that keep growing at this block.
-                        for (r, (m, o)) in merged.iter_mut().zip(old).enumerate() {
-                            if m != o {
-                                visits[t][r] += 1;
-                                if visits[t][r] > 4 {
-                                    widen(m, o);
-                                    // Never below the old state: the iteration must
-                                    // only grow to terminate.
-                                    if let Some(cap) = caps.get(&(r as Reg)) {
-                                        m.lo = m.lo.max(cap.lo.min(o.lo));
-                                        m.hi = m.hi.min(cap.hi.max(o.hi));
-                                    }
-                                }
-                            }
-                        }
-                        if merged == *old {
-                            continue;
-                        }
-                        merged
-                    }
+                let Some(old) = &mut in_states[t] else {
+                    in_states[t] = Some(out);
+                    work.insert(t);
+                    continue;
                 };
-                in_states[t] = Some(merged);
-                work.insert(t);
+                // Join in place, register by register.
+                let mut changed = false;
+                for (r, (o, b)) in old.iter_mut().zip(&out).enumerate() {
+                    let mut m = o.join(*b);
+                    if m == *o {
+                        continue;
+                    }
+                    // Widen only registers that keep growing at this block.
+                    visits[t][r] += 1;
+                    if visits[t][r] > 4 {
+                        widen(&mut m, o);
+                        // Never below the old state: the iteration must only grow to
+                        // terminate.
+                        if let Some(cap) = caps.get(&(r as Reg)) {
+                            m.lo = m.lo.max(cap.lo.min(o.lo));
+                            m.hi = m.hi.min(cap.hi.max(o.hi));
+                        }
+                    }
+                    if m != *o {
+                        *o = m;
+                        changed = true;
+                    }
+                }
+                if changed {
+                    work.insert(t);
+                }
             }
         }
         if !lists_changed && !accs.is_empty() && cap_rounds < 3 {
@@ -941,7 +940,7 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
         }
         if !lists_changed {
             // Summarize from the converged block states only.
-            let mut safe_index = std::collections::HashSet::new();
+            let mut safe_index = asili_parser::FxHashSet::default();
             for (b, in_state) in in_states.iter().enumerate() {
                 let Some(mut state) = in_state.clone() else {
                     continue;
