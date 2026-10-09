@@ -1,4 +1,4 @@
-# Performance: from tree-walker to native code
+# Performance: from a tree-walker to native code only
 
 How Asili executes programs fast, why it is built this way, what the audit that started this
 work found, and where the remaining gaps are. Benchmark: the Arto Inkala "world's hardest"
@@ -19,7 +19,8 @@ this container is ~3.3 ms for anything).
 | C, gcc -O2 | ≈ 4.7 ms | 8.1 ms |
 | Rust -O | — | 6.8 ms |
 | Asili register VM (removed) | ~110 ms | 118 ms |
-| Asili tree-walker (today's fallback, no native backend) | — | ≈ 945 ms |
+| Asili tree-walker (removed) | — | ≈ 945 ms |
+| Asili as wasm (browser target, Node) | — | ≈ 180 ms |
 | Python 3 | — | 302 ms |
 | Asili LLVM AOT (retired) | 4.8 ms | 10 ms |
 | Asili tree-walker (before) | 3.4 s | — |
@@ -127,9 +128,11 @@ registers.
 
 **One source of truth for semantics.** Every operation on a generic `Value` — operators, casts,
 methods, `?`/`jaribu`, iteration, display — is a function in `eval/ops.rs` / `eval/methods.rs`
-that both the tree-walker and native code's host (`host.rs`) call; `host.rs::numeric_op` is
-the reference numeric semantics native code must match bit for bit. Differential tests (`tests/engines_agree.rs`) run each
-snippet on every engine and require identical values and error text.
+that native code's host (`host.rs`) calls; `host.rs::numeric_op` is the reference numeric
+semantics native code must match bit for bit. Differential tests (`tests/engines_agree.rs`,
+`tests/native_tiers.rs`) check each snippet's native code against the language's reference
+results recorded from the tree-walker before it was removed (`tests/golden/`), values and
+error text alike.
 
 **Native code: one in-house backend, `nguvu`.** `pata jenga` compiles each bytecode function
 to machine code itself — no C source, no LLVM, no external compiler, assembler or linker — and
@@ -138,8 +141,10 @@ versions, architecture and the CPU features it relies on, so a stale or foreign 
 mapped; when it is missing or stale the runner compiles in memory. Generic-value instructions
 call back into the host's single-step function (`Host::exec_slow`) through a small runtime
 table, spilling and reloading only the registers that instruction touches, so native code never
-changes behaviour. There is no bytecode interpreter: without a backend for the platform (or
-with `ASILI_AOT=0`) the tree-walker runs the syntax tree every bytecode artifact carries.
+changes behaviour. There is no interpreter of any kind and no fallback: every program runs as
+native code — in the browser as a wasm module (`nguvu/wasm.rs`) the page instantiates beside the
+evaluator's own, sharing its memory and function table — and a construct the bytecode compiler
+can't lower is a build error.
 
 Pipeline (`core/evaluator/src/nguvu/`):
 - `lower.rs`: bytecode → a typed IR of virtual registers (integer or float class, chosen by the
@@ -202,15 +207,16 @@ window), so a loop's speed no longer depends on where unrelated code shifted it.
 The full checklist — invariants, required tests, benchmark thresholds, how to debug a
 regression — is the `performance-guardrails` skill (`.claude/skills/performance-guardrails/`).
 
-- `tests/engines_agree.rs`: tree-walker vs native code, values and error messages
+- `tests/engines_agree.rs`: native code vs the recorded reference results, values and error messages
   (including list representations: `-0.0` in an integer list, huge integers, lists switching
   to floats, lists across calls).
-- `tests/native_tiers.rs`: tree-walker vs native code (through the on-disk image) bit-for-bit
+- `tests/native_tiers.rs`: native code (through the on-disk image) vs the recorded reference results, bit-for-bit
   on the numeric edge cases (`-0.0`, NaN, ±∞, 2^53, negative `%` and floor division, shifts
   outside `0..=63`, out-of-bounds reads and writes, recursion, labelled loops, callbacks,
   unrolled loops with `vunja`/`endelea`, popcount, small-range division, the full Sudoku).
   Every optimization has been checked by breaking it on purpose and watching a test fail.
-- Both run on x86-64 and on AArch64 (CI's `native-arm64` job).
+- Both run on x86-64 and on AArch64 (CI's `native-arm64` job); `driver/wasm/tests/agree.sh`
+  (CI's `wasm` job) checks every example prints the same through the wasm target.
 - NaN *bit patterns* are the one thing not compared: Asili cannot observe them.
 
 ## Plan and status
@@ -247,13 +253,16 @@ The plan this work followed, in order, and where each step stands:
     built); the tree-walker is the fallback where there is no backend, with the same
     10,000-call depth limit as native code and no nesting limit. Done — native speed
     unchanged; the fallback is ~10× slower than the VM was (Sudoku ≈ 0.95 s).
+13. No fallback anywhere: every construct lowers to bytecode (no mixed mode), tests, coverage,
+    the REPL and the debugger run native code, `nguvu` gained a wasm target for the browser, and
+    the tree-walker was deleted. Done — Sudoku unchanged (≈ 5.5 ms whole process, below clang
+    C), ≈ 180 ms in the browser target instead of ≈ 1 s on the tree-walker.
 
-Next steps are the "Remaining gaps" below.
+Next steps are the "Remaining gaps" below, and for safety-critical use the
+[safety-critical roadmap](safety-critical-roadmap.md).
 
 ## Knobs
 
-- `ASILI_AOT=0` — don't build (at `pata jenga`) or load or compile (at run time) native code:
-  the tree-walker runs the program.
 - `ASILI_BYTECODE_DUMP=1` (at `pata jenga`) — print every compiled `kazi`'s instructions.
 - `ASILI_NGUVU_IR=<file>` / `ASILI_NGUVU_DUMP=<file>` — dump the optimized IR with register
   locations / the machine code, function offsets and load address (in-memory compiles).
@@ -264,12 +273,13 @@ Next steps are the "Remaining gaps" below.
   (`compile_module_explained` names the first `kazi` and line that blocked it). Pattern `weka`,
   computed module constants (an init function the host runs once), maps with computed keys and
   method calls on a receiver whose type is only known at run time all lower. The one construct
-  that does not is `tupa` of a binding declared outside an enclosing loop (the tree-walker fails
-  on the loop's second pass, which a static drop cannot reproduce). A program that does not lower
-  still builds a syntax-tree artifact under `--namna dev`; `--namna release` refuses it.
+  that does not is `tupa` of a binding declared outside an enclosing loop (the reference
+  semantics fail on the loop's second pass, which a static drop cannot reproduce); it is a build
+  error.
 - Threads (`tenda`) and server workers (`mkondo_tumikia`, `mkondo_tumikia_http`) share the
-  bytecode program and its native code (`spawn::Shared`) and build one host per thread; only a
-  program built as a syntax-tree artifact still runs them on the tree-walker.
+  bytecode program and its native code (`spawn::Shared`) and build one host per thread.
+- The wasm target makes no direct calls (every call goes through the host) and has no threads
+  (the browser has none for it).
 - Native-to-native calls are direct only for scalar (`Namba`/`Buliani`) functions without
   lists or generic values; others go through the host's call path. Direct calls pass
   arguments as `f64` through a memory buffer, so `fib(32)` is ~40 ms against C's ~11 ms;
@@ -289,7 +299,6 @@ Next steps are the "Remaining gaps" below.
 - `list_push`/`list_remove` are runtime calls (~1M instructions on the benchmark); inlining the
   common case needs a list layout native code may write directly.
 - Platforms: x86-64 (System V and Windows x64) and AArch64 (Linux, macOS) are supported;
-  Windows on ARM64, 32-bit targets and wasm run on the tree-walker (≈ 10× slower than the
-  removed VM was; a backend or a faster fallback would close it). A hardened-runtime macOS app
-  needs the `com.apple.security.cs.allow-jit` entitlement for native code (without it, the
-  tree-walker).
+  the browser runs wasm modules; Windows on ARM64 and other 32-bit targets have no backend and
+  cannot run programs. A hardened-runtime macOS app needs the
+  `com.apple.security.cs.allow-jit` entitlement for native code.

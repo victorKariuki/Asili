@@ -37,8 +37,8 @@ To build it locally:
 ## Project structure
 
 - **core/** — Language core: `diagnostics` (shared error/diagnostic types), `lexer`, `parser`
-  (includes the semantic analyzer), `evaluator` (tree-walking interpreter and the in-house `nguvu` native backend sharing
-  one implementation of the semantics, plus built-ins). Add or
+  (includes the semantic analyzer), `evaluator` (the bytecode compiler, the in-house `nguvu` native backend and its host, one
+  implementation of the semantics, plus built-ins). Add or
   extend built-ins under `core/evaluator/src/builtins/`. `core/` never depends on `pata/` — a
   type `core/` needs to expose to `pata/` (e.g. the `DebugHook` trait `pata-dap` drives) is
   defined on the `core/` side and re-exported, not the other way around.

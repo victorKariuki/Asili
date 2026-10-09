@@ -52,11 +52,12 @@ Per [spec/07-execution-and-roadmap.md](../spec/07-execution-and-roadmap.md)'s ph
       `[eneo-kazi]` table) share the same single manifest file/syntax as an ordinary project — no
       separate `Asili.toml`. See [package-manager-design.md](package-manager-design.md) for the
       full current architecture.
-- [x] Wasm — `driver/wasm` builds for both `wasm32-unknown-unknown` (browser, `wasm-browser`
-      feature, `console.log`/`console.error` via wasm-bindgen) and `wasm32-wasip1` (WASI,
-      `wasm-wasi` feature — uses `std`'s native WASI support directly, no `wasi` crate needed).
-      Multi-module `leta` resolves via `run_bundle` (in-memory bundler). Verified with real
-      execution under Node's WASI loader and wasm-bindgen JS glue, not just compilation. See
+- [x] Wasm — `driver/wasm` builds for the browser (`wasm32-unknown-unknown`, `wasm-browser`
+      feature, `console.log`/`console.error` via wasm-bindgen). Programs run as native code: a
+      wasm module of their own (`nguvu/wasm.rs`) the page instantiates beside the build.
+      Multi-module `leta` resolves via `run_bundle` (in-memory bundler). Verified by running
+      every example under Node (`driver/wasm/tests/agree.sh`, a CI job). The WASI build was
+      removed: a WASI runtime cannot instantiate the per-program module. See
       [wasm-driver-design.md](wasm-driver-design.md) for the full architecture (dual-target
       feature gating, the `platform.rs` I/O shim, the `run_bundle` bundler vs. the CLI's
       disk-based resolver, and known gaps like no cycle detection).
@@ -161,21 +162,20 @@ Researched, decided, not built.
       separate `f64`, number-list and `Value` register files. Bytecode only ever runs as x86-64
       or AArch64 machine code from Asili's own backend (`core/evaluator/src/nguvu/`, no
       external compiler): `pata jenga` writes `<name>.nguvu`, the runner compiles in memory when
-      it is missing, and there is no bytecode interpreter (the register VM was removed). Where
-      no backend exists (wasm, other CPUs, `ASILI_AOT=0`) the tree-walker runs the syntax tree
-      every bytecode artifact carries. A flow-sensitive integer
+      it is missing, and there is no interpreter of any kind — the register VM and then the
+      tree-walker were removed; in the browser native code is a wasm module. Every construct
+      lowers to bytecode (a construct that doesn't is a build error), and tests, coverage, the
+      REPL and the debugger run native code too. A flow-sensitive integer
       range analysis (`native.rs`) keeps provably whole-number `Namba` registers in `i64` (never
-      by speculation: a register it cannot bound stays `f64`), and drops provably in-range list bounds checks. All engines share one implementation of
-      the language's value semantics (`eval/ops.rs`, `eval/methods.rs`); `tests/engines_agree.rs`
-      and `tests/native_tiers.rs` check that the tree-walker and native code agree
-      bit-for-bit. The Arto Inkala Sudoku (90,665 attempts, 10,041 backtracks) solves in
-      ~2.6 ms native (clang `-O2` C: ~3.1 ms, gcc `-O2` C: ~4.7 ms), vs. ~0.95 s on
-      the tree-walker and 0.3 s in CPython. See [performance.md](performance.md). Remaining: a `kazi` using `tupa`, pattern
-      `weka`, computed-key maps, `shughuli ya` method calls on receivers of statically unknown `umbo`, or the
-      thread-starting builtins runs
-      on the tree-walker (per function — the rest of the program stays bytecode),
-      `kazi` calls from native code go through the interpreter's call path (no inlining yet),
-      and there is no standalone native executable (the library is loaded by `pata tenda`).
+      by speculation: a register it cannot bound stays `f64`), and drops provably in-range list
+      bounds checks. Native code's host calls one implementation of the language's value
+      semantics (`eval/ops.rs`, `eval/methods.rs`, `eval/pattern.rs`); `tests/engines_agree.rs`
+      and `tests/native_tiers.rs` check native code bit-for-bit against reference results
+      recorded from the tree-walker before it was removed. The Arto Inkala Sudoku (90,665
+      attempts, 10,041 backtracks) solves faster than clang `-O2` C (~5.5 ms whole process vs
+      ~6.7 ms), ~180 ms as wasm under Node (it was ~0.95 s on the tree-walker), 0.3 s in CPython.
+      See [performance.md](performance.md); for safety-critical use, the
+      [safety-critical roadmap](safety-critical-roadmap.md).
 
 ---
 

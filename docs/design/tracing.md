@@ -21,11 +21,11 @@ start-up, by installing a sink; the hooks themselves never change.
 
 | Id | `Tukio` | Meaning (as the tree shows it) | Emitted by |
 |---|---|---|---|
-| `0x01` | `Ingia` | *kuingia* — a span starts | `kazi` calls (tree-walker; native code's host), parser blocks and functions |
+| `0x01` | `Ingia` | *kuingia* — a span starts | `kazi` calls (native code's host, with the `kazi`'s line), parser blocks and functions |
 | `0x02` | `Toka` | *kutoka* — the innermost span ends | the same, when they finish |
-| `0x03` | `Kigeuzi` | *kutenga nafasi ya kigeuzi* — a binding | `weka`/`thabiti` on the tree-walker |
+| `0x03` | `Kigeuzi` | *kutenga nafasi ya kigeuzi* — a binding | not emitted since the tree-walker was removed (native code has no binding hooks) |
 | `0x04` | `Hesabu` | *operesheni ya hesabu* | reserved (per-operation events would drown the rest) |
-| `0x05` | `MwitoMfumo` | *mwito wa mfumo* — a builtin call | the tree-walker; native code's host |
+| `0x05` | `MwitoMfumo` | *mwito wa mfumo* — a builtin call | native code's host |
 | `0x06` | `Kosa` | *kosa* — a runtime error | once, by the `kazi` the error first leaves |
 | `0x07` | `Hatua` | *hatua ya ujenzi* — a build phase (a span) | `pata`: `uchanganuzi`, `utatuzi`, `semantiki`, `bytecode`, `msimbo asilia` |
 | `0x08` | `Urejeshaji` | *urejeshaji baada ya kosa la sintaksia* | the parser's synchronize step |
@@ -56,11 +56,10 @@ tree prefixes other threads with `[uzi N]`.
 ## Cost and limits
 
 - Off (the default), every hook is one relaxed atomic load (`asili_trace::on()`); spans store
-  nothing. Measured against the commit before tracing: every benchmark within noise, native and
-  tree-walker.
-- Native code carries no hooks. Calls through native code's host (every call from the tree-walker,
-  calls with list or generic arguments, deep calls) are traced; direct native-to-native calls
-  are not, and native code has no line numbers (they show as 0).
+  nothing. Measured against the commit before tracing: every benchmark within noise.
+- Native code carries no hooks. Calls through native code's host (calls with list or generic
+  arguments, deep calls, every call on the wasm target) are traced with the `kazi`'s source line;
+  direct native-to-native calls are not.
 - Binary frames are what a microcontroller target would emit over a serial line, but Asili has no
   bare-metal target yet: today the format is a compact recording for files.
 - `toka` (which ends the process) flushes the trace first; so do the runner and `pata` on every

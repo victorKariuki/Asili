@@ -122,6 +122,8 @@ copy-on-write rule as lists and maps).
 
 ### 7. Tree-walker (200× native)
 
+*Resolved (2026-10): the tree-walker was removed; wasm has a native target of its own.*
+
 Matters wherever there is no native backend (wasm, other CPUs). *Evidence*: Sudoku 1.0 s vs
 5.2 ms; expression dispatch, variable lookup by scanning scopes, value clone/drop.
 
@@ -145,6 +147,8 @@ Hover, inlay hints, semantic tokens and symbols each lex and parse the full text
 *Fix*: take the tree from `DocStore::parse` (already incremental for diagnostics).
 
 ### 11. Silent fallback to the tree-walker
+
+*Resolved (2026-10): there is no fallback; a construct that doesn't lower is a build error.*
 
 A `kazi` the bytecode compiler cannot lower runs ~200× slower, silently, in debug builds (release
 builds refuse, naming the `kazi`). *Fix*: a warning from `pata jenga` naming each such `kazi`.

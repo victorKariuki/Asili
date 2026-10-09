@@ -4,6 +4,12 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Execution ([02-architecture-and-files.md](02-architecture-and-files.md),
+  [07-execution-and-roadmap.md](07-execution-and-roadmap.md)): there is no interpreter — every
+  program runs as native code (machine code, or a wasm module in the browser), including tests,
+  the REPL and the debugger, and a construct the bytecode compiler can't lower is a build error.
+  No change to the language's meaning.
+
 - Architecture ([02-architecture-and-files.md](02-architecture-and-files.md)): new `core/trace`
   crate (Pata-Trace) for compiler and runtime tracing. No change to the language.
 

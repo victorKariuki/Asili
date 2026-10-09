@@ -10,7 +10,7 @@ Previous: [Tooling and Ecosystem](06-tooling-and-ecosystem.md) | [Overview](../S
 2. **Lexer / Parser** — Written in Rust; produces AST.
 3. **Type checker** — Strict-but-inferred (TypeScript-style).
 4. **Bytecode** — Emit `.asb`, the native backend's input (it carries the syntax tree too).
-5. **Execution** — Native machine code from Asili's own backend (`nguvu`: x86-64 and AArch64 today, no external compiler; **Pata Jenga** builds it ahead of time); the tree-walking evaluator where there is no backend (Web/wasm, other CPUs) and in the REPL.
+5. **Execution** — Native code from Asili's own backend (`nguvu`, no external compiler): x86-64 and AArch64 machine code (**Pata Jenga** builds it ahead of time), and a wasm module in the browser; everything runs this way, including tests, the REPL and the debugger — there is no interpreter.
 
 **Attributes (`#[...]`):** Resolved in the compiler pipeline after parse, before or during codegen. Conditional compilation (`#[sharti(...)]`) determines which code is included per target.
 

@@ -1,10 +1,10 @@
 # evaluator
 
-Purpose: evaluate Asili modules, and lower them to `.asb` bytecode that the in-house `nguvu`
-backend compiles to native code (there is no bytecode interpreter). Programs using unsupported
-constructs retain the serialized-AST evaluator fallback; where there is no native backend the
-tree-walker runs the syntax tree a bytecode artifact carries.
+Purpose: lower Asili modules to `.asb` bytecode and run them as native code from the in-house
+`nguvu` backend (machine code on x86-64/AArch64, a wasm module in the browser). There is no
+interpreter and no fallback: a construct the bytecode compiler can't lower is a build error.
 
-The public `compile_module`/`run_bytecode_function` API covers arithmetic, comparisons, loops,
-lists, indexing, mutation, casts, builtin calls, and user-function calls. `pata jenga` selects
-this native-code path while preserving the tree-walk evaluator for the rest of the language.
+Entry points: `compile_module_explained` (bytecode, or the `kazi` and line that blocked it),
+`NativeProgram` (build once, call functions on fresh hosts; `run_function`/`run_main` wrap it),
+`run_artifact` (an `.asb` with its `.nguvu` image), `ReplSession`, `run_main_with_debug_hook`,
+and the test runner (`execute_tests_with_timeout`, `run_test_with_coverage`).

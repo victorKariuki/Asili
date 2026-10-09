@@ -45,17 +45,17 @@ The repository follows a Linux-kernel–style modular layout. Each directory is 
   stacks and synchronize-style error recovery), and semantic (types + analyzer). Expressions
   are stored in one contiguous arena per module (`Module::exprs`, children referenced by
   `ExprId` index). Integration tests live in `tests/`.
-- **evaluator/** — Executes `.asb` artifacts. Programs the bytecode compiler can lower
-  (`bytecode.rs`) run as x86-64 or AArch64 machine code from Asili's own backend (`nguvu/`, no
-  external compiler): `pata jenga` writes it ahead of time as `<name>.nguvu` next to the `.asb`,
-  and the runner compiles it in memory when that is missing. There is no bytecode interpreter:
-  native code calls back into its host (`host.rs`) for generic operations, and where no backend
-  exists (wasm, other CPUs, `ASILI_AOT=0`) the tree-walking evaluator runs the syntax tree every
-  bytecode artifact carries. `native.rs` holds the runtime ABI and the integer range analysis
-  (proofs only: native code never speculates or deoptimizes). Programs using constructs the
-  bytecode compiler does not lower keep the serialized-AST artifact and the tree-walking
-  evaluator. All engines share one implementation of operators, methods, casts
-  and iteration (`eval/ops.rs`, `eval/methods.rs`). Integration tests live in `tests/`.
+- **evaluator/** — Runs programs. Every program is lowered to bytecode (`bytecode.rs`) and runs
+  as native code from Asili's own backend (`nguvu/`, no external compiler): x86-64 or AArch64
+  machine code, which `pata jenga` writes ahead of time as `<name>.nguvu` next to the `.asb` (the
+  runner compiles it in memory when that is missing), or in the browser a wasm module the page
+  instantiates (`nguvu/wasm.rs`). There is no interpreter of any kind and no fallback: a
+  construct the bytecode compiler does not lower is a build error. Native code calls back into
+  its host (`host.rs`) for generic operations, which share one implementation of operators,
+  methods, casts, patterns and iteration (`eval/ops.rs`, `eval/methods.rs`, `eval/pattern.rs`).
+  `native.rs` holds the runtime ABI and the integer range analysis (proofs only: native code
+  never speculates or deoptimizes). Tests, the REPL and the debugger run native code too.
+  Integration tests live in `tests/`.
 - **diagnostics/** — The "Mwalimu" error reporting system (Context Map).
 - **trace/** — Pata-Trace: one tracing API (`emit`, `enter`, `phase`) for the compiler and
   runtime, with readable-tree, OpenTelemetry-shaped JSON and 4-byte binary outputs, chosen at

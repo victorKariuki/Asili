@@ -1,9 +1,15 @@
 # Wasm driver design
 
+> **Status (2026-10):** programs no longer tree-walk in wasm, and the WASI target described
+> below was removed. The browser build lowers each program to bytecode and compiles it with
+> `nguvu`'s wasm target (`core/evaluator/src/nguvu/wasm.rs`) into a module the page
+> instantiates beside the build (`globalThis.asili_nguvu_load`; see `driver/wasm/README.md`).
+> A WASI runtime cannot instantiate such a module, so `asili_wasi` and the `wasm-wasi` features
+> are gone. The rest of this page is the original design, kept for its I/O-shim rationale.
+
 The Wasm driver is `driver/wasm` (crate `asili-wasm`), a thin layer that runs Asili source in a
 WebAssembly environment. It depends directly on `asili-lexer`, `asili-parser`, and
-`asili-evaluator` (`driver/wasm/Cargo.toml:9-14`) — no separate bytecode/codegen step; a Wasm
-build still tree-walks the same AST as the native CLI.
+`asili-evaluator` (`driver/wasm/Cargo.toml:9-14`).
 
 ## Two targets, one crate
 
