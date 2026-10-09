@@ -18,15 +18,22 @@ pub mod opt;
 pub mod range;
 pub mod regalloc;
 pub mod schedule;
+pub mod wasm;
 pub mod x64;
 
 use crate::bytecode::BytecodeProgram;
 
-/// Whether this build can generate native code for the host.
+/// Whether this build can generate native code for the host: machine code, or a wasm module
+/// in the browser build (a page instantiates it; WASI cannot).
 pub fn supported() -> bool {
     cfg!(any(
         all(any(target_arch = "x86_64", target_arch = "aarch64"), unix),
-        all(target_arch = "x86_64", windows)
+        all(target_arch = "x86_64", windows),
+        all(
+            target_arch = "wasm32",
+            feature = "wasm-browser",
+            not(feature = "wasm-wasi")
+        )
     ))
 }
 
@@ -361,6 +368,59 @@ pub fn load_image_bytes(
 }
 
 /// Compile every function of `program` to machine code in executable memory.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn compile(program: &BytecodeProgram) -> Result<crate::aot::NativeLibrary, String> {
     generate(program)?.load()
+}
+
+/// Compile every function of `program` to one wasm module and instantiate it beside this one
+/// ([`wasm`]); there are no direct entries.
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "wasm-browser",
+    not(feature = "wasm-wasi")
+))]
+pub fn compile(program: &BytecodeProgram) -> Result<crate::aot::NativeLibrary, String> {
+    let funcs = wasm_functions(program)?;
+    let bytes = wasm::module(&funcs)?;
+    let base = crate::platform::load_native_module(&bytes, funcs.len() as u32)?;
+    let entries = (0..funcs.len())
+        .map(|i| {
+            // SAFETY: table slot `base + i` holds function `i` of the module just
+            // instantiated, of exactly the `NativeFn` type; a wasm function pointer is its
+            // table index.
+            unsafe { std::mem::transmute::<usize, crate::native::NativeFn>(base + i) }
+        })
+        .collect();
+    Ok(crate::aot::NativeLibrary::from_parts(Box::new(()), entries))
+}
+
+#[cfg(all(
+    target_arch = "wasm32",
+    any(not(feature = "wasm-browser"), feature = "wasm-wasi")
+))]
+pub fn compile(_program: &BytecodeProgram) -> Result<crate::aot::NativeLibrary, String> {
+    Err("nguvu: mfumo huu bado hauungwi mkono".into())
+}
+
+/// Every function of `program` lowered and optimized, without direct entries (the wasm
+/// target's input).
+pub fn wasm_functions(program: &BytecodeProgram) -> Result<Vec<ir::Func>, String> {
+    let direct = Default::default();
+    program
+        .functions
+        .iter()
+        .enumerate()
+        .map(|(i, function)| {
+            let ctx = lower::Ctx {
+                program,
+                direct: &direct,
+                entry_direct: false,
+            };
+            let mut func = lower::lower(i, function, &ctx)
+                .ok_or_else(|| format!("nguvu: kazi '{}' haikuweza kutafsiriwa", function.name))?;
+            opt::optimize(&mut func);
+            Ok(func)
+        })
+        .collect()
 }

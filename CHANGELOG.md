@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **WebAssembly backend (`nguvu::wasm`)**: in the browser build (the playground) programs now
+  run as native code too — `nguvu` compiles a program's optimized IR to one wasm module that the
+  page instantiates beside the build, sharing its memory and function table, so the host calls
+  each function through a function pointer exactly as it calls machine code elsewhere, and
+  generated code reaches the runtime table with `call_indirect`. Control flow is structured from
+  the dominator tree (Ramsey, "Beyond Relooper"). The Sudoku solver runs in 177 ms for the whole
+  Node process (it took about a second on the tree-walker), and `driver/wasm/tests/agree.sh`
+  (a new CI job) checks that every example prints exactly what native code prints. The pointer
+  fields native code reads (`Host`'s first three, a list's length) are 64-bit words on every
+  target. WASI builds have no way to load a module and cannot run programs.
+
 - **Tracing (Pata-Trace)**: a new `asili-trace` crate gives the compiler and runtime one API
   (`emit`, `enter` spans, `phase` spans) and three outputs chosen at start-up with
   `ASILI_FUATILIA` or `--fuatilia[=namna]` (`pata jenga`, `pata tenda`): `mti`, an indented tree

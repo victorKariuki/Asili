@@ -122,11 +122,14 @@ impl Kind {
 }
 
 /// `repr(C)` with `len` first: native code appends in place and stores the new length at the
-/// list's address (see `native::list_head`).
+/// list's address (see `native::list_head`), as a 64-bit word on every target (a 32-bit target
+/// keeps a zero high half after it).
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub(crate) struct NumList {
     len: usize,
+    #[cfg(target_pointer_width = "32")]
+    len_high: u32,
     /// Element storage, 8-byte aligned: element `i` occupies bytes `i * width ..`.
     words: Vec<u64>,
     kind: Kind,
@@ -151,6 +154,8 @@ impl NumList {
         NumList {
             words: Vec::with_capacity(words_for(capacity, width)),
             len: 0,
+            #[cfg(target_pointer_width = "32")]
+            len_high: 0,
             kind,
             width,
         }

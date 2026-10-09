@@ -2850,7 +2850,6 @@ impl<'a> FunctionCompiler<'a> {
 
 /// Native code for `program`, compiled in memory, or why there is none: no backend for this
 /// platform, or a build failure.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn native_for(
     program: &BytecodeProgram,
 ) -> Result<crate::aot::NativeLibrary, EvalError> {
@@ -2871,17 +2870,13 @@ fn tree_of(program: &BytecodeProgram) -> Result<&Module, EvalError> {
         .ok_or_else(|| EvalError::Unknown("kilele hakina mti wa programu".into()))
 }
 
-/// Run `kuu(hoja)` as native code (on wasm, until it has a backend, on the tree-walker).
+/// Run `kuu(hoja)` as native code.
 pub fn run_bytecode(program: &BytecodeProgram, args: Vec<String>) -> Result<(), EvalError> {
-    #[cfg(not(target_arch = "wasm32"))]
-    return run_bytecode_native(program, None, args);
-    #[cfg(target_arch = "wasm32")]
-    crate::run_main(tree_of(program)?, args)
+    run_bytecode_native(program, None, args)
 }
 
 /// Run `kuu(hoja)` on `library` (built for `program`, e.g. the image `pata jenga` wrote); without
 /// one, native code is compiled in memory.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn run_bytecode_native(
     program: &BytecodeProgram,
     library: Option<&crate::aot::NativeLibrary>,
@@ -2902,7 +2897,6 @@ pub fn run_bytecode_native(
 
 /// Run `kuu` of a program other threads may share (`tenda`, server workers run its `kazi` on
 /// the same native code).
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn run_shared_program(
     program: std::sync::Arc<BytecodeProgram>,
     library: Option<std::sync::Arc<crate::aot::NativeLibrary>>,
@@ -2928,12 +2922,7 @@ pub enum Engine<'l> {
     /// The tree-walking evaluator, on the syntax tree the program carries.
     Tree,
     /// Native code built for this program.
-    #[cfg(not(target_arch = "wasm32"))]
     Native(&'l crate::aot::NativeLibrary),
-    /// Keeps the lifetime used on targets without native code.
-    #[cfg(target_arch = "wasm32")]
-    #[doc(hidden)]
-    _Unused(std::marker::PhantomData<&'l ()>),
 }
 
 /// Run a named function on a specific engine.
@@ -2944,11 +2933,10 @@ pub fn run_bytecode_function_on(
     args: Vec<Value>,
 ) -> Result<Value, EvalError> {
     match engine {
-        #[cfg(not(target_arch = "wasm32"))]
         Engine::Native(library) => {
             crate::host::Host::new(program, library, None).call_by_name(name, args)
         }
-        _ => {
+        Engine::Tree => {
             let module = tree_of(program)?;
             let f =
                 ast_function(module, name).ok_or_else(|| EvalError::UndefinedVar(name.into()))?;
@@ -2957,18 +2945,14 @@ pub fn run_bytecode_function_on(
     }
 }
 
-/// Execute a named function as native code (on wasm, until it has a backend, on the
-/// tree-walker). Useful for embedders and focused tests; the CLI entry point above keeps the
+/// Execute a named function as native code. Useful for embedders and focused tests; the CLI entry point above keeps the
 /// `kuu(hoja)` interface.
 pub fn run_bytecode_function(
     program: &BytecodeProgram,
     name: &str,
     args: Vec<Value>,
 ) -> Result<Value, EvalError> {
-    #[cfg(not(target_arch = "wasm32"))]
-    return run_bytecode_function_on(Engine::Native(&native_for(program)?), program, name, args);
-    #[cfg(target_arch = "wasm32")]
-    run_bytecode_function_on(Engine::Tree, program, name, args)
+    run_bytecode_function_on(Engine::Native(&native_for(program)?), program, name, args)
 }
 
 /// Every `shughuli ya` method, inherent blocks first (the order the tree-walker searches them).

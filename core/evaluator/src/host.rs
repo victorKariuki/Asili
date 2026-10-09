@@ -41,13 +41,16 @@ pub(crate) enum Ret {
 // `repr(C)`, starting with what native code reads by offset (`native::DEPTH_OFFSET` and the
 // next two): direct calls count themselves in `depth`, so the call-depth limit is the same on
 // every tier, and direct entries find the runtime table and their stack limit here.
+// Each is a 64-bit word on every target (a 32-bit target pads the runtime table's address).
 #[repr(C)]
 pub(crate) struct Host<'p> {
-    depth: usize,
+    depth: u64,
     runtime: &'static crate::native::Runtime,
+    #[cfg(target_pointer_width = "32")]
+    runtime_high: u32,
     /// Lowest stack address at which native code may make a direct call, for the stack
     /// segment the current native call runs on (set by `run_native`).
-    stack_limit: usize,
+    stack_limit: u64,
     program: &'p BytecodeProgram,
     builtins: Vec<BuiltinFn>,
     builtin_index: HashMap<String, usize>,
@@ -243,7 +246,9 @@ impl<'p> Host<'p> {
         Host {
             depth: 0,
             runtime: &NATIVE_RUNTIME,
-            stack_limit: usize::MAX,
+            #[cfg(target_pointer_width = "32")]
+            runtime_high: 0,
+            stack_limit: u64::MAX,
             program,
             args: Vec::new(),
             spawners: crate::builtins::MODULE_BUILTINS
@@ -371,7 +376,7 @@ impl<'p> Host<'p> {
 
     fn invoke(&mut self, index: usize, frame: Frame) -> Result<Ret, EvalError> {
         self.depth += 1;
-        if self.depth > MAX_CALL_DEPTH {
+        if self.depth > MAX_CALL_DEPTH as u64 {
             self.depth -= 1;
             return Err(depth_error());
         }
@@ -412,7 +417,7 @@ impl<'p> Host<'p> {
         // the call runs.
         // Direct calls check against the limit of the stack this call runs on (`invoke` may
         // have moved it to a new segment); the caller's limit is back in force after.
-        let outer = std::mem::replace(&mut self.stack_limit, crate::native::stack_limit());
+        let outer = std::mem::replace(&mut self.stack_limit, crate::native::stack_limit() as u64);
         let status = unsafe { native(self.runtime, host, &mut frame, nums) };
         self.stack_limit = outer;
         let pc = (status & 0xffff_ffff) as usize;
@@ -642,7 +647,7 @@ impl<'p> Host<'p> {
         let n = &mut frame.nums;
         match op {
             Opcode::CheckDepth => {
-                if self.depth >= MAX_CALL_DEPTH {
+                if self.depth >= MAX_CALL_DEPTH as u64 {
                     fail!(depth_error());
                 }
             }

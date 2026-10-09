@@ -50,6 +50,35 @@ jobs:
       - name: cargo test -p asili-evaluator
         run: cargo test -p asili-evaluator
 
+  wasm:
+    # The browser build compiles programs to a wasm module it instantiates beside itself (the
+    # playground's native code); every example must print exactly what native code prints.
+    name: Native code as wasm (playground)
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install wasm-bindgen
+        run: |
+          version=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep version | cut -d'"' -f2)
+          cargo install wasm-bindgen-cli --version "$version" --locked
+
+      - name: Examples agree with native code
+        run: driver/wasm/tests/agree.sh
+
   examples:
     name: Lint, build, and test examples
     runs-on: ubuntu-latest

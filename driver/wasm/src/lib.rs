@@ -4,7 +4,7 @@
 //! through `asili_evaluator`'s platform shim, which picks browser (console.log) vs WASI (real
 //! std io/fs) vs an unconfigured wasm32 no-op default based on which Cargo feature is active.
 
-use asili_evaluator::{run_main, EvalError};
+use asili_evaluator::{compile_module_explained, run_bytecode};
 use asili_lexer::tokenize;
 use asili_parser::{merge_modules, parse_tokens, ImportPath, Module};
 use std::collections::HashMap;
@@ -15,8 +15,15 @@ use std::collections::HashMap;
 pub fn run_source(source: &str) -> Result<(), String> {
     let tokens = tokenize(source).map_err(|d| format!("lex: {:?}", d))?;
     let module = parse_tokens(&tokens).map_err(|d| format!("parse: {:?}", d))?;
-    run_main(&module, vec![]).map_err(|e: EvalError| e.to_string())?;
-    Ok(())
+    run_module(&module)
+}
+
+/// Lower `module` to bytecode and run its `kuu` as native code (a wasm module the page
+/// instantiates beside this one; see `asili_evaluator::nguvu::wasm`).
+fn run_module(module: &Module) -> Result<(), String> {
+    let program = compile_module_explained(module)
+        .map_err(|why| format!("{why} bado haiwezi kugeuzwa kuwa bytecode"))?;
+    run_bytecode(&program, vec![]).map_err(|e| e.to_string())
 }
 
 /// Run a multi-module Asili program from in-memory sources (no filesystem access, so this is the
@@ -63,8 +70,7 @@ pub fn run_bundle(entry_name: &str, modules: &HashMap<String, String>) -> Result
     }
 
     let merged = merge_modules(&entrypoint, &parsed);
-    run_main(&merged, vec![]).map_err(|e: EvalError| e.to_string())?;
-    Ok(())
+    run_module(&merged)
 }
 
 #[cfg(all(target_arch = "wasm32", feature = "wasm-browser"))]

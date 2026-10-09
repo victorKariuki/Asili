@@ -52,7 +52,10 @@ the wasm-bindgen `init()` glue.
   `pata jenga --tenda`.
 - `index.html` / `style.css` — page layout (editor pane + output pane).
 - `main.js` — loads the wasm package, wires up CodeMirror 6 (via `esm.sh`, no npm/bundler step),
-  and calls the wasm build's exported `run(source)` on click (or Ctrl/Cmd+Enter). Output is
+  and calls the wasm build's exported `run(source)` on click (or Ctrl/Cmd+Enter). `run`
+  compiles the program to bytecode and then to a wasm module of its own (Asili's `nguvu`
+  backend), which `main.js`'s `asili_nguvu_load` instantiates beside the build — so programs
+  run as native wasm code, not interpreted. Output is
   captured by temporarily wrapping `console.log`/`console.error`, which is what `driver/wasm`'s
   `wasm-browser` I/O shim writes to (see
   [core/evaluator/src/platform.rs](/core/evaluator/src/platform.rs)).

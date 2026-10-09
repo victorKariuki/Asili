@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use asili_parser::Module;
 
-#[cfg(not(target_arch = "wasm32"))]
 use crate::bytecode::BytecodeProgram;
 use crate::value::{EvalError, Value};
 
@@ -18,7 +17,6 @@ pub(crate) enum Shared {
     /// Run on the tree-walker (an AST artifact, or a caller that is itself tree-walking).
     Tree(Arc<Module>),
     /// Run as native code built from this bytecode.
-    #[cfg(not(target_arch = "wasm32"))]
     Code {
         program: Arc<BytecodeProgram>,
         native: Arc<crate::aot::NativeLibrary>,
@@ -33,7 +31,6 @@ impl Shared {
     pub(crate) fn has_kazi(&self, name: &str) -> bool {
         match self {
             Shared::Tree(module) => module.functions.iter().any(|f| f.name == name),
-            #[cfg(not(target_arch = "wasm32"))]
             Shared::Code { program, .. } => program.find_function(name).is_some(),
         }
     }
@@ -55,7 +52,6 @@ impl Shared {
                     tree.call(module, f, args)
                 })
             }
-            #[cfg(not(target_arch = "wasm32"))]
             Shared::Code { program, native } => {
                 let mut host = crate::host::Host::new(program, native, Some(self.clone()));
                 body(&mut |name: &str, args: Vec<Value>| host.call_by_name(name, args))

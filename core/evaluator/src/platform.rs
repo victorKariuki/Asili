@@ -138,6 +138,16 @@ mod browser {
         pub fn log(s: &str);
         #[wasm_bindgen(js_namespace = console, js_name = error)]
         pub fn error(s: &str);
+        /// The page's loader for native code (`asili_nguvu_load` on `globalThis`): instantiate
+        /// `bytes` with `env.memory`, `env.table` and `env.base` (where the table grew by
+        /// `count`), and return that base. See `load_native_module`.
+        #[wasm_bindgen(catch, js_name = asili_nguvu_load)]
+        pub fn nguvu_load(
+            bytes: &[u8],
+            count: u32,
+            memory: JsValue,
+            table: JsValue,
+        ) -> Result<u32, JsValue>;
     }
 }
 
@@ -183,6 +193,21 @@ pub fn write_stdout(_s: &str) {}
     not(feature = "wasm-wasi")
 ))]
 pub fn write_stderr(_s: &str) {}
+
+/// Instantiate a wasm module of native code beside this one (sharing its memory and function
+/// table) whose `count` functions fill the table from the index returned (see `nguvu::wasm`).
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "wasm-browser",
+    not(feature = "wasm-wasi")
+))]
+pub fn load_native_module(bytes: &[u8], count: u32) -> Result<usize, String> {
+    let memory = wasm_bindgen::memory();
+    let table = wasm_bindgen::function_table();
+    browser::nguvu_load(bytes, count, memory, table)
+        .map(|base| base as usize)
+        .map_err(|e| format!("msimbo asilia haukupakiwa: {e:?}"))
+}
 
 #[cfg(all(
     target_arch = "wasm32",

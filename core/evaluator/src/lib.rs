@@ -1,30 +1,22 @@
 //! Asili interpreter and TIR/ASB emission.
 
 pub mod alloc;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod aot;
 mod asb;
 pub mod builtins;
 pub mod bundle;
 mod bytecode;
-#[cfg(not(target_arch = "wasm32"))]
 mod compiled;
 pub mod debug_hook;
 mod env;
 mod eval;
-#[cfg(not(target_arch = "wasm32"))]
 mod host;
-#[cfg(not(target_arch = "wasm32"))]
 mod native;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod nguvu;
-#[cfg(not(target_arch = "wasm32"))]
 mod numlist;
 mod platform;
-#[cfg(not(target_arch = "wasm32"))]
 mod repl;
 pub mod runtime;
-#[cfg(not(target_arch = "wasm32"))]
 mod scalars;
 mod signal;
 mod spawn;
@@ -33,18 +25,15 @@ mod value;
 
 pub use crate::builtins::BuiltinFn;
 pub use asb::{artifact_formats, load_asb, load_asb_bytecode, parse_format, AsbLoadError};
-#[cfg(not(target_arch = "wasm32"))]
 pub use bytecode::run_bytecode_native;
 pub use bytecode::{
     compile_module, compile_module_explained, compile_module_with, run_bytecode,
     run_bytecode_function, run_bytecode_function_on, BytecodeProgram, CompileOptions, Engine,
     Opcode,
 };
-#[cfg(not(target_arch = "wasm32"))]
 pub use compiled::NativeProgram;
 pub use env::Env;
 pub use eval::eval_expr;
-#[cfg(not(target_arch = "wasm32"))]
 pub use repl::ReplSession;
 pub use runtime::EvalMetrics;
 pub use tir::{emit_asb_from_tir, lower_to_tir, validate_module, TypedIrFunction, TypedIrModule};

@@ -10,6 +10,16 @@ import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6";
 
 import init, { run } from "./pkg/asili_wasm.js";
 
+// Programs run as native code: the wasm build compiles each one to a small wasm module of its
+// own (core/evaluator/src/nguvu/wasm.rs) and asks the page to instantiate it against the
+// build's memory and function table, in table slots grown for it. The modules are a few
+// kilobytes, well within what browsers compile synchronously on the main thread.
+globalThis.asili_nguvu_load = (bytes, count, memory, table) => {
+  const base = table.grow(count);
+  new WebAssembly.Instance(new WebAssembly.Module(bytes), { env: { memory, table, base } });
+  return base;
+};
+
 // Keywords mirrored from pata/lsp/src/hover.rs's KEYWORDS list — keep in sync if that list grows.
 const KEYWORDS = new Set([
   "leta", "kazi", "umbo", "sifa", "shughuli", "ya", "weka", "thabiti", "rejesha", "ikiwa",
