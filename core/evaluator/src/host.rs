@@ -340,7 +340,10 @@ impl<'p> Host<'p> {
         let mut frame = self.pool.pop().unwrap_or_default();
         frame.nums.clear();
         frame.nums.resize(f.num_regs as usize, 0.0);
-        frame.lists.clear();
+        // Lists keep their storage, emptied, so a frame reused from the pool allocates nothing
+        // for lists of the sizes it held before.
+        frame.lists.truncate(f.list_regs as usize);
+        frame.lists.iter_mut().for_each(NumList::clear);
         frame
             .lists
             .resize_with(f.list_regs as usize, NumList::default);
@@ -751,8 +754,16 @@ impl<'p> Host<'p> {
                 n[*dst as usize] = frame.lists[*list as usize].len() as f64
             }
             Opcode::ListMov { dst, src } => {
-                let copy = frame.lists[*src as usize].clone();
-                frame.lists[*dst as usize] = copy;
+                if dst != src {
+                    let (d, s) = (*dst as usize, *src as usize);
+                    // A copy into the register's own storage (no allocation when it fits).
+                    let (a, b) = frame.lists.split_at_mut(d.max(s));
+                    if d < s {
+                        a[d].clone_from(&b[0]);
+                    } else {
+                        b[0].clone_from(&a[s]);
+                    }
+                }
             }
             Opcode::ListFromVal { dst, src } => match list_from_value(&frame.vals[*src as usize]) {
                 Ok(list) => frame.lists[*dst as usize] = list,
@@ -1080,7 +1091,7 @@ fn operand_value(frame: &Frame, op: Operand) -> Value {
 fn copy_operand(from: &Frame, src: Operand, to: &mut Frame, dst: Operand) {
     match dst.ty {
         Ty::Num | Ty::Bool => to.nums[dst.reg as usize] = from.nums[src.reg as usize],
-        Ty::List => to.lists[dst.reg as usize] = from.lists[src.reg as usize].clone(),
+        Ty::List => to.lists[dst.reg as usize].clone_from(&from.lists[src.reg as usize]),
         Ty::Val => to.vals[dst.reg as usize] = from.vals[src.reg as usize].clone(),
     }
 }

@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   prints each strict function's bound on steps per call and on frame memory. New example
   `examples/kidhibiti` (a bounded controller step); the Sudoku benchmark now reports the worst
   run beside the best (native 5.2 ms best, 5.8 ms worst over 20 runs; clang C 6.6 / 9.3 ms).
+  Strict code allocates nothing while it runs: list copies reuse the destination register's
+  storage (`NumList::clone_from`) and pooled frames keep their lists' storage, so a strict call
+  doing a thousand times the work allocates exactly what one doing it once does
+  (`tests/salama_memory.rs`, a counting allocator); `kumbukumbu` bounds the frame memory.
 
 - **WebAssembly backend (`nguvu::wasm`)**: in the browser build (the playground) programs now
   run as native code too — `nguvu` compiles a program's optimized IR to one wasm module that the

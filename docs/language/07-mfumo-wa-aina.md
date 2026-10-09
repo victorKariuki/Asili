@@ -219,7 +219,9 @@ are known when the program is built (for controllers and other code that must ne
 - nothing that allocates or calls out: numeric arithmetic, comparisons, reading and writing
   existing list elements and `urefu()` only (no `ongeza`, no text, no builtins but `sakafu`/`dari`).
 
-Breaking a rule is a build error naming the function and line. For each strict function
+Breaking a rule is a build error naming the function and line. Strict code allocates nothing
+while it runs (passing a list to a strict callee copies it into storage the callee's frame
+already has), so after the first call its memory use is fixed. For each strict function
 `pata jenga` prints an upper bound on the steps one call runs and on the frame memory it needs:
 
 ```

@@ -124,7 +124,7 @@ impl Kind {
 /// `repr(C)` with `len` first: native code appends in place and stores the new length at the
 /// list's address (see `native::list_head`), as a 64-bit word on every target (a 32-bit target
 /// keeps a zero high half after it).
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 #[repr(C)]
 pub(crate) struct NumList {
     len: usize,
@@ -142,6 +142,29 @@ fn words_for(n: usize, width: usize) -> usize {
     (n * width).div_ceil(8)
 }
 
+// Copies reuse the destination's storage (`clone_from`), so copying a list into a register that
+// already held one of the same size allocates nothing: strict code passes lists to its callees
+// without allocating (see `salama.rs`).
+impl Clone for NumList {
+    fn clone(&self) -> Self {
+        NumList {
+            len: self.len,
+            #[cfg(target_pointer_width = "32")]
+            len_high: 0,
+            words: self.words.clone(),
+            kind: self.kind,
+            width: self.width,
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.len = source.len;
+        self.words.clone_from(&source.words);
+        self.kind = source.kind;
+        self.width = source.width;
+    }
+}
+
 impl Default for NumList {
     fn default() -> Self {
         NumList::with_kind(Kind::U8, 0)
@@ -149,6 +172,14 @@ impl Default for NumList {
 }
 
 impl NumList {
+    /// Empty — exactly a new list (`NumList::default`) — keeping its storage for reuse.
+    pub(crate) fn clear(&mut self) {
+        self.len = 0;
+        self.words.clear();
+        self.kind = Kind::U8;
+        self.width = Kind::U8.width();
+    }
+
     fn with_kind(kind: Kind, capacity: usize) -> Self {
         let width = kind.width();
         NumList {
