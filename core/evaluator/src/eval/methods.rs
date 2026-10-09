@@ -1,7 +1,6 @@
 //! Receiver methods that need no interpreter state.
 //!
-//! Shared by the tree-walking evaluator and native code's host so both execution paths agree on
-//! behaviour and error text.
+//! The one definition of each method's behaviour and error text, called by native code's host.
 
 use std::rc::Rc;
 use unicode_segmentation::UnicodeSegmentation;
@@ -111,12 +110,6 @@ fn plain_ascii(b: &[u8]) -> bool {
     tail[..rest.len()].copy_from_slice(rest);
     !flagged(u64::from_le_bytes(tail))
 }
-
-/// `recv.field`: the named field of a `umbo` value.
-pub(crate) fn field_of(recv: &Value, field: &str) -> Result<Value, EvalError> {
-    field_ref(recv, field).cloned()
-}
-
 /// [`field_ref`], trying position `slot` first (where the field is declared).
 #[inline]
 pub(crate) fn field_at<'v>(

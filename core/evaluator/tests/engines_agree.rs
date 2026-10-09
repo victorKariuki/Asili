@@ -1,10 +1,10 @@
-//! Differential tests: the tree-walking evaluator and the native `nguvu` code built from the
-//! program's bytecode must agree on each snippet — values and error messages alike. Operator, cast, method, unwrapping, iteration and display
-//! semantics are shared code (`eval::ops`, `eval::methods`), and these tests keep it that way.
+//! Differential tests: native `nguvu` code built from each snippet's bytecode must give the
+//! language's reference results (`tests/golden/engines_agree.txt`, recorded from the tree-walking
+//! evaluator before it was removed) — values and error messages alike. Operator, cast, method,
+//! unwrapping, iteration and display semantics are shared code (`eval::ops`, `eval::methods`),
+//! and these tests keep them right.
 
-use asili_evaluator::{
-    compile_module_explained, run_bytecode_function_on, run_function, Engine, Value,
-};
+use asili_evaluator::{compile_module_explained, run_bytecode_function_on, Value};
 use asili_lexer::tokenize;
 use asili_parser::parse_tokens;
 
@@ -33,34 +33,21 @@ fn agree(name: &str, source: &str, functions: &[&str]) {
 
 fn agree_program(
     name: &str,
-    module: &asili_parser::Module,
+    _module: &asili_parser::Module,
     program: &asili_evaluator::BytecodeProgram,
     functions: &[&str],
 ) {
-    let (module, program) = (module, program);
-    // The in-house native backend, where the host supports it.
-    let own = asili_evaluator::nguvu::supported()
-        .then(|| asili_evaluator::nguvu::compile(program).expect("nguvu compile"));
-    let show = |r: Result<Value, asili_evaluator::EvalError>| match r {
-        Ok(v) => canon(&v),
-        Err(e) => format!("ERR {e}"),
-    };
+    if !asili_evaluator::nguvu::supported() {
+        return;
+    }
+    let own = asili_evaluator::nguvu::compile(program).expect("nguvu compile");
     for function in functions {
-        let tree = show(run_function(module, function, vec![]));
-        let tree = golden::expected("engines_agree", &format!("{name}::{function}"), &tree);
-        let host = |engine| show(run_bytecode_function_on(engine, program, function, vec![]));
-        assert_eq!(
-            host(Engine::Tree),
-            tree,
-            "{name}::{function}: the program's own syntax tree vs tree-walker"
-        );
-        if let Some(own) = &own {
-            assert_eq!(
-                host(Engine::Native(own)),
-                tree,
-                "{name}::{function}: nguvu vs tree-walker"
-            );
-        }
+        let got = match run_bytecode_function_on(&own, program, function, vec![]) {
+            Ok(v) => canon(&v),
+            Err(e) => format!("ERR {e}"),
+        };
+        let key = format!("{name}::{function}");
+        assert_eq!(got, golden::expected("engines_agree", &key, &got), "{key}");
     }
 }
 
@@ -850,10 +837,10 @@ fn own_kazi_shadow_builtins() {
         }
         "#;
     agree("shadow", source, &["t"]);
-    // Agreeing is not enough: every engine used to call the builtins instead.
+    // Every engine used to call the builtins instead.
     let module = parse_tokens(&tokenize(source).unwrap()).unwrap();
     assert_eq!(
-        canon(&run_function(&module, "t", vec![]).unwrap()),
+        canon(&asili_evaluator::run_function(&module, "t", vec![]).unwrap()),
         canon(&Value::Namba(204.75))
     );
 }

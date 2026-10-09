@@ -19,7 +19,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         "mkondo_unganisha".to_string(),
         Box::new(|args: &[Value]| {
             let addr = super::arg_str(args, 0);
-            #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+            #[cfg(not(target_arch = "wasm32"))]
             {
                 match TcpStream::connect(&addr) {
                     Ok(s) => {
@@ -29,7 +29,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
                     Err(e) => Ok(Value::kosa(e.to_string())),
                 }
             }
-            #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
+            #[cfg(target_arch = "wasm32")]
             Ok(Value::kosa(
                 "mkondo_unganisha: haipatikani kwenye kivinjari",
             ))
@@ -39,14 +39,14 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         "mkondo_sikiliza".to_string(),
         Box::new(|args: &[Value]| {
             let addr = super::arg_str(args, 0);
-            #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+            #[cfg(not(target_arch = "wasm32"))]
             {
                 match std::net::TcpListener::bind(&addr) {
                     Ok(l) => Ok(Value::sawa(Value::MkondoSikilizaji(Arc::new(l)))),
                     Err(e) => Ok(Value::kosa(e.to_string())),
                 }
             }
-            #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
+            #[cfg(target_arch = "wasm32")]
             Ok(Value::kosa("mkondo_sikiliza: haipatikani kwenye kivinjari"))
         }),
     );

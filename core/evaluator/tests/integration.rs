@@ -3,9 +3,8 @@
 use std::collections::HashMap;
 
 use asili_evaluator::{
-    eval_expr, execute_tests, execute_tests_with_timeout, run_function, run_function_with_metrics,
-    run_function_with_telemetry, run_main, run_test_with_coverage, run_test_with_fixtures,
-    run_test_with_module, Value,
+    execute_tests, execute_tests_with_timeout, run_function, run_main, run_test_with_coverage,
+    run_test_with_fixtures, run_test_with_module, Value,
 };
 use asili_lexer::tokenize;
 use asili_parser::{parse_tokens, semantic_check_with_env, FnContract, Module, ValueType};
@@ -110,25 +109,6 @@ fn asb_roundtrip() {
 }
 
 #[test]
-fn eval_expr_literals_and_arithmetic() {
-    let mut module = parse_and_check(
-        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
-         kazi add() -> Namba { rejesha 2 + 3 }",
-    );
-    let left = module.exprs.add(asili_parser::Expr::Number("2".into()));
-    let right = module.exprs.add(asili_parser::Expr::Number("3".into()));
-    let sum = module.exprs.add(asili_parser::Expr::Binary {
-        left,
-        op: asili_parser::BinaryOp::Add,
-        right,
-        line: 1,
-    });
-    let mut env = asili_evaluator::Env::new();
-    let v = eval_expr(sum, &mut env, &module).expect("eval");
-    assert_eq!(v, Value::Namba(5.0));
-}
-
-#[test]
 fn run_function_returns_value() {
     let module = parse_and_check(
         "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
@@ -136,35 +116,6 @@ fn run_function_returns_value() {
     );
     let v = run_function(&module, "seven", vec![]).expect("run");
     assert_eq!(v, Value::Namba(7.0));
-}
-
-#[test]
-fn run_function_with_telemetry_returns_peak_depth() {
-    let module = parse_and_check(
-        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
-         kazi seven() -> Namba { rejesha 7 }",
-    );
-    let (v, peak) = run_function_with_telemetry(&module, "seven", vec![]).expect("run");
-    assert_eq!(v, Value::Namba(7.0));
-    assert!(peak > 0, "peak depth should be tracked");
-}
-
-#[test]
-fn run_function_with_metrics_counts_hot_path_operations() {
-    let module = parse_and_check(
-        "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
-         kazi hot() -> Namba {
-             weka a = [1, 2, 3]
-             weka x = a[1]?
-             rejesha x + a.urefu()
-         }",
-    );
-    let (value, metrics) = run_function_with_metrics(&module, "hot", vec![]).expect("run");
-    assert_eq!(value, Value::Namba(5.0));
-    assert!(metrics.expressions > 0);
-    assert!(metrics.statements > 0);
-    assert!(metrics.index_reads >= 1);
-    assert!(metrics.method_calls >= 1);
 }
 
 #[test]
@@ -750,8 +701,8 @@ fn kipeo_and_mizizi() {
 fn cast_to_biti8_fallible() {
     let module = parse_only(
         "kazi kuu(hoja: Orodha<Neno>) -> Tupu { }
-         kazi cast_ok() -> Namba { rejesha 100 kama Biti8 }
-         kazi cast_fail() -> Namba { rejesha 1000 kama Biti8 }",
+         kazi cast_ok() -> Chaguo<Namba> { rejesha 100 kama Biti8 }
+         kazi cast_fail() -> Chaguo<Namba> { rejesha 1000 kama Biti8 }",
     );
     let v = run_function(&module, "cast_ok", vec![]).expect("run");
     assert_eq!(v, Value::Chaguo(Some(Box::new(Value::Namba(100.0)))));

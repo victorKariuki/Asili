@@ -179,7 +179,8 @@ extern "C" fn native_exec(
     }
 }
 
-pub(crate) use crate::runtime::MAX_CALL_DEPTH;
+/// Deepest chain of `kazi` calls a program may make; one more fails with `undani mno`.
+pub(crate) const MAX_CALL_DEPTH: usize = 10_000;
 
 /// The error of a call past [`MAX_CALL_DEPTH`].
 fn depth_error() -> EvalError {
@@ -236,7 +237,8 @@ fn flag(b: bool) -> f64 {
 
 impl<'p> Host<'p> {
     /// A host running `program` on `native` (built from exactly this program). `shared`
-    /// describes the program to the threads it starts; without it they run on the tree-walker.
+    /// describes the program to the threads it starts; without it the first thread started
+    /// builds a shared copy.
     pub(crate) fn new(
         program: &'p BytecodeProgram,
         native: &'p crate::aot::NativeLibrary,
@@ -350,7 +352,11 @@ impl<'p> Host<'p> {
         frame
     }
 
-    fn release(&mut self, frame: Frame) {
+    /// Return a finished call's frame to the pool. Its generic values are dropped now — a file
+    /// or connection a `kazi` held is released when the call ends, not when the frame is next
+    /// reused.
+    fn release(&mut self, mut frame: Frame) {
+        frame.vals.clear();
         self.pool.push(frame);
     }
 
@@ -509,7 +515,7 @@ impl<'p> Host<'p> {
     }
 
     /// Run the `kazi` registered (`sikiliza_ishara`) for a signal that arrived, if any. Polled
-    /// whenever native code calls into the host, as the tree-walker polls before each statement.
+    /// whenever native code calls into the host.
     fn poll_signal(&mut self) -> Result<(), EvalError> {
         let signal = crate::signal::take_pending();
         if signal == 0 {
@@ -607,7 +613,7 @@ impl<'p> Host<'p> {
                 binding,
             } => {
                 let mut bound: Vec<(Reg, Value)> = Vec::new();
-                let matched = crate::eval::expr::match_pattern(
+                let matched = crate::eval::pattern::match_pattern(
                     pattern,
                     &frame.vals[*src as usize],
                     &mut |name, v| {
@@ -621,7 +627,7 @@ impl<'p> Host<'p> {
                         frame.vals[reg as usize] = v;
                     }
                 } else if *binding {
-                    return Flow::Fail(crate::eval::stmt::let_pattern_mismatch());
+                    return Flow::Fail(crate::eval::pattern::let_pattern_mismatch());
                 }
                 frame.nums[*dst as usize] = flag(matched);
                 return Flow::Next;
@@ -658,7 +664,7 @@ impl<'p> Host<'p> {
                 if let Some(hook) = &self.debug {
                     // A fresh snapshot before `should_pause` may block, so a `variables` request
                     // made while paused sees this line's values: the locals visible here, then
-                    // the predefined names (the tree-walker's outermost scope).
+                    // the predefined names.
                     let mut bindings: Vec<(String, String)> = binds
                         .iter()
                         .map(|(name, op)| {

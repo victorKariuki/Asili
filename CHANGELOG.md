@@ -490,6 +490,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **The tree-walking evaluator**: every program runs as native code — machine code on x86-64
+  and AArch64, a wasm module in the browser — and nothing interprets a syntax tree any more
+  (`eval/expr.rs`, `eval/stmt.rs`, `runtime.rs`, `Env`, `TreeContext`, `Engine::Tree`,
+  `Shared::Tree`, `EvalOut`, `eval_expr`, `run_function_with_builtins`/`_with_telemetry`/
+  `_with_metrics`, `load_asb` for syntax-tree artifacts). `eval/` keeps only the shared value
+  semantics (`ops`, `methods`, `pattern`). `run_function` and `run_main` keep their signatures and
+  build native code. The differential tests compare native code with the tree-walker's recorded
+  results (`tests/golden/`). Running everything natively found a real bug, fixed here: the host
+  pooled finished frames without dropping their generic values, so a `Mkondo` or `Faili` a `kazi`
+  held stayed open until the frame was reused — now released when the call returns.
+
+- **WASI build** (`asili_wasi`, the `wasm-wasi` features): a WASI runtime cannot instantiate the
+  wasm module a program compiles to, so the browser build is the one wasm target.
+
 - **Syntax-tree artifacts and the native fallback**: `pata jenga` always writes bytecode (both
   profiles fail on a program that does not lower, naming the `kazi` and line); a native platform
   runs only native code — the image beside the artifact, or native code compiled at start-up —

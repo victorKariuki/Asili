@@ -24,16 +24,12 @@ pub mod x64;
 use crate::bytecode::BytecodeProgram;
 
 /// Whether this build can generate native code for the host: machine code, or a wasm module
-/// in the browser build (a page instantiates it; WASI cannot).
+/// in the browser build (the page instantiates it).
 pub fn supported() -> bool {
     cfg!(any(
         all(any(target_arch = "x86_64", target_arch = "aarch64"), unix),
         all(target_arch = "x86_64", windows),
-        all(
-            target_arch = "wasm32",
-            feature = "wasm-browser",
-            not(feature = "wasm-wasi")
-        )
+        all(target_arch = "wasm32", feature = "wasm-browser")
     ))
 }
 
@@ -375,11 +371,7 @@ pub fn compile(program: &BytecodeProgram) -> Result<crate::aot::NativeLibrary, S
 
 /// Compile every function of `program` to one wasm module and instantiate it beside this one
 /// ([`wasm`]); there are no direct entries.
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "wasm-browser",
-    not(feature = "wasm-wasi")
-))]
+#[cfg(all(target_arch = "wasm32", feature = "wasm-browser"))]
 pub fn compile(program: &BytecodeProgram) -> Result<crate::aot::NativeLibrary, String> {
     let funcs = wasm_functions(program)?;
     let bytes = wasm::module(&funcs)?;
@@ -395,10 +387,7 @@ pub fn compile(program: &BytecodeProgram) -> Result<crate::aot::NativeLibrary, S
     Ok(crate::aot::NativeLibrary::from_parts(Box::new(()), entries))
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    any(not(feature = "wasm-browser"), feature = "wasm-wasi")
-))]
+#[cfg(all(target_arch = "wasm32", not(feature = "wasm-browser")))]
 pub fn compile(_program: &BytecodeProgram) -> Result<crate::aot::NativeLibrary, String> {
     Err("nguvu: mfumo huu bado hauungwi mkono".into())
 }

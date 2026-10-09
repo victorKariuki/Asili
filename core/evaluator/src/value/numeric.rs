@@ -2,37 +2,13 @@
 
 use std::cmp::Ordering;
 
-use super::{EvalError, EvalOut, LoopAction, Value};
-
-pub(crate) fn handle_loop_out(my_label: Option<&String>, out: EvalOut) -> LoopAction {
-    match out {
-        EvalOut::Return(v) => LoopAction::Propagate(EvalOut::Return(v)),
-        EvalOut::Break(None) => LoopAction::Break,
-        EvalOut::Break(Some(ref l)) => {
-            if my_label == Some(l) {
-                LoopAction::Break
-            } else {
-                LoopAction::Propagate(EvalOut::Break(Some(l.clone())))
-            }
-        }
-        EvalOut::Continue(None) => LoopAction::Continue,
-        EvalOut::Continue(Some(ref l)) => {
-            if my_label != Some(l) {
-                LoopAction::Propagate(EvalOut::Continue(Some(l.clone())))
-            } else {
-                LoopAction::Continue
-            }
-        }
-        EvalOut::Next => LoopAction::Continue,
-    }
-}
-
+use super::{EvalError, Value};
 // TODO: parse_number silently returns 0.0 for any invalid numeric literal (e.g. "0x1F", "1_000",
 // "1e3" with locale-specific separators, binary "0b1010"). Invalid literals should produce a lex
 // error at tokenization time, not silently evaluate to zero at runtime.
 pub(crate) fn parse_number(s: &str) -> f64 {
     // Most literals are short runs of digits: exact as integers, and much cheaper than the
-    // general float parser (the tree-walker parses a literal each time it evaluates one).
+    // general float parser.
     let b = s.as_bytes();
     if !b.is_empty() && b.len() <= 15 && b.iter().all(u8::is_ascii_digit) {
         return b.iter().fold(0u64, |n, d| n * 10 + (d - b'0') as u64) as f64;
@@ -268,16 +244,4 @@ pub(crate) fn binary_cmp_neno(l: &Value, r: &Value, f: impl Fn(Ordering) -> bool
         (Value::Neno(s1), Value::Neno(s2)) => Some(Value::Ukweli(f(s1.cmp(s2)))),
         _ => None,
     }
-}
-
-pub(crate) fn assign_f64_op(
-    current: &Value,
-    rhs: &Value,
-    op_name: &str,
-    f: impl Fn(f64, f64) -> f64,
-) -> Result<Value, EvalError> {
-    let a =
-        as_f64(current).ok_or_else(|| EvalError::TypeErr(format!("{op_name} inahitaji Namba")))?;
-    let b = as_f64(rhs).ok_or_else(|| EvalError::TypeErr(format!("{op_name} inahitaji Namba")))?;
-    Ok(Value::Namba(f(a, b)))
 }

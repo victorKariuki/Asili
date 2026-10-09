@@ -1,6 +1,6 @@
 //! Majira (time): majira, sasa, sekunde, kutoka_sekunde, umbiza, lala.
 
-#[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use std::collections::HashMap;
@@ -28,14 +28,14 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 }
 
 fn now_secs() -> f64 {
-    #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+    #[cfg(not(target_arch = "wasm32"))]
     {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs_f64()
     }
-    #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
+    #[cfg(target_arch = "wasm32")]
     {
         0.0_f64
     }
@@ -99,12 +99,12 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         "lala".to_string(),
         Box::new(|args: &[Value]| {
             let secs = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0);
-            #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+            #[cfg(not(target_arch = "wasm32"))]
             {
                 crate::platform::flush_stdout();
                 std::thread::sleep(std::time::Duration::from_secs_f64(secs));
             }
-            #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
+            #[cfg(target_arch = "wasm32")]
             let _ = secs;
             Ok(Value::Tupu)
         }),

@@ -1,8 +1,7 @@
-//! Operator semantics shared by the tree-walking evaluator and native code's host.
+//! Operator semantics on generic values, called by native code's host.
 //!
-//! Both engines evaluate operands their own way (native code compiles typed
-//! registers itself), but every operation on generic `Value`s goes through these functions so the two
-//! can never disagree.
+//! Native code compiles operations on typed (numeric) registers itself, with the same results;
+//! every operation on generic `Value`s goes through these functions.
 
 use asili_parser::{BinaryOp, UnaryOp};
 use std::cmp::Ordering;

@@ -10,9 +10,9 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     m.insert(
         "vigezo".to_string(),
         Box::new(|_args: &[Value]| {
-            #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+            #[cfg(not(target_arch = "wasm32"))]
             let args_vec: Vec<Value> = std::env::args().map(Value::neno).collect();
-            #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
+            #[cfg(target_arch = "wasm32")]
             let args_vec: Vec<Value> = Vec::new();
             Ok(Value::list(args_vec))
         }),
@@ -20,12 +20,12 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     m.insert(
         "pata_env".to_string(),
         Box::new(|args: &[Value]| {
-            #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+            #[cfg(not(target_arch = "wasm32"))]
             let val = {
                 let name = super::arg_str(args, 0);
                 std::env::var(&name).ok().map(|s| Box::new(Value::neno(s)))
             };
-            #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
+            #[cfg(target_arch = "wasm32")]
             let val = None::<Box<Value>>;
             Ok(Value::Chaguo(val))
         }),
@@ -34,13 +34,13 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         "toka".to_string(),
         Box::new(|args: &[Value]| {
             let code = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0) as i32;
-            #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+            #[cfg(not(target_arch = "wasm32"))]
             {
                 crate::platform::flush_stdout();
                 asili_trace::finish();
                 std::process::exit(code);
             }
-            #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
+            #[cfg(target_arch = "wasm32")]
             {
                 let _ = code;
                 Ok(Value::Tupu)

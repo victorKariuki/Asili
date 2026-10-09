@@ -2,8 +2,8 @@
 //!
 //! A [`Name`] is a pointer to the one copy of its text in a process-wide table, so comparing two
 //! names is comparing two pointers, copying one copies a pointer, and hashing one writes a hash
-//! computed once when the text was first seen. Variable lookups in the tree-walker's scopes, and
-//! every other map keyed by an identifier, use them instead of comparing strings.
+//! computed once when the text was first seen. Maps keyed by an identifier use them instead of
+//! comparing strings.
 //!
 //! Interned text is never freed: the table holds each distinct identifier a process has seen,
 //! which for a compiler, a run or an editor session is small.

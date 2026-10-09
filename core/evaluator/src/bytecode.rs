@@ -11,9 +11,8 @@
 //! Numeric code therefore never touches the `Value` enum: `a + b` is one `Add` instruction on two
 //! `f64` registers, `ikiwa x < y` is one fused compare-and-branch, `b[i]?` on an
 //! `Orodha<Namba>` is one bounds-checked load, and every numeric literal lives in a register that
-//! is filled once when the frame is entered. Generic operations reuse the tree-walking
-//! evaluator's shared helpers (`eval::methods`) so both execution paths agree on behaviour and
-//! error text.
+//! is filled once when the frame is entered. Generic operations go through the shared value
+//! semantics (`eval::ops`, `eval::methods`).
 //!
 //! A program containing syntax that is not represented here does not compile:
 //! [`compile_module_explained`] names the `kazi` and line.
@@ -481,8 +480,7 @@ pub struct BytecodeProgram {
     pub constants: Vec<StoredConstant>,
     pub functions: Vec<BytecodeFunc>,
     pub entry: String,
-    /// The module's syntax tree (build caches read the module back from it; on wasm, until it
-    /// has a backend, the tree-walker runs it).
+    /// The module's syntax tree (build caches read the module back from it).
     pub ast: Option<asili_parser::Module>,
     /// Every type a `shughuli ya` block is written for, even an empty one (for the error a
     /// method call on that type gives when no such method exists).
@@ -2862,14 +2860,6 @@ pub(crate) fn native_for(
         .map_err(|e| EvalError::Unknown(format!("msimbo asilia haukujengwa: {e}")))
 }
 
-/// The syntax tree a bytecode program carries, for the tree-walker.
-fn tree_of(program: &BytecodeProgram) -> Result<&Module, EvalError> {
-    program
-        .ast
-        .as_ref()
-        .ok_or_else(|| EvalError::Unknown("kilele hakina mti wa programu".into()))
-}
-
 /// Run `kuu(hoja)` as native code.
 pub fn run_bytecode(program: &BytecodeProgram, args: Vec<String>) -> Result<(), EvalError> {
     run_bytecode_native(program, None, args)
@@ -2916,43 +2906,24 @@ pub(crate) fn run_shared_program(
     Ok(())
 }
 
-/// Which engine runs a program's functions, for differential testing.
-#[derive(Clone, Copy)]
-pub enum Engine<'l> {
-    /// The tree-walking evaluator, on the syntax tree the program carries.
-    Tree,
-    /// Native code built for this program.
-    Native(&'l crate::aot::NativeLibrary),
-}
-
-/// Run a named function on a specific engine.
+/// Run a named function on native code built for `program` (e.g. an image loaded from disk).
 pub fn run_bytecode_function_on(
-    engine: Engine<'_>,
+    library: &crate::aot::NativeLibrary,
     program: &BytecodeProgram,
     name: &str,
     args: Vec<Value>,
 ) -> Result<Value, EvalError> {
-    match engine {
-        Engine::Native(library) => {
-            crate::host::Host::new(program, library, None).call_by_name(name, args)
-        }
-        Engine::Tree => {
-            let module = tree_of(program)?;
-            let f =
-                ast_function(module, name).ok_or_else(|| EvalError::UndefinedVar(name.into()))?;
-            crate::TreeContext::new(module)?.call(module, f, args)
-        }
-    }
+    crate::host::Host::new(program, library, None).call_by_name(name, args)
 }
 
-/// Execute a named function as native code. Useful for embedders and focused tests; the CLI entry point above keeps the
-/// `kuu(hoja)` interface.
+/// Execute a named function as native code. Useful for embedders and focused tests; the CLI
+/// entry point above keeps the `kuu(hoja)` interface.
 pub fn run_bytecode_function(
     program: &BytecodeProgram,
     name: &str,
     args: Vec<Value>,
 ) -> Result<Value, EvalError> {
-    run_bytecode_function_on(Engine::Native(&native_for(program)?), program, name, args)
+    run_bytecode_function_on(&native_for(program)?, program, name, args)
 }
 
 /// Every `shughuli ya` method, inherent blocks first (the order the tree-walker searches them).
@@ -2973,23 +2944,6 @@ pub(crate) fn impl_function_name(target: &str, trait_name: Option<&str>, method:
         Some(t) => format!("{target}<{t}>::{method}"),
     }
 }
-
-/// The syntax tree of program function `name` (a module function, or a method by its
-/// `impl_function_name`).
-pub(crate) fn ast_function<'m>(module: &'m Module, name: &str) -> Option<&'m Function> {
-    module
-        .functions
-        .iter()
-        .find(|f| f.name == name)
-        .or_else(|| {
-            module.impls.iter().find_map(|i| {
-                i.body.iter().find(|f| {
-                    impl_function_name(&i.target, i.trait_name.as_deref(), &f.name) == name
-                })
-            })
-        })
-}
-
 /// The names a pattern binds, each once, in first-bound order.
 fn pattern_names(pat: &Pattern, out: &mut Vec<String>) {
     match pat {

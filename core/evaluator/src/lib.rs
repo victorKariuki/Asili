@@ -1,4 +1,7 @@
-//! Asili interpreter and TIR/ASB emission.
+//! Asili's runtime: programs are lowered to bytecode ([`compile_module`]) and run as native
+//! code built by Asili's own backend ([`nguvu`]: machine code, or a wasm module in the browser),
+//! whose host ([`host`]) runs what the machine code hands back on the shared value semantics
+//! (`eval`). Also builtins, `.asb` artifacts and the test runner.
 
 pub mod alloc;
 pub mod aot;
@@ -16,7 +19,6 @@ pub mod nguvu;
 mod numlist;
 mod platform;
 mod repl;
-pub mod runtime;
 mod scalars;
 mod signal;
 mod spawn;
@@ -24,23 +26,18 @@ mod tir;
 mod value;
 
 pub use crate::builtins::BuiltinFn;
-pub use asb::{artifact_formats, load_asb, load_asb_bytecode, parse_format, AsbLoadError};
+pub use asb::{artifact_formats, load_asb_bytecode, parse_format, AsbLoadError};
 pub use bytecode::run_bytecode_native;
 pub use bytecode::{
     compile_module, compile_module_explained, compile_module_with, run_bytecode,
-    run_bytecode_function, run_bytecode_function_on, BytecodeProgram, CompileOptions, Engine,
-    Opcode,
+    run_bytecode_function, run_bytecode_function_on, BytecodeProgram, CompileOptions, Opcode,
 };
 pub use compiled::NativeProgram;
-pub use env::Env;
-pub use eval::eval_expr;
 pub use repl::ReplSession;
-pub use runtime::EvalMetrics;
 pub use tir::{emit_asb_from_tir, lower_to_tir, validate_module, TypedIrFunction, TypedIrModule};
-pub use value::{ErrorKind, EvalError, EvalOut, Value};
+pub use value::{ErrorKind, EvalError, Value};
 
 use asili_parser::{Function, Module};
-use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TestResult {
@@ -49,181 +46,50 @@ pub struct TestResult {
     pub message: String,
 }
 
-/// Run a single function by name with the given arguments. Used for both `kuu` and tests.
+/// Run `module`'s function `func_name` with `args` as native code (built for this one call).
 pub fn run_function(
     module: &Module,
     func_name: &str,
     args: Vec<Value>,
 ) -> Result<Value, EvalError> {
-    run_function_with_telemetry(module, func_name, args).map(|(v, _)| v)
+    NativeProgram::build(module)?.call(func_name, args)
 }
 
-/// Evaluate each module-level `thabiti` constant and bind it in `rt`'s current scope. Module-level
-/// constants (including ones merged in from `leta`-imported modules — see merge_for_eval in
-/// pata/cli) were previously type-checked and exported but never actually bound at runtime, so
-/// referencing one by name failed with UndefinedVar. Call once per fresh Env, before pushing the
-/// function's own scope, so constants act as globals for the rest of execution.
-/// A reusable tree-walker (threads of a tree-walked program): the environment (global and
-/// module constants) and builtin table are built once, and each call only pushes a scope for
-/// its parameters.
-pub(crate) struct TreeContext {
-    env: Env,
-    builtins: runtime::Builtins,
-}
-
-impl TreeContext {
-    pub(crate) fn new(module: &Module) -> Result<Self, EvalError> {
-        let mut env = Env::new();
-        env.seed_global_constants();
-        let mut rt = runtime::Runtime::new(&mut env, module);
-        seed_module_constants(module, &mut rt)?;
-        let builtins = std::mem::take(&mut rt.builtins);
-        drop(rt);
-        Ok(TreeContext { env, builtins })
-    }
-
-    /// Run `f` (a function of `module`) on the tree-walker.
-    pub(crate) fn call(
-        &mut self,
-        module: &Module,
-        f: &Function,
-        args: Vec<Value>,
-    ) -> Result<Value, EvalError> {
-        let builtins = std::mem::take(&mut self.builtins);
-        let mut rt = runtime::Runtime::with_builtins(&mut self.env, module, builtins);
-        let out = eval::call_body(&mut rt, f, args);
-        self.builtins = std::mem::take(&mut rt.builtins);
-        out
-    }
-}
-
-fn seed_module_constants(module: &Module, rt: &mut runtime::Runtime) -> Result<(), EvalError> {
-    for c in &module.constants {
-        let val = eval::eval_expr_impl(c.value, rt)?;
-        rt.env.define(asili_parser::Name::new(&c.name), val);
-    }
-    Ok(())
-}
-
-/// Find `func_name` in `module` and check it takes exactly `argc` arguments.
-fn find_function<'m>(
-    module: &'m Module,
-    func_name: &str,
-    argc: usize,
-) -> Result<&'m Function, EvalError> {
-    let f = module
+/// The arguments `kuu` takes: `hoja: Orodha<Neno>` when it declares a parameter.
+fn main_args(module: &Module, args: Vec<String>) -> Vec<Value> {
+    let takes_args = module
         .functions
         .iter()
-        .find(|x| x.name == func_name)
-        .ok_or_else(|| EvalError::UndefinedVar(func_name.to_string()))?;
-    if f.params.len() != argc {
-        return Err(EvalError::TypeErr(format!(
-            "kazi {} inahitaji hoja {}",
-            func_name,
-            f.params.len()
-        )));
+        .any(|f| f.name == "kuu" && !f.params.is_empty());
+    if takes_args {
+        vec![Value::list(args.into_iter().map(Value::neno).collect())]
+    } else {
+        Vec::new()
     }
-    Ok(f)
 }
 
-/// The one tree-walker entry path every `run_*` function uses: a fresh `Env` with the global
-/// and module constants, `f`'s parameters bound to `args`, `f`'s body evaluated. `setup`
-/// configures the runtime first (metrics, coverage, a debugger); `report` reads it afterwards,
-/// whether or not the call failed.
-fn run_in_fresh_runtime<T>(
-    module: &Module,
-    f: &Function,
-    args: Vec<Value>,
-    builtins: Option<HashMap<String, BuiltinFn>>,
-    setup: impl FnOnce(&mut runtime::Runtime),
-    report: impl FnOnce(runtime::Runtime) -> T,
-) -> (Result<Value, EvalError>, T) {
-    let mut env = Env::new();
-    env.seed_global_constants();
-    let mut rt = match builtins {
-        Some(b) => {
-            runtime::Runtime::with_builtins(&mut env, module, runtime::unshadowed(b, module))
-        }
-        None => runtime::Runtime::new(&mut env, module),
-    };
-    setup(&mut rt);
-    let result =
-        seed_module_constants(module, &mut rt).and_then(|()| eval::call_body(&mut rt, f, args));
-    (result, report(rt))
-}
-
-/// Run a single function with custom builtins (for testing).
-pub fn run_function_with_builtins(
-    module: &Module,
-    func_name: &str,
-    args: Vec<Value>,
-    builtins: HashMap<String, BuiltinFn>,
-) -> Result<Value, EvalError> {
-    let f = find_function(module, func_name, args.len())?;
-    run_in_fresh_runtime(module, f, args, Some(builtins), |_| {}, |_| ()).0
-}
-
-/// Like `run_function` but returns peak evaluation depth for telemetry (development/validation).
-pub fn run_function_with_telemetry(
-    module: &Module,
-    func_name: &str,
-    args: Vec<Value>,
-) -> Result<(Value, usize), EvalError> {
-    let f = find_function(module, func_name, args.len())?;
-    let (result, depth) = run_in_fresh_runtime(module, f, args, None, |_| {}, |rt| rt.peak_depth());
-    result.map(|v| (v, depth))
-}
-
-pub fn run_function_with_metrics(
-    module: &Module,
-    func_name: &str,
-    args: Vec<Value>,
-) -> Result<(Value, EvalMetrics), EvalError> {
-    let f = find_function(module, func_name, args.len())?;
-    let (result, metrics) = run_in_fresh_runtime(
-        module,
-        f,
-        args,
-        None,
-        |rt| rt.enable_metrics(),
-        |rt| rt.metrics().cloned().unwrap_or_default(),
-    );
-    result.map(|v| (v, metrics))
-}
-
-/// Run `kuu` with CLI args as `hoja: Orodha<Neno>`.
+/// Run `kuu` with CLI args as `hoja: Orodha<Neno>`, as native code.
 pub fn run_main(module: &Module, args: Vec<String>) -> Result<(), EvalError> {
-    let hoja = Value::list(args.into_iter().map(Value::neno).collect());
-    run_function(module, "kuu", vec![hoja]).map(|_| ())
+    NativeProgram::build(module)?
+        .call("kuu", main_args(module, args))
+        .map(|_| ())
 }
 
 /// Like `run_main`, but with a real debugger (`pata-dap`'s `DapSession`, driving a
-/// `debug_hook::RealDebugHook`) attached: `eval_stmt_impl` will snapshot bindings into `hook`
-/// and call `hook.should_pause(line)` before every statement, genuinely pausing this thread at a
+/// `debug_hook::RealDebugHook`) attached: the host snapshots bindings into `hook` and calls
+/// `hook.should_pause(line)` before every statement, genuinely pausing this thread at a
 /// configured breakpoint until the debugger resumes it.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn run_main_with_debug_hook(
     module: &Module,
     args: Vec<String>,
     hook: std::sync::Arc<dyn debug_hook::DebugHook>,
 ) -> Result<(), EvalError> {
-    let hoja = Value::list(args.into_iter().map(Value::neno).collect());
-    let f = module
-        .functions
-        .iter()
-        .find(|x| x.name == "kuu")
-        .ok_or_else(|| EvalError::UndefinedVar("kuu".to_string()))?;
-    let args = if f.params.is_empty() {
-        vec![]
-    } else {
-        vec![hoja]
-    };
     let options = bytecode::CompileOptions {
         lines: true,
         bindings: true,
     };
     NativeProgram::build_with(module, options)?
-        .call_with_debugger("kuu", args, hook)
+        .call_with_debugger("kuu", main_args(module, args), hook)
         .map(|_| ())
 }
 
@@ -242,7 +108,6 @@ fn test_result(function: &Function, result: Result<Value, EvalError>) -> TestRes
 
 /// Run a single test function (no args) as native code. Returns pass/fail from actual
 /// execution; a module that cannot be built to native code fails the test with the reason.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn run_test_with_module(module: &Module, function: &Function) -> TestResult {
     match NativeProgram::build(module) {
         Ok(program) => test_result(function, program.call(&function.name, vec![])),
@@ -251,11 +116,10 @@ pub fn run_test_with_module(module: &Module, function: &Function) -> TestResult 
 }
 
 /// Like `run_test_with_module`, but also returns the set of source lines actually executed
-/// while running this one test — real line-level coverage from `Runtime::executed_lines`
-/// (`Stmt::line()` recorded on every statement evaluated), not a function-name presence check.
+/// while running this one test — real line-level coverage from a build that marks every
+/// statement (`Opcode::Line`), not a function-name presence check.
 /// A test that panics still reports whatever lines ran before the panic, since partial coverage
 /// from a failing test is real coverage, not nothing.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn run_test_with_coverage(
     module: &Module,
     function: &Function,
@@ -274,7 +138,6 @@ pub fn run_test_with_coverage(
 }
 
 /// Execute tests by running each function. Each test is tied to its module.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn execute_tests(modules_and_tests: &[(Module, Function)], fail_fast: bool) -> Vec<TestResult> {
     execute_tests_with_timeout(modules_and_tests, fail_fast, None)
 }
@@ -294,7 +157,6 @@ pub fn execute_tests(modules_and_tests: &[(Module, Function)], fail_fast: bool) 
 /// `run_test_with_fixtures`) — every test in this crate's public API that executes tests goes
 /// through this one function, so fixture support reaches `pata jaribu`'s sequential, parallel,
 /// and timed paths alike without each needing its own copy of the setup/teardown logic.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn execute_tests_with_timeout(
     modules_and_tests: &[(Module, Function)],
     fail_fast: bool,
@@ -328,7 +190,6 @@ pub fn execute_tests_with_timeout(
 /// Every `#[baada]` still runs even if an earlier one in the same module panics, and even if the
 /// test body itself failed — teardown functions exist to release resources acquired by setup,
 /// and one broken teardown shouldn't prevent the others from having a chance to run.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn run_test_with_fixtures(
     module: &Module,
     function: &Function,
@@ -401,7 +262,6 @@ fn fixture_error_message(e: EvalError) -> String {
 /// Run one test with a wall-clock timeout, on a dedicated thread. See
 /// `execute_tests_with_timeout`'s doc comment for what happens on an actual timeout (the thread
 /// is not killed, only no longer waited on).
-#[cfg(not(target_arch = "wasm32"))]
 fn run_test_with_timeout(
     program: &NativeProgram,
     function: &Function,
@@ -532,27 +392,27 @@ pub fn run_artifact(path: &std::path::Path, args: Vec<String>) -> Result<(), Run
 }
 
 /// Run an `.asb` artifact's `kuu` as native code: the image `pata jenga` built next to it
-/// (`<name>.nguvu`) when it exists and was built from exactly this bytecode, else compiled in
-/// memory. An artifact holding only a syntax tree (from an older `pata`) must be rebuilt.
+/// (`<name>.nguvu`) when it exists and was built from exactly this bytecode for this machine,
+/// else compiled in memory. An artifact holding only a syntax tree (from an older `pata`) must
+/// be rebuilt.
 pub fn run_asb(
     bytes: &[u8],
     asb_path: Option<&std::path::Path>,
     args: Vec<String>,
 ) -> Result<(), RunAsbError> {
-    #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+    #[cfg(not(target_arch = "wasm32"))]
     let _output = platform::BlockOutput::begin();
     on_known_stack(|| run_asb_here(bytes, Image::Beside(asb_path), args))
 }
 
 /// Run a program carried inside the running executable ([`bundle`]).
 pub fn run_bundle(bundle: &bundle::Bundle, args: Vec<String>) -> Result<(), RunAsbError> {
-    #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+    #[cfg(not(target_arch = "wasm32"))]
     let _output = platform::BlockOutput::begin();
     on_known_stack(|| run_asb_here(&bundle.asb, Image::Bytes(bundle.image.as_deref()), args))
 }
 
 /// Where a bytecode artifact's native image comes from.
-#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 enum Image<'a> {
     /// `<name>.nguvu` beside the artifact at this path.
     Beside(Option<&'a std::path::Path>),
@@ -560,11 +420,11 @@ enum Image<'a> {
     Bytes(Option<&'a [u8]>),
 }
 
-/// Run `f` on a stack whose size `stacker` knows. Both engines grow the stack on demand
-/// (`stacker::maybe_grow` per call or block); where the remaining stack is unknown — musl's
-/// main thread reports only its committed pages — every call near the edge would map, and on
-/// return unmap, a fresh segment (800,000 times for `fib(32)`). One large, lazily committed
-/// segment up front avoids that.
+/// Run `f` on a stack whose size `stacker` knows. Native calls grow the stack on demand
+/// (`stacker::maybe_grow` in the host); where the remaining stack is unknown — musl's main
+/// thread reports only its committed pages — every call near the edge would map, and on return
+/// unmap, a fresh segment (800,000 times for `fib(32)`). One large, lazily committed segment up
+/// front avoids that.
 fn on_known_stack<R>(f: impl FnOnce() -> R) -> R {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -579,51 +439,33 @@ fn on_known_stack<R>(f: impl FnOnce() -> R) -> R {
 }
 
 fn run_asb_here(bytes: &[u8], source: Image<'_>, args: Vec<String>) -> Result<(), RunAsbError> {
-    if parse_format(bytes).as_deref() == Some("bytecode") {
-        let program = load_asb_bytecode(bytes).map_err(|e| RunAsbError::Load(e.to_string()))?;
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            // Native code beside the artifact: the machine-code image `pata jenga` wrote
-            // (`<name>.nguvu`). When it is missing or stale, native code is compiled in memory
-            // (`run_shared_program`).
-            let image = || match source {
-                Image::Beside(path) => {
-                    let path = path?;
-                    let file =
-                        path.with_file_name(nguvu::image_file_name(path.file_stem()?.to_str()?));
-                    file.is_file()
-                        .then(|| nguvu::load_image(&file, &program).ok())
-                        .flatten()
-                }
-                Image::Bytes(bytes) => nguvu::load_image_bytes(bytes?, &program).ok(),
-            };
-            let library = if nguvu::supported() { image() } else { None };
-            return bytecode::run_shared_program(
-                std::sync::Arc::new(program),
-                library.map(std::sync::Arc::new),
-                args,
-            )
-            .map_err(RunAsbError::Run);
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = source;
-            return run_bytecode(&program, args).map_err(RunAsbError::Run);
-        }
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = (bytes, source, args);
-        Err(RunAsbError::Load(
+    if parse_format(bytes).as_deref() != Some("bytecode") {
+        return Err(RunAsbError::Load(
             "kilele hiki kina mti wa programu tu (cha pata ya zamani): kijenge upya kwa `pata jenga`"
                 .into(),
-        ))
+        ));
     }
-    #[cfg(target_arch = "wasm32")]
-    {
-        let module = load_asb(bytes).map_err(|e| RunAsbError::Load(e.to_string()))?;
-        run_main(&module, args).map_err(RunAsbError::Run)
-    }
+    let program = load_asb_bytecode(bytes).map_err(|e| RunAsbError::Load(e.to_string()))?;
+    // Native code beside the artifact: the machine-code image `pata jenga` wrote
+    // (`<name>.nguvu`). When it is missing, stale or for another machine, native code is
+    // compiled in memory (`run_shared_program`).
+    let image = || match source {
+        Image::Beside(path) => {
+            let path = path?;
+            let file = path.with_file_name(nguvu::image_file_name(path.file_stem()?.to_str()?));
+            file.is_file()
+                .then(|| nguvu::load_image(&file, &program).ok())
+                .flatten()
+        }
+        Image::Bytes(bytes) => nguvu::load_image_bytes(bytes?, &program).ok(),
+    };
+    let library = if nguvu::supported() { image() } else { None };
+    bytecode::run_shared_program(
+        std::sync::Arc::new(program),
+        library.map(std::sync::Arc::new),
+        args,
+    )
+    .map_err(RunAsbError::Run)
 }
 
 /// The `.asb` for a program: its bytecode (run as native code), or the `kazi` and line that

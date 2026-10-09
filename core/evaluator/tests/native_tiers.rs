@@ -1,11 +1,11 @@
-//! Differential tests: every snippet must produce bit-identical results on the tree-walking
-//! evaluator (the reference semantics) and the native `nguvu` code (loaded through its on-disk
-//! image).
+//! Differential tests: every snippet's native `nguvu` code (loaded through its on-disk image)
+//! must reproduce the language's reference results bit for bit (`tests/golden/native_tiers.txt`,
+//! recorded from the tree-walking evaluator before it was removed).
 //! The snippets target the places where native code could diverge from `f64` semantics:
 //! -0.0, NaN, infinities, integers beyond 2^53 (which stay floats), remainders and
 //! floor division of negatives, out-of-range shifts, and out-of-bounds list access.
 
-use asili_evaluator::{compile_module, run_bytecode_function_on, Engine, Value};
+use asili_evaluator::{compile_module, run_bytecode_function_on, Value};
 use asili_lexer::tokenize;
 use asili_parser::parse_tokens;
 
@@ -38,22 +38,16 @@ fn check(name: &str, source: &str, functions: &[&str]) {
         let path = asili_evaluator::nguvu::write_image(&program, &dir, name).expect("nguvu image");
         asili_evaluator::nguvu::load_image(&path, &program).expect("load nguvu image")
     });
-    for function in functions {
-        let run = |engine| {
-            run_bytecode_function_on(engine, &program, function, vec![])
+    if let Some(own) = &own {
+        for function in functions {
+            let got = run_bytecode_function_on(own, &program, function, vec![])
                 .map(|v| canon(&v))
-                .unwrap_or_else(|e| format!("ERR {e}"))
-        };
-        let tree = golden::expected(
-            "native_tiers",
-            &format!("{name}::{function}"),
-            &run(Engine::Tree),
-        );
-        if let Some(own) = &own {
+                .unwrap_or_else(|e| format!("ERR {e}"));
+            let key = format!("{name}::{function}");
             assert_eq!(
-                run(Engine::Native(own)),
-                tree,
-                "{name}::{function}: nguvu differs"
+                got,
+                golden::expected("native_tiers", &key, &got),
+                "{key}: nguvu differs"
             );
         }
     }

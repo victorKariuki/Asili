@@ -47,12 +47,10 @@ rustls-pki-types = "1"
 
 [features]
 # Browser wasm32 target: route I/O builtins (chapisha, onyo, makosa) to `console.log`/`console.error`
-# via wasm-bindgen instead of the default silent no-op. Mutually meaningful only on wasm32; a
+# via wasm-bindgen instead of the default silent no-op, and load native code (a wasm module) through
+# the page. Mutually meaningful only on wasm32; a
 # no-op on other targets since the platform module gates on target_arch too.
 wasm-browser = ["dep:wasm-bindgen"]
-# WASI wasm32 target (wasm32-wasip1/wasm32-wasi): std's io/fs already work correctly under WASI,
-# so this feature just stops special-casing wasm32 — no extra crate dependency needed.
-wasm-wasi = []
 
 [lib]
 path = "src/lib.rs"

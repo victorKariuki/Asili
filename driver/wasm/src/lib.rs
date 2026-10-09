@@ -1,8 +1,7 @@
-//! Asili Wasm driver — Phase II.
-//! Runs Asili source in a WebAssembly environment (browser via `wasm-browser`, or a standalone
-//! WASI binary via `wasm-wasi`). I/O builtins (chapisha, majira, vigezo, pata_env, etc.) route
-//! through `asili_evaluator`'s platform shim, which picks browser (console.log) vs WASI (real
-//! std io/fs) vs an unconfigured wasm32 no-op default based on which Cargo feature is active.
+//! Asili Wasm driver: runs Asili source in the browser (`wasm-browser`). Programs are lowered to
+//! bytecode and run as native code — a wasm module of their own the page instantiates beside
+//! this one (`asili_evaluator::nguvu::wasm`). I/O builtins (chapisha, majira, …) route through
+//! `asili_evaluator`'s platform shim (console.log / console.error in the browser).
 
 use asili_evaluator::{compile_module_explained, run_bytecode};
 use asili_lexer::tokenize;

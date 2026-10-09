@@ -1,13 +1,6 @@
-//! ASB (Asili bytecode) serialized format: header + payload for run-from-.asb.
-//
-// HACK: The "ASB" format currently serializes the parsed AST (Module) via bincode, not real bytecode.
-// Running a serialized-AST .asb file re-interprets the AST through the tree-walk evaluator.
-// This means .asb files carry the full AST, not a compact instruction stream, and "compilation"
-// provides no performance benefit over re-parsing source.
-// TODO(Phase II): Replace with a real bytecode format: lower AST -> TIR -> BytecodeProgram,
-// serialize BytecodeProgram, and execute with run_bytecode() instead of run_main().
+//! The `.asb` artifact: a text header, then the program's bytecode (`BytecodeProgram`) and the
+//! syntax tree it carries, serialized with bincode.
 
-use asili_parser::Module;
 use std::fmt;
 
 const ASB_HEADER_PREFIX: &str = "ASB-STUB\nversion=5\nformat=serialized\n";
@@ -79,13 +72,6 @@ pub fn emit_bytecode_bytes(program: &crate::bytecode::BytecodeProgram, source: &
     out.extend_from_slice(&payload);
     out
 }
-
-/// Load a Module from .asb bytes. Expects format=serialized and a PAYLOAD section.
-pub fn load_asb(bytes: &[u8]) -> Result<Module, AsbLoadError> {
-    let payload = payload_slice(bytes)?;
-    bincode::deserialize(payload).map_err(|e| AsbLoadError::Decode(e.to_string()))
-}
-
 fn payload_slice(bytes: &[u8]) -> Result<&[u8], AsbLoadError> {
     let pos = bytes
         .windows(PAYLOAD_MARKER.len())

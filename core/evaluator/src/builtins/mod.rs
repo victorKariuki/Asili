@@ -65,7 +65,7 @@ fn register_all(m: &mut HashMap<String, BuiltinFn>) {
     }
 }
 
-/// Builtins by name (the tree-walking evaluator's lookup table).
+/// Builtins by name (their real names, e.g. for the language server).
 pub fn builtins() -> HashMap<String, BuiltinFn> {
     let mut m: HashMap<String, BuiltinFn> = HashMap::new();
     register_all(&mut m);

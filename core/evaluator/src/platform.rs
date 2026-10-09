@@ -1,13 +1,13 @@
 //! I/O shim so builtins (matumizi, faili, ...) don't have to repeat target-detection logic.
 //!
 //! Three cases:
-//! - Non-wasm32, or wasm32 with the `wasm-wasi` feature: std's `println!`/`eprintln!`/stdin/fs
-//!   already work correctly (Rust's std has first-class WASI support — no extra crate needed).
-//! - wasm32 with the `wasm-browser` feature (and not `wasm-wasi`): route stdout/stderr to
-//!   `console.log`/`console.error` via wasm-bindgen. There is no stdin or real filesystem in a
-//!   browser, so `read_stdin` and file ops report an explicit error rather than silently no-op.
-//! - wasm32 with neither feature: keep the historical silent-no-op default, so an unconfigured
-//!   `wasm32-unknown-unknown` build still compiles and runs (just without real I/O).
+//! - Not wasm32: std's `println!`/`eprintln!`/stdin/fs.
+//! - wasm32 with the `wasm-browser` feature: route stdout/stderr to `console.log`/
+//!   `console.error` via wasm-bindgen, and load native code through the page
+//!   (`load_native_module`). There is no stdin or real filesystem in a browser, so `read_stdin`
+//!   and file ops report an explicit error rather than silently no-op.
+//! - wasm32 without it: a silent no-op default, so an unconfigured `wasm32-unknown-unknown`
+//!   build still compiles (it cannot load native code, so it cannot run programs).
 
 use crate::value::EvalError;
 
@@ -16,7 +16,7 @@ use crate::value::EvalError;
 /// stdout is not a terminal, output collects here instead and goes out in large writes (as C's
 /// stdio does); it is flushed before reading input, before writing to stderr (so the two stay in
 /// order when they share a file), before `toka`, and when the guard drops.
-#[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+#[cfg(not(target_arch = "wasm32"))]
 mod out {
     use std::io::Write;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -87,25 +87,25 @@ mod out {
     }
 }
 
-#[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub use out::{flush as flush_stdout, BlockOutput};
 
 /// Nothing is buffered without std I/O.
-#[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
+#[cfg(target_arch = "wasm32")]
 pub fn flush_stdout() {}
 
-#[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn write_stdout(s: &str) {
     out::write_line(s);
 }
 
-#[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn write_stderr(s: &str) {
     out::flush();
     eprintln!("{s}");
 }
 
-#[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn read_stdin() -> Result<String, EvalError> {
     // A prompt written just before must be visible while waiting for the answer.
     out::flush();
@@ -124,11 +124,7 @@ pub fn read_stdin() -> Result<String, EvalError> {
     }
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "wasm-browser",
-    not(feature = "wasm-wasi")
-))]
+#[cfg(all(target_arch = "wasm32", feature = "wasm-browser"))]
 mod browser {
     use wasm_bindgen::prelude::*;
 
@@ -151,56 +147,32 @@ mod browser {
     }
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "wasm-browser",
-    not(feature = "wasm-wasi")
-))]
+#[cfg(all(target_arch = "wasm32", feature = "wasm-browser"))]
 pub fn write_stdout(s: &str) {
     browser::log(s);
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "wasm-browser",
-    not(feature = "wasm-wasi")
-))]
+#[cfg(all(target_arch = "wasm32", feature = "wasm-browser"))]
 pub fn write_stderr(s: &str) {
     browser::error(s);
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "wasm-browser",
-    not(feature = "wasm-wasi")
-))]
+#[cfg(all(target_arch = "wasm32", feature = "wasm-browser"))]
 pub fn read_stdin() -> Result<String, EvalError> {
     Err(EvalError::Panic(
         "omba: stdin haipatikani kwenye kivinjari".to_string(),
     ))
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    not(feature = "wasm-browser"),
-    not(feature = "wasm-wasi")
-))]
+#[cfg(all(target_arch = "wasm32", not(feature = "wasm-browser")))]
 pub fn write_stdout(_s: &str) {}
 
-#[cfg(all(
-    target_arch = "wasm32",
-    not(feature = "wasm-browser"),
-    not(feature = "wasm-wasi")
-))]
+#[cfg(all(target_arch = "wasm32", not(feature = "wasm-browser")))]
 pub fn write_stderr(_s: &str) {}
 
 /// Instantiate a wasm module of native code beside this one (sharing its memory and function
 /// table) whose `count` functions fill the table from the index returned (see `nguvu::wasm`).
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "wasm-browser",
-    not(feature = "wasm-wasi")
-))]
+#[cfg(all(target_arch = "wasm32", feature = "wasm-browser"))]
 pub fn load_native_module(bytes: &[u8], count: u32) -> Result<usize, String> {
     let memory = wasm_bindgen::memory();
     let table = wasm_bindgen::function_table();
@@ -209,11 +181,7 @@ pub fn load_native_module(bytes: &[u8], count: u32) -> Result<usize, String> {
         .map_err(|e| format!("msimbo asilia haukupakiwa: {e:?}"))
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    not(feature = "wasm-browser"),
-    not(feature = "wasm-wasi")
-))]
+#[cfg(all(target_arch = "wasm32", not(feature = "wasm-browser")))]
 pub fn read_stdin() -> Result<String, EvalError> {
     Err(EvalError::Panic(
         "omba: stdin haipatikani kwenye WASM".to_string(),

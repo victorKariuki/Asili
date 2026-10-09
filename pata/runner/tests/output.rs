@@ -74,8 +74,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// `tenda` threads run the program's compiled `kazi` (bytecode and native code) and report back
-/// over `njia`, whether the spawning `kazi` is compiled or left to the tree-walker.
+/// `tenda` threads run the program's `kazi` as native code and report back over `njia`.
 #[test]
 fn threads_run_compiled_kazi() {
     let dir = std::env::temp_dir().join(format!("asili-runner-threads-{}", std::process::id()));

@@ -10,7 +10,7 @@ static START_TIME: OnceLock<f64> = OnceLock::new();
 
 fn get_start_time() -> f64 {
     *START_TIME.get_or_init(|| {
-        #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+        #[cfg(not(target_arch = "wasm32"))]
         {
             use std::time::{SystemTime, UNIX_EPOCH};
             SystemTime::now()
@@ -18,7 +18,7 @@ fn get_start_time() -> f64 {
                 .unwrap_or_default()
                 .as_secs_f64()
         }
-        #[cfg(all(target_arch = "wasm32", not(feature = "wasm-wasi")))]
+        #[cfg(target_arch = "wasm32")]
         {
             0.0
         }
@@ -54,7 +54,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         "mazingira".to_string(),
         Box::new(|_args: &[Value]| {
             let mut map = crate::value::Kamusi::default();
-            #[cfg(any(not(target_arch = "wasm32"), feature = "wasm-wasi"))]
+            #[cfg(not(target_arch = "wasm32"))]
             {
                 for (key, val) in std::env::vars() {
                     map.insert(MapKey::Neno(key.into()), Value::neno(val));
