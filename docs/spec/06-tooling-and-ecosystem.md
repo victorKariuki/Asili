@@ -102,6 +102,7 @@ Directives for the compiler and tooling. Resolved after AST, before or during co
 | **#[baada]** | Teardown fixture: runs after every `#[jaribio]` test in the same module (file), via `pata jaribu` — including when the test itself failed |
 | **#[sharti(...)]** | Conditional compilation (e.g. include code only for a given target or config) |
 | **#[kiunganishi]** | FFI: link to external C/C++ libraries |
+| **#[salama]** | Strict code: bounded loops, no recursion, no allocation, only strict callees; `pata jenga` checks it and prints the worst-case step and memory bounds (see [language/07](../language/07-mfumo-wa-aina.md)) |
 
 See [Resolved Decisions](08-resolved-decisions.md) for resolution order and semantics.
 

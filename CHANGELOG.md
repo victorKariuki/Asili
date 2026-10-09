@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Strict code (`#[salama]`)**: a `kazi` marked `#[salama]` must keep to a subset whose
+  worst-case time and memory are known at build time — `Namba`/`Ukweli`/`Orodha<Namba>`
+  parameters, loops only `kwa i kutoka a hadi b` with build-time bounds and an unassigned
+  counter, no recursion, strict callees only, and no instruction that allocates or calls out.
+  Breaking a rule is a build error naming the function and line (`salama.rs`); `pata jenga`
+  prints each strict function's bound on steps per call and on frame memory. New example
+  `examples/kidhibiti` (a bounded controller step); the Sudoku benchmark now reports the worst
+  run beside the best (native 5.2 ms best, 5.8 ms worst over 20 runs; clang C 6.6 / 9.3 ms).
+
 - **WebAssembly backend (`nguvu::wasm`)**: in the browser build (the playground) programs now
   run as native code too — `nguvu` compiles a program's optimized IR to one wasm module that the
   page instantiates beside the build, sharing its memory and function table, so the host calls

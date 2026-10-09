@@ -288,6 +288,7 @@ impl<'a> Analyzer<'a> {
             "kiunganishi",
             "kabla",
             "baada",
+            "salama",
         ];
         for imp in &self.module.imports {
             let mod_name = match &imp.path {

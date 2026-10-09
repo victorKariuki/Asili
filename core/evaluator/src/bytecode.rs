@@ -574,7 +574,8 @@ pub fn compile_module(module: &Module) -> Option<BytecodeProgram> {
     compile_module_inner(module, CompileOptions::default(), &mut None)
 }
 
-/// Every `kazi` lowered to bytecode, or the first `kazi` and source line that could not be.
+/// Every `kazi` lowered to bytecode, or why not: the first `kazi` and source line that could
+/// not be lowered, or every rule a `#[salama]` function breaks.
 pub fn compile_module_explained(module: &Module) -> Result<BytecodeProgram, String> {
     compile_module_with(module, CompileOptions::default())
 }
@@ -586,11 +587,21 @@ pub fn compile_module_with(
 ) -> Result<BytecodeProgram, String> {
     let mut failed_line = None;
     let program = compile_module_inner(module, options, &mut failed_line);
-    match (program, failed_line) {
-        (Some(program), None) => Ok(program),
-        (_, Some((function, line))) => Err(format!("kazi '{function}', mstari {line}")),
+    let program = match (program, failed_line) {
+        (Some(program), None) => program,
+        (_, Some((function, line))) => {
+            return Err(format!(
+                "kazi '{function}', mstari {line} bado haiwezi kugeuzwa kuwa bytecode"
+            ))
+        }
         (None, None) => unreachable!("a failed lowering records where"),
+    };
+    // Strict (`#[salama]`) functions must keep to their subset.
+    if let Err(errors) = crate::salama::kagua(module, &program) {
+        let all: Vec<String> = errors.iter().map(ToString::to_string).collect();
+        return Err(all.join("\n"));
     }
+    Ok(program)
 }
 
 fn compile_module_inner(

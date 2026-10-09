@@ -28,9 +28,8 @@ impl NativeProgram {
         module: &Module,
         options: crate::bytecode::CompileOptions,
     ) -> Result<Self, EvalError> {
-        let program = crate::bytecode::compile_module_with(module, options).map_err(|why| {
-            EvalError::Unknown(format!("{why} bado haiwezi kugeuzwa kuwa msimbo asilia"))
-        })?;
+        let program =
+            crate::bytecode::compile_module_with(module, options).map_err(EvalError::Unknown)?;
         Self::from_program(program)
     }
 

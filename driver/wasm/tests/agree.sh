@@ -15,7 +15,7 @@ wasm-bindgen --target nodejs --out-dir "$out/pkg" \
   "$root/target/wasm32-unknown-unknown/release/asili_wasm.wasm"
 
 # Examples that need no network, files or input.
-examples="all_types astar binary_ops control_structures data_structures namba_kuu phase1_modules
+examples="all_types astar binary_ops control_structures data_structures kidhibiti namba_kuu phase1_modules
   seti sifa sudoku unary_ops"
 status=0
 for name in $examples; do

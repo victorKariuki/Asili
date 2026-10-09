@@ -19,6 +19,7 @@ pub mod nguvu;
 mod numlist;
 mod platform;
 mod repl;
+pub mod salama;
 mod scalars;
 mod signal;
 mod spawn;

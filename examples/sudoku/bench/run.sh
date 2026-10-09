@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Benchmark the Asili Sudoku solver against identical C, Rust and Python solvers.
-# Usage: ./run.sh [runs]   (default 5; prints the best wall time per implementation)
+# Usage: ./run.sh [runs]   (default 5; prints the best and worst wall time per implementation)
 #
 # Asili runs on the standalone runner (`tenda`, built as it ships — see below):
 # asili-nguvu = native code built in-house by `pata jenga` (no external tools).
@@ -32,9 +32,10 @@ gcc -O2 -static -o "$out/sudoku_c_static" "$here/sudoku.c" 2>/dev/null || true
 command -v clang >/dev/null && { clang -O2 -static -o "$out/sudoku_clang_static" "$here/sudoku.c" 2>/dev/null || true; }
 rustc -O -o "$out/sudoku_rs" "$here/rust/main.rs"
 
+# Best and worst wall time over the runs (worst case matters as much as the best).
 best() {
   local label="$1"; shift
-  local min="" expected="Majaribio: 90665"
+  local min="" max="" expected="Majaribio: 90665"
   for _ in $(seq "$runs"); do
     local start end ms output
     start=$(date +%s%N)
@@ -43,8 +44,10 @@ best() {
     grep -q "$expected" <<<"$output" || { echo "$label: wrong result" >&2; echo "$output" >&2; exit 1; }
     ms=$(( (end - start) / 100000 ))  # tenths of a millisecond
     if [[ -z "$min" || "$ms" -lt "$min" ]]; then min="$ms"; fi
+    if [[ -z "$max" || "$ms" -gt "$max" ]]; then max="$ms"; fi
   done
-  printf '%-12s %6d.%d ms\n' "$label" $((min / 10)) $((min % 10))
+  printf '%-12s %6d.%d ms   (mbaya zaidi %d.%d ms)\n' "$label" $((min / 10)) $((min % 10)) \
+    $((max / 10)) $((max % 10))
 }
 
 best c-gcc "$out/sudoku_c"

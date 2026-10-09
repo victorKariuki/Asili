@@ -203,3 +203,38 @@ kazi kutoka_c() -> Namba {
 | `#[sharti(...)]` | Conditional compilation; only key `lengo` is recognized (e.g. `lengo = "wasm"`), values OR'd with `\|` — see [implementation-status.md](../design/implementation-status.md) |
 | `#[ndani]`    | Internal / not exported                          |
 | `#[kiunganishi]` | FFI linkage annotation                        |
+| `#[salama]`   | Strict code: the build checks the function keeps to a subset whose time and memory are bounded, and prints the bounds — see below |
+
+### Strict code: `#[salama]`
+
+A `kazi` marked `#[salama]` must stay in a subset whose worst-case running time and memory
+are known when the program is built (for controllers and other code that must never stall):
+
+- parameters only `Namba`, `Ukweli` or `Orodha<Namba>`; the result `Namba`, `Ukweli` or nothing
+  (make lists in ordinary code at start-up and pass them in);
+- loops only `kwa i kutoka a hadi b` with `a` and `b` known when building (number literals,
+  `thabiti` numbers, `+ - * //` on them), and `i` never assigned in the body — no `wakati`, no
+  `kwa … katika`;
+- calls only to other `#[salama]` functions, never recursive;
+- nothing that allocates or calls out: numeric arithmetic, comparisons, reading and writing
+  existing list elements and `urefu()` only (no `ongeza`, no text, no builtins but `sakafu`/`dari`).
+
+Breaking a rule is a build error naming the function and line. For each strict function
+`pata jenga` prints an upper bound on the steps one call runs and on the frame memory it needs:
+
+```
+salama: kazi 'dhibiti' — hatua ≤ 69, kumbukumbu ≤ baiti 200
+```
+
+```asili
+thabiti N: Namba = 8
+
+#[salama]
+kazi wastani(sampuli: Orodha<Namba>) -> Namba {
+    weka jumla = 0
+    kwa i kutoka 0 hadi N {
+        jumla += sampuli[i]
+    }
+    rejesha jumla / N
+}
+```

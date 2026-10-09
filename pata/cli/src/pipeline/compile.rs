@@ -438,9 +438,17 @@ pub fn emit_build_artifacts(
         .map_err(|e| CliError::new(format!("imeshindwa kuunda {}: {e}", target.display()), 1))?;
 
     let bytecode_phase = asili_trace::phase("bytecode");
-    let asb = emit_asb(&compiled.module, &compiled.source).map_err(|blocked| {
-        CliError::new(format!("{blocked} bado haiwezi kugeuzwa kuwa bytecode"), 1)
-    })?;
+    let asb = emit_asb(&compiled.module, &compiled.source)
+        .map_err(|blocked| CliError::new(blocked, 1))?;
+    // The bounds of `#[salama]` functions (the build already checked their rules).
+    if let Ok(program) = asili_evaluator::compile_module_explained(&compiled.module) {
+        for r in asili_evaluator::salama::kagua(&compiled.module, &program).unwrap_or_default() {
+            println!(
+                "salama: kazi '{}' — hatua ≤ {}, kumbukumbu ≤ baiti {}",
+                r.kazi, r.hatua, r.kumbukumbu
+            );
+        }
+    }
     let artifact = target.join(format!("{}.asb", compiled.config.name));
     fs::write(&artifact, &asb).map_err(|e| {
         CliError::new(

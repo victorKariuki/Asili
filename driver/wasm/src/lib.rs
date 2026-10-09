@@ -20,8 +20,7 @@ pub fn run_source(source: &str) -> Result<(), String> {
 /// Lower `module` to bytecode and run its `kuu` as native code (a wasm module the page
 /// instantiates beside this one; see `asili_evaluator::nguvu::wasm`).
 fn run_module(module: &Module) -> Result<(), String> {
-    let program = compile_module_explained(module)
-        .map_err(|why| format!("{why} bado haiwezi kugeuzwa kuwa bytecode"))?;
+    let program = compile_module_explained(module)?;
     run_bytecode(&program, vec![]).map_err(|e| e.to_string())
 }
 

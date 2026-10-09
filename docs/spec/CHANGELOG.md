@@ -4,6 +4,9 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Tooling ([06-tooling-and-ecosystem.md](06-tooling-and-ecosystem.md)): new attribute
+  `#[salama]` for strict, bounded code, checked at build time.
+
 - Execution ([02-architecture-and-files.md](02-architecture-and-files.md),
   [07-execution-and-roadmap.md](07-execution-and-roadmap.md)): there is no interpreter — every
   program runs as native code (machine code, or a wasm module in the browser), including tests,
