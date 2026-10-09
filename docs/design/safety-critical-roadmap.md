@@ -107,6 +107,16 @@ browser. There is no microcontroller or real-time OS backend.
 strict subset (no allocator, no threads, no files), and a bare-metal runtime image; then an RTOS
 port (Zephyr or FreeRTOS) for tasks and timing.
 
+**Status: done for strict code** (issue #81). `pata jenga --lengo cortex-m` compiles every strict
+function to Thumb-2 for ARMv7E-M with `fpv5-d16` (`nguvu/t32.rs`, encodings checked against
+`llvm-mc`; `nguvu/codegen_t32.rs`, 64-bit integers in register pairs) and writes an ELF object
+plus a C header (`nguvu/device.rs`); `driver/kifaa` is the `no_std` device runtime. Strict
+functions taking lists are inlined into their callers on the device. `tests/kifaa.rs` runs the
+example, hand-written cases and random strict programs under `qemu-arm -cpu cortex-m7` and
+requires results equal to native code's bit for bit (a CI job). Left to the firmware: start-up
+code and the RTOS port; cycle-level worst-case timing is measured on the target part. See
+`docs/howto/07-build-for-cortex-m.md`.
+
 ## 6. Regulatory process
 
 **Gap.** Standards such as IEC 62304 (medical device software) need documented requirements,

@@ -11,5 +11,6 @@ Short task-based guides for working with Asili and the toolchain.
 | [04-validate-docs.md](04-validate-docs.md) | `pata thibitisha`: doc-coverage and format validation before a release. |
 | [05-add-dependency.md](05-add-dependency.md) | `pata ongeza`: adding a dependency, what it does and doesn't do. |
 | [06-use-repl.md](06-use-repl.md) | Using `pata repl`, and why top-level items can't be defined there. |
+| [07-build-for-cortex-m.md](07-build-for-cortex-m.md) | `pata jenga --lengo cortex-m`: strict code as a Cortex-M object and C header, linking, calling convention. |
 
 For the language specification and architecture, see the [spec/](../spec/) directory and [SPECIFICATION.md](../SPECIFICATION.md). For stdlib API doc templates, see [lib/docs/](../../lib/docs/).

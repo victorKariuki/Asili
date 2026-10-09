@@ -282,12 +282,7 @@ impl<'m> Checker<'m> {
                 _ => false,
             };
             if !allowed {
-                let what = format!("{op:?}");
-                let what = what
-                    .split([' ', '(', '{'])
-                    .next()
-                    .unwrap_or("?")
-                    .to_string();
+                let what = op.name();
                 self.fail(
                     line,
                     format!("operesheni '{what}' inaweza kutenga kumbukumbu au kuchukua muda usio na kikomo"),

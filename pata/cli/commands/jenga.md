@@ -10,7 +10,13 @@ Flags:
   is `mti` (default), `json`, `json:<faili>`, `mti:<faili>` or `binari:<faili>`; same as
   `ASILI_FUATILIA`. See `docs/design/tracing.md`.
 - `--pato <path>`: Output directory (default `kilele/`)
-- `--lengo <lengo>`: Build target (default `native`); overrides `pata.toml`'s `[jenga] lengo`
+- `--lengo <lengo>`: Build target (default `native`; also `wasm`, `cortex-m`); overrides
+  `pata.toml`'s `[jenga] lengo`. `cortex-m` also compiles every strict (`#[salama]`) function to
+  Thumb-2 for ARMv7E-M with `fpv5-d16`, writing `<pato>/<name>-cortex-m.o` (an ELF object a
+  firmware links with the device runtime `driver/kifaa`) and `<pato>/<name>.h` (its C
+  declarations), and prints `kifaa (Cortex-M): <object> na <header> — kazi: <names>`. A program
+  without strict functions, or a strict function a device cannot run, fails the build. See
+  `docs/howto/07-build-for-cortex-m.md`
 - `--namna <dev|release>`: Build profile. Every program is compiled to bytecode in both (a
   construct the bytecode compiler can't lower fails the build, naming the `kazi` and line; there
   is no syntax-tree artifact). `dev` (default) writes the native image where it can and otherwise

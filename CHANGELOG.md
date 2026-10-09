@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Cortex-M target for strict code** (`pata jenga --lengo cortex-m`): every `#[salama]`
+  function is compiled to Thumb-2 for ARMv7E-M with the `fpv5-d16` unit by `nguvu` itself — a
+  new encoder (`t32.rs`, every encoding checked against `llvm-mc`) and code generator
+  (`codegen_t32.rs`, the IR's 64-bit integers in register pairs, only callee-saved registers
+  allocated) — and written as `kilele/<jina>-cortex-m.o`, an ELF object a firmware links, with
+  `kilele/<jina>.h` declaring `int32_t asili_<kazi>(const hoja *, double *matokeo)` (0 on
+  success, non-zero when the call failed). `driver/kifaa` (`asili-kifaa`) is the `no_std` device
+  runtime: list access, `fmod`/`pow`, conversions; strict functions taking lists are inlined into
+  their callers on the device. `tests/kifaa.rs` (a new CI job) runs the `kidhibiti` example,
+  hand-written cases and random strict programs under `qemu-arm -cpu cortex-m7` and requires
+  every result to equal native code's bit for bit. See `docs/howto/07-build-for-cortex-m.md`.
+
 - **Compiler assurance**: an IR verifier (`nguvu/verify.rs`) checks every function after
   lowering and after the optimizer (and after each pass in debug builds): registers and blocks
   exist, operand classes match, nothing is read before it is written. A differential fuzzer

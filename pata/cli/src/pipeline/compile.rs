@@ -356,6 +356,43 @@ impl BuildProfile {
 /// Ahead-of-time compile a bytecode artifact to native machine code next to it
 /// (`<name>.nguvu`, built in-house with no external tools). In `Dev` an image that cannot be
 /// built is left to the runner to build at start-up; `Release` fails instead.
+/// The device build (`--lengo cortex-m`): the strict functions as `<name>-cortex-m.o`, an ELF
+/// object for Cortex-M a firmware links, and their C declarations in `<name>.h`.
+fn write_device(module: &Module, target: &Path, name: &str) -> Result<(), CliError> {
+    let program =
+        asili_evaluator::compile_module_explained(module).map_err(|e| CliError::new(e, 1))?;
+    let strict: Vec<usize> = module
+        .functions
+        .iter()
+        .filter(|f| asili_evaluator::salama::is_strict(f))
+        .filter_map(|f| program.functions.iter().position(|g| g.name == f.name))
+        .collect();
+    if strict.is_empty() {
+        return Err(CliError::new(
+            "hakuna kazi salama ya kujenga kwa Cortex-M (weka #[salama] juu ya kazi)",
+            1,
+        ));
+    }
+    let built = asili_evaluator::nguvu::device::build(&program, &strict, name)
+        .map_err(|e| CliError::new(e, 1))?;
+    let write = |file: String, bytes: &[u8]| -> Result<PathBuf, CliError> {
+        let path = target.join(file);
+        fs::write(&path, bytes).map_err(|e| {
+            CliError::new(format!("imeshindwa kuandika {}: {e}", path.display()), 1)
+        })?;
+        Ok(path)
+    };
+    let object = write(format!("{name}-cortex-m.o"), &built.object)?;
+    let header = write(format!("{name}.h"), built.header.as_bytes())?;
+    println!(
+        "kifaa (Cortex-M): {} na {} — kazi: {}",
+        object.display(),
+        header.display(),
+        built.exports.join(", ")
+    );
+    Ok(())
+}
+
 /// A release build's standalone executable `<target>/<name>` (`.exe` on Windows): the static
 /// runner `tenda` with the artifact and its native image appended
 /// (`asili_evaluator::bundle`), which runs directly. The runner comes from `ASILI_TENDA` or sits
@@ -464,6 +501,10 @@ pub fn emit_build_artifacts(
     }
     if profile == BuildProfile::Release {
         write_standalone(&asb, &target, &compiled.config.name)?;
+    }
+    if compiled.target.0 == "cortex-m" {
+        let _phase = asili_trace::phase("cortex-m");
+        write_device(&compiled.module, &target, &compiled.config.name)?;
     }
 
     let meta = target.join(format!("{}.build.manifest", compiled.config.name));

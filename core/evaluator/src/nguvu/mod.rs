@@ -10,6 +10,8 @@
 pub mod a64;
 pub mod codegen;
 pub mod codegen_a64;
+pub mod codegen_t32;
+pub mod device;
 pub mod features;
 pub mod ir;
 pub mod lower;
@@ -18,6 +20,7 @@ pub mod opt;
 pub mod range;
 pub mod regalloc;
 pub mod schedule;
+pub mod t32;
 pub mod verify;
 pub mod wasm;
 pub mod x64;
@@ -56,7 +59,7 @@ pub struct Code {
 /// Functions that get a direct entry: numeric signature, and a body that lowers without calls
 /// into the host given that exactly these functions are callable directly (an optimistic
 /// fixpoint, so mutually recursive functions qualify together).
-fn direct_entries(program: &BytecodeProgram) -> asili_parser::FxHashSet<usize> {
+pub(crate) fn direct_entries(program: &BytecodeProgram) -> asili_parser::FxHashSet<usize> {
     let mut direct: asili_parser::FxHashSet<usize> = program
         .functions
         .iter()

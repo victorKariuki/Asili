@@ -16,6 +16,7 @@ members = [
   "pata/lint",
   "pata/dap",
   "driver/wasm",
+  "driver/kifaa",
 ]
 resolver = "2"
 

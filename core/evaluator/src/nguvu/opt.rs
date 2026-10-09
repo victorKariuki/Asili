@@ -21,6 +21,11 @@ use asili_parser::FxHashMap as HashMap;
 /// Run every pass over `func`. In debug builds (and so in every test) the IR is verified after
 /// each pass, naming the pass that broke it; the caller verifies the final result always.
 pub fn optimize(func: &mut Func) -> Result<(), String> {
+    optimize_with(func, super::features::popcnt())
+}
+
+/// [`optimize`] for a target that has a population-count instruction (`popcnt`) or not.
+pub fn optimize_with(func: &mut Func, popcnt: bool) -> Result<(), String> {
     let check = |func: &Func, pass: &str| -> Result<(), String> {
         if cfg!(debug_assertions) {
             super::verify::verify(func).map_err(|e| format!("after {pass}: {e}"))?;
@@ -53,7 +58,7 @@ pub fn optimize(func: &mut Func) -> Result<(), String> {
     fuse_bit_tests(func);
     check(func, "fuse_bit_tests")?;
     eliminate_dead_code(func); // drops the `and`s the tests absorbed
-    if super::features::popcnt() {
+    if popcnt {
         recognize_popcount(func);
         check(func, "recognize_popcount")?;
     }

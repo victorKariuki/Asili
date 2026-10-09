@@ -36,8 +36,8 @@ jobs:
 
   native-platforms:
     # nguvu on every platform it targets, on real hardware: AArch64 Linux, Apple silicon macOS
-    # (MAP_JIT mapping) and x86-64 Windows (Microsoft x64 calling convention). The engine
-    # differential tests compare native code against the interpreter and the tree-walker.
+    # (MAP_JIT mapping) and x86-64 Windows (Microsoft x64 calling convention). The differential
+    # tests compare native code against hand-checked reference results (`tests/golden/`).
     name: Native code on ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -55,6 +55,32 @@ jobs:
 
       - name: cargo test -p asili-evaluator
         run: cargo test -p asili-evaluator
+
+  cortex-m:
+    # Strict code built for Cortex-M (Thumb-2, fpv5-d16) and run under qemu: every result must
+    # equal native code's on the build machine, bit for bit (`tests/kifaa.rs`).
+    name: Strict code on Cortex-M (qemu)
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install clang, lld, llvm-mc and qemu
+        run: sudo apt-get update && sudo apt-get install -y clang lld llvm qemu-user-static
+
+      - name: Thumb-2 encodings against llvm-mc
+        run: cargo test -p asili-evaluator --lib t32
+
+      - name: Device agreement (examples, hand-written cases, 400 random strict programs)
+        run: ASILI_KIFAA_REQUIRE=1 ASILI_KIFAA_PROGRAMS=400 cargo test --release -p asili-evaluator --test kifaa
 
   wasm:
     # The browser build compiles programs to a wasm module it instantiates beside itself (the

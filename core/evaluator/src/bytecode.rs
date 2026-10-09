@@ -80,6 +80,17 @@ pub struct BytecodeFunc {
     pub code: Vec<Opcode>,
 }
 
+impl Opcode {
+    /// The instruction's name (its variant), for messages.
+    pub fn name(&self) -> String {
+        let text = format!("{self:?}");
+        text.split([' ', '(', '{'])
+            .next()
+            .unwrap_or("?")
+            .to_string()
+    }
+}
+
 /// How an indexing instruction treats an out-of-range `Orodha` index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IndexMode {

@@ -260,6 +260,9 @@ already has), so after the first call its memory use is fixed. For each strict f
 salama: kazi 'dhibiti' — hatua ≤ 69, kumbukumbu ≤ baiti 200
 ```
 
+`pata jenga --lengo cortex-m` also compiles the strict functions for Cortex-M microcontrollers,
+as an object file and C header a firmware links (`docs/howto/07-build-for-cortex-m.md`).
+
 ```asili
 thabiti N: Namba = 8
 

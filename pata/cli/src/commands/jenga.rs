@@ -17,8 +17,9 @@ Chagua:
   --pato <njia>      Mahali pa kuweka kilele (default: kilele/).
   --namna <dev|release>        dev (chaguo-msingi): msimbo asilia ukiwezekana, vinginevyo bila.
                                 release: lazima bytecode na msimbo asilia, la sivyo kosa.
-  --lengo <lengo>    Lengo la kujenga (mf. "native", "wasm"). Hupita
-                     [jenga] lengo katika pata.toml; default "native".
+  --lengo <lengo>    Lengo la kujenga: "native" (chaguo-msingi), "wasm", au
+                     "cortex-m" (pia huandika kazi za #[salama] kama kilele/<jina>-cortex-m.o
+                     na kilele/<jina>.h kwa kifaa). Hupita [jenga] lengo katika pata.toml.
   --workspace-info   Onyesha wanachama wa workspace na urejeshi.
   --muda             Onyesha muda wa kila awamu ya ujenzi (kuchanganua/kutoa).
   --fuatilia[=namna] Fuatilia ujenzi na utekelezaji: mti (chaguo-msingi), json,
