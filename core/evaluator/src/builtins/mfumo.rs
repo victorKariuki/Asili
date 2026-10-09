@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use super::BuiltinFn;
 use crate::signal;
-use crate::value::{self, Value};
+use crate::value::{self, EvalError, Value};
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     m.insert(
@@ -32,6 +32,70 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     );
     // The watchdog: once armed, the program must feed it (`mlinzi_lisha`) within `ms`
     // milliseconds every time, or it enters its safe state and stops (exit code 5).
+    m.insert(
+        "weka_env".to_string(),
+        Box::new(|args: &[Value]| {
+            let (key, val) = (super::arg_str(args, 0), super::arg_str(args, 1));
+            if key.is_empty() || key.contains(['=', '\0']) || val.contains('\0') {
+                return Err(EvalError::TypeErr(
+                    "weka_env: jina halali na thamani bila herufi ya NUL zinahitajika".into(),
+                ));
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            // SAFETY: set before or alongside the program's own reads; Asili gives programs no
+            // way to read the environment from native code concurrently with this.
+            unsafe {
+                std::env::set_var(key, val)
+            };
+            Ok(Value::Tupu)
+        }),
+    );
+    m.insert(
+        "endesha".to_string(),
+        Box::new(|args: &[Value]| {
+            let command = super::arg_str(args, 0);
+            let list: Vec<String> = match args.get(1) {
+                None => Vec::new(),
+                Some(Value::Orodha(items)) => items
+                    .iter()
+                    .map(|v| value::as_string(v).unwrap_or_default())
+                    .collect(),
+                Some(_) => {
+                    return Err(EvalError::TypeErr(
+                        "endesha inahitaji amri na Orodha<Neno> ya hoja".into(),
+                    ))
+                }
+            };
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                crate::platform::flush_stdout();
+                let out = std::process::Command::new(&command).args(&list).output();
+                Ok(match out {
+                    Ok(o) if o.status.success() => {
+                        Value::sawa(Value::neno(String::from_utf8_lossy(&o.stdout).into_owned()))
+                    }
+                    Ok(o) => {
+                        let code = o
+                            .status
+                            .code()
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| "ishara".into());
+                        let err = String::from_utf8_lossy(&o.stderr);
+                        Value::kosa(format!(
+                            "{command} imeshindwa (msimbo {code}): {}",
+                            err.trim_end()
+                        ))
+                    }
+                    Err(e) => Value::kosa(format!("{command}: {e}")),
+                })
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                let _ = (command, list);
+                Ok(Value::kosa("endesha: haipatikani kwenye kivinjari"))
+            }
+        }),
+    );
     m.insert(
         "mlinzi_anza".to_string(),
         Box::new(|args: &[Value]| {

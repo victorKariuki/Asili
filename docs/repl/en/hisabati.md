@@ -81,7 +81,11 @@
 | Kazi              | Maelezo                         |
 |-------------------|---------------------------------|
 | `nasibu()`        | Random float in `[0.0, 1.0)`   |
-| `nasibu_chini(n)` | Random float in `[0.0, n)`     |
+| `nasibu_chini(min, max)` | Random float in `[min, max)` |
+| `nasibu_kamili(a, b)` | Random whole number from `a` to `b`, both included |
+| `nasibu_mbegu(n)` | Make the random numbers that follow repeat on every run |
+| `changanya(orodha)` | The list in random order    |
+| `chagua_nasibu(orodha)` | A random element (Chaguo) |
 
 ## Ukaguzi wa Aina ya Namba
 

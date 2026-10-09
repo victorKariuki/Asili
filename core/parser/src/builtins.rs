@@ -84,6 +84,16 @@ fn ret_namba() -> FnContract {
 }
 
 /// Prelude: foundation types and constructors. Always in scope.
+/// Add `name(params) -> ret` to an export table.
+fn contract(
+    functions: &mut HashMap<String, FnContract>,
+    name: &str,
+    params: Vec<ValueType>,
+    ret: ValueType,
+) {
+    functions.insert(name.to_string(), FnContract { params, ret });
+}
+
 pub fn msingi_exports() -> BuiltinExportTable {
     let mut functions = HashMap::new();
     functions.insert(
@@ -175,6 +185,30 @@ pub fn msingi_exports() -> BuiltinExportTable {
 
 pub fn hisabati_exports() -> BuiltinExportTable {
     let mut functions = HashMap::new();
+    contract(
+        &mut functions,
+        "nasibu_kamili",
+        vec![ValueType::Namba, ValueType::Namba],
+        ValueType::Namba,
+    );
+    contract(
+        &mut functions,
+        "nasibu_mbegu",
+        vec![ValueType::Namba],
+        ValueType::Tupu,
+    );
+    contract(
+        &mut functions,
+        "changanya",
+        vec![ValueType::Orodha(Box::new(ValueType::Unknown))],
+        ValueType::Orodha(Box::new(ValueType::Unknown)),
+    );
+    contract(
+        &mut functions,
+        "chagua_nasibu",
+        vec![ValueType::Orodha(Box::new(ValueType::Unknown))],
+        ValueType::Chaguo(Box::new(ValueType::Unknown)),
+    );
     functions.insert(
         "namba_kuu_kutoka".to_string(),
         FnContract {
@@ -268,6 +302,21 @@ pub fn hisabati_exports() -> BuiltinExportTable {
 /// System: env, args, exit. Requires `leta mfumo`.
 pub fn mfumo_exports() -> BuiltinExportTable {
     let mut functions = HashMap::new();
+    contract(
+        &mut functions,
+        "weka_env",
+        vec![ValueType::Neno, ValueType::Neno],
+        ValueType::Tupu,
+    );
+    contract(
+        &mut functions,
+        "endesha",
+        vec![
+            ValueType::Neno,
+            ValueType::Orodha(Box::new(ValueType::Neno)),
+        ],
+        ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
+    );
     functions.insert(
         "vigezo".to_string(),
         FnContract {
@@ -413,6 +462,37 @@ pub fn mfumo_exports() -> BuiltinExportTable {
 /// Time: seconds since epoch, sleep, format. Requires `leta majira`.
 pub fn majira_exports() -> BuiltinExportTable {
     let mut functions = HashMap::new();
+    contract(
+        &mut functions,
+        "kwa_iso",
+        vec![ValueType::Wakati],
+        ValueType::Neno,
+    );
+    contract(
+        &mut functions,
+        "umbiza_eneo",
+        vec![ValueType::Wakati, ValueType::Namba],
+        ValueType::Neno,
+    );
+    contract(
+        &mut functions,
+        "kutoka_iso",
+        vec![ValueType::Neno],
+        ValueType::Tokeo(Box::new(ValueType::Wakati), Box::new(ValueType::Neno)),
+    );
+    contract(
+        &mut functions,
+        "kutoka_tarehe",
+        vec![ValueType::Namba, ValueType::Namba, ValueType::Namba],
+        ValueType::Tokeo(Box::new(ValueType::Wakati), Box::new(ValueType::Neno)),
+    );
+    contract(
+        &mut functions,
+        "tarehe",
+        vec![ValueType::Wakati],
+        ValueType::Kamusi(Box::new(ValueType::Neno), Box::new(ValueType::Namba)),
+    );
+    contract(&mut functions, "kipima_muda", vec![], ValueType::Namba);
     functions.insert(
         "majira".to_string(),
         FnContract {
@@ -511,6 +591,81 @@ pub fn matumizi_exports() -> BuiltinExportTable {
 /// File system: read, write, append, exists, delete, size. Requires `leta faili`.
 pub fn faili_exports() -> BuiltinExportTable {
     let mut functions = HashMap::new();
+    contract(
+        &mut functions,
+        "orodha_saraka",
+        vec![ValueType::Neno],
+        ValueType::Tokeo(
+            Box::new(ValueType::Orodha(Box::new(ValueType::Neno))),
+            Box::new(ValueType::Neno),
+        ),
+    );
+    contract(
+        &mut functions,
+        "unda_saraka",
+        vec![ValueType::Neno],
+        ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
+    );
+    contract(
+        &mut functions,
+        "futa_saraka",
+        vec![ValueType::Neno],
+        ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
+    );
+    contract(
+        &mut functions,
+        "badili_jina",
+        vec![ValueType::Neno, ValueType::Neno],
+        ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
+    );
+    contract(
+        &mut functions,
+        "nakili",
+        vec![ValueType::Neno, ValueType::Neno],
+        ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno)),
+    );
+    contract(
+        &mut functions,
+        "ni_saraka",
+        vec![ValueType::Neno],
+        ValueType::Ukweli,
+    );
+    contract(
+        &mut functions,
+        "ni_faili",
+        vec![ValueType::Neno],
+        ValueType::Ukweli,
+    );
+    contract(
+        &mut functions,
+        "njia_unganisha",
+        vec![ValueType::Neno, ValueType::Neno],
+        ValueType::Neno,
+    );
+    contract(
+        &mut functions,
+        "njia_mzazi",
+        vec![ValueType::Neno],
+        ValueType::Chaguo(Box::new(ValueType::Neno)),
+    );
+    contract(
+        &mut functions,
+        "njia_jina",
+        vec![ValueType::Neno],
+        ValueType::Chaguo(Box::new(ValueType::Neno)),
+    );
+    contract(
+        &mut functions,
+        "njia_kiendelezi",
+        vec![ValueType::Neno],
+        ValueType::Chaguo(Box::new(ValueType::Neno)),
+    );
+    contract(
+        &mut functions,
+        "njia_kamili",
+        vec![ValueType::Neno],
+        ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
+    );
     functions.insert(
         "soma_faili".to_string(),
         FnContract {

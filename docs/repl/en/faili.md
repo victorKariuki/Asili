@@ -32,6 +32,18 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 | `w.andika(data)`| Write `data`; returns `Tokeo<Tupu, Neno>`     |
 | `w.funga()`     | Explicit close (a no-op if already closed)    |
 
+## Saraka na njia
+
+| Function | Description |
+|----------|-------------|
+| `orodha_saraka(njia)` | Names in a directory, sorted; `Tokeo<Orodha<Neno>, Neno>` |
+| `unda_saraka(njia)` / `futa_saraka(njia)` | Create (with missing parents) / delete a directory and its contents |
+| `nakili(a, b)` / `badili_jina(a, b)` | Copy a file (bytes copied) / rename or move |
+| `ni_saraka(njia)` / `ni_faili(njia)` | Whether the path is a directory / a file |
+| `njia_unganisha(a, b)` | Join two path parts with the platform's separator |
+| `njia_mzazi(njia)` / `njia_jina(njia)` / `njia_kiendelezi(njia)` | Parent, last part, extension (Chaguo) |
+| `njia_kamili(njia)` | The absolute path, links resolved (Tokeo) |
+
 ## Mkondo
 
 ```asili

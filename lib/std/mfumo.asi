@@ -6,6 +6,9 @@ thabiti JINA_OS: Neno
 kazi vigezo() -> Orodha<Neno>
 kazi pata_env(jina: Neno) -> Chaguo<Neno>
 kazi toka(kodi: Namba) -> Tupu
+kazi weka_env(jina: Neno, thamani: Neno) -> Tupu
+# Endesha programu nyingine; matokeo yake (stdout) ikifaulu, au kosa lenye msimbo na stderr.
+kazi endesha(amri: Neno, hoja: Orodha<Neno>) -> Tokeo<Neno, Neno>
 kazi mlinzi_anza(ms: Namba) -> Tokeo<Tupu, Neno>
 kazi mlinzi_lisha() -> Tupu
 kazi kikomo_kumbukumbu(baiti: Namba) -> Tupu

@@ -87,6 +87,10 @@ matokeo kama `Namba` tupu — mf. `jaribu asini(0.5)`, si `asini(0.5)` moja kwa 
 |-------------------|---------------------------------------------|
 | `nasibu()`        | Namba nasibu ya desimali katika `[0.0, 1.0)` |
 | `nasibu_chini(min, max)` | Namba nasibu ya desimali katika `[min, max)` (hoja 2, si 1) |
+| `nasibu_kamili(a, b)` | Namba kamili nasibu kutoka `a` hadi `b` (zote mbili zimo) |
+| `nasibu_mbegu(n)` | Namba za nasibu zinazofuata hurudiwa kila mara programu inapoendeshwa |
+| `changanya(orodha)` | Orodha kwa mpangilio wa nasibu |
+| `chagua_nasibu(orodha)` | Kipengele cha nasibu (Chaguo) |
 
 ## Ukaguzi wa Aina ya Namba
 

@@ -9,3 +9,14 @@ kazi sekunde(w: Wakati) -> Namba
 kazi kutoka_sekunde(n: Namba) -> Wakati
 kazi umbiza(w: Wakati) -> Neno
 kazi lala(sekunde: Namba) -> Tupu
+
+# Tarehe na saa kwa ISO 8601 (UTC): "2026-10-09T12:30:00Z".
+kazi kwa_iso(w: Wakati) -> Neno
+kazi kutoka_iso(maandishi: Neno) -> Tokeo<Wakati, Neno>
+# Kama umbiza, kwa saa za eneo lililo dakika `dakika` mbele ya UTC.
+kazi umbiza_eneo(w: Wakati, dakika: Namba) -> Neno
+kazi kutoka_tarehe(mwaka: Namba, mwezi: Namba, siku: Namba) -> Tokeo<Wakati, Neno>
+# mwaka, mwezi, siku, saa, dakika, sekunde, siku_ya_wiki (1 = Jumatatu), siku_ya_mwaka.
+kazi tarehe(w: Wakati) -> Kamusi<Neno, Namba>
+# Sekunde za saa isiyorudi nyuma, za kupima muda.
+kazi kipima_muda() -> Namba

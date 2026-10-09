@@ -9,5 +9,21 @@ kazi vipo(njia: Neno) -> Ukweli
 kazi futa(njia: Neno) -> Tokeo<Tupu, Neno>
 kazi ukubwa(njia: Neno) -> Namba
 
+# Saraka.
+kazi orodha_saraka(njia: Neno) -> Tokeo<Orodha<Neno>, Neno>
+kazi unda_saraka(njia: Neno) -> Tokeo<Tupu, Neno>
+kazi futa_saraka(njia: Neno) -> Tokeo<Tupu, Neno>
+kazi badili_jina(kutoka: Neno, kwenda: Neno) -> Tokeo<Tupu, Neno>
+kazi nakili(kutoka: Neno, kwenda: Neno) -> Tokeo<Namba, Neno>
+kazi ni_saraka(njia: Neno) -> Ukweli
+kazi ni_faili(njia: Neno) -> Ukweli
+
+# Njia (maandishi tu).
+kazi njia_unganisha(a: Neno, b: Neno) -> Neno
+kazi njia_mzazi(njia: Neno) -> Chaguo<Neno>
+kazi njia_jina(njia: Neno) -> Chaguo<Neno>
+kazi njia_kiendelezi(njia: Neno) -> Chaguo<Neno>
+kazi njia_kamili(njia: Neno) -> Tokeo<Neno, Neno>
+
 # Kishikizo cha faili; hali ni "soma", "andika" au "ongeza".
 kazi faili_fungua(njia: Neno, hali: Neno) -> Tokeo<Faili, Neno>

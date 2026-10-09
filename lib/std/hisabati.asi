@@ -75,6 +75,12 @@ kazi si_namba(x: Namba) -> Ukweli
 kazi ni_ukomo(x: Namba) -> Ukweli
 kazi nasibu() -> Namba
 kazi nasibu_chini(chini: Namba, juu: Namba) -> Namba
+# Namba kamili kati ya chini na juu (zote mbili zimo).
+kazi nasibu_kamili(chini: Namba, juu: Namba) -> Namba
+# Huanza mfululizo unaorudiwa wa namba za nasibu (kwa majaribio).
+kazi nasibu_mbegu(mbegu: Namba) -> Tupu
+kazi changanya(orodha: Orodha<T>) -> Orodha<T>
+kazi chagua_nasibu(orodha: Orodha<T>) -> Chaguo<T>
 
 kazi namba_kuu_kutoka(maandishi: Neno) -> Tokeo<Namba_Kuu, Neno>
 kazi namba_sahihi_kutoka(maandishi: Neno) -> Tokeo<Namba_Sahihi, Neno>

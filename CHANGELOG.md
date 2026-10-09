@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Random numbers, dates, directories, paths and programs**: `hisabati` gains `nasibu_kamili`
+  (whole numbers in a range), `nasibu_mbegu` (a seed: the same numbers every run),
+  `changanya` (shuffle) and `chagua_nasibu`; `majira` gains `kwa_iso` / `kutoka_iso`
+  (ISO 8601, with offsets), `umbiza_eneo` (another time zone by offset), `kutoka_tarehe`,
+  `tarehe` (calendar fields as a `Kamusi`) and `kipima_muda` (a monotonic clock); `faili`
+  gains `orodha_saraka`, `unda_saraka`, `futa_saraka`, `badili_jina`, `nakili`, `ni_saraka`,
+  `ni_faili` and the path functions `njia_unganisha`, `njia_mzazi`, `njia_jina`,
+  `njia_kiendelezi` and `njia_kamili`; `mfumo` gains `weka_env` and `endesha` (run a program:
+  its output, or an error with its exit code and stderr).
+
 - **Text, list, map and set methods**: `Neno` gains `safisha` (and `safisha_mwanzo`,
   `safisha_mwisho`), `jaza_kushoto`/`jaza_kulia` (padding), `jaza` (`{}` templates), `herufi`,
   `mistari`, `geuza`, `misimbo` and `kwa_namba` (a fallible parse, where `kama Namba` gives 0);
@@ -606,6 +616,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was not built.
 
 ### Fixed
+
+- **`umbiza` before 1970**: formatting a time before the epoch panicked (a negative duration)
+  and stopped the program; dates now follow the Gregorian calendar either side of 1970.
 
 - **Text positions count characters**: `Neno.kata` sliced by byte offset (cutting a multi-byte
   character in half and producing `�`) and `Neno.tafuta` returned a byte offset, while `urefu`

@@ -32,6 +32,18 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 | `w.andika(data)`| Andika `data`; hurejesha `Tokeo<Tupu, Neno>` |
 | `w.funga()`     | Funga wazi (haina athari ikiwa tayari imefungwa) |
 
+## Saraka na njia
+
+| Kazi | Maelezo |
+|------|---------|
+| `orodha_saraka(njia)` | Majina yaliyo ndani ya saraka, yamepangwa; `Tokeo<Orodha<Neno>, Neno>` |
+| `unda_saraka(njia)` / `futa_saraka(njia)` | Unda saraka (pamoja na wazazi wasiokuwepo) / futa saraka na vilivyomo |
+| `nakili(a, b)` / `badili_jina(a, b)` | Nakili faili (idadi ya baiti) / badili jina au hamisha |
+| `ni_saraka(njia)` / `ni_faili(njia)` | Je, njia ni saraka / ni faili |
+| `njia_unganisha(a, b)` | Unganisha sehemu mbili za njia kwa kitenganishi cha mfumo |
+| `njia_mzazi(njia)` / `njia_jina(njia)` / `njia_kiendelezi(njia)` | Mzazi, sehemu ya mwisho, kiendelezi (Chaguo) |
+| `njia_kamili(njia)` | Njia kamili, viungo vimefuatwa (Tokeo) |
+
 ## Mkondo
 
 ```asili

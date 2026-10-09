@@ -42,6 +42,10 @@ weka ab = absolute(-5)        # 5
 weka s = sakafu(3.7)          # 3
 weka juu = dari(3.2)          # 4
 weka n = nasibu()             # random float [0,1)
+weka r = nasibu_kamili(1, 6)  # a whole number from 1 to 6, both included
+nasibu_mbegu(42)              # from here on, the same numbers every run (tests, simulations)
+weka c = changanya([1, 2, 3]) # the list in random order
+weka x = chagua_nasibu([4, 5])  # Chaguo: a random element, Hamna for an empty list
 ```
 
 **Maadili ya hisabati (constants)** — available ambiently:
@@ -93,6 +97,10 @@ leta mfumo
 weka hoja = vigezo()                # Orodha<Neno> of CLI args
 weka path = pata_env("PATH")       # Chaguo<Neno>
 toka(1)                             # exit with code
+weka_env("LUGHA", "sw")             # set an environment variable for this program (and the
+                                    # programs it runs)
+weka orodha = jaribu endesha("ls", ["-l"])   # run a program: its output if it exits with 0,
+                                    # else a Kosa naming the exit code and its stderr
 jaribu mlinzi_anza(100)            # watchdog: feed with mlinzi_lisha() within every 100 ms
 kikomo_kumbukumbu(8000000)         # memory limit in bytes (runner); see #[hali_salama]
 jaribu sikiliza_ishara(2, shimla)   # register signal handler (e.g. SIGINT = 2); returns
@@ -169,23 +177,26 @@ leta majira
 weka wakati_sasa = sasa()              # Wakati: current timestamp
 weka sek = sekunde(wakati_sasa)        # Namba: seconds since epoch
 weka w2 = kutoka_sekunde(1700000000)   # Wakati: from epoch seconds
-weka umbizwa = umbiza(wakati_sasa)     # formatted string (no format-string argument today —
-                                        # umbiza takes exactly 1 arg: a Wakati)
+weka umbizwa = umbiza(wakati_sasa)     # "2026-10-09 12:30:00" (UTC)
+weka iso = kwa_iso(wakati_sasa)         # "2026-10-09T12:30:00Z" (milliseconds when present)
+weka eneo = umbiza_eneo(wakati_sasa, 180)  # "2026-10-09 15:30:00+03:00": UTC+3, in minutes
+weka w3 = jaribu kutoka_iso("2026-10-09T15:30:00+03:00")  # Tokeo<Wakati, Neno>; also
+                                        # "YYYY-MM-DD", a space for T, Z, ±HH:MM or ±HHMM
+weka w4 = jaribu kutoka_tarehe(2024, 2, 29)   # Tokeo<Wakati, Neno>: midnight UTC
+weka p = tarehe(wakati_sasa)            # Kamusi<Neno, Namba>: mwaka, mwezi, siku, saa,
+                                        # dakika, sekunde, siku_ya_wiki (1 = Jumatatu),
+                                        # siku_ya_mwaka
+weka kuanza = kipima_muda()             # seconds on a clock that never goes back, for
+                                        # measuring durations (sasa() follows the wall clock)
 lala(1)                                 # sleep for 1 second (argument is seconds, not ms)
 
 weka sasa_namba = majira()             # Namba: raw seconds since epoch (not Wakati)
 ```
 
-> `majira()` returns `Namba` (raw float seconds). `sasa()` returns `Wakati` — a plain opaque
-> time value with **no methods of its own**; `sekunde(w)` and `umbiza(w)` are free functions
-> that take a `Wakati` argument (`w.sekunde()`/`w.umbiza()` do not exist and fail to compile:
-> `SEM039: aina 'Wakati' haina njia`). Use `sasa()` + the free functions above when you need
-> formatting; use `majira()` for simple elapsed-time arithmetic.
->
-> **Known bug:** `umbiza()`'s calendar-date formatting is inaccurate — it uses fixed 30-day
-> months and no leap-year handling, so the date portion can be off by more than two weeks
-> depending on the time of year (the time-of-day portion is correct). See
-> [implementation-status.md](../design/implementation-status.md).
+> `majira()` returns `Namba` (raw float seconds). `sasa()` returns `Wakati`; `w.sekunde()`
+> (or `sekunde(w)`) gives its seconds since the epoch. Dates follow the proleptic Gregorian
+> calendar (leap years included, times before 1970 too) in UTC; `umbiza_eneo` shows another
+> time zone by its offset in minutes — there is no time-zone database.
 
 **Maadili ya majira** — available ambiently:
 
@@ -204,6 +215,19 @@ jaribu andika_faili("out.txt", "maudhui\n")
 weka ipo = vipo("path/to/file")      # Ukweli
 weka ukubwa_w = ukubwa("file.txt")   # Namba (bytes)
 jaribu futa("temp.txt")
+
+jaribu unda_saraka("kumbukumbu/2026")      # makes missing parents too
+weka majina = jaribu orodha_saraka("kumbukumbu")   # Orodha<Neno>, sorted
+jaribu nakili("a.txt", "b.txt")             # Tokeo<Namba, Neno>: bytes copied
+jaribu badili_jina("b.txt", "c.txt")
+ni_saraka("kumbukumbu")                     # Ukweli (ni_faili for files)
+jaribu futa_saraka("kumbukumbu")            # and everything inside it
+
+njia_unganisha("data", "a.txt")             # "data/a.txt" (the platform's separator)
+njia_mzazi("/data/a.txt")                   # Chaguo: "/data"
+njia_jina("/data/a.txt")                    # Chaguo: "a.txt"
+njia_kiendelezi("/data/a.txt")              # Chaguo: "txt"
+jaribu njia_kamili("a.txt")                 # Tokeo: the absolute path, links resolved
 ```
 
 **Maadili ya faili** — available ambiently:

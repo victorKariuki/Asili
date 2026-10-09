@@ -296,18 +296,107 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
                     args.len()
                 )));
             }
-            let r: f64 = rand::rng().random();
-            Ok(Value::Namba(r))
+            Ok(Value::Namba(random_f64()))
         }),
     );
     m.insert(
         "nasibu_chini".to_string(),
         Box::new(|args: &[Value]| {
             let (min, max) = value::args_f64_2(args, "nasibu_chini")?;
-            let r: f64 = rand::rng().random();
-            Ok(Value::Namba(min + r * (max - min)))
+            Ok(Value::Namba(min + random_f64() * (max - min)))
         }),
     );
+    m.insert(
+        "nasibu_kamili".to_string(),
+        Box::new(|args: &[Value]| {
+            let (a, b) = value::args_f64_2(args, "nasibu_kamili")?;
+            let (lo, hi) = (a.min(b).ceil(), a.max(b).floor());
+            if !(lo.is_finite() && hi.is_finite()) || lo > hi || hi - lo >= 9.0e15 {
+                return Err(crate::value::EvalError::TypeErr(
+                    "nasibu_kamili inahitaji mipaka ya Namba kamili zenye nafasi kati yao".into(),
+                ));
+            }
+            Ok(Value::Namba(lo + random_below((hi - lo) as u64 + 1) as f64))
+        }),
+    );
+    m.insert(
+        "nasibu_mbegu".to_string(),
+        Box::new(|args: &[Value]| {
+            let seed = value::as_f64(args.first().unwrap_or(&Value::Hamna)).ok_or_else(|| {
+                crate::value::EvalError::TypeErr("nasibu_mbegu inahitaji Namba".into())
+            })?;
+            seed_rng(seed);
+            Ok(Value::Tupu)
+        }),
+    );
+    m.insert(
+        "changanya".to_string(),
+        Box::new(|args: &[Value]| {
+            let mut items = match args.first() {
+                Some(Value::Orodha(l)) => l.to_vec(),
+                _ => {
+                    return Err(crate::value::EvalError::TypeErr(
+                        "changanya inahitaji Orodha".into(),
+                    ))
+                }
+            };
+            // Fisher–Yates.
+            for i in (1..items.len()).rev() {
+                let j = random_below(i as u64 + 1) as usize;
+                items.swap(i, j);
+            }
+            Ok(Value::list(items))
+        }),
+    );
+    m.insert(
+        "chagua_nasibu".to_string(),
+        Box::new(|args: &[Value]| match args.first() {
+            Some(Value::Orodha(l)) if l.is_empty() => Ok(Value::Chaguo(None)),
+            Some(Value::Orodha(l)) => {
+                let i = random_below(l.len() as u64) as usize;
+                Ok(Value::Chaguo(l.get(i).cloned().map(Box::new)))
+            }
+            _ => Err(crate::value::EvalError::TypeErr(
+                "chagua_nasibu inahitaji Orodha".into(),
+            )),
+        }),
+    );
+}
+
+thread_local! {
+    /// This thread's random numbers after `nasibu_mbegu` (a reproducible sequence), or `None`
+    /// for the system's (seeded from the operating system).
+    static SEEDED: std::cell::RefCell<Option<rand::rngs::StdRng>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn seed_rng(seed: f64) {
+    use rand::SeedableRng;
+    SEEDED.with(|s| *s.borrow_mut() = Some(rand::rngs::StdRng::seed_from_u64(seed.to_bits())));
+}
+
+/// A number in `[0, 1)` from this thread's random numbers.
+pub(crate) fn random_f64() -> f64 {
+    SEEDED.with(|s| match &mut *s.borrow_mut() {
+        Some(r) => r.random(),
+        None => rand::rng().random(),
+    })
+}
+
+/// A whole number in `[0, n)` (`n` > 0), uniformly.
+pub(crate) fn random_below(n: u64) -> u64 {
+    SEEDED.with(|s| match &mut *s.borrow_mut() {
+        Some(r) => r.random_range(0..n),
+        None => rand::rng().random_range(0..n),
+    })
+}
+
+/// `n` random bytes from this thread's random numbers.
+pub(crate) fn random_bytes<const N: usize>() -> [u8; N] {
+    SEEDED.with(|s| match &mut *s.borrow_mut() {
+        Some(r) => r.random(),
+        None => rand::rng().random(),
+    })
 }
 
 /// `n ** p` as `Tokeo`, KOSA when the result is not finite.
