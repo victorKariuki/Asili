@@ -205,3 +205,28 @@ fn double_funga_is_a_safe_no_op() {
     );
     let _ = std::fs::remove_file(&path);
 }
+
+/// A handle declared inside a block is released when the block ends — so what it wrote is in
+/// the file when the same `kazi` reads it after the block.
+#[test]
+fn block_scope_exit_closes_the_handle() {
+    let path = temp_path("block");
+    let src = format!(
+        r#"
+        leta faili
+        kazi jaribu() -> Neno {{
+            ikiwa kweli {{
+                weka w = jaribu (faili_fungua("{p}", "andika"))
+                jaribu (w.andika("ndani ya kizuizi"))
+            }}
+            weka r = jaribu (faili_fungua("{p}", "soma"))
+            rejesha jaribu (r.soma())
+        }}
+        "#,
+        p = path.display()
+    );
+    let module = compile(&src);
+    let got = run_function(&module, "jaribu", vec![]);
+    let _ = std::fs::remove_file(&path);
+    assert_eq!(got.expect("run"), Value::neno("ndani ya kizuizi"));
+}

@@ -242,3 +242,22 @@ fn weak_reference_does_not_count_toward_strong_refcount() {
         "downgrading to Dhaifu must not increment the strong count"
     );
 }
+
+/// A share declared inside a block is dropped where the block ends, not when the `kazi` returns.
+#[test]
+fn block_scope_exit_drops_a_share() {
+    let src = r#"
+        leta kasha_gc
+
+        kazi baada_ya_kizuizi() -> Namba {
+            weka a = kasha_gc_unda(1.0)
+            ikiwa kweli {
+                weka b = a.shirikisha()
+            }
+            rejesha a.idadi()
+        }
+    "#;
+    let module = compile(src);
+    let result = run_function(&module, "baada_ya_kizuizi", vec![]).expect("runs");
+    assert_eq!(result, Value::Namba(1.0));
+}

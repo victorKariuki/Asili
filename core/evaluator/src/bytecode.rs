@@ -1378,7 +1378,21 @@ impl<'a> FunctionCompiler<'a> {
                 return None;
             }
         }
-        self.scopes.pop();
+        // The block's generic locals are released where it ends (a file or connection one
+        // holds is closed there), unless their type cannot hold a resource.
+        let scope = self.scopes.pop()?;
+        let mut held: Vec<Reg> = scope
+            .values()
+            .filter(|l| l.op.ty == Ty::Val && !resource_free(l.type_name.as_deref()))
+            .map(|l| l.op.reg)
+            .collect();
+        if !held.is_empty() {
+            held.sort_unstable();
+            let k = self.program.constant(StoredConstant::Tupu);
+            for reg in held {
+                self.emit(Opcode::ConstVal { dst: reg, k });
+            }
+        }
         Some(())
     }
 
@@ -2924,6 +2938,32 @@ pub fn run_bytecode_function(
     args: Vec<Value>,
 ) -> Result<Value, EvalError> {
     run_bytecode_function_on(&native_for(program)?, program, name, args)
+}
+
+/// Whether a value of the written type `name` can never hold a resource (a file, a connection, a
+/// thread or a shared box): text, numbers, truth values and collections of them.
+fn resource_free(name: Option<&str>) -> bool {
+    const PLAIN: [&str; 14] = [
+        "Neno",
+        "Herufi",
+        "Namba",
+        "Ukweli",
+        "Tupu",
+        "Orodha",
+        "Kamusi",
+        "Seti",
+        "Jozi",
+        "Chaguo",
+        "Tokeo",
+        "Namba_Kuu",
+        "Namba_Sahihi",
+        "Wakati",
+    ];
+    name.is_some_and(|n| {
+        n.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .filter(|w| !w.is_empty())
+            .all(|w| PLAIN.contains(&w))
+    })
 }
 
 /// Every `shughuli ya` method, inherent blocks first (the order the tree-walker searches them).

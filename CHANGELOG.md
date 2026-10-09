@@ -532,6 +532,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Values released at block exit in native code**: a generic local declared inside a block (an
+  `ikiwa` branch, a loop body) is dropped where the block ends, as the language defines, instead
+  of when its register is next written or the `kazi` returns — a file, connection or `Kasha_GC`
+  share it holds is released there. Types that cannot hold a resource (text, numbers, their
+  collections) are left alone, so numeric and text code pays nothing.
+
 - **Unknown built-in methods are compile errors**: a call to a method no built-in type has —
   `a.panga()` on an `Orodha` — compiled and only failed when the program ran, with a misleading
   message. The analyzer now reports `SEM040` ("njia 'panga' haipo kwa 'Orodha'"). The method
