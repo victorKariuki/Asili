@@ -311,20 +311,17 @@ impl<'p> Host<'p> {
         Ok(())
     }
 
-    /// This program as other threads receive it: the one the host was started from, or else
-    /// its syntax tree for the tree-walker.
-    fn shared_program(&mut self) -> crate::spawn::Shared {
-        let program = self.program;
-        self.shared
-            .get_or_insert_with(|| {
-                crate::spawn::Shared::Tree(std::sync::Arc::new(
-                    program
-                        .ast
-                        .clone()
-                        .expect("bytecode carries its syntax tree"),
-                ))
-            })
-            .clone()
+    /// This program as other threads receive it: the one the host was started from, or else a
+    /// shared copy with its own native code (built once, on the first thread started).
+    fn shared_program(&mut self) -> Result<crate::spawn::Shared, EvalError> {
+        if let Some(shared) = &self.shared {
+            return Ok(shared.clone());
+        }
+        let program = std::sync::Arc::new(self.program.clone());
+        let native = std::sync::Arc::new(crate::bytecode::native_for(&program)?);
+        let shared = crate::spawn::Shared::Code { program, native };
+        self.shared = Some(shared.clone());
+        Ok(shared)
     }
 
     /// `Neno` constant `k` interned (a struct or field name).
@@ -933,14 +930,11 @@ impl<'p> Host<'p> {
                 }
                 let result = match self.spawners.iter().position(|s| *s == builtin) {
                     // Threads that run this program's `kazi` on this engine.
-                    Some(which) => {
-                        let shared = self.shared_program();
-                        match which {
-                            0 => crate::builtins::sambamba::tenda(&shared, &args),
-                            1 => crate::builtins::mkondo::mkondo_tumikia(&shared, &args),
-                            _ => crate::builtins::http::mkondo_tumikia_http(&shared, &args),
-                        }
-                    }
+                    Some(which) => self.shared_program().and_then(|shared| match which {
+                        0 => crate::builtins::sambamba::tenda(&shared, &args),
+                        1 => crate::builtins::mkondo::mkondo_tumikia(&shared, &args),
+                        _ => crate::builtins::http::mkondo_tumikia_http(&shared, &args),
+                    }),
                     None => (self.builtins[builtin])(&args),
                 };
                 self.give_args(args);
