@@ -6,19 +6,22 @@ description: Keep Asili at C speed and keep its execution engines agreeing. Use 
 # Performance guardrails
 
 Asili runs the Arto Inkala Sudoku (`examples/sudoku`, 90,665 attempts) at C speed through
-ahead-of-time native code. That result rests on a few invariants that are easy to break
-silently: a change can keep every functional test green while making the hot loop 10× slower,
-or while making the native tier disagree with the interpreter on one edge case. This skill is
+ahead-of-time native code — and native code is the only way any program runs. That result
+rests on a few invariants that are easy to break silently: a change can keep every functional
+test green while making the hot loop 10× slower, or while making native code give a different
+result from the language's reference semantics on one edge case. This skill is
 the checklist that stops that. `docs/design/performance.md` has the full design and history.
 
-## The execution tiers (one semantics, two engines)
+## One engine: native code
 
-| Tier | Where | When it runs |
+| Target | Where | What runs on it |
 |---|---|---|
-| Tree-walking evaluator | `core/evaluator/src/eval/` | REPL, `pata jaribu`, AST `.asb` artifacts, `kazi` the bytecode compiler can't lower, and whole bytecode programs where there is no native code (`ASILI_AOT=0`, a platform without a backend, wasm) — bytecode artifacts carry the syntax tree for this |
-| Native code (`nguvu`) | `core/evaluator/src/nguvu/` (+ `native.rs` analysis, `aot.rs` hash/ABI, `host.rs` the runtime it calls back into) | every bytecode program: `pata jenga` writes `kilele/<name>.nguvu`; `pata tenda`/`jenga --tenda`/runner map it if its hash, ABI, architecture and CPU features match, else compile in memory |
+| Machine code (x86-64, AArch64) | `core/evaluator/src/nguvu/` (+ `native.rs` analysis, `aot.rs` hash/ABI, `host.rs` the runtime it calls back into) | everything: `pata tenda`/`jenga --tenda`/the runner (the `kilele/<name>.nguvu` image if its hash, ABI, architecture and CPU features match, else compiled in memory), `pata jaribu` (tests, fixtures, coverage via `Opcode::Line`), the REPL (`ReplSession`), the debugger (`Opcode::Line` with bindings), threads |
+| A wasm module (browser) | `nguvu/wasm.rs`, loaded through the page (`platform::load_native_module`) | the playground (`driver/wasm`) |
 
-There is no bytecode interpreter: bytecode (`bytecode.rs`) is only the native backend's input.
+There is no interpreter of any kind: bytecode (`bytecode.rs`) is only the native backend's
+input, and nothing walks a syntax tree. A program the bytecode compiler can't lower does not
+build (`compile_module_explained` names the `kazi` and line).
 
 No external tool is involved anywhere: not to build `pata`, not in `pata jenga`, not to run.
 
@@ -26,8 +29,8 @@ No external tool is involved anywhere: not to build `pata`, not in `pata jenga`,
 `opt.rs` (constant folding, `range.rs` interval analysis, if-conversion, bit-test/popcount
 fusion, value reuse, constant hoisting, liveness DCE) → `regalloc.rs` + `schedule.rs` (shared
 by targets) → `codegen.rs`/`x64.rs` (x86-64) or `codegen_a64.rs`/`a64.rs` (AArch64) →
-`mem.rs` (executable mapping). A change to IR semantics or a new IR instruction needs both
-code generators; run the differential tests on arm64 too (CI's `native-arm64` job, or locally:
+`mem.rs` (executable mapping), or `wasm.rs` (one wasm module, structured control flow). A
+change to IR semantics or a new IR instruction needs all three code generators; run the differential tests on arm64 too (CI's `native-arm64` job, or locally:
 `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER="qemu-aarch64-static -L /usr/aarch64-linux-gnu"
 cargo test -p asili-evaluator --target aarch64-unknown-linux-gnu`).
@@ -47,10 +50,9 @@ cargo test -p asili-evaluator --target aarch64-unknown-linux-gnu`).
    removed on purpose; see commit `d77a8c4` and the history of `aot.rs` if you need them.)
    Every IR transform must keep bit-identical results; an optimization that can't prove its
    precondition leaves the code alone.
-3. **Native code is bit-identical to the interpreter.** A `Namba` register may be lowered to
+3. **Native code gives the reference results bit for bit.** A `Namba` register may be lowered to
    `i64` only when `native::analyze_numbers` proves it whole, never NaN, never `-0.0`, and within
-   ±2^53. Nothing is speculated: no guards, no deoptimization, native code never resumes the
-   interpreter part-way through a call. If a counter needs to be an integer for speed, make the
+   ±2^53. Nothing is speculated: no guards, no deoptimization. If a counter needs to be an integer for speed, make the
    analysis prove it (square-root narrowing, loop-accumulator caps are the existing tools).
    `sdiv`/`srem` only on proven integers. Bounds checks
    are dropped only for indices in `NumAnalysis::safe_index`. When in doubt, the analysis must
@@ -64,10 +66,12 @@ cargo test -p asili-evaluator --target aarch64-unknown-linux-gnu`).
    generated code assumes about its host → bump `ABI_VERSION` in `aot.rs`. Changing what code
    `nguvu` generates → bump `IMAGE_VERSION` in `nguvu/mod.rs`. A stale image must be rejected,
    never loaded.
-6. **Unsupported means fallback, never crash.** When the bytecode compiler can't lower a
-   construct it returns `None` and `pata jenga` emits the AST artifact
-   (`compile_module_explained` says which `kazi`/line blocked it). Native code and its host must
-   never hit an "unsupported" error at run time for something the compiler accepted.
+6. **Unsupported means a build error, never a fallback or a crash.** When the bytecode compiler
+   can't lower a construct the build fails (`compile_module_explained` says which `kazi`/line
+   blocked it) — there is nothing to fall back to. Native code and its host must never hit an
+   "unsupported" error at run time for something the compiler accepted. Lower new constructs
+   instead (a method the compiler can't resolve statically is dispatched at run time, a
+   computed module constant runs in the `<thabiti>` init function, …).
 7. **The hot path stays unboxed.** Numeric instructions touch only the `nums` (`f64`) and
    `lists` (`Vec<f64>`) register files — no `Value` construction, no allocation, no `HashMap`
    lookups per instruction. Fused instructions (`JumpIfNot` compare-and-branch, `ForStep`,
@@ -79,14 +83,20 @@ cargo test -p asili-evaluator --target aarch64-unknown-linux-gnu`).
 
 ## Required tests for engine changes
 
-- `cargo test -p asili-evaluator --test engines_agree` — each snippet on the tree-walker and
-  native code; values *and error messages* must match. Add a snippet for every new operator, method,
-  builtin or syntax form.
-- `cargo test -p asili-evaluator --test native_tiers` — interpreter vs native code (through the
-  on-disk image), bit-for-bit (NaN bit patterns excluded: Asili can't observe them).
+- `cargo test -p asili-evaluator --test engines_agree` — each snippet's native code against its
+  expected results in `tests/golden/engines_agree.txt` (recorded from the tree-walker before it
+  was removed); values *and error messages* must match. Add a snippet for every new operator,
+  method, builtin or syntax form, record it with `ASILI_GOLDEN=write`, and check the recorded
+  line by hand against the language's documented semantics before committing it.
+- `cargo test -p asili-evaluator --test native_tiers` — native code through the on-disk image
+  against `tests/golden/native_tiers.txt`, bit-for-bit (NaN bit patterns excluded: Asili can't
+  observe them).
   Add edge cases for anything numeric: `-0.0`, NaN, ±∞, ±2^53 and beyond (must stay floats),
   negative `%`/`//`, shifts outside `0..=63`, out-of-range indices.
 - `cargo test -p asili-evaluator --test bytecode` — compiler unit behaviour (run as native code).
+- `driver/wasm/tests/agree.sh` — every example through the wasm target under Node prints
+  exactly what native code prints (needs the `wasm32-unknown-unknown` target and the
+  `wasm-bindgen` CLI of the version in `Cargo.lock`).
 - A new `nguvu` transform needs a snippet that exercises it — check by breaking the transform
   on purpose and watching the test fail (a test that still passes covers nothing).
 
@@ -97,11 +107,11 @@ examples/sudoku/bench/run.sh 7      # best-of-7 whole-process wall time
 ```
 
 It builds release `pata` and the standalone runner, runs `pata jenga --namna release` on the
-example (which fails if the program falls back to the tree-walker or native code can't be
-built), and checks every implementation reports `Majaribio: 90665` before timing it.
+example (which fails if native code can't be built), and checks every implementation reports `Majaribio: 90665` before timing it.
 
 Reference (2026-09, this container, standalone runner): gcc C 8.0 ms · clang C 6.4 ms · Rust
-7.0 ms · **asili-nguvu 7.1 ms** · Python 304 ms (2026-10: asili-mti, the tree-walker fallback, ≈ 945 ms). Process start-up is ~3.3 ms
+7.0 ms · **asili-nguvu 7.1 ms** · Python 304 ms (2026-10: asili-nguvu 5.3–6.0 ms against clang
+6.5–7.5 ms; the wasm target runs it in ~180 ms of Node process). Process start-up is ~3.3 ms
 of every figure here; solve-only (run minus an empty run): nguvu ≈ 3.0 ms, clang -O2 C
 ≈ 3.1 ms, gcc -O2 C ≈ 4.7 ms.
 
@@ -118,8 +128,9 @@ new figures in `docs/design/performance.md` when they change meaningfully.
 1. Did the bytecode compiler or `nguvu` change? If native code slowed down,
    check that `analyze_numbers` converged: a function it gives up on (100,000 steps) runs
    entirely on floats — `ASILI_NGUVU_IR` shows `FAdd`/`FloatToIntSat` where `Add` was expected.
-2. Did the program still lower to bytecode? `compile_module_explained` reports the first
-   construct that forced the AST fallback (a 30× slowdown looks exactly like this).
+2. Did a hot path move to the host? A generic-`Value` instruction (`Exec` in the IR dump) in a
+   hot loop — an unknown receiver type, a value that stopped being provably numeric — costs a
+   host round trip per iteration.
 3. `ASILI_NGUVU_IR=<file>` dumps the optimized IR with register locations and loop depth;
    `ASILI_NGUVU_DUMP=<file>` writes the machine code (`objdump -D -b binary -mi386:x86-64`),
    its function offsets and load address (`.offsets`/`.base`, to line up with profiler
@@ -145,11 +156,12 @@ VS Code grammar and `asili_lexer::KEYWORDS` (the single keyword list LSP and for
 hot and numeric, consider a dedicated opcode (as `sakafu`/`dari` have).
 
 **Adding a method:** add it to `eval/methods.rs` only (pure, mutating or callback, plus the
-matching `is_*` predicate); the evaluator and native code all pick it up from there.
+matching `is_*` predicate); native code's host picks it up from there.
 
 **Adding an `Expr`/`Stmt` variant:** update `Expr::children` in `ast.rs` (linters, LSP and the
-parser's own checks walk the tree through it); the bytecode compiler returns `None` for it until
-lowered (invariant 6).
+parser's own checks walk the tree through it), and lower it in `bytecode.rs` in the same change
+— a construct the compiler can't lower makes every program using it fail to build
+(invariant 6).
 
 ## Chains into
 

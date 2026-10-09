@@ -109,27 +109,32 @@ separate follow-up task.
 ## Keep Asili at C speed — engines agree, benchmark proves it
 
 Asili runs the Sudoku benchmark (`examples/sudoku/bench/run.sh`) at C speed through native
-code from its own backend (`nguvu`, no external compiler) — the only way bytecode runs; there
-is no bytecode interpreter. The tree-walker runs everything else, and whole programs where no
-backend exists (wasm, other CPUs, `ASILI_AOT=0`). Whenever a change
-touches `core/evaluator/` (`bytecode.rs`, `nguvu/`, `aot.rs`, `native.rs`, `eval/ops.rs`, `eval/methods.rs`, `builtins/`), parser lowering/desugaring, the
+code from its own backend (`nguvu`, no external compiler). Native code is the only way any
+program runs — machine code on x86-64/AArch64, a wasm module in the browser playground
+(`nguvu/wasm.rs`); there is no interpreter of any kind (no tree-walker, no bytecode
+interpreter) and no fallback: a construct the bytecode compiler can't lower is a build error.
+Whenever a change
+touches `core/evaluator/` (`bytecode.rs`, `nguvu/`, `aot.rs`, `native.rs`, `host.rs`, `eval/`, `builtins/`), parser lowering/desugaring, the
 `.asb` format, or adds an operator/builtin/method/opcode/AST variant, invoke the
 `performance-guardrails` skill before considering the work done. Non-negotiables it enforces:
 
-- **One semantics source.** Operators, casts, methods, indexing, `?`/`jaribu`, formatting and
-  iteration are implemented once (`eval/ops.rs`, `eval/methods.rs`, `bytecode.rs::numeric_op`)
-  and called by every engine. Never re-implement a rule inside the native backend or its host (`host.rs`).
-- **One native backend** — `nguvu`, in-house: bytecode → IR → machine code, written by
-  `pata jenga` as `kilele/<name>.nguvu`. No external compiler, assembler or linker, no C
-  transpiler, no JIT at run time.
-- **Native code is bit-identical to the interpreter** — integer lowering only when range
-  analysis proves it (no speculation, no deoptimization: an unprovable register stays `f64`); every new opcode is described to
-  `native.rs` (`num_reads`/`num_writes`/`list_writes`/`transfer`); `BYTECODE_VERSION` /
-  `ABI_VERSION` bumped when their formats change.
+- **One semantics source.** Operators, casts, methods, indexing, patterns, `?`/`jaribu`,
+  formatting and iteration are implemented once (`eval/ops.rs`, `eval/methods.rs`,
+  `eval/pattern.rs`, `host.rs::numeric_op`) and called by native code's host. Never
+  re-implement a rule inside the native backend or the host.
+- **One native backend** — `nguvu`, in-house: bytecode → IR → machine code (or a wasm module),
+  written by `pata jenga` as `kilele/<name>.nguvu`. No external compiler, assembler or linker,
+  no C transpiler.
+- **Native code gives the language's reference results bit for bit** — integer lowering only
+  when range analysis proves it (no speculation, no deoptimization: an unprovable register stays
+  `f64`); every new opcode is described to `native.rs` (`num_reads`/`num_writes`/`list_writes`/
+  `transfer`); `BYTECODE_VERSION` / `ABI_VERSION` / `IMAGE_VERSION` bumped when their formats
+  change.
 - **Tests and numbers, not assumptions**: `engines_agree.rs` and `native_tiers.rs` cover every
-  new construct, and `run.sh` is rerun after engine changes — asili-nguvu at or below clang
-  `-O2` C on the solve and the attempt count exactly 90,665. Report the measured numbers, and treat a regression as a
-  bug to fix before finishing.
+  new construct against hand-checked expectations (`tests/golden/`), `driver/wasm/tests/agree.sh`
+  keeps the wasm target printing what native code prints, and `run.sh` is rerun after engine
+  changes — asili-nguvu at or below clang `-O2` C on the solve and the attempt count exactly
+  90,665. Report the measured numbers, and treat a regression as a bug to fix before finishing.
 
 ## Write once, reuse — no second implementations
 
@@ -145,8 +150,8 @@ the change. The current single sources:
 | Expression-tree shape | `Expr::children` / `Expr::map_children` in `core/parser/src/ast.rs`; `Exprs::descendants` to visit a whole expression; `Block::map_expr_roots` for every expression a block holds (lint, LSP, parser checks, module merging) |
 | Builtin signatures | `core/parser/src/builtins.rs` export tables (analyzer, LSP completion); `BUILTIN_MODULE_NAMES` for the module whitelist |
 | Builtin implementations | `core/evaluator/src/builtins/*` via `register_all`/`BuiltinTable` (evaluator and native code's host); `Value::sawa`/`Value::kosa`, `arg_str` for results/arguments |
-| Value semantics and methods | `eval/ops.rs`, `eval/methods.rs` |
-| Running a tree-walker function | `run_in_fresh_runtime` in `core/evaluator/src/lib.rs` |
+| Value semantics, methods and patterns | `eval/ops.rs`, `eval/methods.rs`, `eval/pattern.rs` |
+| Running a module's function (tests, tools) | `asili_evaluator::NativeProgram` (`run_function`/`run_main` wrap it) |
 | Running an artifact | `asili_evaluator::run_artifact` (`pata tenda`, `jenga --tenda`, runner) |
 | Compile front end | `parse_and_resolve` + `check_program` in `pata/cli/src/pipeline/compile.rs` |
 | Finding `pata.toml` / reading tool sections | the `pata-config` crate |
