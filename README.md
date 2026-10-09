@@ -6,7 +6,7 @@
 
 - **Syntax:** Swahili keywords (`kazi`, `weka`, `ikiwa`, `linganisha`, `rejesha`, …).
 - **Types:** Primitives (`Namba`, `Neno`, `Ukweli`), collections (`Orodha<T>`, `Kamusi<K,V>`), `Chaguo<T>`, `Tokeo<T,E>`, structs and impls.
-- **Stdlib:** Modular built-ins (msingi, mfumo, majira, matumizi, faili, hisabati, runtime, syscall, kiungo, sambamba) plus `lib/std` interface stubs.
+- **Stdlib:** Modular built-ins (msingi, mfumo, majira, matumizi, faili, hisabati, ruwaza, usimbaji, runtime, syscall, kiungo, sambamba, kasha_gc) plus `lib/std` interface stubs.
 - **Spec:** [docs/SPECIFICATION.md](docs/SPECIFICATION.md) and [docs/spec/](docs/spec/) define the language and execution model.
 
 ## Prerequisites
