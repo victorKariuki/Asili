@@ -384,7 +384,8 @@ impl<'p> Host<'p> {
         let native = self.native.funcs[index];
         let red_zone = 64 * 1024 + crate::native::DIRECT_CALL_HEADROOM;
         // Calls native code makes directly to native code bypass the host and are not traced.
-        let span = asili_trace::enter(&self.program.functions[index].name, 0);
+        let function = &self.program.functions[index];
+        let span = asili_trace::enter(&function.name, function.line);
         let result = stacker::maybe_grow(red_zone, 2 * 1024 * 1024, || {
             self.run_native(native, index, frame)
         });

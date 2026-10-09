@@ -127,7 +127,6 @@ impl DebugHook for RealDebugHook {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::Value;
 
     #[test]
     fn should_pause_returns_false_for_a_line_with_no_breakpoint() {

@@ -36,13 +36,7 @@ impl NativeProgram {
 
     /// Build native code for an already lowered program.
     pub fn from_program(program: BytecodeProgram) -> Result<Self, EvalError> {
-        if !crate::nguvu::supported() {
-            return Err(EvalError::Unknown(
-                "jukwaa hili halina msimbo asilia (nguvu)".into(),
-            ));
-        }
-        let native = crate::nguvu::compile(&program)
-            .map_err(|e| EvalError::Unknown(format!("msimbo asilia haukujengwa: {e}")))?;
+        let native = crate::bytecode::native_for(&program)?;
         Ok(NativeProgram {
             program: Arc::new(program),
             native: Arc::new(native),

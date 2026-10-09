@@ -542,11 +542,9 @@ pub fn run_artifact(path: &std::path::Path, args: Vec<String>) -> Result<(), Run
     run_asb(&bytes, Some(&asb), args)
 }
 
-/// Run an `.asb` artifact's `kuu`. Bytecode artifacts run as native code: the image `pata jenga`
-/// built next to them (`<name>.nguvu`) when it exists and was built from exactly this bytecode,
-/// else compiled in memory; where this platform has no backend (or `ASILI_AOT=0`) the
-/// tree-walker runs the syntax tree the artifact carries. Serialized-AST artifacts use the
-/// tree-walking evaluator.
+/// Run an `.asb` artifact's `kuu` as native code: the image `pata jenga` built next to it
+/// (`<name>.nguvu`) when it exists and was built from exactly this bytecode, else compiled in
+/// memory. An artifact holding only a syntax tree (from an older `pata`) must be rebuilt.
 pub fn run_asb(
     bytes: &[u8],
     asb_path: Option<&std::path::Path>,
@@ -598,7 +596,7 @@ fn run_asb_here(bytes: &[u8], source: Image<'_>, args: Vec<String>) -> Result<()
         {
             // Native code beside the artifact: the machine-code image `pata jenga` wrote
             // (`<name>.nguvu`). When it is missing or stale, native code is compiled in memory
-            // (`run_shared_program`), or the tree-walker runs the program.
+            // (`run_shared_program`).
             let image = || match source {
                 Image::Beside(path) => {
                     let path = path?;
@@ -610,11 +608,7 @@ fn run_asb_here(bytes: &[u8], source: Image<'_>, args: Vec<String>) -> Result<()
                 }
                 Image::Bytes(bytes) => nguvu::load_image_bytes(bytes?, &program).ok(),
             };
-            let library = if !aot::enabled() || !nguvu::supported() {
-                None
-            } else {
-                image()
-            };
+            let library = if nguvu::supported() { image() } else { None };
             return bytecode::run_shared_program(
                 std::sync::Arc::new(program),
                 library.map(std::sync::Arc::new),
@@ -628,28 +622,24 @@ fn run_asb_here(bytes: &[u8], source: Image<'_>, args: Vec<String>) -> Result<()
             return run_bytecode(&program, args).map_err(RunAsbError::Run);
         }
     }
-    let module = load_asb(bytes).map_err(|e| RunAsbError::Load(e.to_string()))?;
-    run_main(&module, args).map_err(RunAsbError::Run)
-}
-
-/// The `.asb` for a program: bytecode (compiled to native code) whenever the whole
-/// module lowers to it, else the serialized AST for the tree-walker.
-pub fn emit_asb(module: &Module, source: &str) -> Vec<u8> {
-    match bytecode::compile_module(module) {
-        Some(program) => asb::emit_bytecode_bytes(&program, source),
-        None => asb::emit_asb_bytes(module, source),
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (bytes, source, args);
+        Err(RunAsbError::Load(
+            "kilele hiki kina mti wa programu tu (cha pata ya zamani): kijenge upya kwa `pata jenga`"
+                .into(),
+        ))
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let module = load_asb(bytes).map_err(|e| RunAsbError::Load(e.to_string()))?;
+        run_main(&module, args).map_err(RunAsbError::Run)
     }
 }
 
-/// The `.asb` holding the serialized AST (the tree-walker's artifact), whatever the program.
-pub fn emit_asb_ast(module: &Module, source: &str) -> Vec<u8> {
-    asb::emit_asb_bytes(module, source)
-}
-
-/// Like [`emit_asb`] but bytecode is required (for `pata jenga --namna release`): every program
-/// is compiled to bytecode, and when a construct can't be lowered the error names the `kazi` and
-/// line that blocked it instead of silently falling back to the tree-walker's AST artifact.
-pub fn emit_asb_bytecode(module: &Module, source: &str) -> Result<Vec<u8>, String> {
+/// The `.asb` for a program: its bytecode (run as native code), or the `kazi` and line that
+/// could not be lowered.
+pub fn emit_asb(module: &Module, source: &str) -> Result<Vec<u8>, String> {
     bytecode::compile_module_explained(module)
         .map(|program| asb::emit_bytecode_bytes(&program, source))
 }

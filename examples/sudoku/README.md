@@ -33,8 +33,7 @@ reports 90,665 attempts:
 ```
 
 `pata jenga` compiles the bytecode ahead of time to native machine code with Asili's own
-backend (`asili-nguvu`, no C compiler involved); with `ASILI_AOT=0` it runs on the
-tree-walking evaluator (`asili-mti`, the fallback where there is no native backend). The Asili tiers run on the standalone runner.
+backend (`asili-nguvu`, no C compiler involved), and the standalone runner runs it.
 Typical results on one core (whole process, including ~3.3 ms of process start-up):
 
 | Implementation | Time |
@@ -43,7 +42,6 @@ Typical results on one core (whole process, including ~3.3 ms of process start-u
 | C (gcc -O2) | 8.1 ms |
 | Rust (-O) | 6.8 ms |
 | Asili, native (`nguvu`) | 7.2 ms |
-| Asili, tree-walker fallback | ≈ 945 ms |
 | Python 3 | 302 ms |
 
 Solve only (minus an empty program's time): Asili ≈ 2.6 ms, clang C ≈ 3.1 ms, gcc C ≈ 4.7 ms.

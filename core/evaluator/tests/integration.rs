@@ -94,18 +94,19 @@ fn asb_is_deterministic() {
         traits: vec![],
         impls: vec![],
     };
-    let a = emit_asb(&module, "abc");
-    let b = emit_asb(&module, "abc");
+    let a = emit_asb(&module, "abc").expect("bytecode");
+    let b = emit_asb(&module, "abc").expect("bytecode");
     assert_eq!(a, b, "emit_asb bytes deterministic");
 }
 
 #[test]
 fn asb_roundtrip() {
-    use asili_evaluator::{emit_asb_ast, load_asb};
+    use asili_evaluator::{emit_asb, load_asb_bytecode};
     let module = parse_and_check("kazi kuu(hoja: Orodha<Neno>) -> Tupu { }");
-    let bytes = emit_asb_ast(&module, "source");
-    let loaded = load_asb(&bytes).expect("load_asb");
-    assert_eq!(module.functions.len(), loaded.functions.len());
+    let bytes = emit_asb(&module, "source").expect("bytecode");
+    let loaded = load_asb_bytecode(&bytes).expect("load_asb_bytecode");
+    let ast = loaded.ast.expect("the syntax tree it carries");
+    assert_eq!(module.functions.len(), ast.functions.len());
 }
 
 #[test]

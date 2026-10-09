@@ -4,7 +4,7 @@
 //! ([`crate::nguvu`]) and writes it next to the `.asb`; `pata tenda` maps it and runs its
 //! functions instead of interpreting them. Native code is only used when it was built from the
 //! exact bytecode being run ([`program_hash`]) for the same calling convention
-//! ([`ABI_VERSION`]), so a stale build can never execute. `ASILI_AOT=0` turns native code off.
+//! ([`ABI_VERSION`]), so a stale build can never execute.
 
 use crate::bytecode::BytecodeProgram;
 use crate::native::NativeFn;
@@ -21,11 +21,6 @@ pub fn program_hash(program: &BytecodeProgram) -> u64 {
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
     h
-}
-
-/// Whether native code may be built and loaded (`ASILI_AOT=0` turns it off).
-pub fn enabled() -> bool {
-    std::env::var("ASILI_AOT").map_or(true, |v| v != "0")
 }
 
 /// Native code whose functions correspond 1:1 to a program's functions.

@@ -479,6 +479,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **Syntax-tree artifacts and the native fallback**: `pata jenga` always writes bytecode (both
+  profiles fail on a program that does not lower, naming the `kazi` and line); a native platform
+  runs only native code — the image beside the artifact, or native code compiled at start-up —
+  and an old syntax-tree `.asb` asks to be rebuilt. `ASILI_AOT` is gone, and with it the
+  benchmark's tree-walker row; build caches read the module back from the syntax tree a bytecode
+  artifact carries. Native trace spans now carry the `kazi`'s source line. (wasm keeps the
+  tree-walker until `nguvu` has a WebAssembly backend.)
+
 - **Mixed mode**: a `kazi` the bytecode compiler cannot lower no longer runs on the
   tree-walker beside native code (`Opcode::Interpreted`, the host's tree-walker contexts and the
   tree-walker's hook back into native code are gone). A program lowers as a whole or not at all;

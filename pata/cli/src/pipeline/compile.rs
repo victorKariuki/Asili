@@ -5,9 +5,7 @@ use crate::pipeline::project::{
 };
 use crate::pipeline::sharti::filter_module_for_target;
 use asili_diagnostics::Diagnostic;
-use asili_evaluator::{
-    emit_asb, execute_tests_with_timeout, load_asb, parse_format, validate_module, TestResult,
-};
+use asili_evaluator::{emit_asb, execute_tests_with_timeout, validate_module, TestResult};
 use asili_lexer::tokenize;
 use asili_parser::{
     discover_tests, parse_tokens, semantic_check_with_env_and_modules, Function, Module, Target,
@@ -168,9 +166,9 @@ pub fn compile_project(root: &Path, cli_target: Option<&str>) -> Result<CompileO
                     )
                 })?;
                 // An artifact this build cannot read is rebuilt, not an error.
-                let cached = (parse_format(&bytes).as_deref() != Some("bytecode"))
-                    .then(|| load_asb(&bytes).ok())
-                    .flatten();
+                let cached = asili_evaluator::load_asb_bytecode(&bytes)
+                    .ok()
+                    .and_then(|program| program.ast);
                 if let Some(module) = cached {
                     return Ok(CompileOutput {
                         module,
@@ -332,12 +330,12 @@ pub fn compile_single_file(
 /// `pata jenga --namna`: how hard the build tries for native code.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BuildProfile {
-    /// Best effort: bytecode when the program benefits, native code where the platform has a
-    /// native backend, otherwise the artifact runs on the tree-walker with a note.
+    /// The program's bytecode, and its native image where this platform has a backend (the
+    /// runner otherwise builds native code when it starts).
     #[default]
     Dev,
-    /// What ships must run as native code: the program must compile to bytecode and its native
-    /// code must be built, or the build fails saying why.
+    /// What ships: the native image must be built (or the build fails saying why), and a
+    /// standalone executable is written beside it.
     Release,
 }
 
@@ -356,8 +354,8 @@ impl BuildProfile {
 }
 
 /// Ahead-of-time compile a bytecode artifact to native machine code next to it
-/// (`<name>.nguvu`, built in-house with no external tools). In `Dev` a platform without a
-/// native backend only means the artifact runs on the tree-walker; `Release` fails instead.
+/// (`<name>.nguvu`, built in-house with no external tools). In `Dev` an image that cannot be
+/// built is left to the runner to build at start-up; `Release` fails instead.
 /// A release build's standalone executable `<target>/<name>` (`.exe` on Windows): the static
 /// runner `tenda` with the artifact and its native image appended
 /// (`asili_evaluator::bundle`), which runs directly. The runner comes from `ASILI_TENDA` or sits
@@ -403,15 +401,9 @@ fn build_native_library(
     // Libraries from the retired LLVM backend would only confuse; nothing loads them now.
     let _ = fs::remove_file(target.join(format!("{name}.{}", std::env::consts::DLL_EXTENSION)));
     let _ = fs::remove_file(target.join(format!("{name}.ll")));
-    if parse_format(asb).as_deref() != Some("bytecode") {
-        let _ = fs::remove_file(&stale);
-        return Ok(());
-    }
     let program = asili_evaluator::load_asb_bytecode(asb)
         .map_err(|e| CliError::new(format!("kuipakia bytecode: {e}"), 1))?;
-    let failure = if !asili_evaluator::aot::enabled() {
-        "ASILI_AOT=0".to_string()
-    } else if !nguvu::supported() {
+    let failure = if !nguvu::supported() {
         "mfumo huu bado hauungwi mkono".to_string()
     } else {
         match nguvu::write_image(&program, target, name) {
@@ -429,7 +421,7 @@ fn build_native_library(
             1,
         ));
     }
-    println!("msimbo asilia haukujengwa ({failure}); kilele kitaendeshwa bila msimbo asilia");
+    println!("picha ya msimbo asilia haikujengwa ({failure})");
     Ok(())
 }
 
@@ -446,18 +438,9 @@ pub fn emit_build_artifacts(
         .map_err(|e| CliError::new(format!("imeshindwa kuunda {}: {e}", target.display()), 1))?;
 
     let bytecode_phase = asili_trace::phase("bytecode");
-    let asb = match profile {
-        BuildProfile::Dev => emit_asb(&compiled.module, &compiled.source),
-        BuildProfile::Release => asili_evaluator::emit_asb_bytecode(&compiled.module, &compiled.source)
-            .map_err(|blocked| {
-                CliError::new(
-                    format!(
-                        "--namna release inahitaji bytecode: {blocked} bado haiwezi kugeuzwa kuwa bytecode"
-                    ),
-                    1,
-                )
-            })?,
-    };
+    let asb = emit_asb(&compiled.module, &compiled.source).map_err(|blocked| {
+        CliError::new(format!("{blocked} bado haiwezi kugeuzwa kuwa bytecode"), 1)
+    })?;
     let artifact = target.join(format!("{}.asb", compiled.config.name));
     fs::write(&artifact, &asb).map_err(|e| {
         CliError::new(
@@ -728,10 +711,10 @@ mod tests {
             .contains("haijulikani"));
     }
 
-    /// Release never ships a tree-walker artifact: a program the bytecode compiler can't lower
-    /// fails with the construct that blocked it, where dev quietly falls back.
+    /// No profile writes a syntax-tree artifact: a program the bytecode compiler can't lower
+    /// fails the build with the construct that blocked it.
     #[test]
-    fn release_profile_refuses_the_ast_fallback() {
+    fn builds_refuse_programs_that_do_not_lower() {
         let root = temp_dir("release-ast");
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(root.join("pata.toml"), crate::test_support::MANIFEST).unwrap();
@@ -742,15 +725,16 @@ mod tests {
         )
         .unwrap();
         let compiled = compile_project(&root, None).expect("compiles");
-        let err = emit_build_artifacts(&root, &compiled, None, BuildProfile::Release)
-            .expect_err("release must refuse the AST artifact");
-        assert!(
-            err.message.contains("inahitaji bytecode"),
-            "{}",
-            err.message
-        );
-        assert!(err.message.contains("kazi 'kuu'"), "{}", err.message);
-        emit_build_artifacts(&root, &compiled, None, BuildProfile::Dev).expect("dev falls back");
+        for profile in [BuildProfile::Dev, BuildProfile::Release] {
+            let err = emit_build_artifacts(&root, &compiled, None, profile)
+                .expect_err("no syntax-tree artifact");
+            assert!(
+                err.message.contains("kugeuzwa kuwa bytecode"),
+                "{}",
+                err.message
+            );
+            assert!(err.message.contains("kazi 'kuu'"), "{}", err.message);
+        }
         let _ = fs::remove_dir_all(root);
     }
 
@@ -795,7 +779,8 @@ mod tests {
         // Prove it's not just structurally present but actually runs end-to-end: a struct field
         // initialized from an imported constant, through the CLI's full compile pipeline and the
         // evaluator's runtime, should produce the constant's real value.
-        let result = asili_evaluator::run_function(&compiled.module, "thamani", vec![])
+        let result = asili_evaluator::NativeProgram::build(&compiled.module)
+            .and_then(|program| program.call("thamani", vec![]))
             .expect("thamani() should run using the imported struct and constant");
         match result {
             asili_evaluator::Value::Namba(n) => {
@@ -937,22 +922,12 @@ mod tests {
         let artifact =
             emit_build_artifacts(&root, &compiled, None, BuildProfile::Dev).expect("emit .asb");
         let bytes = fs::read(&artifact).expect("read .asb");
-        // Bytecode when the program lowers to it, else the serialized AST.
-        let names: Vec<String> = if parse_format(&bytes).as_deref() == Some("bytecode") {
-            asili_evaluator::load_asb_bytecode(&bytes)
-                .expect("load_asb_bytecode")
-                .functions
-                .into_iter()
-                .map(|f| f.name)
-                .collect()
-        } else {
-            load_asb(&bytes)
-                .expect("load_asb")
-                .functions
-                .into_iter()
-                .map(|f| f.name.to_string())
-                .collect()
-        };
+        let names: Vec<String> = asili_evaluator::load_asb_bytecode(&bytes)
+            .expect("load_asb_bytecode")
+            .functions
+            .into_iter()
+            .map(|f| f.name)
+            .collect();
         assert!(
             !names.iter().any(|n| n == "tu_native"),
             "tu_native should be absent from the emitted .asb, not just the in-memory module"

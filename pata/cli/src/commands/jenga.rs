@@ -4,7 +4,7 @@ use crate::pipeline::compile::{
 };
 use crate::pipeline::performance::{PerformanceMetrics, ScopedTimer};
 use crate::pipeline::project::find_workspace_root;
-use asili_evaluator::{load_asb, parse_format, run_artifact, run_main};
+use asili_evaluator::run_artifact;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -88,9 +88,9 @@ pub fn run(args: &[String]) -> CliResult {
                 )
             })?;
             // An artifact this build cannot read is rebuilt, not an error.
-            let cached = (parse_format(&asb_bytes).as_deref() != Some("bytecode"))
-                .then(|| load_asb(&asb_bytes).ok())
-                .flatten();
+            let cached = asili_evaluator::load_asb_bytecode(&asb_bytes)
+                .ok()
+                .and_then(|program| program.ast);
             if let Some(module) = cached {
                 let artifact = target.join(format!("{name}.asb"));
                 fs::write(&artifact, &asb_bytes).map_err(|e| {
@@ -108,8 +108,8 @@ pub fn run(args: &[String]) -> CliResult {
                 let _ = fs::write(&meta, manifest);
                 println!("imejengwa (cache): {}", artifact.display());
                 if do_run {
-                    run_main(&module, program_args)
-                        .map_err(|e| CliError::new(format!("kuendesha kuu: {e}"), 1))?;
+                    run_artifact(&artifact, program_args)
+                        .map_err(|e| CliError::new(e.to_string(), e.exit_code()))?;
                 }
                 if show_timing {
                     metrics.set_total(total_timer.elapsed());
@@ -271,19 +271,10 @@ mod tests {
             asb_bytes.starts_with(b"ASB-STUB"),
             "asb should have ASB-STUB header"
         );
-        // Bytecode when the program lowers to it, else the serialized AST.
-        let functions = if asili_evaluator::parse_format(&asb_bytes).as_deref() == Some("bytecode")
-        {
-            asili_evaluator::load_asb_bytecode(&asb_bytes)
-                .expect("load_asb_bytecode")
-                .functions
-                .len()
-        } else {
-            asili_evaluator::load_asb(&asb_bytes)
-                .expect("load_asb")
-                .functions
-                .len()
-        };
+        let functions = asili_evaluator::load_asb_bytecode(&asb_bytes)
+            .expect("load_asb_bytecode")
+            .functions
+            .len();
         assert!(functions > 0, "asb should contain merged module");
         let manifest =
             fs::read_to_string("kilele/app.build.manifest").expect("per-artifact manifest");

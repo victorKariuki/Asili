@@ -7,7 +7,7 @@ fn artifact(dir: &std::path::Path, source: &str) -> std::path::PathBuf {
     let tokens = asili_lexer::tokenize(source).expect("tokenize");
     let module = asili_parser::parse_tokens(&tokens).expect("parse");
     let path = dir.join("p.asb");
-    std::fs::write(&path, asili_evaluator::emit_asb(&module, source)).unwrap();
+    std::fs::write(&path, asili_evaluator::emit_asb(&module, source).unwrap()).unwrap();
     path
 }
 
@@ -18,7 +18,6 @@ fn run(asb: &std::path::Path, args: &[&str]) -> (i32, String) {
     let status = Command::new(env!("CARGO_BIN_EXE_tenda"))
         .arg(asb)
         .args(args)
-        .env("ASILI_AOT", "0")
         .stdin(Stdio::null())
         .stdout(file.try_clone().unwrap())
         .stderr(file)
@@ -117,18 +116,13 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 }
 "#,
     );
-    for aot in ["0", "1"] {
+    {
         let out = Command::new(env!("CARGO_BIN_EXE_tenda"))
             .arg(&asb)
-            .env("ASILI_AOT", aot)
             .output()
             .unwrap();
         // fib(20) + fib(21) + fib(22) + fib(23)
-        assert_eq!(
-            String::from_utf8_lossy(&out.stdout),
-            "64079\n",
-            "ASILI_AOT={aot}"
-        );
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "64079\n");
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -153,7 +147,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 "#;
     let tokens = asili_lexer::tokenize(source).expect("tokenize");
     let module = asili_parser::parse_tokens(&tokens).expect("parse");
-    let asb = asili_evaluator::emit_asb(&module, source);
+    let asb = asili_evaluator::emit_asb(&module, source).unwrap();
     let program = asili_evaluator::load_asb_bytecode(&asb).expect("bytecode");
     let image = asili_evaluator::nguvu::supported()
         .then(|| asili_evaluator::nguvu::write_image(&program, &dir, "p").ok())
@@ -201,19 +195,14 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
 }
 "#,
     );
-    for aot in ["0", "1"] {
-        let trace = dir.join(format!("trace-{aot}.json"));
+    {
+        let trace = dir.join("trace.json");
         let out = Command::new(env!("CARGO_BIN_EXE_tenda"))
             .arg(&asb)
-            .env("ASILI_AOT", aot)
             .env("ASILI_FUATILIA", format!("json:{}", trace.display()))
             .output()
             .unwrap();
-        assert_eq!(
-            String::from_utf8_lossy(&out.stdout),
-            "2\n",
-            "ASILI_AOT={aot}"
-        );
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "2\n");
         assert_ne!(out.status.code(), Some(0));
         let lines = std::fs::read_to_string(&trace).unwrap();
         let spans: Vec<&str> = lines
@@ -233,18 +222,12 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
             .filter(|l| l.contains("\"name\":\"kosa\""))
             .count();
         assert_eq!(errors, 1, "one error event, not one per kazi: {lines}");
-        if aot == "0" {
-            // The tree-walker also sees bindings and builtin calls.
-            assert!(lines.contains("\"name\":\"kigeuzi\""), "{lines}");
-            assert!(lines.contains("\"name\":\"mwito_mfumo\""), "{lines}");
-        }
     }
     // `toka` ends the process: the binary trace is still flushed, and decodes.
     let trace = dir.join("trace.bin");
     let status = Command::new(env!("CARGO_BIN_EXE_tenda"))
         .arg(&asb)
         .arg("x")
-        .env("ASILI_AOT", "0")
         .env("ASILI_FUATILIA", format!("binari:{}", trace.display()))
         .stdout(Stdio::null())
         .status()

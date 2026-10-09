@@ -50,19 +50,6 @@ impl fmt::Display for AsbLoadError {
 
 impl std::error::Error for AsbLoadError {}
 
-/// Emit .asb as bytes: UTF-8 header (with module_hash) then PAYLOAD marker then bincode-serialized Module.
-pub fn emit_asb_bytes(module: &Module, source: &str) -> Vec<u8> {
-    let payload = bincode::serialize(module).expect("Module serialization");
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    source.hash(&mut h);
-    let hash = h.finish();
-    let header = format!("{ASB_HEADER_PREFIX}module_hash={hash:016x}\nPAYLOAD\n");
-    let mut out = header.into_bytes();
-    out.extend_from_slice(&payload);
-    out
-}
-
 /// Version of the bytecode payload (its instruction set, and the syntax tree it carries). Artifacts built by an
 /// older `pata jenga` carry a different `version=` and must be rebuilt.
 const BYTECODE_VERSION: &str = "14";
