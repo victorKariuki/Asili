@@ -1550,6 +1550,7 @@ impl<'a> Analyzer<'a> {
                     ValueType::NjiaTxBounded(_) => "NjiaTxBounded".to_string(),
                     ValueType::NjiaRxBounded(_) => "NjiaRxBounded".to_string(),
                     ValueType::Fungo(_) => "Fungo".to_string(),
+                    ValueType::Wakati => "Wakati".to_string(),
                     _ => {
                         self.errors.push(
                             Diagnostic::new("SEM039", format!("aina '{}' haina njia", receiver_ty))
@@ -1584,6 +1585,7 @@ impl<'a> Analyzer<'a> {
                         | ValueType::NjiaTxBounded(_)
                         | ValueType::NjiaRxBounded(_)
                         | ValueType::Fungo(_)
+                        | ValueType::Wakati
                 );
                 if is_builtin {
                     for arg in args {
@@ -1609,113 +1611,7 @@ impl<'a> Analyzer<'a> {
                         );
                         return ValueType::Unknown;
                     }
-                    return match (receiver_ty, method_name.as_str()) {
-                        (ValueType::Neno, "clona") => ValueType::Neno,
-                        (ValueType::Neno, "urefu" | "biti_ngapi") => ValueType::Namba,
-                        (ValueType::Neno, "herufi_kwa") => {
-                            ValueType::Chaguo(Box::new(ValueType::Herufi))
-                        }
-                        (
-                            ValueType::Neno,
-                            "kwa_herufi_ndogo" | "kwa_herufi_kubwa" | "badilisha" | "rudia",
-                        ) => ValueType::Neno,
-                        (ValueType::Neno, "tupu" | "anza_na" | "maliza_na" | "ina") => {
-                            ValueType::Ukweli
-                        }
-                        (ValueType::Neno, "hesabu") => ValueType::Namba,
-                        (ValueType::Neno, "gawanya") => {
-                            ValueType::Orodha(Box::new(ValueType::Neno))
-                        }
-                        (ValueType::Neno, "kata") => ValueType::Neno,
-                        (ValueType::Neno, "tafuta") => {
-                            ValueType::Chaguo(Box::new(ValueType::Namba))
-                        }
-                        (ValueType::Jozi(k, v), "clona") => ValueType::Jozi(k.clone(), v.clone()),
-                        (ValueType::Jozi(k, _), "kwanza") => *k,
-                        (ValueType::Jozi(_, v), "pili") => *v,
-                        (ValueType::Orodha(ref t), "clona") => ValueType::Orodha(t.clone()),
-                        (ValueType::Orodha(_), "urefu") => ValueType::Namba,
-                        (ValueType::Orodha(_), "ongeza") => ValueType::Tupu,
-                        (ValueType::Orodha(_), "ingiza") => ValueType::Tupu,
-                        (ValueType::Orodha(ref t), "ondoa") => ValueType::Chaguo(t.clone()),
-                        (ValueType::Orodha(ref t), "pata") => ValueType::Chaguo(t.clone()),
-                        (ValueType::Orodha(_), "badilisha" | "kila_mmoja" | "kila_na_fahirisi") => {
-                            ValueType::Tupu
-                        }
-                        (ValueType::Orodha(ref t), "ramani" | "chuja") => {
-                            ValueType::Orodha(t.clone())
-                        }
-                        (ValueType::Orodha(_), "hesabu") => ValueType::Namba,
-                        (ValueType::Orodha(_), "chunguza") => ValueType::Ukweli,
-                        (ValueType::Orodha(_), "unganisha" | "jiunge") => ValueType::Neno,
-                        (ValueType::Orodha(_), "kwa_neno") => {
-                            ValueType::Orodha(Box::new(ValueType::Neno))
-                        }
-                        (ValueType::Orodha(ref t), "vipande") => {
-                            ValueType::Orodha(Box::new(ValueType::Orodha(t.clone())))
-                        }
-                        (ValueType::Kamusi(ref k, ref v), "clona") => {
-                            ValueType::Kamusi(k.clone(), v.clone())
-                        }
-                        (ValueType::Kamusi(_, _), "idadi") => ValueType::Namba,
-                        (ValueType::Kamusi(_, ref v), "pata") => ValueType::Chaguo(v.clone()),
-                        (ValueType::Kamusi(_, _), "ingiza" | "weka_key") => ValueType::Tupu,
-                        (ValueType::Kamusi(_, _), "vipo") => ValueType::Ukweli,
-                        (ValueType::Kamusi(ref k, _), "funguo") => ValueType::Orodha(k.clone()),
-                        (ValueType::Tokeo(ref t, _), "angu") => *t.clone(),
-                        (ValueType::Tokeo(_, _), "ni_kosa" | "ni_sawa") => ValueType::Ukweli,
-                        (ValueType::Tokeo(_, ref e), "kosa") => *e.clone(),
-                        (ValueType::Chaguo(ref t), "angu" | "hakikisha") => *t.clone(),
-                        (ValueType::Chaguo(_), "ni_po" | "ni_tupu") => ValueType::Ukweli,
-                        (ValueType::KashaGC(ref t), "pata") => *t.clone(),
-                        (ValueType::KashaGC(_), "weka") => ValueType::Tupu,
-                        (ValueType::KashaGC(_), "idadi") => ValueType::Namba,
-                        (ValueType::KashaGC(ref t), "shirikisha") => ValueType::KashaGC(t.clone()),
-                        (ValueType::KashaGCDhaifu(ref t), "imarisha") => {
-                            ValueType::Chaguo(Box::new(ValueType::KashaGC(t.clone())))
-                        }
-                        (ValueType::Faili, "soma") => {
-                            ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno))
-                        }
-                        (ValueType::Faili, "andika") => {
-                            ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno))
-                        }
-                        (ValueType::Faili, "funga") => ValueType::Tupu,
-                        (ValueType::Mkondo, "soma") => {
-                            ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno))
-                        }
-                        (ValueType::Mkondo, "soma_bailisi") => {
-                            ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno))
-                        }
-                        (ValueType::Mkondo, "andika") => {
-                            ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno))
-                        }
-                        (ValueType::Mkondo, "funga") => ValueType::Tupu,
-                        (ValueType::Kumbukumbu(ref t), "pata") => *t.clone(),
-                        (ValueType::Seti(ref t), "clona") => ValueType::Seti(t.clone()),
-                        (ValueType::Seti(_), "ongeza") => ValueType::Tupu,
-                        (ValueType::Seti(_), "ondoa") => ValueType::Ukweli,
-                        (ValueType::Seti(_), "ina") => ValueType::Ukweli,
-                        (ValueType::Seti(_), "urefu") => ValueType::Namba,
-                        (ValueType::Seti(ref t), "orodha") => ValueType::Orodha(t.clone()),
-                        (ValueType::NjiaTx(_), "tuma") => {
-                            ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno))
-                        }
-                        (ValueType::NjiaRx(ref t), "pokea") => {
-                            ValueType::Tokeo(t.clone(), Box::new(ValueType::Neno))
-                        }
-                        (ValueType::NjiaTxBounded(_), "tuma") => {
-                            ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno))
-                        }
-                        (ValueType::NjiaRxBounded(ref t), "pokea") => {
-                            ValueType::Tokeo(t.clone(), Box::new(ValueType::Neno))
-                        }
-                        (ValueType::Fungo(_), "funga") => ValueType::Tupu,
-                        (ValueType::Fungo(_), "fungua") => ValueType::Tupu,
-                        (ValueType::Fungo(ref t), "pata") => *t.clone(),
-                        (ValueType::Fungo(_), "weka") => ValueType::Tupu,
-                        _ => ValueType::Unknown,
-                    };
+                    return crate::builtins::method_return_type(&receiver_ty, method_name);
                 }
                 if !is_enum && !_is_struct {
                     self.errors.push(
@@ -2352,6 +2248,7 @@ fn method_receiver(ty: &ValueType) -> Option<crate::builtins::MethodReceiver> {
         ValueType::NjiaTx(_) | ValueType::NjiaTxBounded(_) => R::NjiaTx,
         ValueType::NjiaRx(_) | ValueType::NjiaRxBounded(_) => R::NjiaRx,
         ValueType::Fungo(_) => R::Fungo,
+        ValueType::Wakati => R::Wakati,
         _ => return None,
     })
 }

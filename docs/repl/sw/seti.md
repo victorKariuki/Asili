@@ -23,6 +23,10 @@ Namba(3.0)
 | `s.urefu()`   | Idadi ya wanachama                         |
 | `s.orodha()`  | Badilisha kuwa `Orodha<T>`                 |
 | `s.clona()`   | Nakala                                     |
+| `s.muungano(t)` | Wanachama wa `s` au `t` (muungano)       |
+| `s.makutano(t)` | Wanachama wa zote mbili (makutano)       |
+| `s.tofauti(t)`  | Wanachama wa `s` wasio katika `t`        |
+| `s.ni_sehemu_ya(t)` | `Ukweli`: je, kila mwanachama wa `s` yumo katika `t`? |
 
 ## Mfano
 

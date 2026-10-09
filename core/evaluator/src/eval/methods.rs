@@ -5,6 +5,7 @@
 use std::rc::Rc;
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::numlist::NumList;
 use crate::value::{self, EvalError, MapKey, Value};
 
 fn out_of_bounds_message(idx: usize, len: usize) -> String {
@@ -248,31 +249,85 @@ pub(crate) fn pure_method(
             Ok(Value::neno(out))
         }
         (Value::Neno(s), "kata") => {
-            let start = args_val
-                .first()
-                .and_then(value::as_f64)
-                .map(|n| n as usize)
-                .unwrap_or(0);
-            let end = args_val
-                .get(1)
-                .and_then(value::as_f64)
-                .map(|n| n as usize)
-                .unwrap_or_else(|| s.len());
-            let start = start.min(s.len());
-            let end = end.min(s.len()).max(start);
-            let sub = String::from_utf8_lossy(s.as_bytes()[start..end].into()).into_owned();
-            Ok(Value::neno(sub))
+            // Characters `mwanzo..mwisho`, counted as `urefu` counts them.
+            Ok(Value::neno(char_slice(
+                s,
+                arg_index(args_val, 0).unwrap_or(0),
+                arg_index(args_val, 1),
+            )))
         }
         (Value::Neno(s), "tafuta") => {
             let sub = args_val
                 .first()
                 .and_then(value::as_string)
                 .unwrap_or_default();
-            match s.find(&sub) {
-                Some(i) => Ok(Value::Chaguo(Some(Box::new(Value::Namba(i as f64))))),
-                None => Ok(Value::Chaguo(None)),
-            }
+            // The character position (as `urefu` and `kata` count), not the byte offset.
+            Ok(Value::Chaguo(s.find(&sub).map(|at| {
+                Box::new(Value::Namba(grapheme_count(&s[..at]) as f64))
+            })))
         }
+        (Value::Neno(s), "safisha") => Ok(trimmed(s, s.trim())),
+        (Value::Neno(s), "safisha_mwanzo") => Ok(trimmed(s, s.trim_start())),
+        (Value::Neno(s), "safisha_mwisho") => Ok(trimmed(s, s.trim_end())),
+        (Value::Neno(s), "jaza_kushoto" | "jaza_kulia") => {
+            let width = arg_index(args_val, 0).ok_or_else(|| {
+                EvalError::TypeErr(format!("{method} inahitaji urefu wa Namba kamili"))
+            })?;
+            let fill = match args_val.get(1) {
+                None => " ".to_string(),
+                Some(v) => value::as_string(v)
+                    .or_else(|| value::as_char(v).map(String::from))
+                    .filter(|f| grapheme_count(f) == 1)
+                    .ok_or_else(|| {
+                        EvalError::TypeErr(format!("{method} inahitaji herufi moja ya kujaza"))
+                    })?,
+            };
+            let missing = width.saturating_sub(grapheme_count(s));
+            if missing == 0 {
+                return Ok(Value::Neno(s.clone()));
+            }
+            let mut out = String::with_capacity(s.len() + missing * fill.len());
+            if method == "jaza_kulia" {
+                out.push_str(s);
+            }
+            for _ in 0..missing {
+                out.push_str(&fill);
+            }
+            if method == "jaza_kushoto" {
+                out.push_str(s);
+            }
+            Ok(Value::neno(out))
+        }
+        (Value::Neno(s), "jaza") => match args_val.first() {
+            Some(Value::Orodha(items)) => fill_template(s, items).map(Value::neno),
+            _ => Err(EvalError::TypeErr(
+                "jaza inahitaji Orodha ya thamani".into(),
+            )),
+        },
+        (Value::Neno(s), "herufi") => Ok(Value::list(if plain_ascii(s.as_bytes()) {
+            s.bytes()
+                .map(|b| Value::neno((b as char).to_string()))
+                .collect()
+        } else {
+            s.graphemes(true)
+                .map(|g| Value::neno(g.to_string()))
+                .collect()
+        })),
+        (Value::Neno(s), "mistari") => Ok(Value::list(
+            s.lines().map(|l| Value::neno(l.to_string())).collect(),
+        )),
+        (Value::Neno(s), "geuza") => Ok(Value::neno(if plain_ascii(s.as_bytes()) {
+            s.chars().rev().collect::<String>()
+        } else {
+            s.graphemes(true).rev().collect::<String>()
+        })),
+        (Value::Neno(s), "misimbo") => Ok(Value::list(
+            s.chars().map(|c| Value::Namba(c as u32 as f64)).collect(),
+        )),
+        (Value::Neno(s), "kwa_namba") => Ok(match s.trim().parse::<f64>() {
+            Ok(n) => Value::sawa(Value::Namba(n)),
+            Err(_) => Value::kosa(format!("'{s}' si namba")),
+        }),
         (Value::Neno(s), "kwa_herufi_ndogo") => Ok(Value::neno(s.to_lowercase())),
         (Value::Neno(s), "kwa_herufi_kubwa") => Ok(Value::neno(s.to_uppercase())),
         (Value::Neno(s), "tupu") => Ok(Value::Ukweli(s.is_empty())),
@@ -334,6 +389,7 @@ pub(crate) fn pure_method(
                 idx.and_then(|i| l.get(i).cloned()).map(Box::new),
             ))
         }
+        (Value::Orodha(l), m) if is_list_method(m) => list_method(l, m, args_val),
         (Value::Orodha(l), "unganisha") => {
             let sep = value::as_string(args_val.first().unwrap_or(&Value::Hamna))
                 .ok_or_else(|| EvalError::TypeErr("unganisha inahitaji Neno".into()))?;
@@ -401,6 +457,12 @@ pub(crate) fn pure_method(
             Ok(Value::Chaguo(m.get(&key).cloned().map(Box::new)))
         }
         (Value::Kamusi(m), "funguo") => Ok(Value::list(m.keys().map(MapKey::to_value).collect())),
+        (Value::Kamusi(m), "thamani") => Ok(Value::list(m.values().cloned().collect())),
+        (Value::Kamusi(m), "vipengele") => Ok(Value::list(
+            m.iter()
+                .map(|(k, v)| Value::Jozi(Box::new(k.to_value()), Box::new(v.clone())))
+                .collect(),
+        )),
         (Value::Kamusi(m), "vipo") => {
             let key_val = args_val
                 .first()
@@ -414,6 +476,39 @@ pub(crate) fn pure_method(
                 .ok_or_else(|| EvalError::TypeErr("ina inahitaji thamani".into()))?;
             let key = MapKey::try_from_value(v)?;
             Ok(Value::Ukweli(s.contains(&key)))
+        }
+        (Value::Seti(s), "muungano" | "makutano" | "tofauti" | "ni_sehemu_ya") => {
+            let Some(Value::Seti(other)) = args_val.first() else {
+                return Err(EvalError::TypeErr(format!("{method} inahitaji Seti")));
+            };
+            Ok(match method {
+                "muungano" => {
+                    // Copy the larger set and add the smaller one.
+                    let (big, small) = if s.len() >= other.len() {
+                        (s, other)
+                    } else {
+                        (other, s)
+                    };
+                    let mut out = (**big).clone();
+                    out.extend(small.iter().cloned());
+                    Value::Seti(Rc::new(out))
+                }
+                "makutano" => {
+                    // Walk the smaller set, probe the larger.
+                    let (big, small) = if s.len() >= other.len() {
+                        (s, other)
+                    } else {
+                        (other, s)
+                    };
+                    Value::Seti(Rc::new(
+                        small.iter().filter(|k| big.contains(*k)).cloned().collect(),
+                    ))
+                }
+                "tofauti" => Value::Seti(Rc::new(
+                    s.iter().filter(|k| !other.contains(*k)).cloned().collect(),
+                )),
+                _ => Value::Ukweli(s.len() <= other.len() && s.is_subset(other)),
+            })
         }
         (Value::Seti(s), "urefu") => Ok(Value::Namba(s.len() as f64)),
         (Value::Seti(s), "clona") => Ok(Value::Seti(s.clone())),
@@ -716,6 +811,362 @@ pub(crate) fn pure_method(
     }
 }
 
+/// Argument `i` as a non-negative whole number (an index or a length).
+fn arg_index(args_val: &[Value], i: usize) -> Option<usize> {
+    args_val
+        .get(i)
+        .and_then(value::as_f64)
+        .filter(|n| n.is_finite() && *n >= 0.0)
+        .map(|n| n as usize)
+}
+
+/// `s` trimmed to `part` (a sub-slice of it), sharing `s` when nothing was trimmed.
+fn trimmed(s: &value::Text, part: &str) -> Value {
+    if part.len() == s.len() {
+        Value::Neno(s.clone())
+    } else {
+        Value::neno(part.to_string())
+    }
+}
+
+/// Characters `start..end` of `s` (`end` defaults to the end; both clamped), counted as
+/// `urefu` counts them — byte offsets directly when `s` is plain ASCII.
+fn char_slice(s: &str, start: usize, end: Option<usize>) -> String {
+    if plain_ascii(s.as_bytes()) {
+        let start = start.min(s.len());
+        let end = end.unwrap_or(s.len()).min(s.len()).max(start);
+        return s[start..end].to_string();
+    }
+    let mut bounds = s.grapheme_indices(true).map(|(i, _)| i).chain([s.len()]);
+    let Some(from) = bounds.nth(start) else {
+        return String::new();
+    };
+    let to = match end {
+        Some(end) if end > start => bounds.nth(end - start - 1).unwrap_or(s.len()),
+        Some(_) => from,
+        None => s.len(),
+    };
+    s[from..to].to_string()
+}
+
+/// List methods that look at the elements as values (equality, order, sums): one
+/// implementation for numbers ([`numbers_method`], shared with typed numeric lists) and one for
+/// everything else.
+fn is_list_method(m: &str) -> bool {
+    matches!(
+        m,
+        "tupu"
+            | "kwanza"
+            | "mwisho"
+            | "ina"
+            | "tafuta"
+            | "kata"
+            | "geuza"
+            | "panga"
+            | "kubwa"
+            | "ndogo"
+            | "jumla"
+            | "kipekee"
+    )
+}
+
+fn list_method(l: &Rc<Vec<Value>>, method: &str, args_val: &[Value]) -> Result<Value, EvalError> {
+    if let Some(nums) = as_numbers(l) {
+        if let Some(out) = numbers_method(&nums, method, args_val) {
+            return out.map(NumOut::into_value);
+        }
+    }
+    match method {
+        "tupu" => Ok(Value::Ukweli(l.is_empty())),
+        "kwanza" => Ok(Value::Chaguo(l.first().cloned().map(Box::new))),
+        "mwisho" => Ok(Value::Chaguo(l.last().cloned().map(Box::new))),
+        "ina" | "tafuta" => {
+            let x = args_val.first().unwrap_or(&Value::Hamna);
+            let mut found = None;
+            for (i, item) in l.iter().enumerate() {
+                if equal(item, x)? {
+                    found = Some(i);
+                    break;
+                }
+            }
+            Ok(if method == "ina" {
+                Value::Ukweli(found.is_some())
+            } else {
+                Value::Chaguo(found.map(|i| Box::new(Value::Namba(i as f64))))
+            })
+        }
+        "kata" => {
+            let start = arg_index(args_val, 0).unwrap_or(0).min(l.len());
+            let end = arg_index(args_val, 1)
+                .unwrap_or(l.len())
+                .min(l.len())
+                .max(start);
+            Ok(Value::list(l[start..end].to_vec()))
+        }
+        "geuza" => Ok(Value::list(l.iter().rev().cloned().collect())),
+        "panga" => {
+            check_orderable(l)?;
+            let mut items = l.to_vec();
+            items.sort_by(order);
+            Ok(Value::list(items))
+        }
+        "kubwa" | "ndogo" => {
+            check_orderable(l)?;
+            let want = if method == "kubwa" {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Less
+            };
+            let mut best: Option<&Value> = None;
+            for item in l.iter() {
+                if best.is_none_or(|b| order(item, b) == want) {
+                    best = Some(item);
+                }
+            }
+            Ok(Value::Chaguo(best.cloned().map(Box::new)))
+        }
+        "jumla" => Err(EvalError::TypeErr("jumla inahitaji Orodha ya Namba".into())),
+        "kipekee" => {
+            // Repeats as a `Seti` counts them; values a `Seti` cannot hold, by `==`.
+            let mut kept: Vec<Value> = Vec::new();
+            let mut seen: std::collections::HashSet<MapKey> = Default::default();
+            for item in l.iter() {
+                let fresh = match MapKey::try_from_value(item) {
+                    Ok(key) => seen.insert(key),
+                    Err(_) => {
+                        let mut new = true;
+                        for k in &kept {
+                            if equal(k, item)? {
+                                new = false;
+                                break;
+                            }
+                        }
+                        new
+                    }
+                };
+                if fresh {
+                    kept.push(item.clone());
+                }
+            }
+            Ok(Value::list(kept))
+        }
+        _ => Err(EvalError::Unknown(format!("njia '{method}' haijulikani"))),
+    }
+}
+
+/// Which register file a typed numeric list's method result goes to (the bytecode compiler
+/// gives `ListMethod` a destination of this kind).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum NumOutKind {
+    List,
+    Num,
+    Bool,
+    Val,
+}
+
+/// Pure methods [`numbers_method`] implements on a typed numeric list, and where each result
+/// goes.
+pub(crate) const NUMBER_LIST_METHODS: &[(&str, NumOutKind)] = &[
+    ("tupu", NumOutKind::Bool),
+    ("ina", NumOutKind::Bool),
+    ("jumla", NumOutKind::Num),
+    ("kwanza", NumOutKind::Val),
+    ("mwisho", NumOutKind::Val),
+    ("kubwa", NumOutKind::Val),
+    ("ndogo", NumOutKind::Val),
+    ("tafuta", NumOutKind::Val),
+    ("pata", NumOutKind::Val),
+    ("kata", NumOutKind::List),
+    ("geuza", NumOutKind::List),
+    ("panga", NumOutKind::List),
+    ("kipekee", NumOutKind::List),
+    ("clona", NumOutKind::List),
+];
+
+/// Where `method`'s result goes when it runs on a typed numeric list, or `None` when it does
+/// not run there (the list is then converted to generic values first).
+pub(crate) fn number_list_result(method: &str) -> Option<NumOutKind> {
+    NUMBER_LIST_METHODS
+        .iter()
+        .find(|(m, _)| *m == method)
+        .map(|(_, k)| *k)
+}
+
+/// A numeric-list method's result.
+pub(crate) enum NumOut {
+    List(NumList),
+    Num(f64),
+    Bool(bool),
+    Val(Value),
+}
+
+impl NumOut {
+    pub(crate) fn into_value(self) -> Value {
+        match self {
+            NumOut::List(l) => Value::list(l.iter().map(Value::Namba).collect()),
+            NumOut::Num(n) => Value::Namba(n),
+            NumOut::Bool(b) => Value::Ukweli(b),
+            NumOut::Val(v) => v,
+        }
+    }
+}
+
+/// The elements of `l` as a typed numeric list, when every one is a number.
+fn as_numbers(l: &[Value]) -> Option<NumList> {
+    let mut out = Vec::with_capacity(l.len());
+    for v in l {
+        match v {
+            Value::Namba(n) => out.push(*n),
+            _ => return None,
+        }
+    }
+    Some(out.into_iter().collect())
+}
+
+fn some_number(n: Option<f64>) -> Value {
+    Value::Chaguo(n.map(|n| Box::new(Value::Namba(n))))
+}
+
+/// `method` on a list of numbers — the one implementation for typed numeric lists
+/// (`ListMethod`) and for generic lists that hold only numbers — or `None` when it is not one
+/// of [`NUMBER_LIST_METHODS`] or its arguments are not numbers (the generic path then answers,
+/// the same way).
+pub(crate) fn numbers_method(
+    l: &NumList,
+    method: &str,
+    args_val: &[Value],
+) -> Option<Result<NumOut, EvalError>> {
+    let number = |i: usize| match args_val.get(i) {
+        Some(Value::Namba(n)) => Some(*n),
+        _ => None,
+    };
+    let len = l.len();
+    Some(Ok(match method {
+        "tupu" => NumOut::Bool(len == 0),
+        "kwanza" => NumOut::Val(some_number(l.get(0))),
+        "mwisho" => NumOut::Val(some_number(len.checked_sub(1).and_then(|i| l.get(i)))),
+        "pata" => {
+            let i = args_val
+                .first()
+                .and_then(value::as_f64)
+                .filter(|n| n.is_finite() && *n >= 0.0 && n.fract() == 0.0);
+            NumOut::Val(some_number(i.and_then(|i| l.get(i as usize))))
+        }
+        "ina" => {
+            let x = number(0)?;
+            NumOut::Bool(l.position(x).is_some())
+        }
+        "tafuta" => {
+            let x = number(0)?;
+            NumOut::Val(some_number(l.position(x).map(|i| i as f64)))
+        }
+        "kata" => {
+            let start = arg_index(args_val, 0).unwrap_or(0).min(len);
+            let end = arg_index(args_val, 1).unwrap_or(len).min(len).max(start);
+            NumOut::List(l.slice(start, end))
+        }
+        "geuza" => NumOut::List(l.reversed()),
+        "panga" => NumOut::List(l.sorted(order_f64)),
+        "kubwa" | "ndogo" => NumOut::Val(some_number(l.extreme(method == "kubwa", order_f64))),
+        // Left to right, as a loop of `+` would add them.
+        "jumla" => NumOut::Num(l.sum()),
+        // Repeats as a `Seti` counts them: numbers by their exact value.
+        "kipekee" => NumOut::List(l.unique()),
+        "clona" => NumOut::List(l.clone()),
+        _ => return None,
+    }))
+}
+
+/// The order `panga` gives numbers: by value, NaN after every other number (a total order, so
+/// sorting never depends on the algorithm).
+pub(crate) fn order_f64(x: &f64, y: &f64) -> std::cmp::Ordering {
+    x.partial_cmp(y)
+        .unwrap_or_else(|| x.is_nan().cmp(&y.is_nan()))
+}
+
+/// `a == b` with the language's equality (numbers and text compared directly).
+fn equal(a: &Value, b: &Value) -> Result<bool, EvalError> {
+    match (a, b) {
+        (Value::Namba(x), Value::Namba(y)) => Ok(x == y),
+        (Value::Neno(x), Value::Neno(y)) => Ok(x == y),
+        _ => Ok(matches!(
+            super::ops::binary_value(&asili_parser::BinaryOp::Eq, a, b)?,
+            Value::Ukweli(true)
+        )),
+    }
+}
+
+/// Values `panga`, `kubwa`/`ndogo` and `panga_kwa` can order: all numbers, all text, all
+/// characters or all truth values.
+fn check_orderable(items: &[Value]) -> Result<(), EvalError> {
+    let kind = |v: &Value| match v {
+        Value::Namba(_) => 0,
+        Value::Neno(_) => 1,
+        Value::Herufi(_) => 2,
+        Value::Ukweli(_) => 3,
+        _ => 4,
+    };
+    let first = items.first().map(kind);
+    if first != Some(4) && items.iter().all(|v| Some(kind(v)) == first) {
+        Ok(())
+    } else {
+        Err(EvalError::TypeErr(
+            "kupanga kunahitaji Namba zote, Neno zote, Herufi zote au Ukweli zote".into(),
+        ))
+    }
+}
+
+/// A total order on values [`check_orderable`] accepts: numbers as [`order_f64`], text by its
+/// characters, `si_kweli` before `kweli`.
+fn order(a: &Value, b: &Value) -> std::cmp::Ordering {
+    match (a, b) {
+        (Value::Namba(x), Value::Namba(y)) => order_f64(x, y),
+        (Value::Neno(x), Value::Neno(y)) => x.as_ref().cmp(y.as_ref()),
+        (Value::Herufi(x), Value::Herufi(y)) => x.cmp(y),
+        (Value::Ukweli(x), Value::Ukweli(y)) => x.cmp(y),
+        _ => std::cmp::Ordering::Equal,
+    }
+}
+
+/// `kiolezo` with each `{}` replaced by the next item's text (`{{` and `}}` are literal
+/// braces); the number of `{}` must equal the number of items.
+fn fill_template(kiolezo: &str, items: &[Value]) -> Result<String, EvalError> {
+    let mut out = String::with_capacity(kiolezo.len() + 8 * items.len());
+    let mut next = items.iter();
+    let mut rest = kiolezo;
+    while let Some(at) = rest.find(['{', '}']) {
+        out.push_str(&rest[..at]);
+        let tail = &rest[at..];
+        if let Some(after) = tail.strip_prefix("{{").or_else(|| tail.strip_prefix("}}")) {
+            out.push_str(&tail[..1]);
+            rest = after;
+        } else if let Some(after) = tail.strip_prefix("{}") {
+            let item = next.next().ok_or_else(|| {
+                EvalError::TypeErr("jaza: nafasi {} ni nyingi kuliko thamani".into())
+            })?;
+            match item {
+                Value::Neno(t) => out.push_str(t),
+                other => {
+                    out.push_str(&value::to_display_string(other).ok_or_else(|| {
+                        EvalError::TypeErr("jaza: thamani haiwezi kuwa Neno".into())
+                    })?)
+                }
+            }
+            rest = after;
+        } else {
+            out.push_str(&tail[..1]);
+            rest = &tail[1..];
+        }
+    }
+    out.push_str(rest);
+    if next.next().is_some() {
+        return Err(EvalError::TypeErr(
+            "jaza: thamani ni nyingi kuliko nafasi {}".into(),
+        ));
+    }
+    Ok(out)
+}
+
 /// Whether `method` mutates `recv` in place (`ongeza`, `ingiza`, `ondoa`, `weka_key`,
 /// `badilisha` on the collection types that have them).
 pub(crate) fn is_mutating(recv: &Value, method: &str) -> bool {
@@ -774,6 +1225,39 @@ pub(crate) fn mutate(
                     "badilisha: fahirisi nje ya mipaka".into(),
                 )),
             }
+        }
+        (Value::Orodha(values), "ongeza_zote") => {
+            match args_val.first() {
+                Some(Value::Orodha(more)) => Rc::make_mut(values).extend(more.iter().cloned()),
+                _ => return Err(EvalError::TypeErr("ongeza_zote inahitaji Orodha".into())),
+            }
+            Ok(Value::Tupu)
+        }
+        (Value::Orodha(values), "futa_zote") => {
+            if Rc::get_mut(values).is_some() {
+                Rc::make_mut(values).clear();
+            } else {
+                *values = Rc::new(Vec::new()); // shared: drop this copy's reference instead
+            }
+            Ok(Value::Tupu)
+        }
+        (Value::Kamusi(map), "ondoa") => {
+            let key_val = args_val
+                .first()
+                .ok_or_else(|| EvalError::TypeErr("ondoa inahitaji ufunguo".into()))?;
+            let key = MapKey::try_from_value(key_val)?;
+            if !map.contains_key(&key) {
+                return Ok(Value::Chaguo(None)); // no copy of a shared map for a miss
+            }
+            Ok(Value::Chaguo(Rc::make_mut(map).remove(&key).map(Box::new)))
+        }
+        (Value::Kamusi(map), "futa_zote") => {
+            if Rc::get_mut(map).is_some() {
+                Rc::make_mut(map).clear();
+            } else {
+                *map = Rc::new(Default::default());
+            }
+            Ok(Value::Tupu)
         }
         (Value::Kamusi(map), "ingiza" | "weka_key") => {
             let key_val = args_val
@@ -876,6 +1360,18 @@ pub(crate) fn callback_method(
                 }
             }
             Ok(Value::Namba(count))
+        }
+        "panga_kwa" => {
+            // Sort by the key the named function gives each element (stable); each key is
+            // computed once.
+            let mut keyed = Vec::with_capacity(items.len());
+            for item in items.iter() {
+                keyed.push((call(&name, std::slice::from_ref(item))?, item.clone()));
+            }
+            let keys: Vec<Value> = keyed.iter().map(|(k, _)| k.clone()).collect();
+            check_orderable(&keys)?;
+            keyed.sort_by(|a, b| order(&a.0, &b.0));
+            Ok(Value::list(keyed.into_iter().map(|(_, v)| v).collect()))
         }
         "chunguza" => {
             for item in items.iter() {

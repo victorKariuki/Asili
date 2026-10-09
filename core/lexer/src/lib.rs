@@ -362,6 +362,8 @@ fn tokenize_inner(
                         decoded = Some(match escaped {
                             'n' => '\n',
                             't' => '\t',
+                            'r' => '\r',
+                            '0' => '\0',
                             '\'' => '\'',
                             '\\' => '\\',
                             _ => escaped,
@@ -371,7 +373,8 @@ fn tokenize_inner(
                     }
                 }
                 if let Some(ch) = decoded {
-                    let width = if ch == '\\' || ch == '\'' { 4 } else { 3 };
+                    // `'\n'` is four characters, `'a'` three.
+                    let width = if chars[i + 1] == '\\' { 4 } else { 3 };
                     i += width;
                     col += width;
                     tokens.push(Token {
@@ -398,9 +401,25 @@ fn tokenize_inner(
                         let escaped = chars[i];
                         i += 1;
                         col += 1;
+                        // `\u{…}`: a Unicode code point in hexadecimal.
+                        if escaped == 'u' && chars.get(i) == Some(&'{') {
+                            let close = chars[i..].iter().position(|&c| c == '}');
+                            let code = close.and_then(|end| {
+                                let hex: String = chars[i + 1..i + end].iter().collect();
+                                u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                            });
+                            if let (Some(end), Some(c)) = (close, code) {
+                                s.push(c);
+                                i += end + 1;
+                                col += end + 1;
+                                continue;
+                            }
+                        }
                         let decoded = match escaped {
                             'n' => '\n',
                             't' => '\t',
+                            'r' => '\r',
+                            '0' => '\0',
                             '"' => '"',
                             '\\' => '\\',
                             _ => {
@@ -540,6 +559,33 @@ fn skip_comment(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn lexemes(src: &str) -> Vec<String> {
+        tokenize(src)
+            .expect("tokenize")
+            .into_iter()
+            .map(|t| t.lexeme)
+            .collect()
+    }
+
+    #[test]
+    fn escaped_char_literals_are_one_token() {
+        assert_eq!(lexemes(r"x = '\n'"), ["x", "=", "CHAR:\n"]);
+        assert_eq!(
+            lexemes(r"('\r' == '\0')"),
+            ["(", "CHAR:\r", "==", "CHAR:\0", ")"]
+        );
+        assert_eq!(lexemes(r"'\''"), ["CHAR:'"]);
+        assert_eq!(lexemes(r"'\\'"), ["CHAR:\\"]);
+    }
+
+    #[test]
+    fn string_escapes() {
+        assert_eq!(lexemes(r#""a\rb\0\u{e9}\u{1F600}""#), ["\"a\rb\0é😀\""]);
+        // An unknown escape keeps its backslash.
+        assert_eq!(lexemes(r#""\q""#), ["\"\\q\""]);
+    }
     use super::{tokenize, tokenize_with_trivia};
 
     #[test]

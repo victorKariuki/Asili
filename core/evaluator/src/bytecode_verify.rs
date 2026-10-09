@@ -88,6 +88,12 @@ fn verify_function(program: &BytecodeProgram, f: &BytecodeFunc) -> Result<(), St
                 return Err(at(format!("thabiti {k} haipo")));
             }
             Opcode::Return { src } => operand(src).map_err(at)?,
+            Opcode::ListMethod(call) => {
+                for &r in &call.args {
+                    val(r).map_err(at)?;
+                }
+                operand(&call.dst).map_err(at)?;
+            }
             Opcode::Line { binds, .. } => {
                 for (_, o) in binds.iter() {
                     operand(o).map_err(at)?;
@@ -115,6 +121,7 @@ fn check(r: Reg, count: u32, bank: &str) -> Result<(), String> {
 fn list_operands(op: &Opcode) -> Vec<Reg> {
     let mut regs = crate::native::list_writes(op);
     match op {
+        Opcode::ListMethod(call) => regs.push(call.list),
         Opcode::ListGet { list, .. }
         | Opcode::ListGetTokeo { list, .. }
         | Opcode::ListSet { list, .. }

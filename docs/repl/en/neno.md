@@ -15,8 +15,8 @@
 |----------------------|--------------------------------------------|---------------------------------|
 | `s.urefu()`         | Number of grapheme clusters               | `"café".urefu()` → `4`        |
 | `s.biti_ngapi()`    | Length in bytes (UTF-8)                   | `"é".biti_ngapi()` → `2`      |
-| `s.kata(a, b)`      | Byte slice from `a` to `b`                | `"hello".kata(1, 4)` → `"ell"`|
-| `s.tafuta(p)`       | Position of `p` within `s` (Chaguo)       | `"hello".tafuta("ll")` → `Chaguo(Kuna(Namba(2.0)))` |
+| `s.kata(a, b)`      | Characters from position `a` to `b` (counted as `urefu()` counts) | `"café".kata(1, 3)` → `"af"`|
+| `s.tafuta(p)`       | Character position of `p` within `s` (Chaguo) | `"hello".tafuta("ll")` → `Chaguo(Kuna(Namba(2.0)))` |
 | `s.unganisha(kip)`  | Append `kip`                              | `"a".unganisha("-")` → `"a-"` |
 | `s.clona()`         | Copy the string                           | `"a".clona()` → `"a"`         |
 | `s.gawanya(sep)`    | Split by separator; `Orodha<Neno>`        | `"a,b,c".gawanya(",")` → `["a","b","c"]` |
@@ -26,6 +26,14 @@
 | `s.anza_na(p)`      | `kweli` if `s` starts with `p`            | `"Habari".anza_na("Hab")` → `kweli` |
 | `s.maliza_na(p)`    | `kweli` if `s` ends with `p`              | `"Habari".maliza_na("ari")` → `kweli` |
 | `s.herufi_kwa(i)`   | Character at grapheme position `i` (same counting as `urefu()`); `Chaguo<Herufi>` | `"café".herufi_kwa(3)` → `Chaguo(Kuna(Herufi('é')))` |
+| `s.safisha()`       | Without whitespace at either end (`safisha_mwanzo`, `safisha_mwisho`: one end) | `"  sawa ".safisha()` → `"sawa"` |
+| `s.jaza_kushoto(n, h)` | Pad on the left with character `h` to `n` characters (`jaza_kulia`: right) | `"7".jaza_kushoto(3, "0")` → `"007"` |
+| `s.jaza(orodha)`    | Put the list's values in place of each `{}` | `"{} ana {}".jaza(["Amara", 30])` → `"Amara ana 30"` |
+| `s.herufi()`        | The characters as `Orodha<Neno>`          | `"abc".herufi()` → `["a","b","c"]` |
+| `s.mistari()`       | The lines as `Orodha<Neno>`               | `"a\nb".mistari()` → `["a","b"]` |
+| `s.geuza()`         | The characters in reverse order           | `"abc".geuza()` → `"cba"` |
+| `s.misimbo()`       | Unicode code points of the characters     | `"A".misimbo()` → `[65]` |
+| `s.kwa_namba()`     | The number the text spells; `Tokeo` (an error if it is not a number) | `"2.5".kwa_namba()` → `Tokeo(Sawa(Namba(2.5)))` |
 
 ## Concatenation
 

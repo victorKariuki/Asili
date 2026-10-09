@@ -815,6 +815,17 @@ pub const PURE_METHODS: [&[&str]; 16] = [
         "maliza_na",
         "gawanya",
         "badilisha",
+        "safisha",
+        "safisha_mwanzo",
+        "safisha_mwisho",
+        "jaza_kushoto",
+        "jaza_kulia",
+        "jaza",
+        "herufi",
+        "mistari",
+        "geuza",
+        "misimbo",
+        "kwa_namba",
     ],
     &[
         "clona",
@@ -824,9 +835,38 @@ pub const PURE_METHODS: [&[&str]; 16] = [
         "jiunge",
         "kwa_neno",
         "vipande",
+        "tupu",
+        "kwanza",
+        "mwisho",
+        "ina",
+        "tafuta",
+        "kata",
+        "geuza",
+        "panga",
+        "kubwa",
+        "ndogo",
+        "jumla",
+        "kipekee",
     ],
-    &["clona", "idadi", "pata", "funguo", "vipo"],
-    &["ina", "urefu", "clona", "orodha"],
+    &[
+        "clona",
+        "idadi",
+        "pata",
+        "funguo",
+        "vipo",
+        "thamani",
+        "vipengele",
+    ],
+    &[
+        "ina",
+        "urefu",
+        "clona",
+        "orodha",
+        "muungano",
+        "makutano",
+        "tofauti",
+        "ni_sehemu_ya",
+    ],
     &["angu", "ni_tupu", "ni_po", "hakikisha"],
     &["ni_kosa", "ni_sawa", "kosa", "angu"],
     &["clona", "kwanza", "pili"],
@@ -844,8 +884,15 @@ pub const PURE_METHODS: [&[&str]; 16] = [
 /// Built-in methods that change their receiver in place, per [`MethodReceiver`].
 pub const MUTATING_METHODS: [&[&str]; 16] = [
     &[],
-    &["ongeza", "ingiza", "ondoa", "badilisha"],
-    &["ingiza", "weka_key"],
+    &[
+        "ongeza",
+        "ingiza",
+        "ondoa",
+        "badilisha",
+        "ongeza_zote",
+        "futa_zote",
+    ],
+    &["ingiza", "weka_key", "ondoa", "futa_zote"],
     &["ongeza", "ondoa"],
     &[],
     &[],
@@ -871,6 +918,7 @@ pub const CALLBACK_METHODS: [&[&str]; 16] = [
         "chunguza",
         "kila_na_fahirisi",
         "kila_mmoja",
+        "panga_kwa",
     ],
     &[],
     &[],
@@ -894,4 +942,126 @@ pub fn has_builtin_method(receiver: MethodReceiver, name: &str) -> bool {
     [&PURE_METHODS, &MUTATING_METHODS, &CALLBACK_METHODS]
         .iter()
         .any(|table| table[i].contains(&name))
+}
+
+/// Static type of the result of built-in method `method` on a value of type `receiver`
+/// (`Unknown` when it has none or is not known statically). The one table of built-in method
+/// result types: the analyzer checks calls with it, and the bytecode compiler follows method
+/// chains with it.
+pub fn method_return_type(receiver: &ValueType, method: &str) -> ValueType {
+    match (receiver.clone(), method) {
+        (ValueType::Neno, "clona") => ValueType::Neno,
+        (ValueType::Neno, "urefu" | "biti_ngapi") => ValueType::Namba,
+        (ValueType::Neno, "herufi_kwa") => ValueType::Chaguo(Box::new(ValueType::Herufi)),
+        (ValueType::Neno, "kwa_herufi_ndogo" | "kwa_herufi_kubwa" | "badilisha" | "rudia") => {
+            ValueType::Neno
+        }
+        (ValueType::Neno, "tupu" | "anza_na" | "maliza_na" | "ina") => ValueType::Ukweli,
+        (ValueType::Neno, "hesabu") => ValueType::Namba,
+        (ValueType::Neno, "gawanya") => ValueType::Orodha(Box::new(ValueType::Neno)),
+        (
+            ValueType::Neno,
+            "kata" | "safisha" | "safisha_mwanzo" | "safisha_mwisho" | "jaza_kushoto"
+            | "jaza_kulia" | "jaza" | "geuza",
+        ) => ValueType::Neno,
+        (ValueType::Neno, "herufi" | "mistari") => ValueType::Orodha(Box::new(ValueType::Neno)),
+        (ValueType::Neno, "misimbo") => ValueType::Orodha(Box::new(ValueType::Namba)),
+        (ValueType::Neno, "kwa_namba") => {
+            ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno))
+        }
+        (ValueType::Neno, "tafuta") => ValueType::Chaguo(Box::new(ValueType::Namba)),
+        (ValueType::Jozi(k, v), "clona") => ValueType::Jozi(k.clone(), v.clone()),
+        (ValueType::Jozi(k, _), "kwanza") => *k,
+        (ValueType::Jozi(_, v), "pili") => *v,
+        (ValueType::Orodha(ref t), "clona") => ValueType::Orodha(t.clone()),
+        (ValueType::Orodha(_), "urefu") => ValueType::Namba,
+        (ValueType::Orodha(_), "ongeza" | "ongeza_zote" | "futa_zote") => ValueType::Tupu,
+        (ValueType::Orodha(_), "tupu" | "ina") => ValueType::Ukweli,
+        (ValueType::Orodha(ref t), "kwanza" | "mwisho" | "kubwa" | "ndogo") => {
+            ValueType::Chaguo(t.clone())
+        }
+        (ValueType::Orodha(_), "tafuta") => ValueType::Chaguo(Box::new(ValueType::Namba)),
+        (ValueType::Orodha(ref t), "kata" | "geuza" | "panga" | "panga_kwa" | "kipekee") => {
+            ValueType::Orodha(t.clone())
+        }
+        (ValueType::Orodha(_), "jumla") => ValueType::Namba,
+        (ValueType::Orodha(_), "ingiza") => ValueType::Tupu,
+        (ValueType::Orodha(ref t), "ondoa") => ValueType::Chaguo(t.clone()),
+        (ValueType::Orodha(ref t), "pata") => ValueType::Chaguo(t.clone()),
+        (ValueType::Orodha(_), "badilisha" | "kila_mmoja" | "kila_na_fahirisi") => ValueType::Tupu,
+        (ValueType::Orodha(ref t), "ramani" | "chuja") => ValueType::Orodha(t.clone()),
+        (ValueType::Orodha(_), "hesabu") => ValueType::Namba,
+        (ValueType::Orodha(_), "chunguza") => ValueType::Ukweli,
+        (ValueType::Orodha(_), "unganisha" | "jiunge") => ValueType::Neno,
+        (ValueType::Orodha(_), "kwa_neno") => ValueType::Orodha(Box::new(ValueType::Neno)),
+        (ValueType::Orodha(ref t), "vipande") => {
+            ValueType::Orodha(Box::new(ValueType::Orodha(t.clone())))
+        }
+        (ValueType::Kamusi(ref k, ref v), "clona") => ValueType::Kamusi(k.clone(), v.clone()),
+        (ValueType::Kamusi(_, _), "idadi") => ValueType::Namba,
+        (ValueType::Kamusi(_, ref v), "pata") => ValueType::Chaguo(v.clone()),
+        (ValueType::Kamusi(_, _), "ingiza" | "weka_key" | "futa_zote") => ValueType::Tupu,
+        (ValueType::Kamusi(_, ref v), "ondoa") => ValueType::Chaguo(v.clone()),
+        (ValueType::Kamusi(_, ref v), "thamani") => ValueType::Orodha(v.clone()),
+        (ValueType::Kamusi(ref k, ref v), "vipengele") => {
+            ValueType::Orodha(Box::new(ValueType::Jozi(k.clone(), v.clone())))
+        }
+        (ValueType::Kamusi(_, _), "vipo") => ValueType::Ukweli,
+        (ValueType::Kamusi(ref k, _), "funguo") => ValueType::Orodha(k.clone()),
+        (ValueType::Tokeo(ref t, _), "angu") => *t.clone(),
+        (ValueType::Tokeo(_, _), "ni_kosa" | "ni_sawa") => ValueType::Ukweli,
+        (ValueType::Tokeo(_, ref e), "kosa") => *e.clone(),
+        (ValueType::Chaguo(ref t), "angu" | "hakikisha") => *t.clone(),
+        (ValueType::Chaguo(_), "ni_po" | "ni_tupu") => ValueType::Ukweli,
+        (ValueType::KashaGC(ref t), "pata") => *t.clone(),
+        (ValueType::KashaGC(_), "weka") => ValueType::Tupu,
+        (ValueType::KashaGC(_), "idadi") => ValueType::Namba,
+        (ValueType::KashaGC(ref t), "shirikisha") => ValueType::KashaGC(t.clone()),
+        (ValueType::KashaGCDhaifu(ref t), "imarisha") => {
+            ValueType::Chaguo(Box::new(ValueType::KashaGC(t.clone())))
+        }
+        (ValueType::Faili, "soma") => {
+            ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno))
+        }
+        (ValueType::Faili, "andika") => {
+            ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno))
+        }
+        (ValueType::Faili, "funga") => ValueType::Tupu,
+        (ValueType::Mkondo, "soma") => {
+            ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno))
+        }
+        (ValueType::Mkondo, "soma_bailisi") => {
+            ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno))
+        }
+        (ValueType::Mkondo, "andika") => {
+            ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno))
+        }
+        (ValueType::Mkondo, "funga") => ValueType::Tupu,
+        (ValueType::Kumbukumbu(ref t), "pata") => *t.clone(),
+        (ValueType::Seti(ref t), "clona") => ValueType::Seti(t.clone()),
+        (ValueType::Seti(_), "ongeza") => ValueType::Tupu,
+        (ValueType::Seti(_), "ondoa") => ValueType::Ukweli,
+        (ValueType::Seti(_), "ina" | "ni_sehemu_ya") => ValueType::Ukweli,
+        (ValueType::Seti(ref t), "muungano" | "makutano" | "tofauti") => ValueType::Seti(t.clone()),
+        (ValueType::Seti(_), "urefu") => ValueType::Namba,
+        (ValueType::Seti(ref t), "orodha") => ValueType::Orodha(t.clone()),
+        (ValueType::NjiaTx(_), "tuma") => {
+            ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno))
+        }
+        (ValueType::NjiaRx(ref t), "pokea") => {
+            ValueType::Tokeo(t.clone(), Box::new(ValueType::Neno))
+        }
+        (ValueType::NjiaTxBounded(_), "tuma") => {
+            ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno))
+        }
+        (ValueType::NjiaRxBounded(ref t), "pokea") => {
+            ValueType::Tokeo(t.clone(), Box::new(ValueType::Neno))
+        }
+        (ValueType::Wakati, "sekunde") => ValueType::Namba,
+        (ValueType::Fungo(_), "funga") => ValueType::Tupu,
+        (ValueType::Fungo(_), "fungua") => ValueType::Tupu,
+        (ValueType::Fungo(ref t), "pata") => *t.clone(),
+        (ValueType::Fungo(_), "weka") => ValueType::Tupu,
+        _ => ValueType::Unknown,
+    }
 }

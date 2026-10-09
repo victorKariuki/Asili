@@ -11,8 +11,8 @@ All built-in types support method call syntax: `thamani.njia(hoja...)`.
 | `s.urefu()`             | `Namba`          | Number of Unicode grapheme clusters (visible characters)   |
 | `s.biti_ngapi()`        | `Namba`          | Byte length (UTF-8 encoded size)                           |
 | `s.clona()`             | `Neno`           | Create a copy (needed before passing to a function)        |
-| `s.kata(mwanzo, mwisho)`| `Neno`           | Byte slice from `mwanzo` to `mwisho` (exclusive)          |
-| `s.tafuta(sub)`         | `Chaguo<Namba>`  | Byte index of first match, or `Hamna`                     |
+| `s.kata(mwanzo, mwisho)`| `Neno`           | Characters from `mwanzo` to `mwisho` (exclusive; `mwisho` optional, both clamped to the text) |
+| `s.tafuta(sub)`         | `Chaguo<Namba>`  | Character position of the first match, or `Hamna`         |
 | `s.unganisha(sep)`      | `Neno`           | Append `sep` to end of string                              |
 | `s.gawanya(sep)`        | `Orodha<Neno>`   | Split by separator; returns list of parts                  |
 | `s.badilisha(kwa, na)`  | `Neno`           | Replace all occurrences of `kwa` with `na`                |
@@ -25,6 +25,14 @@ All built-in types support method call syntax: `thamani.njia(hoja...)`.
 | `s.anza_na(kiambishi)`  | `Ukweli`         | `kweli` if string starts with `kiambishi`                 |
 | `s.maliza_na(kiishio)`  | `Ukweli`         | `kweli` if string ends with `kiishio`                     |
 | `s.herufi_kwa(i)`       | `Chaguo<Herufi>` | Character at grapheme position `i` (like `urefu()` counts), or `Hamna` if out of range |
+| `s.safisha()`           | `Neno`           | Without whitespace at either end (`safisha_mwanzo` / `safisha_mwisho`: one end only) |
+| `s.jaza_kushoto(n, h)`  | `Neno`           | Padded on the left with the one character `h` (default a space) to `n` characters; `jaza_kulia` pads on the right; longer text is unchanged |
+| `s.jaza(orodha)`        | `Neno`           | Each `{}` replaced by the next item's text (`{{` and `}}` are literal braces); the counts must match |
+| `s.herufi()`            | `Orodha<Neno>`   | The characters, each as a `Neno`                          |
+| `s.mistari()`           | `Orodha<Neno>`   | The lines (separated by `\n` or `\r\n`)                   |
+| `s.geuza()`             | `Neno`           | The characters in reverse order                           |
+| `s.misimbo()`           | `Orodha<Namba>`  | The Unicode code point of every code point in the text    |
+| `s.kwa_namba()`         | `Tokeo<Namba, Neno>` | The number the text spells (spaces around it allowed), or an error — unlike `kama Namba`, which gives 0 for text that is not a number |
 
 ### Mifano
 
@@ -34,6 +42,7 @@ weka s = "Habari Dunia"
 s.urefu()                        # 12
 s.biti_ngapi()                   # 12 (all ASCII here)
 s.kata(0, 6)                     # "Habari"
+s.kata(7)                        # "Dunia"
 s.tafuta("Dunia")                # Chaguo(Kuna(Namba(7.0))) — debug-format includes type wrappers
 s.tafuta("xyz")                  # Chaguo(Hamna)
 s.kwa_herufi_ndogo()             # "habari dunia"
@@ -42,6 +51,10 @@ s.anza_na("Hab")                 # kweli
 s.maliza_na("nia")               # kweli
 s.gawanya(" ")                   # ["Habari", "Dunia"]
 s.badilisha("Dunia", "Asili")    # "Habari Asili"
+"  sawa  ".safisha()             # "sawa"
+"7".jaza_kushoto(3, "0")         # "007"
+"{} ana miaka {}".jaza(["Amara", 30])   # "Amara ana miaka 30"
+"2.5".kwa_namba()                # Tokeo(Sawa(Namba(2.5)))
 ```
 
 ### Neno na UTF-8
@@ -52,12 +65,10 @@ s.badilisha("Dunia", "Asili")    # "Habari Asili"
 weka s = "café"
 s.urefu()          # 4  (c, a, f, é — four graphemes)
 s.biti_ngapi()     # 5  (é is two bytes in UTF-8)
-s.kata(0, 3)       # "caf" — byte slice, not grapheme slice; cutting at byte 4 lands
-                   #        mid-character (é starts at byte 3) and produces invalid UTF-8
-s.herufi_kwa(3)    # Chaguo(Kuna(Herufi('é'))) — grapheme-indexed, so this is always
-                   #        the right position regardless of byte width; use this
-                   #        instead of `.kata()` when inspecting one character at a time
-                   #        (e.g. writing a tokenizer)
+s.kata(0, 3)       # "caf" — positions count characters, like urefu()
+s.kata(3)          # "é"
+s.tafuta("é")      # Chaguo(Kuna(Namba(3.0))) — the character position, not the byte offset
+s.herufi_kwa(3)    # Chaguo(Kuna(Herufi('é')))
 s.herufi_kwa(99)   # Chaguo(Hamna) — out of range, not a panic
 ```
 
@@ -83,6 +94,19 @@ s.herufi_kwa(99)   # Chaguo(Hamna) — out of range, not a panic
 | `a.kwa_neno()`     | `Orodha<Neno>` | Convert every element to a string                        |
 | `a.vipande(size)`  | `Orodha<Orodha<T>>` | Split the list into chunks of at most `size` elements |
 | `a.kila_na_fahirisi(f)` | `Tupu`   | Call a named function with each element and its index    |
+| `a.tupu()`         | `Ukweli`       | Whether the list has no elements                         |
+| `a.kwanza()` / `a.mwisho()` | `Chaguo<T>` | The first / last element, or `Hamna` when empty  |
+| `a.ina(x)`         | `Ukweli`       | Whether some element `==` `x`                            |
+| `a.tafuta(x)`      | `Chaguo<Namba>`| Index of the first element `==` `x`, or `Hamna`          |
+| `a.kata(i, j)`     | `Orodha<T>`    | Elements `i` to `j` (exclusive; `j` optional; both clamped) |
+| `a.geuza()`        | `Orodha<T>`    | The elements in reverse order                            |
+| `a.panga()`        | `Orodha<T>`    | Sorted ascending, stable: numbers (NaN last), text, characters or truth values — all of one kind, or an error |
+| `a.panga_kwa(f)`   | `Orodha<T>`    | Sorted (stable) by the key the named function gives each element (each key computed once) |
+| `a.kubwa()` / `a.ndogo()` | `Chaguo<T>` | The largest / smallest element in `panga`'s order (the first, among equals), or `Hamna` when empty |
+| `a.jumla()`        | `Namba`        | The sum of a list of numbers, added left to right        |
+| `a.kipekee()`      | `Orodha<T>`    | The elements without repeats, first occurrences in order (repeats as a `Seti` counts them: `0` and `-0` differ) |
+| `a.ongeza_zote(b)` | `Tupu`         | Append every element of `b` (mutates in place)           |
+| `a.futa_zote()`    | `Tupu`         | Remove every element (mutates in place; copies keep theirs) |
 | `a.ingiza(i, v)`  | `Tupu`         | Replace the element at index `i` with `v` (mutates in place); panics if `i` is out of bounds — does **not** grow the list. `a[i] = v` desugars to this call. |
 | `a[i]`            | `T`            | Element; out of range is a runtime error (not a method — see below) |
 | `a[i]?`           | `T`            | Element; out of range returns the `KosaMipaka` error from the `kazi` |
@@ -109,7 +133,18 @@ kazi kwa_mstari(row: Orodha<Namba>) -> Neno {
   rejesha row.kwa_neno().jiunge(" ")
 }
 weka mistari = a.vipande(2).ramani("kwa_mstari").jiunge("\n")
+
+[3, 1, 2].panga()            # [1, 2, 3]
+[3, 1, 3].kipekee()          # [3, 1]
+[4, 9, 2].kubwa()            # Chaguo(Kuna(9))
+[1.5, 2, 3].jumla()          # 6.5
 ```
+
+On an `Orodha<Namba>` these methods work on the list's compact numeric storage directly, and
+a list result (`panga`, `kata`, `geuza`, `kipekee`) stays one: sorting integers is a radix sort,
+`jumla` of integers that cannot overflow 2^53 adds them as machine integers (the same result,
+several times faster than a loop), and searching an integer list for a value it cannot hold
+answers at once.
 
 ### Kufikia Kipengele (Indexing)
 
@@ -140,6 +175,10 @@ a[10] = 1         # panics: "ingiza: index nje ya mipaka" — out-of-bounds assi
 | `m.funguo()`       | `Orodha`       | All keys as a list                                   |
 | `m.idadi()`        | `Namba`        | Number of entries                                    |
 | `m.clona()`        | `Kamusi<K,V>`  | Deep copy                                            |
+| `m.ondoa(k)`       | `Chaguo<V>`    | Remove key `k`, returning its value; `Hamna` if it was missing (mutates in place) |
+| `m.thamani()`      | `Orodha<V>`    | All values (in the same order as `funguo()`)         |
+| `m.vipengele()`    | `Orodha<Jozi<K,V>>` | All entries as key–value pairs                  |
+| `m.futa_zote()`    | `Tupu`         | Remove every entry (mutates in place)                |
 
 ### Mifano
 
@@ -168,6 +207,38 @@ m.pata("jina")                 # Chaguo(Kuna(Neno("Amara"))) — wrapped
 **Note:** `m[k]` (direct index-read) returns the plain value (or `Hamna` if the key is
 missing) — it does **not** wrap the result in `Chaguo` the way `m.pata(k)` does. The two are
 not interchangeable despite reading the same key.
+
+---
+
+## Seti — Set Methods
+
+| Njia                 | Matokeo     | Maelezo                                         |
+|----------------------|-------------|-------------------------------------------------|
+| `s.ongeza(x)`        | `Tupu`      | Add `x` (mutates in place)                      |
+| `s.ondoa(x)`         | `Ukweli`    | Remove `x`; whether it was there                |
+| `s.ina(x)`           | `Ukweli`    | Whether `x` is in the set                       |
+| `s.urefu()`          | `Namba`     | Number of elements                              |
+| `s.orodha()`         | `Orodha<T>` | The elements as a list (order not guaranteed)   |
+| `s.clona()`          | `Seti<T>`   | Copy                                            |
+| `s.muungano(t)`      | `Seti<T>`   | Elements in `s` or `t` (union)                  |
+| `s.makutano(t)`      | `Seti<T>`   | Elements in both (intersection)                 |
+| `s.tofauti(t)`       | `Seti<T>`   | Elements of `s` not in `t` (difference)         |
+| `s.ni_sehemu_ya(t)`  | `Ukweli`    | Whether every element of `s` is in `t`          |
+
+```asili
+weka a = seti(1, 2, 3)
+weka b = seti(2, 3, 4)
+a.makutano(b).orodha().panga()   # [2, 3]
+seti(2).ni_sehemu_ya(a)          # kweli
+```
+
+---
+
+## Wakati — Time Methods
+
+| Njia          | Matokeo | Maelezo                              |
+|---------------|---------|--------------------------------------|
+| `t.sekunde()` | `Namba` | Seconds since the Unix epoch         |
 
 ---
 

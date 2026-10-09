@@ -151,6 +151,53 @@ pub(crate) struct NumList {
     width: usize,
 }
 
+/// `$body` with `$xs` bound to the elements of numeric list `$l` as a slice of their
+/// representation (`&[u8]` … `&[f64]`): one monomorphic loop per representation.
+macro_rules! typed {
+    ($l:expr, $xs:ident => $body:expr) => {{
+        let l = $l;
+        let n = l.len;
+        let p = l.words.as_ptr() as *const u8;
+        // SAFETY: `words` holds `n` elements of the representation's width, aligned for it.
+        unsafe {
+            match l.kind {
+                Kind::U8 => {
+                    let $xs = std::slice::from_raw_parts(p, n);
+                    $body
+                }
+                Kind::I8 => {
+                    let $xs = std::slice::from_raw_parts(p as *const i8, n);
+                    $body
+                }
+                Kind::U16 => {
+                    let $xs = std::slice::from_raw_parts(p as *const u16, n);
+                    $body
+                }
+                Kind::I16 => {
+                    let $xs = std::slice::from_raw_parts(p as *const i16, n);
+                    $body
+                }
+                Kind::U32 => {
+                    let $xs = std::slice::from_raw_parts(p as *const u32, n);
+                    $body
+                }
+                Kind::I32 => {
+                    let $xs = std::slice::from_raw_parts(p as *const i32, n);
+                    $body
+                }
+                Kind::I64 => {
+                    let $xs = std::slice::from_raw_parts(p as *const i64, n);
+                    $body
+                }
+                Kind::F64 => {
+                    let $xs = std::slice::from_raw_parts(p as *const f64, n);
+                    $body
+                }
+            }
+        }
+    }};
+}
+
 /// Words holding `n` elements of `width` bytes.
 fn words_for(n: usize, width: usize) -> usize {
     (n * width).div_ceil(8)
@@ -337,6 +384,208 @@ impl NumList {
         v
     }
 
+    /// Elements `start..end` (in range), in the same representation.
+    pub(crate) fn slice(&self, start: usize, end: usize) -> NumList {
+        let mut l = NumList::zeroed(self.kind, end - start);
+        let w = self.width;
+        // SAFETY: both hold at least the bytes copied: `self` `end * w`, `l` `(end - start) * w`.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                (self.words.as_ptr() as *const u8).add(start * w),
+                l.words.as_mut_ptr() as *mut u8,
+                (end - start) * w,
+            );
+        }
+        l
+    }
+
+    /// The elements in reverse order, in the same representation.
+    pub(crate) fn reversed(&self) -> NumList {
+        let mut l = NumList::zeroed(self.kind, self.len);
+        for i in 0..self.len {
+            l.write(self.len - 1 - i, self.read(i));
+        }
+        l
+    }
+
+    /// The elements sorted (stable) by `cmp`, in the same representation. Integer
+    /// representations are radix-sorted on their own bits (equal integers are
+    /// indistinguishable, so stability is moot there).
+    pub(crate) fn sorted(&self, cmp: impl Fn(&f64, &f64) -> std::cmp::Ordering) -> NumList {
+        let mut l = self.clone();
+        let n = self.len;
+        let p = l.words.as_mut_ptr() as *mut u8;
+        // SAFETY: `words` holds `n` elements of the representation's width, aligned for it.
+        unsafe {
+            match self.kind {
+                Kind::U8 => radix_sort(std::slice::from_raw_parts_mut(p, n), |x| x as u64, 1),
+                Kind::I8 => radix_sort(
+                    std::slice::from_raw_parts_mut(p as *mut i8, n),
+                    |x| (x as u8 ^ 0x80) as u64,
+                    1,
+                ),
+                Kind::U16 => radix_sort(
+                    std::slice::from_raw_parts_mut(p as *mut u16, n),
+                    |x| x as u64,
+                    2,
+                ),
+                Kind::I16 => radix_sort(
+                    std::slice::from_raw_parts_mut(p as *mut i16, n),
+                    |x| (x as u16 ^ 0x8000) as u64,
+                    2,
+                ),
+                Kind::U32 => radix_sort(
+                    std::slice::from_raw_parts_mut(p as *mut u32, n),
+                    |x| x as u64,
+                    4,
+                ),
+                Kind::I32 => radix_sort(
+                    std::slice::from_raw_parts_mut(p as *mut i32, n),
+                    |x| (x as u32 ^ 0x8000_0000) as u64,
+                    4,
+                ),
+                Kind::I64 => radix_sort(
+                    std::slice::from_raw_parts_mut(p as *mut i64, n),
+                    |x| x as u64 ^ 0x8000_0000_0000_0000,
+                    8,
+                ),
+                Kind::F64 => {
+                    // Equal doubles can still differ (0 and -0): keep their order (stable).
+                    let mut v = self.to_f64s();
+                    v.sort_by(cmp);
+                    for (i, x) in v.into_iter().enumerate() {
+                        l.write(i, x);
+                    }
+                }
+            }
+        }
+        l
+    }
+
+    /// The elements as doubles, converted in one pass per representation.
+    pub(crate) fn to_f64s(&self) -> Vec<f64> {
+        typed!(self, xs => xs.iter().map(|&x| x as f64).collect())
+    }
+
+    /// The sum, adding left to right as a loop of `+` would. Integer elements whose total can
+    /// never pass 2^53 are summed as integers (exact, so the same result, and vectorized).
+    pub(crate) fn sum(&self) -> f64 {
+        const EXACT: f64 = 9_007_199_254_740_992.0; // 2^53
+        let bound = match self.kind {
+            Kind::U8 => 255.0,
+            Kind::I8 => 128.0,
+            Kind::U16 => 65_535.0,
+            Kind::I16 => 32_768.0,
+            Kind::U32 => 4_294_967_295.0,
+            Kind::I32 => 2_147_483_648.0,
+            Kind::I64 | Kind::F64 => f64::INFINITY,
+        };
+        if (self.len as f64) * bound < EXACT {
+            typed!(self, xs => xs.iter().map(|&x| x as i64).sum::<i64>() as f64)
+        } else {
+            typed!(self, xs => xs.iter().fold(0.0, |a, &x| a + x as f64))
+        }
+    }
+
+    /// Index of the first element equal (`==`) to `x`.
+    pub(crate) fn position(&self, x: f64) -> Option<usize> {
+        // -0 == 0: look for 0. Otherwise an integer list holds no value its representation
+        // cannot.
+        let x = if x == 0.0 { 0.0 } else { x };
+        if self.kind != Kind::F64 && !self.kind.holds(x) {
+            return None;
+        }
+        typed!(self, xs => xs.iter().position(|&v| v as f64 == x))
+    }
+
+    /// The largest (`max`) or smallest element: for integers, the representation's own
+    /// max/min (equal integers are indistinguishable); for doubles, the first one that
+    /// `order` ranks above (or below) every earlier one.
+    pub(crate) fn extreme(
+        &self,
+        max: bool,
+        order: impl Fn(&f64, &f64) -> std::cmp::Ordering,
+    ) -> Option<f64> {
+        if self.kind == Kind::F64 {
+            let want = if max {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Less
+            };
+            let xs = self.to_f64s();
+            let (&first, rest) = xs.split_first()?;
+            return Some(rest.iter().fold(
+                first,
+                |b, &v| {
+                    if order(&v, &b) == want {
+                        v
+                    } else {
+                        b
+                    }
+                },
+            ));
+        }
+        let n = self.len;
+        let p = self.words.as_ptr() as *const u8;
+        macro_rules! ext {
+            ($t:ty) => {{
+                // SAFETY: `words` holds `n` elements of this representation, aligned for it.
+                let xs = unsafe { std::slice::from_raw_parts(p as *const $t, n) };
+                if max {
+                    xs.iter().max().map(|&v| v as f64)
+                } else {
+                    xs.iter().min().map(|&v| v as f64)
+                }
+            }};
+        }
+        match self.kind {
+            Kind::U8 => ext!(u8),
+            Kind::I8 => ext!(i8),
+            Kind::U16 => ext!(u16),
+            Kind::I16 => ext!(i16),
+            Kind::U32 => ext!(u32),
+            Kind::I32 => ext!(i32),
+            Kind::I64 | Kind::F64 => ext!(i64),
+        }
+    }
+
+    /// The elements without repeats (by exact value, as a `Seti` keeps them), first occurrences
+    /// in order, in the same representation.
+    pub(crate) fn unique(&self) -> NumList {
+        let mut out = NumList::with_kind(self.kind, 0);
+        // 8- and 16-bit elements: a bitmap of the values seen.
+        if self.width <= 2 {
+            // Values -32,768..=65,535 (every 8- and 16-bit representation) offset by 32,768.
+            let mut seen = vec![0u64; 2048]; // 131,072 bits
+            let mut mark = |key: usize| {
+                let (w, b) = (key / 64, key % 64);
+                let fresh = seen[w] & (1 << b) == 0;
+                seen[w] |= 1 << b;
+                fresh
+            };
+            typed!(self, xs => {
+                for &x in xs {
+                    let v = x as f64;
+                    if mark((v as i64 + 32_768) as usize) {
+                        out.push(v);
+                    }
+                }
+            });
+            return out;
+        }
+        let mut seen: std::collections::HashSet<u64, foldhash::fast::RandomState> =
+            std::collections::HashSet::with_capacity_and_hasher(self.len, Default::default());
+        typed!(self, xs => {
+            for &x in xs {
+                let v = x as f64;
+                if seen.insert(v.to_bits()) {
+                    out.push(v);
+                }
+            }
+        });
+        out
+    }
+
     pub(crate) fn iter(&self) -> impl Iterator<Item = f64> + '_ {
         (0..self.len).map(|i| self.read(i))
     }
@@ -478,5 +727,179 @@ mod tests {
         let mut want: Vec<f64> = (1..20).filter(|&i| i != 6).map(|i| i as f64).collect();
         want.push(1e6);
         assert_eq!(v, want);
+    }
+}
+
+/// Sort `xs` ascending by `key` (an order-preserving map to unsigned integers of `bytes`
+/// bytes): least-significant-digit radix sort, one byte per pass, skipping passes where every
+/// element has the same byte. Small slices use the standard sort.
+fn radix_sort<T: Copy + Ord>(xs: &mut [T], key: impl Fn(T) -> u64, bytes: u32) {
+    if xs.len() < 256 {
+        xs.sort_unstable();
+        return;
+    }
+    let mut buf: Vec<T> = xs.to_vec();
+    let (mut src, mut dst): (&mut [T], &mut [T]) = (xs, &mut buf);
+    let mut in_buf = false;
+    for pass in 0..bytes {
+        let shift = 8 * pass;
+        let mut count = [0usize; 256];
+        for &x in src.iter() {
+            count[((key(x) >> shift) & 0xFF) as usize] += 1;
+        }
+        if count.iter().any(|&c| c == src.len()) {
+            continue; // every element has this byte: nothing moves
+        }
+        let mut at = [0usize; 256];
+        let mut total = 0;
+        for (b, &c) in count.iter().enumerate() {
+            at[b] = total;
+            total += c;
+        }
+        for &x in src.iter() {
+            let b = ((key(x) >> shift) & 0xFF) as usize;
+            dst[at[b]] = x;
+            at[b] += 1;
+        }
+        std::mem::swap(&mut src, &mut dst);
+        in_buf = !in_buf;
+    }
+    if in_buf {
+        // The sorted elements ended in the buffer: copy them back.
+        dst.copy_from_slice(src);
+    }
+}
+
+#[cfg(test)]
+mod method_tests {
+    use super::*;
+
+    /// Lists of every representation: small and large, positive and negative, with repeats.
+    fn samples() -> Vec<Vec<f64>> {
+        let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = move || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        let mut out = vec![vec![], vec![5.0], vec![3.0, 3.0, 1.0]];
+        for (range, signed) in [
+            (200u64, false),
+            (100, true),
+            (60_000, false),
+            (30_000, true),
+            (4_000_000_000, false),
+            (2_000_000_000, true),
+            (1 << 50, true),
+        ] {
+            for n in [10, 300, 5000] {
+                out.push(
+                    (0..n)
+                        .map(|_| {
+                            let v = (next() % range) as f64;
+                            if signed && next() % 2 == 0 {
+                                -v
+                            } else {
+                                v
+                            }
+                        })
+                        .collect(),
+                );
+            }
+        }
+        out.push(vec![
+            0.5,
+            -0.0,
+            0.0,
+            f64::NAN,
+            -1.5,
+            f64::INFINITY,
+            0.5,
+            -0.0,
+        ]);
+        out.push((0..1000).map(|i| (i as f64) * 0.25 - 100.0).collect());
+        out
+    }
+
+    fn total(a: &f64, b: &f64) -> std::cmp::Ordering {
+        a.partial_cmp(b)
+            .unwrap_or_else(|| a.is_nan().cmp(&b.is_nan()))
+    }
+
+    #[test]
+    fn methods_match_naive_versions_in_every_representation() {
+        for v in samples() {
+            let l: NumList = v.iter().copied().collect();
+            // Sorted: stable sort of the doubles, bit for bit.
+            let mut want = v.clone();
+            want.sort_by(total);
+            let got: Vec<u64> = l.sorted(total).iter().map(f64::to_bits).collect();
+            assert_eq!(
+                got,
+                want.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                "{:?}",
+                l.kind
+            );
+            // Sum: left to right.
+            let want = v.iter().fold(0.0, |a, &x| a + x);
+            assert_eq!(l.sum().to_bits(), want.to_bits(), "{:?}", l.kind);
+            // Unique by exact value, first occurrences in order.
+            let mut seen = std::collections::HashSet::new();
+            let want: Vec<u64> = v
+                .iter()
+                .map(|x| x.to_bits())
+                .filter(|b| seen.insert(*b))
+                .collect();
+            let got: Vec<u64> = l.unique().iter().map(f64::to_bits).collect();
+            assert_eq!(got, want, "{:?}", l.kind);
+            // Extremes: the first element ranked above / below every earlier one.
+            for max in [true, false] {
+                let want = v.iter().copied().fold(None, |b: Option<f64>, x| match b {
+                    Some(b)
+                        if total(&x, &b)
+                            != if max {
+                                std::cmp::Ordering::Greater
+                            } else {
+                                std::cmp::Ordering::Less
+                            } =>
+                    {
+                        Some(b)
+                    }
+                    _ => Some(x),
+                });
+                assert_eq!(
+                    l.extreme(max, total).map(f64::to_bits),
+                    want.map(f64::to_bits)
+                );
+            }
+            // Search: `==`.
+            for x in v.iter().take(5).copied().chain([-1.0, 1e300, 0.5, -0.0]) {
+                assert_eq!(
+                    l.position(x),
+                    v.iter().position(|&y| y == x),
+                    "{x} in {:?}",
+                    l.kind
+                );
+            }
+            // Slices and reversal keep the values.
+            let n = v.len();
+            assert_eq!(
+                l.slice(n / 3, n / 2)
+                    .iter()
+                    .map(f64::to_bits)
+                    .collect::<Vec<_>>(),
+                v[n / 3..n / 2]
+                    .iter()
+                    .map(|x| x.to_bits())
+                    .collect::<Vec<_>>()
+            );
+            let mut r = v.clone();
+            r.reverse();
+            assert_eq!(
+                l.reversed().iter().map(f64::to_bits).collect::<Vec<_>>(),
+                r.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+            );
+        }
     }
 }

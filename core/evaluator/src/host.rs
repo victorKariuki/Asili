@@ -889,6 +889,27 @@ impl<'p> Host<'p> {
                     .iter()
                     .map(|r| frame.vals[*r as usize].clone())
                     .collect();
+                // In place on the typed list where the method allows it.
+                let list = &mut frame.lists[call.recv as usize];
+                match (call.method.as_str(), args.first()) {
+                    ("futa_zote", _) => {
+                        list.clear();
+                        frame.vals[call.dst as usize] = Value::Tupu;
+                        return Flow::Next;
+                    }
+                    ("ongeza_zote", Some(Value::Orodha(more)))
+                        if more.iter().all(|v| matches!(v, Value::Namba(_))) =>
+                    {
+                        for v in more.iter() {
+                            if let Value::Namba(n) = v {
+                                list.push(*n);
+                            }
+                        }
+                        frame.vals[call.dst as usize] = Value::Tupu;
+                        return Flow::Next;
+                    }
+                    _ => {}
+                }
                 let list = std::mem::take(&mut frame.lists[call.recv as usize]);
                 let mut value = Value::list(list.iter().map(Value::Namba).collect());
                 let result = methods::mutate(&mut value, call.method.as_str(), &args);
@@ -899,6 +920,45 @@ impl<'p> Host<'p> {
                 match result {
                     Ok(v) => frame.vals[call.dst as usize] = v,
                     Err(e) => fail!(e),
+                }
+            }
+            Opcode::ListMethod(call) => {
+                let args: Vec<Value> = call
+                    .args
+                    .iter()
+                    .map(|r| frame.vals[*r as usize].clone())
+                    .collect();
+                let list = &frame.lists[call.list as usize];
+                let method = call.method.as_str();
+                let out = match methods::numbers_method(list, method, &args) {
+                    Some(out) => out,
+                    // Arguments that are not numbers: the generic method, same answer.
+                    None => {
+                        let generic = Value::list(list.iter().map(Value::Namba).collect());
+                        methods::pure_method(&generic, method, &args).map(methods::NumOut::Val)
+                    }
+                };
+                let out = match out {
+                    Ok(out) => out,
+                    Err(e) => fail!(e),
+                };
+                let reg = call.dst.reg as usize;
+                match (call.dst.ty, out) {
+                    (Ty::List, methods::NumOut::List(l)) => frame.lists[reg] = l,
+                    (Ty::List, other) => match list_from_value(&other.into_value()) {
+                        Ok(l) => frame.lists[reg] = l,
+                        Err(e) => fail!(e),
+                    },
+                    (Ty::Num | Ty::Bool, methods::NumOut::Num(n)) => frame.nums[reg] = n,
+                    (Ty::Num | Ty::Bool, methods::NumOut::Bool(b)) => {
+                        frame.nums[reg] = if b { 1.0 } else { 0.0 }
+                    }
+                    (Ty::Num | Ty::Bool, other) => match other.into_value() {
+                        Value::Namba(n) => frame.nums[reg] = n,
+                        Value::Ukweli(b) => frame.nums[reg] = if b { 1.0 } else { 0.0 },
+                        _ => fail!(internal("ListMethod")),
+                    },
+                    (Ty::Val, out) => frame.vals[reg] = out.into_value(),
                 }
             }
             Opcode::IterItems { dst, src } => {

@@ -140,6 +140,17 @@ pub struct MethodOp {
     pub dst: Reg,
 }
 
+/// A pure method (`panga`, `jumla`, `kata`, ...) on a typed numeric list, run on its storage
+/// directly; the result goes to a register of the file the method's result needs (a list
+/// result stays a typed list).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ListMethodOp {
+    pub method: asili_parser::Name,
+    pub list: Reg,
+    pub args: Vec<Reg>,
+    pub dst: Operand,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// An in-place method (`ongeza`, `ingiza`, ...) on a generic local.
 pub struct MutMethodOp {
@@ -393,6 +404,7 @@ pub enum Opcode {
     /// Any other mutating method on an `Orodha<Namba>` local (e.g. `badilisha`), through the
     /// shared implementation; `vals[dst]` receives its result.
     ListMutate(Box<MutMethodOp>),
+    ListMethod(Box<ListMethodOp>),
     /// `vals[dst]` = the `Orodha` snapshot `kwa ... katika vals[src]` iterates.
     IterItems {
         dst: Reg,
@@ -961,27 +973,13 @@ fn binary_code(op: &BinaryOp) -> Option<BinaryOp> {
     }
 }
 
-/// Static result type name of a supported method, for chaining (`b.vipande(9).ramani(..)`).
-fn method_result_type(receiver: &str, method: &str) -> Option<&'static str> {
-    if receiver.starts_with("Orodha") {
-        match method {
-            "clona" | "vipande" | "kwa_neno" | "ramani" | "chuja" => Some("Orodha"),
-            "jiunge" | "unganisha" => Some("Neno"),
-            _ => None,
-        }
-    } else if receiver.starts_with("Kamusi") {
-        (method == "funguo").then_some("Orodha")
-    } else if receiver.starts_with("Seti") {
-        (method == "orodha").then_some("Orodha")
-    } else if receiver == "Neno" {
-        match method {
-            "clona" | "kata" | "kwa_herufi_ndogo" | "kwa_herufi_kubwa" | "unganisha" | "rudia"
-            | "badilisha" => Some("Neno"),
-            "gawanya" => Some("Orodha<Neno>"),
-            _ => None,
-        }
-    } else {
-        None
+/// Static result type name of a built-in method, for chaining (`b.vipande(9).ramani(..)`): the
+/// parser's one table of method result types.
+fn method_result_type(receiver: &str, method: &str) -> Option<String> {
+    let recv = asili_parser::parse_value_type(receiver);
+    match asili_parser::builtins::method_return_type(&recv, method) {
+        asili_parser::ValueType::Unknown => None,
+        t => Some(t.to_string()),
     }
 }
 
@@ -1258,6 +1256,21 @@ impl<'a> FunctionCompiler<'a> {
             Expr::MethodCall {
                 method_name, args, ..
             } if method_name == "urefu" && args.is_empty() => Ty::Num,
+            // A typed numeric list's methods keep their results typed (`ListMethod`).
+            Expr::MethodCall {
+                receiver,
+                method_name,
+                ..
+            } if self.infer(self.node(*receiver)) == Ty::List
+                && methods::number_list_result(method_name).is_some() =>
+            {
+                match methods::number_list_result(method_name) {
+                    Some(methods::NumOutKind::List) => Ty::List,
+                    Some(methods::NumOutKind::Num) => Ty::Num,
+                    Some(methods::NumOutKind::Bool) => Ty::Bool,
+                    _ => Ty::Val,
+                }
+            }
             Expr::Index { base, .. } if self.infer(self.node(*base)) == Ty::List => Ty::Num,
             Expr::FieldAccess {
                 receiver, field, ..
@@ -1359,7 +1372,7 @@ impl<'a> FunctionCompiler<'a> {
                 ..
             } => {
                 let recv = self.type_name(self.node(*receiver))?;
-                method_result_type(&recv, method_name).map(str::to_string)
+                method_result_type(&recv, method_name)
             }
             // The program's own `kazi` (which shadows a builtin of the same name).
             Expr::Call { callee, .. } => match self.node(*callee) {
@@ -2763,6 +2776,24 @@ impl<'a> FunctionCompiler<'a> {
                         list: list.reg,
                         idx,
                     });
+                    return Some(out);
+                }
+                (m, _, _) if methods::number_list_result(m).is_some() => {
+                    let list = self.expr_as(receiver, Ty::List)?.reg;
+                    let regs = self.val_args(args)?;
+                    let ty = match methods::number_list_result(m)? {
+                        methods::NumOutKind::List => Ty::List,
+                        methods::NumOutKind::Num => Ty::Num,
+                        methods::NumOutKind::Bool => Ty::Bool,
+                        methods::NumOutKind::Val => Ty::Val,
+                    };
+                    let out = self.dst_or_temp(dst, ty);
+                    self.emit(Opcode::ListMethod(Box::new(ListMethodOp {
+                        method: asili_parser::Name::new(m),
+                        list,
+                        args: regs,
+                        dst: out,
+                    })));
                     return Some(out);
                 }
                 (_, _, Some(list)) if methods::is_mutating(&Value::list(Vec::new()), method) => {

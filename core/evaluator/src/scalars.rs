@@ -102,6 +102,10 @@ fn val_access(op: &Opcode, f: &mut impl FnMut(Reg, Access)) {
             call.args.iter().for_each(|r| f(*r, Read));
             f(call.dst, Write);
         }
+        Opcode::ListMethod(call) => {
+            call.args.iter().for_each(|r| f(*r, Read));
+            operand(&call.dst, Write, f);
+        }
         Opcode::MakeList { dst, items } => {
             items.iter().for_each(|r| f(*r, Read));
             f(*dst, Write);

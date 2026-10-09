@@ -42,6 +42,21 @@ thabiti PI = 3.14159
 | `Herufi`  | Single Unicode character         | `'a'`, `'ñ'`             |
 | `Tupu`    | No value (unit type)             | —                        |
 
+### Herufi Maalum katika Neno na Herufi (Escapes)
+
+| Andiko     | Maana                                              |
+|------------|----------------------------------------------------|
+| `\n`       | New line                                           |
+| `\t`       | Tab                                                |
+| `\r`       | Carriage return                                    |
+| `\0`       | The NUL character (code point 0)                   |
+| `\\`       | A backslash                                        |
+| `\"` / `\'` | A double quote (in `Neno`) / single quote (in `Herufi`) |
+| `\u{e9}`   | The Unicode code point written in hexadecimal (`é`); text only |
+
+Any other character after `\` keeps the backslash (`"\q"` is the two characters `\` and `q`).
+`pata nadhifu` writes control characters back as escapes.
+
 ### Aina za Namba Kamili (Integer Types)
 
 | Aina     | Maelezo            |

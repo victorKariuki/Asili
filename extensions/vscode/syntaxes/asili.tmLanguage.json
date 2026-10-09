@@ -66,11 +66,11 @@
       "end": "\"",
       "name": "string.quoted.double.asili",
       "patterns": [
-        { "match": "\\\\[ntr\"\\\\]", "name": "constant.character.escape.asili" }
+        { "match": "\\\\(u\\{[0-9a-fA-F]+\\}|[ntr0\"\\\\])", "name": "constant.character.escape.asili" }
       ]
     },
     "char": {
-      "match": "'(\\\\[ntr'\\\\]|[^'])'",
+      "match": "'(\\\\[ntr0'\\\\]|[^'])'",
       "name": "string.quoted.single.asili",
       "captures": {
         "1": { "name": "constant.character.escape.asili" }

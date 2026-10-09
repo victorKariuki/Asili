@@ -11,11 +11,15 @@ Kamusi ni hifadhi ya ufunguo-thamani. Ufunguo unaweza kuwa wa aina yoyote inayow
 
 ## Njia
 
-| Usemi              | Maelezo                                         |
+| Expression         | Description                                     |
 |--------------------|-------------------------------------------------|
-| `m.ingiza(k, v)`   | Weka au sasisha ufunguo `k` na thamani `v`      |
-| `m.pata(k)`        | Pata thamani (Chaguo: Hamna ikiwa haipo)        |
-| `m.pata(k).angu(d)`| Pata thamani au `d` ikiwa ufunguo haupo         |
+| `m.ingiza(k, v)`   | Set or update key `k` to value `v`              |
+| `m.pata(k)`        | The value (Chaguo: Hamna when missing)          |
+| `m.pata(k).angu(d)`| The value, or `d` when the key is missing       |
+| `m.ondoa(k)`       | Remove key `k`, returning its value (Chaguo)    |
+| `m.thamani()`      | All values as a list                            |
+| `m.vipengele()`    | All key–value pairs (`Orodha<Jozi>`)            |
+| `m.futa_zote()`    | Remove every entry                              |
 
 ## Mfano
 

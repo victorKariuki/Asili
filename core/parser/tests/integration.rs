@@ -499,8 +499,8 @@ fn unknown_builtin_method_is_a_compile_error() {
             .collect::<Vec<_>>()
     };
     assert_eq!(
-        check("weka b = a.panga()"),
-        vec![("SEM040", "njia 'panga' haipo kwa 'Orodha'".to_string())]
+        check("weka b = a.pangilia()"),
+        vec![("SEM040", "njia 'pangilia' haipo kwa 'Orodha'".to_string())]
     );
     assert!(check("weka n = a.urefu()").is_empty());
     assert!(check("a.ongeza(2)").is_empty());

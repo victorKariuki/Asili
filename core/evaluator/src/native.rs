@@ -292,6 +292,7 @@ pub(crate) fn num_reads(op: &Opcode) -> Vec<Reg> {
         | Opcode::ValLen { .. }
         | Opcode::Unwrap { .. }
         | Opcode::ListMutate(_)
+        | Opcode::ListMethod(_)
         | Opcode::IterItems { .. }
         | Opcode::Jaribu { .. }
         | Opcode::Cast { .. }
@@ -345,6 +346,9 @@ pub(crate) fn num_writes(op: &Opcode) -> Vec<Reg> {
         | Opcode::ValLen { dst, .. }
         | Opcode::MatchPattern { dst, .. } => vec![*dst],
         Opcode::Call(call) if matches!(call.dst.ty, Ty::Num | Ty::Bool) => vec![call.dst.reg],
+        Opcode::ListMethod(call) if matches!(call.dst.ty, Ty::Num | Ty::Bool) => {
+            vec![call.dst.reg]
+        }
         // Exhaustive, like `num_reads`. (Jumps, `ForStep` and returns never reach `exec_slow`.)
         Opcode::Call(_)
         | Opcode::Jump { .. }
@@ -373,6 +377,7 @@ pub(crate) fn num_writes(op: &Opcode) -> Vec<Reg> {
         | Opcode::ValIndex { .. }
         | Opcode::Unwrap { .. }
         | Opcode::ListMutate(_)
+        | Opcode::ListMethod(_)
         | Opcode::IterItems { .. }
         | Opcode::IterItem { .. }
         | Opcode::Jaribu { .. }
@@ -402,6 +407,7 @@ pub(crate) fn list_writes(op: &Opcode) -> Vec<Reg> {
         | Opcode::ListRemoveVal { list, .. } => vec![*list],
         Opcode::ListMutate(call) => vec![call.recv],
         Opcode::Call(call) if call.dst.ty == Ty::List => vec![call.dst.reg],
+        Opcode::ListMethod(call) if call.dst.ty == Ty::List => vec![call.dst.reg],
         // Exhaustive, like `num_reads`.
         Opcode::Call(_)
         | Opcode::Mov { .. }
@@ -453,6 +459,7 @@ pub(crate) fn list_writes(op: &Opcode) -> Vec<Reg> {
         | Opcode::MakeList { .. }
         | Opcode::CallBuiltin(_)
         | Opcode::CallMethod(_)
+        | Opcode::ListMethod(_)
         | Opcode::MutMethod(_)
         | Opcode::MakeStruct { .. }
         | Opcode::Field { .. }
@@ -1095,6 +1102,11 @@ fn len_transfer(op: &Opcode, state: &[NumFact], nregs: usize) -> Vec<(usize, Num
         Opcode::ListMov { dst, src } => vec![(slot(dst), state[slot(src)])],
         Opcode::ListFromVal { dst, .. } => vec![(slot(dst), unknown)],
         Opcode::ListMutate(call) => vec![(slot(&call.recv), unknown)],
+        // `kata`, `geuza`, `panga`, `kipekee`, `clona`: never longer than the source.
+        Opcode::ListMethod(call) if call.dst.ty == Ty::List => {
+            let l = state[slot(&call.list)];
+            vec![(slot(&call.dst.reg), NumFact::int_range(0.0, l.hi))]
+        }
         Opcode::Call(call) if call.dst.ty == Ty::List => vec![(slot(&call.dst.reg), unknown)],
         _ => Vec::new(),
     }
@@ -1198,6 +1210,13 @@ fn list_transfer(op: &Opcode, facts: &[NumFact], lists: &[Option<NumFact>]) -> V
             .unwrap_or_default(),
         Opcode::ListFromVal { dst, .. } => vec![(*dst, NumFact::TOP)],
         Opcode::ListMutate(call) => vec![(call.recv, NumFact::TOP)],
+        // Its elements are some of the source list's.
+        Opcode::ListMethod(call) if call.dst.ty == Ty::List => {
+            vec![(
+                call.dst.reg,
+                lists[call.list as usize].unwrap_or(NumFact::TOP),
+            )]
+        }
         Opcode::Call(call) if call.dst.ty == Ty::List => vec![(call.dst.reg, NumFact::TOP)],
         _ => Vec::new(),
     }
@@ -1411,6 +1430,7 @@ fn transfer(op: &Opcode, facts: &[NumFact], lists: &[Option<NumFact>]) -> Vec<(R
             (*dst, int_result(0.0, EXACT - 1.0))
         }
         Opcode::UnboxBool { dst, .. } => (*dst, int_result(0.0, 1.0)),
+        Opcode::ListMethod(call) if call.dst.ty == Ty::Bool => (call.dst.reg, int_result(0.0, 1.0)),
         // Reads return a stored element (out-of-range reads leave the function).
         Opcode::ListGet { dst, list, .. } => (*dst, lists[*list as usize].unwrap_or(NumFact::TOP)),
         other => {

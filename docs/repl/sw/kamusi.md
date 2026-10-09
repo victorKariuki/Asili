@@ -16,6 +16,10 @@ Kamusi ni hifadhi ya ufunguo-thamani. Ufunguo unaweza kuwa wa aina yoyote inayow
 | `m.ingiza(k, v)`   | Weka au sasisha ufunguo `k` na thamani `v`      |
 | `m.pata(k)`        | Pata thamani (Chaguo: Hamna ikiwa haipo)        |
 | `m.pata(k).angu(d)`| Pata thamani au `d` ikiwa ufunguo haupo         |
+| `m.ondoa(k)`       | Ondoa ufunguo `k`, rejesha thamani yake (Chaguo) |
+| `m.thamani()`      | Thamani zote kama orodha                        |
+| `m.vipengele()`    | Jozi zote za ufunguo na thamani (`Orodha<Jozi>`) |
+| `m.futa_zote()`    | Ondoa vipengele vyote                           |
 
 ## Mfano
 

@@ -278,6 +278,8 @@ fn render_lexeme(lexeme: &str) -> std::borrow::Cow<'_, str> {
         return std::borrow::Cow::Owned(match ch {
             '\n' => "'\\n'".to_string(),
             '\t' => "'\\t'".to_string(),
+            '\r' => "'\\r'".to_string(),
+            '\0' => "'\\0'".to_string(),
             '\'' => "'\\''".to_string(),
             '\\' => "'\\\\'".to_string(),
             other => format!("'{other}'"),
@@ -285,7 +287,7 @@ fn render_lexeme(lexeme: &str) -> std::borrow::Cow<'_, str> {
     }
     if lexeme.starts_with('"') && lexeme.ends_with('"') && lexeme.len() >= 2 {
         let inner = &lexeme[1..lexeme.len() - 1];
-        if inner.contains(['\n', '\t', '"', '\\']) {
+        if inner.contains(['\n', '\t', '"', '\\']) || inner.chars().any(char::is_control) {
             let mut out = String::with_capacity(lexeme.len() + 4);
             out.push('"');
             for c in inner.chars() {
@@ -294,6 +296,9 @@ fn render_lexeme(lexeme: &str) -> std::borrow::Cow<'_, str> {
                     '\t' => out.push_str("\\t"),
                     '"' => out.push_str("\\\""),
                     '\\' => out.push_str("\\\\"),
+                    '\r' => out.push_str("\\r"),
+                    '\0' => out.push_str("\\0"),
+                    c if c.is_control() => out.push_str(&format!("\\u{{{:x}}}", c as u32)),
                     other => out.push(other),
                 }
             }
@@ -552,8 +557,24 @@ weka c = 'x'"#;
     }
 
     #[test]
+    fn control_character_escapes_round_trip() {
+        // `\r`, `\0` and `\u{…}` decode to control or other characters; control characters are
+        // printed escaped again, everything else as itself.
+        let input = r#"chapisha("a\rb\0c\u{1b}d\u{e9}")"#;
+        let once = canonical_format(input);
+        assert!(once.contains(r#""a\rb\0c\u{1b}dé""#), "got: {once}");
+        assert_eq!(once, canonical_format(&once));
+    }
+
+    #[test]
     fn escaped_char_literals_round_trip() {
-        for (src, expect) in [(r"'\n'", r"'\n'"), (r"'\''", r"'\''"), (r"'\\'", r"'\\'")] {
+        for (src, expect) in [
+            (r"'\n'", r"'\n'"),
+            (r"'\''", r"'\''"),
+            (r"'\\'", r"'\\'"),
+            (r"'\r'", r"'\r'"),
+            (r"'\0'", r"'\0'"),
+        ] {
             let input = format!("weka c = {src}\n");
             let output = canonical_format(&input);
             assert!(

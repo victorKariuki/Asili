@@ -22,6 +22,10 @@ Namba(3.0)
 | `s.urefu()`   | Member count                               |
 | `s.orodha()`  | Convert to `Orodha<T>`                     |
 | `s.clona()`   | Clone                                      |
+| `s.muungano(t)` | Members of `s` or `t` (union)            |
+| `s.makutano(t)` | Members of both (intersection)           |
+| `s.tofauti(t)`  | Members of `s` not in `t` (difference)   |
+| `s.ni_sehemu_ya(t)` | `Ukweli`: is every member of `s` in `t`? |
 
 ## Example
 

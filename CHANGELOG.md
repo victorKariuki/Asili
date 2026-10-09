@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Text, list, map and set methods**: `Neno` gains `safisha` (and `safisha_mwanzo`,
+  `safisha_mwisho`), `jaza_kushoto`/`jaza_kulia` (padding), `jaza` (`{}` templates), `herufi`,
+  `mistari`, `geuza`, `misimbo` and `kwa_namba` (a fallible parse, where `kama Namba` gives 0);
+  `Orodha` gains `panga`, `panga_kwa` (by a key function), `geuza`, `kata`, `ina`, `tafuta`,
+  `kubwa`, `ndogo`, `jumla`, `kipekee`, `kwanza`, `mwisho`, `tupu`, `ongeza_zote` and `futa_zote`;
+  `Kamusi` gains `ondoa`, `thamani`, `vipengele` and `futa_zote`; `Seti` gains `muungano`,
+  `makutano`, `tofauti` and `ni_sehemu_ya`. On an `Orodha<Namba>` the list methods run on the
+  list's compact numeric storage (a new `ListMethod` instruction) and list results stay typed:
+  integer lists sort by radix sort, integer sums that cannot pass 2^53 are added as machine
+  integers (bit-identical, about 5x faster than a native loop over a million elements), and
+  `ina`/`tafuta`/`kubwa`/`ndogo`/`kipekee` loop over the stored representation; a generic list
+  holding only numbers takes the same code, so both give the same answers. `.asb` format
+  version 16.
+- **String escapes**: `\r`, `\0` and `\u{…}` (a code point in hexadecimal) in text, and `\r` and
+  `\0` in character literals; `pata nadhifu` writes control characters back as escapes.
+
 - **Assurance documents** (`docs/assurance/`): the toolchain's safety requirements with IDs
   (`requirements.md`), a requirement-to-test traceability matrix generated from `// Verifies:
   REQ-…` comments on tests (`traceability.md`; `tests/traceability.rs` fails when a requirement
@@ -204,6 +220,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   rejected instead of silently accepted. The Sudoku benchmark builds with `--namna release`.
 
 ### Changed
+
+- **One table of built-in method result types**: the analyzer's types for built-in methods and
+  the bytecode compiler's (for following method chains) were two separate lists; both now read
+  `asili_parser::builtins::method_return_type`.
 
 - **`pata jaribu` runs tests as native code**: each module is built once to bytecode and
   native code (`NativeProgram`), and every test, `#[kabla]`/`#[baada]` fixture and timed test
@@ -586,6 +606,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was not built.
 
 ### Fixed
+
+- **Text positions count characters**: `Neno.kata` sliced by byte offset (cutting a multi-byte
+  character in half and producing `�`) and `Neno.tafuta` returned a byte offset, while `urefu`
+  and `herufi_kwa` count characters; both now count characters too.
+- **Escaped character literals**: `'\n'`, `'\t'`, `'\''` and `'\\'` left a stray `'` token after
+  them (the lexer advanced by the decoded character's width), breaking expressions such as
+  `(c == '\n')`.
+- **`Wakati` methods**: the analyzer rejected every method call on a `Wakati` value (`SEM039`), so
+  the documented `t.sekunde()` could not be used.
 
 - **Optimizer and compile-time bugs found by the fuzzer and verifier**: if-conversion committed
   an arm's temporaries with a select reading a register never written on the other path (now
