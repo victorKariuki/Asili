@@ -26,16 +26,19 @@ Default-imported. No OS dependency. The Phase I interpreter provides selected st
 - **Fallible:** `gawio(a, b)`, `kipeo(n, p)`, `mizizi(n)` — return **Tokeo\<Namba, Kosa\>** (e.g. divide by zero, negative sqrt).
 - **Infallible helpers:** `duara(n)` (rounding), `absolute(n)` (absolute value) return `Namba`.
 - **Special numeric constants:** `Ukomo` (positive infinity) and `Siyo_Namba` (NaN) are exposed for numeric logic on `Namba`.
+- **Random:** `nasibu()`, `nasibu_kamili(a, b)` (bounds included), `changanya(orodha)`, `chagua_nasibu(orodha) -> Chaguo<T>`; `nasibu_mbegu(n)` seeds the thread's generator so the sequence repeats.
 
 ### Neno (String)
 
 - `neno.urefu()` — length in **grapheme clusters** (Lugha-Mama).
 - `neno.biti_ngapi()` — length in **bytes** (Nguvu).
-- `neno.unganisha()`, `neno.kata()`, `neno.tafuta()`.
+- `neno.unganisha()`, `neno.kata()`, `neno.tafuta()` — positions count characters.
+- `safisha`/`safisha_mwanzo`/`safisha_mwisho`, `jaza_kushoto`/`jaza_kulia`, `jaza` (`{}` templates), `herufi`, `mistari`, `geuza`, `misimbo`, `kwa_namba -> Tokeo<Namba, Neno>`.
 
 ### Orodha (List/Array)
 
 - `orodha.ongeza()`, `orodha.ondoa()`, `orodha.kila_mmoja()`.
+- `panga`, `panga_kwa`, `geuza`, `kata`, `ina`, `tafuta`, `kubwa`, `ndogo`, `jumla`, `kipekee`, `kwanza`, `mwisho`, `tupu`, `ongeza_zote`, `futa_zote` (full contracts: [08-njia-za-aina.md](../language/08-njia-za-aina.md)).
 
 ### Kasha_GC\<T\> (opt-in managed memory)
 
@@ -66,6 +69,12 @@ Builtin exports are ambient; `leta mfumo` remains optional documentation. OS-dep
 ### Mazingira (Environment)
 
 - `mfumo.majira()`, `mfumo.vigezo()`, `mfumo.pata_env(jina)`, `mfumo.toka(kodi)`.
+- `weka_env(jina, thamani)`; `endesha(amri, hoja) -> Tokeo<Neno, Neno>` (stdout, or a `Kosa` with exit code and stderr).
+
+### Majira and Faili
+
+- `majira`: `kwa_iso`, `kutoka_iso -> Tokeo<Wakati, Neno>`, `umbiza_eneo(w, dakika)`, `kutoka_tarehe`, `tarehe` (calendar fields), `kipima_muda` (monotonic) — proleptic Gregorian, UTC.
+- `faili`: `orodha_saraka`, `unda_saraka`, `futa_saraka`, `badili_jina`, `nakili`, `ni_saraka`, `ni_faili`, `njia_unganisha`, `njia_mzazi`, `njia_jina`, `njia_kiendelezi`, `njia_kamili`.
 
 ### JSON
 
