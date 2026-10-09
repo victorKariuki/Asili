@@ -1,0 +1,13 @@
+# Ruwaza (regular expressions) – interface stub
+#
+# Sintaksia ni ya Perl (Unicode, bila look-around wala backreferences); muda wa kulinganisha
+# unakua kwa mstari na urefu wa maandishi. Kila kazi hurudisha kosa ruwaza isipokuwa sahihi.
+
+kazi ruwaza_inalingana(ruwaza: Neno, maandishi: Neno) -> Tokeo<Ukweli, Neno>
+kazi ruwaza_tafuta(ruwaza: Neno, maandishi: Neno) -> Tokeo<Chaguo<Neno>, Neno>
+kazi ruwaza_zote(ruwaza: Neno, maandishi: Neno) -> Tokeo<Orodha<Neno>, Neno>
+# Kikundi 0 ni ulinganisho mzima; kikundi kisichoshiriki ni maandishi tupu.
+kazi ruwaza_vikundi(ruwaza: Neno, maandishi: Neno) -> Tokeo<Chaguo<Orodha<Neno>>, Neno>
+# `$1` au `${jina}` ndani ya `kwa` ni kikundi; `$$` ni alama ya dola.
+kazi ruwaza_badilisha(ruwaza: Neno, maandishi: Neno, kwa: Neno) -> Tokeo<Neno, Neno>
+kazi ruwaza_gawanya(ruwaza: Neno, maandishi: Neno) -> Tokeo<Orodha<Neno>, Neno>

@@ -4,6 +4,12 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Standard library ([05-standard-library.md](05-standard-library.md)): HTTP client
+  (`http_pata`, `http_tuma`, `http_ombi`), new `ruwaza` (regular expressions) and `usimbaji`
+  (encodings, hashes, UUIDs) modules.
+- Syntax ([03-syntax.md](03-syntax.md)): `jaribu` in a function that cannot return the error
+  stops the program; elsewhere it propagates, as already specified.
+
 - Tooling ([06-tooling-and-ecosystem.md](06-tooling-and-ecosystem.md)): new attribute
   `#[salama]` for strict, bounded code, checked at build time.
 

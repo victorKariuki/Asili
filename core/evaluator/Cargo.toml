@@ -21,6 +21,10 @@ num-traits = "0.2"
 parking_lot = "0.12"
 lock_api = "0.4"
 foldhash = "0.2"
+# `ruwaza` (regular expressions) and `usimbaji` (hashes and base64): pure Rust, on every target.
+regex = "1"
+sha2 = "0.11"
+base64 = "0.22"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.4"
@@ -32,6 +36,9 @@ libc = "0.2"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rustls = "0.23"
 rustls-pemfile = "2"
+# The HTTP client (`http_pata`, `http_tuma`, `http_ombi`): rustls rather than the system TLS
+# library, so the static runner needs nothing from the system.
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "rustls-webpki-roots", "gzip"] }
 # Loads the LLVM-compiled native library `pata jenga` builds next to an `.asb` (src/aot.rs).
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

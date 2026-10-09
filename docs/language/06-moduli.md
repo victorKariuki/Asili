@@ -156,6 +156,34 @@ hufasiri HTTP/1.1 halisi — `kazi_jina(ombi: OmbiHttp) -> JibuHttp` badala ya
 [http-server-design.md](../design/http-server-design.md),
 [tls-design.md](../design/tls-design.md), [http-framing-design.md](../design/http-framing-design.md).
 
+**HTTP (mteja)**:
+
+```asili
+leta mfumo
+
+umbo JibuHttp { hali: Namba, vichwa: Kamusi<Neno, Neno>, mwili: Neno }
+
+weka ukurasa = jaribu http_pata("https://example.com/")      # the body of a 2xx response
+weka jibu = jaribu http_tuma("https://api.example.com/v1", "{\"a\": 1}", "application/json")
+
+weka vichwa = kamusi_tupu()
+vichwa.ingiza("Authorization", "Bearer ...")
+weka j: JibuHttp = jaribu http_ombi("DELETE", "https://api.example.com/v1/7", vichwa, "")
+chapisha(j.hali kama Neno)                     # any status, 404 included
+chapisha(j.vichwa.pata("content-type").angu(""))  # header names in lowercase
+```
+
+`http_pata(anwani)` (GET) and `http_tuma(anwani, mwili, aina)` (POST, `aina` is the
+`Content-Type`) return `Tokeo<Neno, Neno>`: the body when the status is 2xx, else a `Kosa` with
+the URL, the status and the start of the body. `http_ombi(njia, anwani, vichwa, mwili)` sends
+any method with the given headers (an empty `mwili` sends no body on `GET`/`HEAD`) and returns
+the whole response, whatever its status, as a `JibuHttp { hali, vichwa, mwili }` — the struct the
+HTTP server uses; declare it as above to read its fields. A connection or TLS failure is a
+`Kosa`. HTTPS uses rustls with the Mozilla root certificates; `HTTPS_PROXY`/`HTTP_PROXY`/
+`NO_PROXY` are honoured; gzip responses are decoded; connections to a host are reused across
+requests; a request times out after 60 seconds and a body is read up to 256 MB. Not available in
+the browser playground.
+
 **JSON**:
 
 ```asili
@@ -254,6 +282,46 @@ weka maudhui = jaribu (r.soma())
 `"ongeza"`. Kishikizo hufungwa kiotomatiki `w`/`r` yanapotoka nje ya wigo (hata bila `.funga()`
 au `tupa` wazi), si tu wakati zinapofungwa kwa mkono — tazama
 [faili-mkondo-design.md](../design/faili-mkondo-design.md).
+
+### ruwaza — Regular expressions
+
+```asili
+leta ruwaza
+
+weka sawa = jaribu ruwaza_inalingana("^\\d{3}-\\d{4}$", "555-1234")     # Ukweli
+weka neno = jaribu ruwaza_tafuta("[a-z]+", "123 habari")              # Chaguo<Neno>: "habari"
+weka zote = jaribu ruwaza_zote("\\d+", "a1 b22 c333")                  # ["1", "22", "333"]
+weka v = jaribu ruwaza_vikundi("(\\w+)@(\\w+)", "juma@mfano")          # Chaguo<Orodha<Neno>>:
+                                                  # ["juma@mfano", "juma", "mfano"]
+weka b = jaribu ruwaza_badilisha("(\\w+) (\\w+)", "habari dunia", "$2 $1")  # "dunia habari"
+weka sehemu = jaribu ruwaza_gawanya("\\s*,\\s*", "a , b,c")              # ["a", "b", "c"]
+```
+
+Every function takes the pattern first and returns a `Tokeo` whose `Kosa` is an invalid pattern
+(`ruwaza '(' si sahihi: ...`). The syntax is Perl-like and Unicode-aware (`\w` matches `é`;
+`(?i)` ignores case; `(?<jina>...)` names a group) without look-around or backreferences, so
+matching takes time linear in the text — no pattern can hang a program. In `ruwaza_vikundi`,
+group 0 is the whole match and a group that took no part is `""`; in `ruwaza_badilisha`, `$1`
+or `${jina}` is a group and `$$` a dollar sign. Each thread keeps the patterns it has compiled,
+so a pattern used in a loop is compiled once.
+
+### usimbaji — Encodings and hashes
+
+```asili
+leta usimbaji
+
+weka b = base64_simba("habari dunia")             # "aGFiYXJpIGR1bmlh"
+weka n = jaribu base64_fumbua(b)                  # Tokeo<Neno, Neno>
+weka h = hex_simba("Aé")                          # "41c3a9" (the UTF-8 bytes)
+weka s = hashi_sha256("abc")                      # 64 hex digits
+weka s5 = hashi_sha512("abc")                     # 128 hex digits
+weka mac = hmac_sha256("ufunguo", "ujumbe")      # HMAC-SHA256, hex
+weka id = kitambulisho()                          # random UUID (version 4)
+```
+
+Text is encoded as its UTF-8 bytes. `base64_fumbua` gives a `Kosa` for invalid base64 or bytes
+that are not UTF-8 text. `kitambulisho` draws on the same random numbers as `nasibu`, so after
+`nasibu_mbegu(n)` it repeats too.
 
 ### runtime
 

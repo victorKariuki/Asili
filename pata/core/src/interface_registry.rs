@@ -3,7 +3,8 @@
 use crate::builtin_modules;
 use crate::Error;
 use asili_parser::{
-    parse_value_type, FnContract, Param, TraitDecl, TraitMethodSig, TypeExpr, ValueType,
+    parse_value_type, split_generic_args, FnContract, Param, TraitDecl, TraitMethodSig, TypeExpr,
+    ValueType,
 };
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -122,9 +123,9 @@ fn parse_fn_sahihi(line: &str) -> Option<(String, FnContract)> {
     let name = tail[..open].trim().to_string();
     let params_raw = &tail[open + 1..close];
     let mut params = Vec::new();
-    for p in params_raw
-        .split(',')
-        .map(|s| s.trim())
+    // Commas inside `<...>` (`Kamusi<Neno, Neno>`) belong to the type, not between parameters.
+    for p in split_generic_args(params_raw)
+        .into_iter()
         .filter(|s| !s.is_empty())
     {
         let ty = if let Some((_, t)) = p.split_once(':') {

@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **HTTP client, regular expressions, encodings and hashes**: `mfumo` gains `http_pata` (GET),
+  `http_tuma` (POST) and `http_ombi` (any method and headers; the whole response as a
+  `JibuHttp { hali, vichwa, mwili }`), over HTTPS with rustls and the Mozilla roots, proxy
+  variables honoured, gzip decoded and connections reused. A new `ruwaza` module has
+  `ruwaza_inalingana`, `ruwaza_tafuta`, `ruwaza_zote`, `ruwaza_vikundi` (capture groups),
+  `ruwaza_badilisha` (`$1`/`${jina}` replacements) and `ruwaza_gawanya` — linear-time,
+  Unicode-aware, an invalid pattern a `Kosa`, compiled patterns cached per thread. A new
+  `usimbaji` module has `base64_simba`/`base64_fumbua`, `hex_simba`, `hashi_sha256`,
+  `hashi_sha512`, `hmac_sha256` and `kitambulisho` (random UUID v4, repeatable after
+  `nasibu_mbegu`).
+
 - **Random numbers, dates, directories, paths and programs**: `hisabati` gains `nasibu_kamili`
   (whole numbers in a range), `nasibu_mbegu` (a seed: the same numbers every run),
   `changanya` (shuffle) and `chagua_nasibu`; `majira` gains `kwa_iso` / `kutoka_iso`
@@ -616,6 +627,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was not built.
 
 ### Fixed
+
+- **`jaribu` propagates**: in a `kazi` returning `Tokeo`/`Chaguo`, `jaribu x` stopped the whole
+  program on an error instead of returning it to the caller as documented (and as `x?` does);
+  it now returns it. Where the function cannot return the error (`kuu() -> Tupu`), it still
+  stops the program. `.asb` format version 17.
+- **`.asi` stubs with generic parameters**: the stub reader split parameters at every comma, so
+  a parameter typed `Kamusi<Neno, Neno>` read as two.
 
 - **`umbiza` before 1970**: formatting a time before the epoch panicked (a negative duration)
   and stopped the program; dates now follow the Gregorian calendar either side of 1970.

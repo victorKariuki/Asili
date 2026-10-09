@@ -152,7 +152,8 @@ pub(crate) struct NumList {
 }
 
 /// `$body` with `$xs` bound to the elements of numeric list `$l` as a slice of their
-/// representation (`&[u8]` … `&[f64]`): one monomorphic loop per representation.
+/// representation (`&[u8]` … `&[f64]`): one monomorphic loop per representation. (A cast such
+/// as `x as f64` in `$body` is a no-op on some arms, hence the `allow`.)
 macro_rules! typed {
     ($l:expr, $xs:ident => $body:expr) => {{
         let l = $l;
@@ -163,35 +164,51 @@ macro_rules! typed {
             match l.kind {
                 Kind::U8 => {
                     let $xs = std::slice::from_raw_parts(p, n);
-                    $body
+                    #[allow(clippy::unnecessary_cast)]
+                    let r = $body;
+                    r
                 }
                 Kind::I8 => {
                     let $xs = std::slice::from_raw_parts(p as *const i8, n);
-                    $body
+                    #[allow(clippy::unnecessary_cast)]
+                    let r = $body;
+                    r
                 }
                 Kind::U16 => {
                     let $xs = std::slice::from_raw_parts(p as *const u16, n);
-                    $body
+                    #[allow(clippy::unnecessary_cast)]
+                    let r = $body;
+                    r
                 }
                 Kind::I16 => {
                     let $xs = std::slice::from_raw_parts(p as *const i16, n);
-                    $body
+                    #[allow(clippy::unnecessary_cast)]
+                    let r = $body;
+                    r
                 }
                 Kind::U32 => {
                     let $xs = std::slice::from_raw_parts(p as *const u32, n);
-                    $body
+                    #[allow(clippy::unnecessary_cast)]
+                    let r = $body;
+                    r
                 }
                 Kind::I32 => {
                     let $xs = std::slice::from_raw_parts(p as *const i32, n);
-                    $body
+                    #[allow(clippy::unnecessary_cast)]
+                    let r = $body;
+                    r
                 }
                 Kind::I64 => {
                     let $xs = std::slice::from_raw_parts(p as *const i64, n);
-                    $body
+                    #[allow(clippy::unnecessary_cast)]
+                    let r = $body;
+                    r
                 }
                 Kind::F64 => {
                     let $xs = std::slice::from_raw_parts(p as *const f64, n);
-                    $body
+                    #[allow(clippy::unnecessary_cast)]
+                    let r = $body;
+                    r
                 }
             }
         }
@@ -747,7 +764,7 @@ fn radix_sort<T: Copy + Ord>(xs: &mut [T], key: impl Fn(T) -> u64, bytes: u32) {
         for &x in src.iter() {
             count[((key(x) >> shift) & 0xFF) as usize] += 1;
         }
-        if count.iter().any(|&c| c == src.len()) {
+        if count.contains(&src.len()) {
             continue; // every element has this byte: nothing moves
         }
         let mut at = [0usize; 256];

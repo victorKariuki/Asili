@@ -1,4 +1,5 @@
-//! Builtin module export tables (msingi, mfumo, majira, matumizi, faili, hisabati). Resolved without disk I/O.
+//! Builtin module export tables (msingi, mfumo, majira, matumizi, faili, hisabati, ruwaza,
+//! usimbaji, ...). Resolved without disk I/O.
 
 use crate::{FnContract, ValueType};
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ pub fn ambient_module_names() -> impl Iterator<Item = &'static str> {
 
 pub const BUILTIN_MODULE_NAMES: &[&str] = &[
     "msingi", "mfumo", "majira", "matumizi", "faili", "hisabati", "runtime", "syscall", "kiungo",
-    "sambamba", "kasha_gc",
+    "sambamba", "kasha_gc", "ruwaza", "usimbaji",
 ];
 
 /// Export table: functions and constants for a builtin module.
@@ -307,6 +308,31 @@ pub fn mfumo_exports() -> BuiltinExportTable {
         "weka_env",
         vec![ValueType::Neno, ValueType::Neno],
         ValueType::Tupu,
+    );
+    contract(
+        &mut functions,
+        "http_pata",
+        vec![ValueType::Neno],
+        tokeo_neno(ValueType::Neno),
+    );
+    contract(
+        &mut functions,
+        "http_tuma",
+        vec![ValueType::Neno, ValueType::Neno, ValueType::Neno],
+        tokeo_neno(ValueType::Neno),
+    );
+    // The response is a `JibuHttp { hali, vichwa, mwili }` struct, Unknown at the signature level
+    // like the server's `OmbiHttp`/`JibuHttp` (see `mkondo_tumikia_http`).
+    contract(
+        &mut functions,
+        "http_ombi",
+        vec![
+            ValueType::Neno,
+            ValueType::Neno,
+            ValueType::Kamusi(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
+            ValueType::Neno,
+        ],
+        tokeo_neno(ValueType::Unknown),
     );
     contract(
         &mut functions,
@@ -908,6 +934,73 @@ pub fn kasha_gc_exports() -> BuiltinExportTable {
     }
 }
 
+fn tokeo_neno(ok: ValueType) -> ValueType {
+    ValueType::Tokeo(Box::new(ok), Box::new(ValueType::Neno))
+}
+
+/// Regular expressions: `ruwaza_*(ruwaza, maandishi, ...)`, each a `Tokeo` whose error is an
+/// invalid pattern.
+pub fn ruwaza_exports() -> BuiltinExportTable {
+    let mut functions = HashMap::new();
+    let texts = || ValueType::Orodha(Box::new(ValueType::Neno));
+    let two = || vec![ValueType::Neno, ValueType::Neno];
+    contract(
+        &mut functions,
+        "ruwaza_inalingana",
+        two(),
+        tokeo_neno(ValueType::Ukweli),
+    );
+    contract(
+        &mut functions,
+        "ruwaza_tafuta",
+        two(),
+        tokeo_neno(ValueType::Chaguo(Box::new(ValueType::Neno))),
+    );
+    contract(&mut functions, "ruwaza_zote", two(), tokeo_neno(texts()));
+    contract(
+        &mut functions,
+        "ruwaza_vikundi",
+        two(),
+        tokeo_neno(ValueType::Chaguo(Box::new(texts()))),
+    );
+    contract(
+        &mut functions,
+        "ruwaza_badilisha",
+        vec![ValueType::Neno, ValueType::Neno, ValueType::Neno],
+        tokeo_neno(ValueType::Neno),
+    );
+    contract(&mut functions, "ruwaza_gawanya", two(), tokeo_neno(texts()));
+    BuiltinExportTable {
+        functions,
+        constants: HashMap::new(),
+    }
+}
+
+/// Encodings, hashes and identifiers.
+pub fn usimbaji_exports() -> BuiltinExportTable {
+    let mut functions = HashMap::new();
+    for name in ["base64_simba", "hex_simba", "hashi_sha256", "hashi_sha512"] {
+        contract(&mut functions, name, vec![ValueType::Neno], ValueType::Neno);
+    }
+    contract(
+        &mut functions,
+        "base64_fumbua",
+        vec![ValueType::Neno],
+        tokeo_neno(ValueType::Neno),
+    );
+    contract(
+        &mut functions,
+        "hmac_sha256",
+        vec![ValueType::Neno, ValueType::Neno],
+        ValueType::Neno,
+    );
+    contract(&mut functions, "kitambulisho", vec![], ValueType::Neno);
+    BuiltinExportTable {
+        functions,
+        constants: HashMap::new(),
+    }
+}
+
 /// Return builtin export table for the given module name, or None.
 pub fn builtin_module_exports(name: &str) -> Option<BuiltinExportTable> {
     match name {
@@ -922,6 +1015,8 @@ pub fn builtin_module_exports(name: &str) -> Option<BuiltinExportTable> {
         "kiungo" => Some(kiungo_exports()),
         "sambamba" => Some(sambamba_exports()),
         "kasha_gc" => Some(kasha_gc_exports()),
+        "ruwaza" => Some(ruwaza_exports()),
+        "usimbaji" => Some(usimbaji_exports()),
         _ => None,
     }
 }

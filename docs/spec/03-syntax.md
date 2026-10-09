@@ -92,7 +92,9 @@ Bitwise operators for integer/fixed-width bit types:
 ### Special protocol operations
 
 - `kama` — explicit cast.
-- `jaribu` / `?` — propagate `KOSA` in `Tokeo<T, E>`.
+- `jaribu` / `?` — propagate `KOSA` in `Tokeo<T, E>`. In a function that cannot return the
+  error (one not returning `Tokeo`/`Chaguo`, such as `kuu() -> Tupu`), `jaribu` stops the
+  program with it instead.
 - `azima` / `azima_tenda` — immutable/mutable borrowing.
 - `tupa` — explicit early drop.
 - `paparika` — unrecoverable panic.

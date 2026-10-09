@@ -17,6 +17,7 @@
 mod faili;
 mod hisabati;
 pub(crate) mod http;
+mod http_mteja;
 mod json;
 mod kasha_gc;
 mod kiungo;
@@ -27,9 +28,11 @@ mod mfumo;
 pub(crate) mod mkondo;
 mod msingi;
 mod runtime;
+mod ruwaza;
 pub(crate) mod sambamba;
 mod seti;
 mod syscall;
+mod usimbaji;
 
 use std::collections::HashMap;
 
@@ -65,6 +68,9 @@ fn register_all(m: &mut HashMap<String, BuiltinFn>) {
     kumbukumbu::register(m);
     seti::register(m);
     json::register(m);
+    http_mteja::register(m);
+    ruwaza::register(m);
+    usimbaji::register(m);
     // Listed so compilers resolve them; each engine intercepts the call and passes the program
     // (see `MODULE_BUILTINS`), so these bodies run only for a by-name callback.
     for name in MODULE_BUILTINS {

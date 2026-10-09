@@ -1,0 +1,10 @@
+# Usimbaji (encodings, hashes) – interface stub
+
+kazi base64_simba(maandishi: Neno) -> Neno
+kazi base64_fumbua(maandishi: Neno) -> Tokeo<Neno, Neno>
+kazi hex_simba(maandishi: Neno) -> Neno
+kazi hashi_sha256(maandishi: Neno) -> Neno
+kazi hashi_sha512(maandishi: Neno) -> Neno
+kazi hmac_sha256(ufunguo: Neno, ujumbe: Neno) -> Neno
+# UUID ya nasibu (toleo 4); `nasibu_mbegu` huifanya irudiwe pia.
+kazi kitambulisho() -> Neno

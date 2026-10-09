@@ -69,6 +69,10 @@ weka matokeo = jaribu gawio(10, 2)    # 5.0
 # ikiwa gawio ingerudisha Kosa, jaribu ingepeleka kosa hadi kazi inayoita
 ```
 
+In a `kazi` that returns a `Tokeo` or `Chaguo`, `jaribu x` is `x?`: the error becomes the
+function's return value. In one that cannot return it (`kazi kuu(...) -> Tupu`, or a `kazi`
+returning `Namba`), an error stops the program with that error.
+
 ### Mfano Kamili
 
 Match `Tokeo::Sawa(v)`/`Tokeo::Kosa(e)` directly — this works against a `Tokeo` returned by any

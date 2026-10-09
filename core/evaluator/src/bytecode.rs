@@ -410,7 +410,8 @@ pub enum Opcode {
         dst: Reg,
         src: Reg,
     },
-    /// `jaribu` on `vals[src]`: errors abort execution.
+    /// `jaribu` on `vals[src]` in a function that cannot return the error: errors abort
+    /// execution. (Where it can, `jaribu` compiles to [`Opcode::Unwrap`], as `?` does.)
     Jaribu {
         dst: Reg,
         src: Reg,
@@ -950,6 +951,15 @@ struct FunctionCompiler<'a> {
     const_regs: HashMap<u64, Reg>,
     loops: Vec<LoopState>,
     ret: Ty,
+    /// The function returns a `Tokeo`/`Chaguo`, so `jaribu` can hand an error back to its
+    /// caller as `?` does; elsewhere (`kuu() -> Tupu`) an error stops the program.
+    returns_result: bool,
+}
+
+/// A return type a `Tokeo` or `Chaguo` error can be returned as.
+fn returns_result(type_name: &str) -> bool {
+    let t = type_name.trim();
+    t.starts_with("Tokeo") || t.starts_with("Chaguo") || t.ends_with('?')
 }
 
 fn is_cmp(op: &BinaryOp) -> Option<CmpOp> {
@@ -1038,6 +1048,7 @@ impl<'a> FunctionCompiler<'a> {
             const_regs: HashMap::new(),
             loops: Vec::new(),
             ret,
+            returns_result: returns_result(&function.return_type.name),
         };
         let mut params = Vec::with_capacity(function.params.len());
         for param in &function.params {
@@ -1079,6 +1090,7 @@ impl<'a> FunctionCompiler<'a> {
             const_regs: HashMap::new(),
             loops: Vec::new(),
             ret: Ty::Val,
+            returns_result: false,
         };
         let mut items = Vec::with_capacity(constants.len());
         for constant in constants {
@@ -2336,9 +2348,16 @@ impl<'a> FunctionCompiler<'a> {
                 UnaryOp::Jaribu => {
                     let src = self.tokeo_operand(self.node(*inner))?;
                     let out = self.dst_or_temp(dst, Ty::Val);
-                    self.emit(Opcode::Jaribu {
-                        dst: out.reg,
-                        src: src.reg,
+                    self.emit(if self.returns_result {
+                        Opcode::Unwrap {
+                            dst: out.reg,
+                            src: src.reg,
+                        }
+                    } else {
+                        Opcode::Jaribu {
+                            dst: out.reg,
+                            src: src.reg,
+                        }
                     });
                     Some(out)
                 }

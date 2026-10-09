@@ -80,6 +80,27 @@ Builtin exports are ambient; `leta mfumo` remains optional documentation. OS-dep
   decodes to `Kamusi<Neno, _>`; other JSON shapes (array, scalar) still decode correctly at
   runtime, but the declared static return type reflects the common "parse a JSON object" case.
 
+### HTTP (client)
+
+- `http_pata(anwani) -> Tokeo<Neno, Neno>` (GET) and `http_tuma(anwani, mwili, aina) ->
+  Tokeo<Neno, Neno>` (POST; `aina` is the `Content-Type`): the body of a 2xx response, else a
+  `Kosa` naming the status.
+- `http_ombi(njia, anwani, vichwa: Kamusi<Neno, Neno>, mwili) -> Tokeo<JibuHttp, Neno>`: any
+  method; the whole response (`hali`, `vichwa` with lowercase names, `mwili`) whatever its
+  status. Only a failed connection, TLS handshake or read is a `Kosa`.
+
+### Ruwaza (regular expressions)
+
+`ruwaza_inalingana`, `ruwaza_tafuta`, `ruwaza_zote`, `ruwaza_vikundi`, `ruwaza_badilisha`,
+`ruwaza_gawanya` — each `(ruwaza, maandishi, ...)` returning `Tokeo<_, Neno>`, a `Kosa` for an
+invalid pattern. Matching takes time linear in the text (no look-around or backreferences).
+
+### Usimbaji (encodings and hashes)
+
+`base64_simba`, `base64_fumbua -> Tokeo<Neno, Neno>`, `hex_simba`, `hashi_sha256`,
+`hashi_sha512`, `hmac_sha256(ufunguo, ujumbe)` (hex digests of the text's UTF-8 bytes) and
+`kitambulisho()` (a random version-4 UUID, from the same generator as `nasibu`).
+
 ---
 
 ### Resource handles and traits

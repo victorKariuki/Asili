@@ -19,6 +19,12 @@ kazi rejesha_ishara(ishara: Namba) -> Tokeo<Tupu, Neno>
 kazi kwa_json(thamani: T) -> Tokeo<Neno, Neno>
 kazi kutoka_json(maandishi: Neno) -> Tokeo<Kamusi<Neno, T>, Neno>
 
+# HTTP (mteja). Mwili wa jibu la 2xx, au kosa lenye hali na mwanzo wa mwili.
+kazi http_pata(anwani: Neno) -> Tokeo<Neno, Neno>
+kazi http_tuma(anwani: Neno, mwili: Neno, aina: Neno) -> Tokeo<Neno, Neno>
+# Ombi lolote; jibu zima ni JibuHttp { hali, vichwa, mwili }, hata hali isipokuwa 2xx.
+kazi http_ombi(njia: Neno, anwani: Neno, vichwa: Kamusi<Neno, Neno>, mwili: Neno) -> Tokeo<T, Neno>
+
 # Mtandao (TCP) na TLS
 kazi mkondo_unganisha(anwani: Neno) -> Tokeo<Mkondo, Neno>
 kazi mkondo_sikiliza(anwani: Neno) -> Tokeo<MkondoSikilizaji, Neno>

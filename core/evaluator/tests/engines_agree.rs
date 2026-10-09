@@ -137,8 +137,24 @@ fn unwrapping_with_question_mark_and_jaribu() {
             weka b: Orodha<Namba> = [5]
             rejesha b.pata(0)? + b.pata(3).angu(10)
         }
+        kazi jaribu_rudisha() -> Tokeo<Namba, Neno> {
+            weka x = jaribu gawio(1, 0)
+            chapisha("haifiki")
+            rejesha gawio(x, 1)
+        }
+        kazi jaribu_sawa() -> Tokeo<Namba, Neno> {
+            weka x = jaribu gawio(6, 2)
+            rejesha gawio(x, 1)
+        }
         "#,
-        &["sawa", "kosa", "jaribu_kosa", "chaguo"],
+        &[
+            "sawa",
+            "kosa",
+            "jaribu_kosa",
+            "chaguo",
+            "jaribu_rudisha",
+            "jaribu_sawa",
+        ],
     );
 }
 

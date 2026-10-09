@@ -54,6 +54,8 @@ tupa::achilia	N4052400000000000
 tupa_outer::t	N4008000000000000
 unwrap::chaguo	N402e000000000000
 unwrap::jaribu_kosa	ERR KOSA: Struct("KosaMipaka", [("ujumbe", Neno("fahirisi nje ya mipaka: 9 (urefu 2)"))])
+unwrap::jaribu_rudisha	Tokeo(Kosa(Neno("gawio kwa sifuri")))
+unwrap::jaribu_sawa	Tokeo(Sawa(Namba(3.0)))
 unwrap::kosa	Tokeo(Kosa(Struct("KosaMipaka", [("ujumbe", Neno("fahirisi nje ya mipaka: 9 (urefu 2)"))])))
 unwrap::sawa	N4008000000000000
 user_methods::t	[N4028000000000000,N402c000000000000,N4054000000000000,N4028000000000000]

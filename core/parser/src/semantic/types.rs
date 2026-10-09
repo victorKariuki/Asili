@@ -8,7 +8,7 @@
 use crate::ValueType;
 
 /// Split a generic args string by comma at depth 0 (ignoring commas inside < >).
-pub(crate) fn split_generic_args(s: &str) -> Vec<&str> {
+pub fn split_generic_args(s: &str) -> Vec<&str> {
     let s = s.trim();
     let mut out = Vec::new();
     let mut start = 0;
