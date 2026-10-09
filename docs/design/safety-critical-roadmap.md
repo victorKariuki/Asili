@@ -3,7 +3,7 @@
 Asili now runs every program as native code from its own backend (`nguvu`), at C speed on the
 Sudoku benchmark, with no interpreter and no fallback. That is fast and deterministic in
 *results*; it is not yet what life-support or other safety-critical software needs. This page
-records what is missing, in the order it should be done. None of it is started.
+records what was missing, in the order it should be done, and where each item stands.
 
 ## 1. Guaranteed worst-case time per step
 
@@ -21,6 +21,10 @@ bound, and timings so far are best-of-N, never worst case.
   longest path of the lowered IR.
 - The benchmark harness reports worst case beside best case.
 
+**Status: done** (issue #77). `#[salama]` marks strict functions; `salama.rs` rejects
+everything outside the subset at build time and `pata jenga` prints each one's bound on steps
+per call (`hatua`) and frame memory (`kumbukumbu`). The benchmark reports worst beside best.
+
 ## 2. Fixed memory
 
 **Gap.** There is no mode that allocates nothing after start-up.
@@ -29,6 +33,9 @@ bound, and timings so far are best-of-N, never worst case.
 frames are preallocated from the call graph (no recursion), and the host's pools are sized at
 start-up; a run that would allocate fails the build, not the device. A memory-limit model (the
 total a program may ever use) is computed and printed by the build.
+
+**Status: done** (issue #78). Strict code allocates nothing while it runs: list copies reuse
+storage and pooled frames keep their lists (`tests/salama_memory.rs` counts allocations).
 
 ## 3. Failure discipline
 
@@ -42,6 +49,11 @@ out of bounds in Rust), and there is no defined safe state, watchdog or memory-l
 - A defined safe state: a program declares a `#[salama]` handler the runtime calls on any
   unrecoverable error, deadline miss or memory-limit hit, before stopping.
 - A watchdog hook: the host checks a deadline at loop back-edges in strict code.
+
+**Status: done** (issue #79). `#[hali_salama]` is the safe state (run once on an error leaving
+`kuu`, a runtime panic, the watchdog or the memory limit); `mlinzi_anza`/`mlinzi_lisha` are the
+watchdog, `kikomo_kumbukumbu` the memory limit; the runtime modules deny `unwrap`, `expect`,
+`panic!` and `unreachable!` (a CI clippy step).
 
 ## 4. Compiler assurance
 
@@ -58,6 +70,33 @@ range analysis, non-reproducible builds, resources released late).
 - Translation validation for the riskiest passes (range analysis, if-conversion, unrolling):
   check each optimized function against its unoptimized IR on random inputs during tests.
 - Reproducible builds checked in CI (same source → byte-identical `.asb` and `.nguvu`).
+
+**Status: done** (issue #80), with one change of plan:
+- *IR verifier* (`nguvu/verify.rs`): every function is checked after lowering and after the
+  optimizer — registers and blocks exist, operand classes match, nothing is read before it is
+  written on any path — and in debug builds after every single pass, naming the pass. It found
+  if-conversion committing arm temporaries with a select that read an undefined register.
+- *Differential fuzzing* (`tests/fuzz.rs`): random programs over the numeric subset (arithmetic,
+  bitwise operators, comparisons, `ikiwa`, counted and `wakati` loops, list reads and writes,
+  calls) run with and without the optimizer and must agree bit for bit, or fail with the same
+  error. 300 programs in `cargo test` on every platform CI covers (x86-64, AArch64), 2,000 in a
+  release CI step, any number with `ASILI_FUZZ_PROGRAMS`/`ASILI_FUZZ_SEED`; `agree.sh` also runs
+  100 of them as wasm against native code. It found nested constant loops unrolling to hundreds
+  of copies (3 s to compile a 40-line function; the unroll budget now counts nested loops at
+  their unrolled size) and two quadratic compile-time passes (register allocation re-sorted
+  every interval list per assignment; range analysis carried dead registers in every block
+  state) — a 4,000-statement function went from 12 s to 0.8 s.
+- *Translation validation* is the verifier plus optimized-against-unoptimized comparison on
+  random programs, rather than evaluating IR on random inputs: an IR evaluator would be a second
+  implementation of every instruction's semantics, which this repository avoids.
+- *No reference interpreter as oracle*, for the same reason: the unoptimized pipeline and the
+  hand-checked `tests/golden/` results are the references.
+- *Reproducible builds*: `builds_are_reproducible` builds Sudoku and 20 fuzz programs four times
+  each and requires byte-identical `.asb` and native images.
+- *Load-time bytecode verifier* (`bytecode_verify.rs`, added): a damaged or edited `.asb` whose
+  instructions name a register, jump target, function or constant that does not exist is
+  rejected before native code runs it (native code reaches registers by address). The compiler's
+  own output passes the same check.
 
 ## 5. Device targets
 

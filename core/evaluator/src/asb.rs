@@ -95,5 +95,12 @@ pub fn load_asb_bytecode(bytes: &[u8]) -> Result<crate::bytecode::BytecodeProgra
                 .to_string(),
         ));
     }
-    bincode::deserialize(payload).map_err(|e| AsbLoadError::Decode(e.to_string()))
+    let program: crate::bytecode::BytecodeProgram =
+        bincode::deserialize(payload).map_err(|e| AsbLoadError::Decode(e.to_string()))?;
+    crate::bytecode_verify::verify(&program).map_err(|e| {
+        AsbLoadError::InvalidFormat(format!(
+            "kilele kimeharibika ({e}); jenga upya kwa `pata jenga`"
+        ))
+    })?;
+    Ok(program)
 }

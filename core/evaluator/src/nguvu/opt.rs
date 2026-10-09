@@ -18,29 +18,53 @@
 use super::ir::{Class, Func, ICond, Inst, IntOp, Term, VReg};
 use asili_parser::FxHashMap as HashMap;
 
-pub fn optimize(func: &mut Func) {
+/// Run every pass over `func`. In debug builds (and so in every test) the IR is verified after
+/// each pass, naming the pass that broke it; the caller verifies the final result always.
+pub fn optimize(func: &mut Func) -> Result<(), String> {
+    let check = |func: &Func, pass: &str| -> Result<(), String> {
+        if cfg!(debug_assertions) {
+            super::verify::verify(func).map_err(|e| format!("after {pass}: {e}"))?;
+        }
+        Ok(())
+    };
     fold_all_constants(func);
+    check(func, "fold_all_constants")?;
     let consts = constants(func);
     if super::range::fold_ranges(func, &consts) {
+        check(func, "fold_ranges")?;
         fold_all_constants(func);
+        check(func, "fold_all_constants")?;
     }
     merge_blocks(func);
+    check(func, "merge_blocks")?;
     eliminate_dead_code(func); // folded guards leave their constants behind
+    check(func, "eliminate_dead_code")?;
     if_convert(func);
+    check(func, "if_convert")?;
     merge_blocks(func); // converted triangles leave straight chains behind
+    check(func, "merge_blocks")?;
     fold_immediates(func);
+    check(func, "fold_immediates")?;
     super::range::narrow_divisions(func, &constants(func));
+    check(func, "narrow_divisions")?;
     select_to_arith(func);
+    check(func, "select_to_arith")?;
     eliminate_dead_code(func); // so an `and` sits right before the test reading it
     fuse_bit_tests(func);
+    check(func, "fuse_bit_tests")?;
     eliminate_dead_code(func); // drops the `and`s the tests absorbed
     if super::features::popcnt() {
         recognize_popcount(func);
+        check(func, "recognize_popcount")?;
     }
     fold_all_constants(func); // `n = 0; n += popcnt(…)` is a copy
+    check(func, "fold_all_constants")?;
     reuse_values(func);
+    check(func, "reuse_values")?;
     hoist_wide_constants(func);
+    check(func, "hoist_wide_constants")?;
     eliminate_dead_code(func);
+    Ok(())
 }
 
 /// Registers whose every definition is an `IConst` of the same value, or a copy of such a
@@ -581,6 +605,11 @@ fn if_convert(func: &mut Func) {
             preds[s.0 as usize] += 1;
         }
     }
+    // Only registers live into the join need committing: an arm's temporaries are not, and a
+    // live one is written on the path around the arm too, so the select reads a defined value.
+    // (Liveness from before any conversion stays sound: a select only reads a register that
+    // was already live there.)
+    let live = func.liveness();
     for a in 0..nb {
         let Term::Branch { cond, then_, else_ } = func.blocks[a].term else {
             continue;
@@ -638,7 +667,10 @@ fn if_convert(func: &mut Func) {
             }
             moved.push(inst);
         }
-        let mut commits: Vec<(VReg, VReg)> = renamed.into_iter().collect();
+        let mut commits: Vec<(VReg, VReg)> = renamed
+            .into_iter()
+            .filter(|(orig, _)| live.live_in[join.0 as usize].contains(*orig))
+            .collect();
         commits.sort();
         for (orig, fresh) in commits {
             let (x, y) = if taken_on_true {

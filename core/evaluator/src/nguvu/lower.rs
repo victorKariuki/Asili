@@ -97,7 +97,7 @@ struct Lower<'a> {
 }
 
 /// Numeric registers an instruction reads, including control flow and returns.
-fn reads(op: &Opcode) -> Vec<Reg> {
+pub(crate) fn reads(op: &Opcode) -> Vec<Reg> {
     let mut r = num_reads(op);
     match op {
         Opcode::JumpIfFalse { cond, .. } | Opcode::JumpIfTrue { cond, .. } => r.push(*cond),
@@ -110,7 +110,7 @@ fn reads(op: &Opcode) -> Vec<Reg> {
 }
 
 /// Numeric registers an instruction writes.
-fn writes(op: &Opcode) -> Vec<Reg> {
+pub(crate) fn writes(op: &Opcode) -> Vec<Reg> {
     let mut w = num_writes(op);
     if let Opcode::ForStep { ctr, .. } = op {
         w.push(*ctr);
@@ -296,23 +296,20 @@ impl<'a> Lower<'a> {
         }
     }
 
-    /// Fully unroll the counted loop whose entry test is at `pc` when its bounds are constants
-    /// and it is small: each copy of the body sees the counter as a constant, so everything
-    /// derived from it folds (`1 << (v - 1)` becomes an immediate mask). Returns the pc to
-    /// continue at, or `None` to lower the loop normally.
-    fn unroll(&mut self, pc: usize) -> Option<usize> {
+    /// The counted loop whose entry test is at `pc` (`kwa i kutoka a hadi b` with constant
+    /// bounds): its first counter value, trip count and the pc of its step.
+    fn counted_loop(&self, pc: usize) -> Option<(f64, i64, usize)> {
         let code = &self.function.code;
         let Opcode::JumpIfNot {
             op: CmpOp::Lt,
             a: ctr,
             b: end,
             target,
-        } = code[pc]
+        } = *code.get(pc)?
         else {
             return None;
         };
-        let exit = target as usize;
-        let step = exit.checked_sub(1)?;
+        let step = (target as usize).checked_sub(1)?;
         match code.get(step)? {
             Opcode::ForStep {
                 ctr: c,
@@ -330,9 +327,44 @@ impl<'a> Lower<'a> {
         if !(lo.abs() < 1e15 && hi.abs() < 1e15) {
             return None;
         }
-        let trips = (hi - lo).max(0.0) as i64;
+        Some((lo, (hi - lo).max(0.0) as i64, step))
+    }
+
+    /// Instructions `from..to` would lower to with every loop inside it that may unroll
+    /// unrolled (so nested loops count at their full size against [`UNROLL_BUDGET`]).
+    fn expanded_len(&self, from: usize, to: usize) -> usize {
+        let mut len = 0;
+        let mut pc = from;
+        while pc < to {
+            match self.counted_loop(pc) {
+                Some((_, trips, step)) if trips <= UNROLL_TRIPS && step < to => {
+                    len += trips as usize * (self.expanded_len(pc + 1, step) + 1);
+                    pc = step + 1;
+                }
+                _ => {
+                    len += 1;
+                    pc += 1;
+                }
+            }
+        }
+        len
+    }
+
+    /// Fully unroll the counted loop whose entry test is at `pc` when its bounds are constants
+    /// and it is small: each copy of the body sees the counter as a constant, so everything
+    /// derived from it folds (`1 << (v - 1)` becomes an immediate mask). Returns the pc to
+    /// continue at, or `None` to lower the loop normally.
+    fn unroll(&mut self, pc: usize) -> Option<usize> {
+        let (lo, trips, step) = self.counted_loop(pc)?;
+        let code = &self.function.code;
+        let Opcode::JumpIfNot { a: ctr, b: end, .. } = code[pc] else {
+            return None;
+        };
+        let exit = step + 1;
         let body = pc + 1..step;
-        if trips > UNROLL_TRIPS || trips as usize * (body.len() + 1) > UNROLL_BUDGET {
+        if trips > UNROLL_TRIPS
+            || trips as usize * (self.expanded_len(pc + 1, step) + 1) > UNROLL_BUDGET
+        {
             return None;
         }
         // A `vunja` leaves the copies without the counter's register being updated, so the

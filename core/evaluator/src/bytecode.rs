@@ -599,6 +599,9 @@ pub fn compile_module_with(
         }
         (None, None) => unreachable!("a failed lowering records where"),
     };
+    // What the compiler emits passes the same check a loaded `.asb` does.
+    crate::bytecode_verify::verify(&program)
+        .map_err(|e| format!("kosa la ndani la Asili: bytecode si sahihi ({e})"))?;
     // Strict (`#[salama]`) functions must keep to their subset.
     if let Err(errors) = crate::salama::kagua(module, &program) {
         let all: Vec<String> = errors.iter().map(ToString::to_string).collect();
@@ -2002,6 +2005,12 @@ impl<'a> FunctionCompiler<'a> {
     }
 
     fn expr_to(&mut self, expr: &Expr, dst: Option<Operand>) -> Option<Operand> {
+        // Deeply nested expressions recurse once per level; grow the stack on demand like the
+        // parser and analyzer do instead of overflowing it.
+        stacker::maybe_grow(64 * 1024, 1024 * 1024, || self.expr_to_inner(expr, dst))
+    }
+
+    fn expr_to_inner(&mut self, expr: &Expr, dst: Option<Operand>) -> Option<Operand> {
         match expr {
             Expr::Number(s) => {
                 let reg = self.num_const(value::parse_number(s));

@@ -245,8 +245,8 @@ pub fn allocate(func: &Func, target: &Target) -> Allocation {
             let (keep, gone) = (x.min(y), x.max(y));
             leader[gone] = keep;
             let moved = std::mem::take(&mut ranges[gone]);
-            ranges[keep].extend(moved);
-            ranges[keep].sort_unstable();
+            let kept = std::mem::take(&mut ranges[keep]);
+            ranges[keep] = merge_sorted(kept, moved);
             weight[keep] += weight[gone];
         }
     }
@@ -268,8 +268,9 @@ pub fn allocate(func: &Func, target: &Target) -> Allocation {
             .unwrap_or(std::cmp::Ordering::Equal)
             .then(a.cmp(&b))
     });
-    // Ranges assigned to each physical register (kept sorted and merged).
-    let mut taken: HashMap<(bool, u8), Vec<(u32, u32)>> = HashMap::default();
+    // Ranges assigned to each physical register: disjoint, by start (an overlap test is a
+    // lookup per range, not a scan of everything the register already holds).
+    let mut taken: HashMap<(bool, u8), std::collections::BTreeMap<u32, u32>> = HashMap::default();
     let mut loc = vec![Loc::Slot; n];
     for v in todo {
         let rs = &ranges[v];
@@ -298,9 +299,13 @@ pub fn allocate(func: &Func, target: &Target) -> Allocation {
                 Loc::Slot => unreachable!(),
             };
             let used = taken.entry(key).or_default();
-            if !overlaps(used, rs) {
-                used.extend_from_slice(rs);
-                used.sort_unstable();
+            let clash = rs.iter().any(|&(s, e)| {
+                used.range(..=e)
+                    .next_back()
+                    .is_some_and(|(_, &end)| end >= s)
+            });
+            if !clash {
+                used.extend(rs.iter().copied());
                 loc[v] = c;
                 break;
             }
@@ -393,5 +398,23 @@ fn brief(i: &Inst) -> String {
             .next()
             .unwrap_or("")
             .to_string(),
+    }
+}
+
+/// Two sorted range lists as one sorted list.
+fn merge_sorted(a: Vec<(u32, u32)>, b: Vec<(u32, u32)>) -> Vec<(u32, u32)> {
+    let mut out = Vec::with_capacity(a.len() + b.len());
+    let (mut a, mut b) = (a.into_iter().peekable(), b.into_iter().peekable());
+    loop {
+        let next = match (a.peek(), b.peek()) {
+            (Some(x), Some(y)) if x <= y => a.next(),
+            (Some(_), Some(_)) => b.next(),
+            (Some(_), None) => a.next(),
+            (None, _) => b.next(),
+        };
+        match next {
+            Some(r) => out.push(r),
+            None => return out,
+        }
     }
 }

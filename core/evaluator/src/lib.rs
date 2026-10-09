@@ -9,6 +9,7 @@ mod asb;
 pub mod builtins;
 pub mod bundle;
 mod bytecode;
+mod bytecode_verify;
 mod compiled;
 pub mod debug_hook;
 mod env;

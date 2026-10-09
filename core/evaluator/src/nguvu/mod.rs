@@ -18,6 +18,7 @@ pub mod opt;
 pub mod range;
 pub mod regalloc;
 pub mod schedule;
+pub mod verify;
 pub mod wasm;
 pub mod x64;
 
@@ -123,8 +124,36 @@ fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> 
     done.into_iter().map(|(_, r)| r).collect()
 }
 
+/// How a program is compiled.
+#[derive(Clone, Copy, Debug)]
+pub struct Options {
+    /// Run the optimizer ([`opt`]). Always on in builds; off only to check, by comparing the
+    /// two, that optimized code computes exactly what unoptimized code does (`tests/fuzz.rs`).
+    pub optimize: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options { optimize: true }
+    }
+}
+
+/// Lower function `index` and, when asked, optimize it, verifying the IR on the way in and out
+/// ([`verify`]): a malformed function is a build error, never machine code.
+fn lower_checked(index: usize, ctx: &lower::Ctx, options: Options) -> Result<ir::Func, String> {
+    let function = &ctx.program.functions[index];
+    let mut func = lower::lower(index, function, ctx)
+        .ok_or_else(|| format!("nguvu: kazi '{}' haikuweza kutafsiriwa", function.name))?;
+    let bug = |e: String| format!("nguvu: kosa la ndani katika kazi '{}': {e}", function.name);
+    verify::verify(&func).map_err(|e| bug(format!("lowering: {e}")))?;
+    if options.optimize {
+        opt::optimize(&mut func).map_err(bug)?;
+        verify::verify(&func).map_err(|e| bug(format!("optimizer: {e}")))?;
+    }
+    Ok(func)
+}
+
 fn compile_function(func: &mut ir::Func) -> Result<Code, String> {
-    opt::optimize(func);
     #[cfg(target_arch = "aarch64")]
     return codegen_a64::generate(func);
     #[cfg(not(target_arch = "aarch64"))]
@@ -133,6 +162,11 @@ fn compile_function(func: &mut ir::Func) -> Result<Code, String> {
 
 /// Generate machine code for every function of `program`.
 pub fn generate(program: &BytecodeProgram) -> Result<Image, String> {
+    generate_with(program, Options::default())
+}
+
+/// [`generate`] with explicit [`Options`].
+pub fn generate_with(program: &BytecodeProgram, options: Options) -> Result<Image, String> {
     if !supported() {
         return Err("nguvu: mfumo huu bado hauungwi mkono".into());
     }
@@ -146,15 +180,12 @@ pub fn generate(program: &BytecodeProgram) -> Result<Image, String> {
             .map(|i| (true, i)),
     );
     let compiled = par_map(&jobs, |&(entry_direct, index)| {
-        let function = &program.functions[index];
         let ctx = lower::Ctx {
             program,
             direct: &direct,
             entry_direct,
         };
-        let mut func = lower::lower(index, function, &ctx)
-            .ok_or_else(|| format!("nguvu: kazi '{}' haikuweza kutafsiriwa", function.name))?;
-        compile_function(&mut func)
+        compile_function(&mut lower_checked(index, &ctx, options)?)
     });
     let mut units: Vec<(Option<usize>, Code)> = Vec::with_capacity(jobs.len()); // (direct entry of, code)
     for (&(entry_direct, index), code) in jobs.iter().zip(compiled) {
@@ -366,7 +397,16 @@ pub fn load_image_bytes(
 /// Compile every function of `program` to machine code in executable memory.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn compile(program: &BytecodeProgram) -> Result<crate::aot::NativeLibrary, String> {
-    generate(program)?.load()
+    compile_with(program, Options::default())
+}
+
+/// [`compile`] with explicit [`Options`].
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compile_with(
+    program: &BytecodeProgram,
+    options: Options,
+) -> Result<crate::aot::NativeLibrary, String> {
+    generate_with(program, options)?.load()
 }
 
 /// Compile every function of `program` to one wasm module and instantiate it beside this one
@@ -396,20 +436,12 @@ pub fn compile(_program: &BytecodeProgram) -> Result<crate::aot::NativeLibrary, 
 /// target's input).
 pub fn wasm_functions(program: &BytecodeProgram) -> Result<Vec<ir::Func>, String> {
     let direct = Default::default();
-    program
-        .functions
-        .iter()
-        .enumerate()
-        .map(|(i, function)| {
-            let ctx = lower::Ctx {
-                program,
-                direct: &direct,
-                entry_direct: false,
-            };
-            let mut func = lower::lower(i, function, &ctx)
-                .ok_or_else(|| format!("nguvu: kazi '{}' haikuweza kutafsiriwa", function.name))?;
-            opt::optimize(&mut func);
-            Ok(func)
-        })
+    let ctx = lower::Ctx {
+        program,
+        direct: &direct,
+        entry_direct: false,
+    };
+    (0..program.functions.len())
+        .map(|i| lower_checked(i, &ctx, Options::default()))
         .collect()
 }

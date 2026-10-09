@@ -303,6 +303,13 @@ fn analyze(func: &Func, ctx: &Ctx) -> Option<Vec<Option<State>>> {
             }
         }
     }
+    // A block's entry state keeps only the registers live into it: nothing else can be read
+    // there, and carrying every dead temporary made the analysis quadratic in function size.
+    let live = func.liveness();
+    let prune = |succ: usize, mut s: State| {
+        s.retain(|v, _| live.live_in[succ].contains(*v));
+        s
+    };
     let mut ins: Vec<Option<State>> = vec![None; nb];
     let mut visits = vec![0u32; nb];
     ins[0] = Some(State::default());
@@ -315,6 +322,7 @@ fn analyze(func: &Func, ctx: &Ctx) -> Option<Vec<Option<State>>> {
         }
         let s = ins[b].clone().expect("queued");
         for (succ, out) in successors_out(ctx, func, b, s) {
+            let out = prune(succ, out);
             let merged = match &ins[succ] {
                 None => out,
                 Some(old) => {
@@ -350,6 +358,7 @@ fn analyze(func: &Func, ctx: &Ctx) -> Option<Vec<Option<State>>> {
                 let Some(ps) = ins[p].clone() else { continue };
                 for (succ, out) in successors_out(ctx, func, p, ps) {
                     if succ == b {
+                        let out = prune(succ, out);
                         acc = Some(match acc {
                             None => out,
                             Some(a) => join(&a, &out),

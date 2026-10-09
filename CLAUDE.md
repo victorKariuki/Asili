@@ -132,7 +132,9 @@ touches `core/evaluator/` (`bytecode.rs`, `nguvu/`, `aot.rs`, `native.rs`, `host
   change.
 - **Tests and numbers, not assumptions**: `engines_agree.rs` and `native_tiers.rs` cover every
   new construct against hand-checked expectations (`tests/golden/`), `driver/wasm/tests/agree.sh`
-  keeps the wasm target printing what native code prints, and `run.sh` is rerun after engine
+  keeps the wasm target printing what native code prints, `tests/fuzz.rs` keeps optimized
+  native code computing what unoptimized code does (the IR verifier, `nguvu/verify.rs`, runs
+  after every optimizer pass in debug builds), and `run.sh` is rerun after engine
   changes — asili-nguvu at or below clang `-O2` C on the solve and the attempt count exactly
   90,665. Report the measured numbers, and treat a regression as a bug to fix before finishing.
 

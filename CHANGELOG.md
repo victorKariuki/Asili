@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Compiler assurance**: an IR verifier (`nguvu/verify.rs`) checks every function after
+  lowering and after the optimizer (and after each pass in debug builds): registers and blocks
+  exist, operand classes match, nothing is read before it is written. A differential fuzzer
+  (`tests/fuzz.rs`) generates random numeric programs and requires optimized and unoptimized
+  native code (`nguvu::Options`) to agree bit for bit — 300 in `cargo test`, 2,000 in a CI
+  step, and 100 run as wasm against native code by `agree.sh`. Builds are checked to be
+  reproducible (byte-identical `.asb` and native image), and loading an `.asb` now verifies its
+  bytecode (`bytecode_verify.rs`) — a damaged file naming a register, jump target, function or
+  constant that does not exist is rejected before native code runs it.
+
 - **Failure discipline**: a program's `#[hali_salama]` `kazi` (no parameters, at most one) is its
   safe state — it runs once, on a fresh host, whenever the program fails in a way it cannot
   recover from: an error leaving `kuu`, a fault inside the runtime (a panic hook; shipped builds
@@ -556,6 +566,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was not built.
 
 ### Fixed
+
+- **Optimizer and compile-time bugs found by the fuzzer and verifier**: if-conversion committed
+  an arm's temporaries with a select reading a register never written on the other path (now
+  only registers live after the join are committed); nested constant loops each passed the
+  unroll budget alone and multiplied into hundreds of copies (a 40-line function took 3 s to
+  compile; nested loops now count at their unrolled size); register allocation re-sorted a
+  physical register's whole interval list on every assignment and range analysis carried every
+  dead register in every block state, both quadratic (a 4,000-statement function: 12 s → 0.8 s).
+  The bytecode compiler now grows its stack on deeply nested expressions instead of
+  overflowing it in debug builds.
 
 - **Values released at block exit in native code**: a generic local declared inside a block (an
   `ikiwa` branch, a loop body) is dropped where the block ends, as the language defines, instead
