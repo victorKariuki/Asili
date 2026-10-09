@@ -45,7 +45,7 @@ impl std::error::Error for AsbLoadError {}
 
 /// Version of the bytecode payload (its instruction set, and the syntax tree it carries). Artifacts built by an
 /// older `pata jenga` carry a different `version=` and must be rebuilt.
-const BYTECODE_VERSION: &str = "14";
+const BYTECODE_VERSION: &str = "15";
 
 /// Every artifact format this build reads and writes, for build caches: a cached artifact made
 /// under different formats (an older or newer toolchain) must be rebuilt, not loaded.

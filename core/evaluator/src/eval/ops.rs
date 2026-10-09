@@ -35,7 +35,7 @@ fn numeric(op: &BinaryOp, l: &Value, r: &Value, op_name: &str) -> Result<Value, 
     let err = || EvalError::TypeErr(format!("{op_name} inahitaji Namba"));
     let a = value::as_f64(l).ok_or_else(err)?;
     let b = value::as_f64(r).ok_or_else(err)?;
-    Ok(number_op(op, a, b).expect("an arithmetic or comparison operator"))
+    number_op(op, a, b).ok_or_else(err)
 }
 
 /// `l op r` for already-evaluated operands. `na`/`au` short-circuiting is the caller's job

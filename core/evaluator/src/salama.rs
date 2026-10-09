@@ -62,6 +62,32 @@ pub fn kagua(module: &Module, program: &BytecodeProgram) -> Result<Vec<Ripoti>, 
         .filter(|f| is_strict(f))
         .map(|f| (f.name.as_str(), f))
         .collect();
+    // The safe state (`#[hali_salama]`): at most one, taking nothing.
+    let safe: Vec<&Function> = module
+        .functions
+        .iter()
+        .filter(|f| f.attrs.iter().any(|a| a.name == "hali_salama"))
+        .collect();
+    let mut safe_errors = Vec::new();
+    for f in &safe {
+        if !f.params.is_empty() {
+            safe_errors.push(Kosa {
+                kazi: f.name.to_string(),
+                mstari: f.line,
+                sababu: "kazi ya hali salama haichukui hoja".into(),
+            });
+        }
+    }
+    if let [_, second, ..] = safe.as_slice() {
+        safe_errors.push(Kosa {
+            kazi: second.name.to_string(),
+            mstari: second.line,
+            sababu: "programu ina kazi moja tu ya hali salama".into(),
+        });
+    }
+    if !safe_errors.is_empty() {
+        return Err(safe_errors);
+    }
     if strict.is_empty() {
         return Ok(Vec::new());
     }

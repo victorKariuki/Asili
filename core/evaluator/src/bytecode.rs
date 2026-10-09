@@ -488,6 +488,9 @@ pub struct BytecodeProgram {
     /// The function computing the module constants that are not literals, in order, as one
     /// `Orodha` (`StoredConstant::Computed(i)` is its `i`th item).
     pub init: Option<u32>,
+    /// The program's `#[hali_salama]` function, run once when the program fails unrecoverably
+    /// (see `hali_salama.rs`).
+    pub safe_state: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -764,6 +767,11 @@ fn compile_module_inner(
         ast: Some(module.clone()),
         impl_targets: module.impls.iter().map(|i| i.target.clone()).collect(),
         init,
+        safe_state: module
+            .functions
+            .iter()
+            .position(|f| f.attrs.iter().any(|a| a.name == "hali_salama"))
+            .map(|i| i as u32),
     })
 }
 
@@ -2925,10 +2933,14 @@ pub(crate) fn run_shared_program(
         program: program.clone(),
         native: native.clone(),
     };
+    crate::hali_salama::register(&program, &native);
     let hoja = Value::list(args.into_iter().map(Value::neno).collect());
-    crate::host::Host::new(&program, &native, Some(shared))
-        .call_by_name(&program.entry, vec![hoja])?;
-    Ok(())
+    let result = crate::host::Host::new(&program, &native, Some(shared))
+        .call_by_name(&program.entry, vec![hoja]);
+    if let Err(e) = &result {
+        crate::hali_salama::enter(&e.to_string());
+    }
+    result.map(drop)
 }
 
 /// Run a named function on native code built for `program` (e.g. an image loaded from disk).

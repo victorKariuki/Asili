@@ -1,5 +1,19 @@
 //! Builtin function registry: msingi, mfumo, majira, matumizi, faili, hisabati, runtime.
 
+// Runtime code never panics on its own: an impossible state is an error the program sees
+// (and its safe state handles), not a crash (see docs/design/safety-critical-roadmap.md §3).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 mod faili;
 mod hisabati;
 pub(crate) mod http;

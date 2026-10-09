@@ -6,6 +6,9 @@ thabiti JINA_OS: Neno
 kazi vigezo() -> Orodha<Neno>
 kazi pata_env(jina: Neno) -> Chaguo<Neno>
 kazi toka(kodi: Namba) -> Tupu
+kazi mlinzi_anza(ms: Namba) -> Tokeo<Tupu, Neno>
+kazi mlinzi_lisha() -> Tupu
+kazi kikomo_kumbukumbu(baiti: Namba) -> Tupu
 kazi sikiliza_ishara(ishara: Namba, kazi_jina: Neno) -> Tokeo<Tupu, Neno>
 kazi rejesha_ishara(ishara: Namba) -> Tokeo<Tupu, Neno>
 

@@ -11,6 +11,20 @@
 //! elements are proven to lie in `0..=1` is read and written as bytes with plain loads and
 //! stores) and asks for it through [`NumList::ensure`], which fails when the elements do not fit.
 
+// Runtime code never panics on its own: an impossible state is an error the program sees
+// (and its safe state handles), not a crash (see docs/design/safety-critical-roadmap.md §3).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 /// How a list stores its elements: integers of 1, 2, 4 or 8 bytes (unsigned where no element is
 /// negative — zero-extending loads are the cheapest), or `f64` bits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

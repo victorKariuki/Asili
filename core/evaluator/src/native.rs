@@ -2,6 +2,20 @@
 //! its host (`host.rs`), per-instruction register effects used to spill/reload around calls back
 //! into the host, and the integer range analysis.
 
+// Runtime code never panics on its own: an impossible state is an error the program sees
+// (and its safe state handles), not a crash (see docs/design/safety-critical-roadmap.md §3).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use crate::bytecode::{CmpOp, Opcode, Reg, Ty};
 use crate::host::Frame;
 use crate::numlist::Kind;
@@ -841,7 +855,9 @@ pub(crate) fn analyze_numbers(f: &crate::bytecode::BytecodeFunc) -> NumAnalysis 
             if steps > 100_000 {
                 return give_up();
             }
-            let mut state = in_states[b].clone().expect("queued blocks have a state");
+            let Some(mut state) = in_states[b].clone() else {
+                continue; // queued blocks always have a state
+            };
             let end = starts.get(b + 1).copied().unwrap_or(code.len());
             let mut edges: Vec<(usize, Vec<NumFact>)> = Vec::new();
             let mut falls_through = true;

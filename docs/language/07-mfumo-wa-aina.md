@@ -203,7 +203,39 @@ kazi kutoka_c() -> Namba {
 | `#[sharti(...)]` | Conditional compilation; only key `lengo` is recognized (e.g. `lengo = "wasm"`), values OR'd with `\|` — see [implementation-status.md](../design/implementation-status.md) |
 | `#[ndani]`    | Internal / not exported                          |
 | `#[kiunganishi]` | FFI linkage annotation                        |
+| `#[hali_salama]` | The safe state: runs once when the program fails unrecoverably — see below |
 | `#[salama]`   | Strict code: the build checks the function keeps to a subset whose time and memory are bounded, and prints the bounds — see below |
+
+### The safe state: `#[hali_salama]`
+
+A program may mark one `kazi`, taking no parameters, `#[hali_salama]`. It runs once, on a fresh
+runtime, whenever the program fails in a way it cannot recover from — an error leaving `kuu`, a
+fault inside the runtime, the watchdog expiring, or the memory limit being passed — and then the
+program stops with an error code. It is where a controller drives its outputs to their safe
+positions.
+
+```asili
+#[hali_salama]
+kazi zima_salama() -> Tupu {
+    chapisha("vali zimefungwa")
+}
+
+kazi kuu(hoja: Orodha<Neno>) -> Tupu {
+    kikomo_kumbukumbu(8000000)    # stop (through the safe state) past 8 MB
+    jaribu mlinzi_anza(50)        # the watchdog: feed it within every 50 ms
+    wakati kweli {
+        # … one control cycle …
+        mlinzi_lisha()
+    }
+}
+```
+
+`mlinzi_anza(ms)` arms the watchdog and `mlinzi_lisha()` feeds it; a program that goes `ms`
+milliseconds without feeding it enters its safe state and exits with code 5.
+`kikomo_kumbukumbu(baiti)` limits the program's memory (enforced by the standalone runner,
+`tenda`). Faults inside the runtime run the safe state too: the runtime's own code is checked to
+contain no `unwrap`/`expect`/`panic!` (`cargo clippy -p asili-evaluator`, a CI step), so such a
+fault is a bug in Asili, not a path the program can take.
 
 ### Strict code: `#[salama]`
 

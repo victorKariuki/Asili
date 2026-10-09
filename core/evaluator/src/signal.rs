@@ -2,6 +2,20 @@
 //! OS handler only sets an atomic; eval loop dispatches to registered kazi by name.
 //! Dispatch is polled at the top of every statement (see eval/stmt.rs's eval_stmt_impl and
 //! eval/mod.rs's eval_block_in_env, both of which call take_pending()).
+
+// Runtime code never panics on its own: an impossible state is an error the program sees
+// (and its safe state handles), not a crash (see docs/design/safety-critical-roadmap.md §3).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
 //
 // sikiliza_ishara/rejesha_ishara are no-ops on non-unix platforms (#[cfg(not(unix))]) at this
 // module's level; the mfumo builtin wrappers surface this as Tokeo(Kosa(...)) instead of
@@ -47,8 +61,8 @@ pub fn take_pending() -> i32 {
 /// Register handler: when signal sig_id is received, dispatch to kazi with this name.
 #[cfg(unix)]
 pub fn register_handler(sig_id: i32, kazi_name: String) {
-    handlers().lock().unwrap().insert(sig_id, kazi_name);
-    let mut inst = installed().lock().unwrap();
+    crate::sync::lock(&handlers()).insert(sig_id, kazi_name);
+    let mut inst = crate::sync::lock(&installed());
     if inst.insert(sig_id) {
         let sig = sig_id;
         // # Safety:
@@ -67,7 +81,7 @@ pub fn register_handler(_sig_id: i32, _kazi_name: String) {}
 /// Get kazi name for signal, if registered.
 #[cfg(unix)]
 pub fn get_handler(sig_id: i32) -> Option<String> {
-    handlers().lock().unwrap().get(&sig_id).cloned()
+    crate::sync::lock(&handlers()).get(&sig_id).cloned()
 }
 
 #[cfg(not(unix))]
@@ -78,7 +92,7 @@ pub fn get_handler(_sig_id: i32) -> Option<String> {
 /// Clear handler for signal (rejesha_ishara).
 #[cfg(unix)]
 pub fn clear_handler(sig_id: i32) {
-    handlers().lock().unwrap().remove(&sig_id);
+    crate::sync::lock(&handlers()).remove(&sig_id);
 }
 
 #[cfg(not(unix))]

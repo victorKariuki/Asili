@@ -105,3 +105,13 @@ fn allocation_and_other_types_are_rejected() {
     let e = errors("#[salama]\nkazi f() -> Namba {\n    chapisha(\"x\")\n    rejesha 0\n}\n");
     assert!(e.contains("operesheni"), "{e}");
 }
+
+#[test]
+fn the_safe_state_takes_nothing_and_there_is_one() {
+    let e = errors("#[hali_salama]\nkazi zima(x: Namba) -> Tupu {\n}\n");
+    assert!(e.contains("haichukui hoja"), "{e}");
+    let e =
+        errors("#[hali_salama]\nkazi a() -> Tupu {\n}\n#[hali_salama]\nkazi b() -> Tupu {\n}\n");
+    assert!(e.contains("kazi 'b'") || e.contains("'b'"), "{e}");
+    assert!(e.contains("kazi moja tu"), "{e}");
+}

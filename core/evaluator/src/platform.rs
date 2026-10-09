@@ -9,6 +9,20 @@
 //! - wasm32 without it: a silent no-op default, so an unconfigured `wasm32-unknown-unknown`
 //!   build still compiles (it cannot load native code, so it cannot run programs).
 
+// Runtime code never panics on its own: an impossible state is an error the program sees
+// (and its safe state handles), not a crash (see docs/design/safety-critical-roadmap.md §3).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use crate::value::EvalError;
 
 /// Block-buffered program output. `println!` flushes on every newline even into a pipe or a

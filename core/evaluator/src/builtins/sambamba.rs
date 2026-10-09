@@ -74,7 +74,7 @@ pub(crate) fn tenda(program: &crate::spawn::Shared, args: &[Value]) -> Result<Va
         })
     });
     let id = NEXT_HANDLE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    handles().lock().unwrap().insert(id, handle);
+    crate::sync::lock(&handles()).insert(id, handle);
     Ok(Value::sawa(Value::Namba(id as f64)))
 }
 
@@ -83,7 +83,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         "subiri_tenda".to_string(),
         Box::new(|args: &[Value]| {
             let id = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0) as u64;
-            let handle = handles().lock().unwrap().remove(&id);
+            let handle = crate::sync::lock(&handles()).remove(&id);
             // About to block: show what was printed so far.
             crate::platform::flush_stdout();
             match handle {

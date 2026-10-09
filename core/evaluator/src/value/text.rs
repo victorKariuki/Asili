@@ -23,6 +23,9 @@ const HEADER: usize = std::mem::size_of::<Header>();
 /// Shared text (see the module documentation).
 pub struct Text(NonNull<Header>);
 
+// Fails only for text longer than `isize::MAX` bytes, which no allocation could hold — the
+// same capacity overflow `Vec` and `String` stop at.
+#[allow(clippy::expect_used)]
 fn layout(cap: usize) -> Layout {
     Layout::from_size_align(HEADER + cap, std::mem::align_of::<Header>()).expect("text size")
 }

@@ -290,6 +290,27 @@ pub fn mfumo_exports() -> BuiltinExportTable {
         },
     );
     functions.insert(
+        "mlinzi_anza".to_string(),
+        FnContract {
+            params: vec![ValueType::Namba],
+            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
+        },
+    );
+    functions.insert(
+        "mlinzi_lisha".to_string(),
+        FnContract {
+            params: vec![],
+            ret: ValueType::Tupu,
+        },
+    );
+    functions.insert(
+        "kikomo_kumbukumbu".to_string(),
+        FnContract {
+            params: vec![ValueType::Namba],
+            ret: ValueType::Tupu,
+        },
+    );
+    functions.insert(
         "sikiliza_ishara".to_string(),
         FnContract {
             params: vec![ValueType::Namba, ValueType::Neno],

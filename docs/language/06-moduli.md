@@ -93,6 +93,8 @@ leta mfumo
 weka hoja = vigezo()                # Orodha<Neno> of CLI args
 weka path = pata_env("PATH")       # Chaguo<Neno>
 toka(1)                             # exit with code
+jaribu mlinzi_anza(100)            # watchdog: feed with mlinzi_lisha() within every 100 ms
+kikomo_kumbukumbu(8000000)         # memory limit in bytes (runner); see #[hali_salama]
 jaribu sikiliza_ishara(2, shimla)   # register signal handler (e.g. SIGINT = 2); returns
                                      # Tokeo<Tupu, Neno> — Kosa on platforms with no signal
                                      # support (non-Unix)

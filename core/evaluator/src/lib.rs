@@ -13,6 +13,7 @@ mod compiled;
 pub mod debug_hook;
 mod env;
 mod eval;
+mod hali_salama;
 mod host;
 mod native;
 pub mod nguvu;
@@ -23,6 +24,7 @@ pub mod salama;
 mod scalars;
 mod signal;
 mod spawn;
+mod sync;
 mod tir;
 mod value;
 

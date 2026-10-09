@@ -2,6 +2,20 @@
 //! into a function that takes them as parameters, runs the line, and returns its result with
 //! every top-level binding's new value.
 
+// Runtime code never panics on its own: an impossible state is an error the program sees
+// (and its safe state handles), not a crash (see docs/design/safety-critical-roadmap.md §3).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use asili_parser::{Block, Expr, Function, Module, Name, Param, Pattern, Stmt, TypeExpr};
 
 use crate::value::{EvalError, Value};

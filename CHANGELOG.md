@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Failure discipline**: a program's `#[hali_salama]` `kazi` (no parameters, at most one) is its
+  safe state — it runs once, on a fresh host, whenever the program fails in a way it cannot
+  recover from: an error leaving `kuu`, a fault inside the runtime (a panic hook; shipped builds
+  abort on panic), the watchdog expiring, or the memory limit being passed. New `mfumo` builtins:
+  `mlinzi_anza(ms)` / `mlinzi_lisha()` arm and feed a watchdog (expiry enters the safe state and
+  exits with code 5); `kikomo_kumbukumbu(baiti)` limits the program's memory, counted by the
+  runner's allocator and reported as an error at native code's next host call. Runtime modules
+  deny `unwrap`/`expect`/`panic!`/`unreachable!` (a new CI clippy step): impossible states are
+  errors the program sees, and poisoned locks are recovered (`sync::lock`). Tests in
+  `pata/runner/tests/hali_salama.rs`. The `.asb` format is now version 15 (it records the safe
+  state).
+
 - **Strict code (`#[salama]`)**: a `kazi` marked `#[salama]` must keep to a subset whose
   worst-case time and memory are known at build time — `Namba`/`Ukweli`/`Orodha<Namba>`
   parameters, loops only `kwa i kutoka a hadi b` with build-time bounds and an unassigned

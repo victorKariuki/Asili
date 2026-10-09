@@ -30,6 +30,35 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             Ok(Value::Chaguo(val))
         }),
     );
+    // The watchdog: once armed, the program must feed it (`mlinzi_lisha`) within `ms`
+    // milliseconds every time, or it enters its safe state and stops (exit code 5).
+    m.insert(
+        "mlinzi_anza".to_string(),
+        Box::new(|args: &[Value]| {
+            let ms = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0);
+            if !(ms.is_finite() && ms > 0.0) {
+                return Ok(Value::kosa("mlinzi_anza inahitaji muda chanya (ms)"));
+            }
+            mlinzi::anza(std::time::Duration::from_secs_f64(ms / 1000.0));
+            Ok(Value::sawa(Value::Tupu))
+        }),
+    );
+    m.insert(
+        "mlinzi_lisha".to_string(),
+        Box::new(|_args: &[Value]| {
+            mlinzi::lisha();
+            Ok(Value::Tupu)
+        }),
+    );
+    // The memory limit, in bytes (0: none): passing it stops the program through its safe state.
+    m.insert(
+        "kikomo_kumbukumbu".to_string(),
+        Box::new(|args: &[Value]| {
+            let bytes = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0);
+            crate::alloc::set_limit(bytes.max(0.0) as usize);
+            Ok(Value::Tupu)
+        }),
+    );
     m.insert(
         "toka".to_string(),
         Box::new(|args: &[Value]| {
@@ -84,4 +113,40 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             }
         }),
     );
+}
+
+/// The watchdog behind `mlinzi_anza`/`mlinzi_lisha`: one thread per process, checking the
+/// deadline the program keeps pushing forward.
+mod mlinzi {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    /// (interval, deadline) once armed.
+    static STATE: Mutex<Option<(Duration, Instant)>> = Mutex::new(None);
+    static THREAD: std::sync::Once = std::sync::Once::new();
+
+    pub(super) fn anza(interval: Duration) {
+        *crate::sync::lock(&STATE) = Some((interval, Instant::now() + interval));
+        #[cfg(not(target_arch = "wasm32"))]
+        THREAD.call_once(|| {
+            std::thread::spawn(|| loop {
+                let deadline = crate::sync::lock(&STATE).map(|(_, d)| d);
+                let Some(deadline) = deadline else { return };
+                let now = Instant::now();
+                if now >= deadline {
+                    crate::hali_salama::enter("mlinzi: muda umekwisha bila kulishwa");
+                    eprintln!("mlinzi: muda umekwisha bila kulishwa");
+                    crate::platform::flush_stdout();
+                    std::process::exit(5);
+                }
+                std::thread::sleep((deadline - now).min(Duration::from_millis(10)));
+            });
+        });
+    }
+
+    pub(super) fn lisha() {
+        if let Some((interval, deadline)) = crate::sync::lock(&STATE).as_mut() {
+            *deadline = Instant::now() + *interval;
+        }
+    }
 }

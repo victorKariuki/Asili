@@ -12,9 +12,64 @@
 //! that thread's lists (memory is memory). Peak usage per size class bounds the footprint, as
 //! in most slab allocators.
 
+// Runtime code never panics on its own: an impossible state is an error the program sees
+// (and its safe state handles), not a crash (see docs/design/safety-critical-roadmap.md §3).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::UnsafeCell;
 use std::ptr::null_mut;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+/// Bytes this allocator holds from the system (chunks and large blocks): the program's memory.
+static SYSTEM_BYTES: AtomicUsize = AtomicUsize::new(0);
+/// The memory limit in bytes (`kikomo_kumbukumbu`), 0 for none.
+static LIMIT: AtomicUsize = AtomicUsize::new(0);
+/// Set once the limit is passed; native code's host turns it into an error at its next call.
+static OVER: AtomicBool = AtomicBool::new(false);
+
+/// Limit the program's memory to `bytes` (0: no limit). Enforced where this allocator is the
+/// global one (the standalone runner): passing it is an error at the host's next call, which
+/// stops the program through its safe state. The limit is soft — the allocation that passes it
+/// still succeeds, so the runtime never fails half-way through its own bookkeeping.
+pub fn set_limit(bytes: usize) {
+    LIMIT.store(bytes, Ordering::Relaxed);
+    OVER.store(false, Ordering::Relaxed);
+    note(0);
+}
+
+/// Bytes held from the system now.
+pub fn system_bytes() -> usize {
+    SYSTEM_BYTES.load(Ordering::Relaxed)
+}
+
+/// Whether the memory limit has been passed.
+pub(crate) fn over_limit() -> bool {
+    OVER.load(Ordering::Relaxed)
+}
+
+/// `delta` more bytes held from the system.
+fn note(delta: usize) {
+    let now = SYSTEM_BYTES.fetch_add(delta, Ordering::Relaxed) + delta;
+    let limit = LIMIT.load(Ordering::Relaxed);
+    if limit != 0 && now > limit {
+        OVER.store(true, Ordering::Relaxed);
+    }
+}
+
+fn released(bytes: usize) {
+    SYSTEM_BYTES.fetch_sub(bytes, Ordering::Relaxed);
+}
 
 /// Block sizes, 16-byte multiples growing by about a quarter.
 const SIZES: [usize; 28] = [
@@ -90,6 +145,7 @@ impl AsiliAlloc {
                 if chunk.is_null() {
                     return null_mut();
                 }
+                note(CHUNK);
                 cache.bump = chunk;
                 // SAFETY: within the chunk just allocated.
                 cache.end = unsafe { chunk.add(CHUNK) };
@@ -122,7 +178,13 @@ unsafe impl GlobalAlloc for AsiliAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         match class(&layout) {
             Some(c) => unsafe { Self::take(c) },
-            None => unsafe { System.alloc(layout) },
+            None => {
+                let p = unsafe { System.alloc(layout) };
+                if !p.is_null() {
+                    note(layout.size());
+                }
+                p
+            }
         }
     }
 
@@ -130,7 +192,10 @@ unsafe impl GlobalAlloc for AsiliAlloc {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         match class(&layout) {
             Some(c) => unsafe { Self::give(c, ptr) },
-            None => unsafe { System.dealloc(ptr, layout) },
+            None => {
+                released(layout.size());
+                unsafe { System.dealloc(ptr, layout) }
+            }
         }
     }
 
@@ -141,7 +206,14 @@ unsafe impl GlobalAlloc for AsiliAlloc {
         match (class(&layout), class(&new_layout)) {
             // Same block size: nothing to move.
             (Some(a), Some(b)) if a == b => ptr,
-            (None, None) => unsafe { System.realloc(ptr, layout, new_size) },
+            (None, None) => {
+                let p = unsafe { System.realloc(ptr, layout, new_size) };
+                if !p.is_null() {
+                    released(layout.size());
+                    note(new_size);
+                }
+                p
+            }
             _ => {
                 let new = unsafe { self.alloc(new_layout) };
                 if !new.is_null() {

@@ -101,7 +101,11 @@ fn plain_ascii(b: &[u8]) -> bool {
     };
     let mut chunks = b.chunks_exact(8);
     for c in &mut chunks {
-        if flagged(u64::from_le_bytes(c.try_into().expect("8 bytes"))) {
+        // `chunks_exact(8)`: always eight bytes.
+        let Ok(word) = <[u8; 8]>::try_from(c) else {
+            return false;
+        };
+        if flagged(u64::from_le_bytes(word)) {
             return false;
         }
     }
@@ -585,7 +589,7 @@ pub(crate) fn pure_method(
             let v = args_val.first().cloned().unwrap_or(Value::Hamna);
             match v.try_into_send() {
                 Some(sv) => {
-                    let sent = tx.lock().unwrap().send(sv).is_ok();
+                    let sent = crate::sync::lock(&tx).send(sv).is_ok();
                     Ok(Value::Tokeo(if sent {
                         Ok(Box::new(Value::Tupu))
                     } else {
@@ -601,7 +605,7 @@ pub(crate) fn pure_method(
         }
         (Value::NjiaRx(rx), "pokea") => {
             crate::platform::flush_stdout(); // about to block: show what was printed so far
-            let guard = rx.lock().unwrap();
+            let guard = crate::sync::lock(&rx);
             match guard.recv() {
                 Ok(sv) => Ok(Value::sawa(sv.into_value())),
                 Err(_) => Ok(Value::kosa("pokea: upande wa kutuma umefungwa")),
@@ -615,7 +619,7 @@ pub(crate) fn pure_method(
             let v = args_val.first().cloned().unwrap_or(Value::Hamna);
             match v.try_into_send() {
                 Some(sv) => {
-                    let sent = tx.lock().unwrap().send(sv).is_ok();
+                    let sent = crate::sync::lock(&tx).send(sv).is_ok();
                     Ok(Value::Tokeo(if sent {
                         Ok(Box::new(Value::Tupu))
                     } else {
@@ -631,7 +635,7 @@ pub(crate) fn pure_method(
         }
         (Value::NjiaRxBounded(rx), "pokea") => {
             crate::platform::flush_stdout(); // about to block: show what was printed so far
-            let guard = rx.lock().unwrap();
+            let guard = crate::sync::lock(&rx);
             match guard.recv() {
                 Ok(sv) => Ok(Value::sawa(sv.into_value())),
                 Err(_) => Ok(Value::kosa("pokea: upande wa kutuma umefungwa")),

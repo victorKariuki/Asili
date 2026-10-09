@@ -8,6 +8,20 @@
 //! `pata-cli`/`pata-runner`'s existing precedent). `pata-dap` re-exports `DebugHook` from here
 //! rather than defining its own copy, so both sides of the contract stay in sync by construction.
 
+// Runtime code never panics on its own: an impossible state is an error the program sees
+// (and its safe state handles), not a crash (see docs/design/safety-critical-roadmap.md §3).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -63,7 +77,7 @@ impl RealDebugHook {
     }
 
     pub fn set_breakpoints(&self, lines: Vec<usize>) {
-        *self.breakpoints.lock().unwrap() = lines;
+        *crate::sync::lock(&self.breakpoints) = lines;
     }
 
     /// Whether execution has genuinely paused at least once — real observability for a caller
@@ -92,21 +106,23 @@ impl Default for RealDebugHook {
 
 impl DebugHook for RealDebugHook {
     fn record_bindings(&self, bindings: Vec<(String, String)>) {
-        *self.bindings.lock().unwrap() = bindings;
+        *crate::sync::lock(&self.bindings) = bindings;
     }
 
     fn should_pause(&self, line: usize) -> bool {
-        if !self.breakpoints.lock().unwrap().contains(&line) {
+        if !crate::sync::lock(&self.breakpoints).contains(&line) {
             return false;
         }
 
         self.did_pause.store(true, Ordering::SeqCst);
         self.paused_at_line.store(line as i64, Ordering::SeqCst);
         let (lock, cvar) = &*self.paused;
-        let mut is_paused = lock.lock().unwrap();
+        let mut is_paused = crate::sync::lock(&lock);
         *is_paused = true;
         while *is_paused {
-            is_paused = cvar.wait(is_paused).unwrap();
+            is_paused = cvar
+                .wait(is_paused)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
         }
         self.paused_at_line.store(-1, Ordering::SeqCst);
         true
@@ -114,13 +130,13 @@ impl DebugHook for RealDebugHook {
 
     fn resume(&self) {
         let (lock, cvar) = &*self.paused;
-        let mut is_paused = lock.lock().unwrap();
+        let mut is_paused = crate::sync::lock(&lock);
         *is_paused = false;
         cvar.notify_all();
     }
 
     fn current_bindings(&self) -> Vec<(String, String)> {
-        self.bindings.lock().unwrap().clone()
+        crate::sync::lock(&self.bindings).clone()
     }
 }
 

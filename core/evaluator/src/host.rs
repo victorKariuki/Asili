@@ -5,6 +5,20 @@
 //! method calls, …) come back through [`native_exec`] one at a time and run here on the shared
 //! semantics (`eval::ops`, `eval::methods`).
 
+// Runtime code never panics on its own: an impossible state is an error the program sees
+// (and its safe state handles), not a crash (see docs/design/safety-critical-roadmap.md §3).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use crate::builtins::BuiltinFn;
 use crate::bytecode::{
     BytecodeFunc, BytecodeProgram, CmpOp, IndexMode, Opcode, Operand, StoredConstant, Ty, UnaryCode,
@@ -308,7 +322,7 @@ impl<'p> Host<'p> {
         };
         let values = self.call_values(init as usize, Vec::new())?;
         let Value::Orodha(items) = &values else {
-            unreachable!("the constants function returns an Orodha");
+            return Err(internal("thabiti zilizokokotolewa"));
         };
         for (k, c) in self.program.constants.iter().enumerate() {
             if let StoredConstant::Computed(i) = c {
@@ -520,6 +534,12 @@ impl<'p> Host<'p> {
     /// Run the `kazi` registered (`sikiliza_ishara`) for a signal that arrived, if any. Polled
     /// whenever native code calls into the host.
     fn poll_signal(&mut self) -> Result<(), EvalError> {
+        if crate::alloc::over_limit() {
+            return Err(EvalError::Unknown(format!(
+                "kikomo cha kumbukumbu kimezidiwa (baiti {})",
+                crate::alloc::system_bytes()
+            )));
+        }
         let signal = crate::signal::take_pending();
         if signal == 0 {
             return Ok(());
@@ -575,10 +595,14 @@ impl<'p> Host<'p> {
                 };
             }
             Opcode::IterItem { dst, items, idx } => {
-                let Value::Orodha(items) = &frame.vals[*items as usize] else {
-                    unreachable!("IterItems leaves an Orodha")
+                let item = match &frame.vals[*items as usize] {
+                    Value::Orodha(items) => items.get(frame.nums[*idx as usize] as usize).cloned(),
+                    _ => None,
                 };
-                frame.vals[*dst as usize] = items[frame.nums[*idx as usize] as usize].clone();
+                let Some(item) = item else {
+                    fail!(internal("kipengee cha kitanzi"));
+                };
+                frame.vals[*dst as usize] = item;
                 return Flow::Next;
             }
             Opcode::FieldNum {
@@ -805,12 +829,12 @@ impl<'p> Host<'p> {
             }
             Opcode::ValBinary { op, dst, a, b } => {
                 if dst == a && dst != b {
-                    let [target, r] = frame
-                        .vals
-                        .get_disjoint_mut([*dst as usize, *b as usize])
-                        .expect("distinct registers");
-                    if ops::assign_in_place(op, target, r) {
-                        return Flow::Next;
+                    if let Ok([target, r]) =
+                        frame.vals.get_disjoint_mut([*dst as usize, *b as usize])
+                    {
+                        if ops::assign_in_place(op, target, r) {
+                            return Flow::Next;
+                        }
                     }
                 }
                 match ops::binary_value(op, &frame.vals[*a as usize], &frame.vals[*b as usize]) {
@@ -1022,7 +1046,7 @@ impl<'p> Host<'p> {
             | Opcode::Floor { .. }
             | Opcode::Ceil { .. }
             | Opcode::Trunc { .. }
-            | Opcode::Cmp { .. } => unreachable!("numeric_op handles numeric instructions"),
+            | Opcode::Cmp { .. } => fail!(internal("maagizo ya namba")),
             Opcode::Jump { .. }
             | Opcode::JumpIfFalse { .. }
             | Opcode::JumpIfTrue { .. }
@@ -1086,6 +1110,12 @@ fn operand_value(frame: &Frame, op: Operand) -> Value {
         ),
         Ty::Val => frame.vals[op.reg as usize].clone(),
     }
+}
+
+/// An instruction found the host in a state the compiler never produces: an error the program
+/// sees (and its safe state handles), not a crash.
+fn internal(what: &str) -> EvalError {
+    EvalError::Unknown(format!("kosa la ndani la Asili ({what})"))
 }
 
 fn copy_operand(from: &Frame, src: Operand, to: &mut Frame, dst: Operand) {

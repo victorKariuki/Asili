@@ -164,7 +164,8 @@ pub(crate) fn big_numeric_binary_op(
             match v {
                 Value::NambaKuu(n) => (*n.clone()).clone(),
                 Value::Namba(n) => BigInt::from(*n as i64),
-                _ => unreachable!("both_int guard checked above"),
+                // Not reached: `both_int` admits only these two.
+                _ => BigInt::default(),
             }
         };
         let ai = to_bigint(l);

@@ -28,6 +28,9 @@ jobs:
       - name: cargo test --workspace
         run: cargo test --workspace
 
+      - name: Runtime never panics (clippy deny lints in the evaluator's runtime modules)
+        run: cargo clippy -p asili-evaluator --lib
+
   native-platforms:
     # nguvu on every platform it targets, on real hardware: AArch64 Linux, Apple silicon macOS
     # (MAP_JIT mapping) and x86-64 Windows (Microsoft x64 calling convention). The engine

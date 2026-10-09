@@ -2,6 +2,20 @@
 //! module constants are computed afresh, as each run of a program computes them): how
 //! `pata jaribu` runs every test and fixture of a module.
 
+// Runtime code never panics on its own: an impossible state is an error the program sees
+// (and its safe state handles), not a crash (see docs/design/safety-critical-roadmap.md §3).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use std::sync::Arc;
 
 use asili_parser::Module;
