@@ -658,6 +658,7 @@ mod tests {
 
     /// Each encoding against the bytes `llvm-mc` gives for the same instruction (skipped where
     /// `llvm-mc` is not installed).
+    // Verifies: REQ-TGT-4
     #[test]
     fn encodings_match_llvm() {
         type Case = (&'static str, fn(&mut Asm));
@@ -837,6 +838,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // Verifies: REQ-TGT-4
     #[test]
     fn branches_reach_their_labels() {
         // Check against llvm-mc's own branch encodings for the same distances.

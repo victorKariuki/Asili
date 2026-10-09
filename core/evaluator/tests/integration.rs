@@ -543,6 +543,7 @@ fn execute_tests_with_timeout_continues_past_a_timed_out_test() {
     assert!(by_name["baada_yake"].passed);
 }
 
+// Verifies: REQ-RUN-2
 #[test]
 fn recursion_depth_limit_eval() {
     // The limit counts `kazi` calls (10,000, as in native code), not nesting: deeply nested

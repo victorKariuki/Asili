@@ -1,0 +1,194 @@
+//! Traceability from the safety requirements (`docs/assurance/requirements.md`) to the tests
+//! that verify them. A test names what it verifies in a comment above it — `// Verifies:
+//! REQ-STRICT-1, REQ-STRICT-2` (`# Verifies:` in a shell script, which then stands for the whole
+//! script). This test fails when a requirement verified by test has no test, when a test names a
+//! requirement that does not exist, or when `docs/assurance/traceability.md` — the matrix
+//! generated from both — is out of date. `ASILI_TRACE=write` regenerates the matrix.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+struct Requirement {
+    id: String,
+    title: String,
+    verification: String,
+}
+
+fn root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn requirements() -> Vec<Requirement> {
+    let text = std::fs::read_to_string(root().join("docs/assurance/requirements.md"))
+        .expect("requirements.md");
+    let mut out: Vec<Requirement> = Vec::new();
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("### ") {
+            let (id, title) = rest.split_once(": ").expect("`### ID: title`");
+            out.push(Requirement {
+                id: id.to_string(),
+                title: title.to_string(),
+                verification: String::new(),
+            });
+        } else if let Some(v) = line.strip_prefix("Verification: ") {
+            out.last_mut().expect("a requirement").verification = v.to_string();
+        } else if !line.starts_with('#') && !line.is_empty() {
+            // A continuation of the verification line (wrapped).
+            if let Some(r) = out.last_mut() {
+                if !r.verification.is_empty() && !r.verification.ends_with(')') {
+                    r.verification.push(' ');
+                    r.verification.push_str(line.trim());
+                }
+            }
+        }
+    }
+    for r in &out {
+        assert!(!r.verification.is_empty(), "{}: no Verification line", r.id);
+    }
+    out
+}
+
+/// Every `.rs` and `.sh` file under the source directories.
+fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        if path.is_dir() {
+            if name != "target" && name != "node_modules" && name != ".git" {
+                sources(&path, out);
+            }
+        } else if path.extension().is_some_and(|e| e == "rs" || e == "sh") {
+            out.push(path);
+        }
+    }
+}
+
+/// Requirement ID → the tests (`path::function`, or a script's path) that verify it.
+fn traces() -> BTreeMap<String, Vec<String>> {
+    let root = root();
+    let mut files = Vec::new();
+    for dir in ["core", "pata", "driver"] {
+        sources(&root.join(dir), &mut files);
+    }
+    files.sort();
+    let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for file in files {
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        let rel = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .display()
+            .to_string()
+            .replace('\\', "/");
+        let script = rel.ends_with(".sh");
+        let lines: Vec<&str> = text.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            let marker = if script {
+                "# Verifies: "
+            } else {
+                "// Verifies: "
+            };
+            let Some(at) = line.find(marker) else {
+                continue;
+            };
+            // Not this file's own documentation of the syntax.
+            if rel.ends_with("tests/traceability.rs") {
+                continue;
+            }
+            let ids = line[at + marker.len()..]
+                .split([',', ' '])
+                .filter(|s| s.starts_with("REQ-"))
+                .map(str::to_string);
+            let name = if script {
+                rel.clone()
+            } else {
+                let f = lines[i + 1..]
+                    .iter()
+                    .find_map(|l| {
+                        let l = l.trim_start();
+                        let l = l.strip_prefix("pub ").unwrap_or(l);
+                        let l = l.strip_prefix("async ").unwrap_or(l);
+                        l.strip_prefix("fn ")
+                            .map(|r| r.split(['(', '<']).next().unwrap_or("").to_string())
+                    })
+                    .unwrap_or_else(|| {
+                        panic!("{rel}:{}: `Verifies:` with no function after it", i + 1)
+                    });
+                format!("{rel}::{f}")
+            };
+            for id in ids {
+                out.entry(id).or_default().push(name.clone());
+            }
+        }
+    }
+    out
+}
+
+fn matrix(reqs: &[Requirement], traces: &BTreeMap<String, Vec<String>>) -> String {
+    let mut m = String::from(
+        "# Traceability matrix\n\n\
+         Generated by `core/evaluator/tests/traceability.rs` from\n\
+         [requirements.md](requirements.md) and the `Verifies:` comments on tests; do not edit.\n\
+         Regenerate with `ASILI_TRACE=write cargo test -p asili-evaluator --test traceability`.\n\n\
+         | Requirement | Verification | Evidence |\n|---|---|---|\n",
+    );
+    for r in reqs {
+        let evidence = match traces.get(&r.id) {
+            Some(tests) => tests
+                .iter()
+                .map(|t| format!("`{t}`"))
+                .collect::<Vec<_>>()
+                .join("<br>"),
+            None => "—".to_string(),
+        };
+        m.push_str(&format!(
+            "| **{}** {} | {} | {} |\n",
+            r.id,
+            r.title,
+            r.verification.replace('|', "\\|"),
+            evidence
+        ));
+    }
+    m
+}
+
+#[test]
+fn every_requirement_is_traced_and_the_matrix_is_current() {
+    let reqs = requirements();
+    let traces = traces();
+    let known: Vec<&str> = reqs.iter().map(|r| r.id.as_str()).collect();
+    let unknown: Vec<&String> = traces
+        .keys()
+        .filter(|id| !known.contains(&id.as_str()))
+        .collect();
+    assert!(
+        unknown.is_empty(),
+        "tests name unknown requirements: {unknown:?}"
+    );
+    let untested: Vec<&str> = reqs
+        .iter()
+        .filter(|r| r.verification.starts_with("test") && !traces.contains_key(&r.id))
+        .map(|r| r.id.as_str())
+        .collect();
+    assert!(
+        untested.is_empty(),
+        "requirements verified by test with no test: {untested:?}"
+    );
+    let generated = matrix(&reqs, &traces);
+    let path = root().join("docs/assurance/traceability.md");
+    if std::env::var_os("ASILI_TRACE").is_some_and(|v| v == "write") {
+        std::fs::write(&path, &generated).expect("write traceability.md");
+        return;
+    }
+    let committed = std::fs::read_to_string(&path).unwrap_or_default();
+    assert!(
+        committed == generated,
+        "docs/assurance/traceability.md is out of date: regenerate it with \
+         ASILI_TRACE=write cargo test -p asili-evaluator --test traceability"
+    );
+}

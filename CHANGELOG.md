@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Assurance documents** (`docs/assurance/`): the toolchain's safety requirements with IDs
+  (`requirements.md`), a requirement-to-test traceability matrix generated from `// Verifies:
+  REQ-…` comments on tests (`traceability.md`; `tests/traceability.rs` fails when a requirement
+  verified by test has none, a test names an unknown requirement, or the matrix is stale), a
+  risk register in ISO 14971 form, and tool-qualification and SOUP evidence with the toolchain's
+  limits — the language's contribution to an IEC 62304 file, not a certification. New tests for
+  the IR verifier and for device build errors.
+
 - **Cortex-M target for strict code** (`pata jenga --lengo cortex-m`): every `#[salama]`
   function is compiled to Thumb-2 for ARMv7E-M with the `fpv5-d16` unit by `nguvu` itself — a
   new encoder (`t32.rs`, every encoding checked against `llvm-mc`) and code generator

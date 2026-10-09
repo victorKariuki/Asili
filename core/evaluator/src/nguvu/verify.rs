@@ -151,3 +151,64 @@ fn check_classes(func: &Func, inst: &Inst) -> Result<(), String> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nguvu::ir::{BlockData, IntOp, ENTRY_ARGS};
+
+    /// `v4 = 1; v5 = v4 + v4; return v5` over the four entry arguments.
+    fn good() -> Func {
+        let mut classes = vec![Class::Int; 6];
+        classes[4] = Class::Int;
+        Func {
+            classes,
+            blocks: vec![BlockData {
+                insts: vec![
+                    Inst::IConst {
+                        dst: VReg(4),
+                        value: 1,
+                    },
+                    Inst::Int {
+                        op: IntOp::Add,
+                        dst: VReg(5),
+                        a: VReg(4),
+                        b: VReg(4),
+                    },
+                ],
+                term: Term::Return(VReg(5)),
+            }],
+            cold: vec![false],
+            call_buffer: 0,
+            args: ENTRY_ARGS,
+        }
+    }
+
+    // Verifies: REQ-COMP-1
+    #[test]
+    fn malformed_functions_are_rejected() {
+        assert_eq!(verify(&good()), Ok(()));
+
+        let mut f = good();
+        f.blocks[0].insts.remove(0); // v4 read, never written
+        assert!(verify(&f)
+            .unwrap_err()
+            .contains("read before it is written"));
+
+        let mut f = good();
+        f.classes[5] = Class::Float; // an integer add into a float register
+        assert!(verify(&f).unwrap_err().contains("expected Int"));
+
+        let mut f = good();
+        f.blocks[0].term = Term::Jump(crate::nguvu::ir::Block(7));
+        assert!(verify(&f).unwrap_err().contains("missing block"));
+
+        let mut f = good();
+        f.blocks[0].term = Term::Return(VReg(99));
+        assert!(verify(&f).unwrap_err().contains("out of range"));
+
+        let mut f = good();
+        f.cold.clear();
+        assert!(verify(&f).is_err());
+    }
+}

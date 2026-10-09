@@ -3,6 +3,7 @@
 # native runner (`tenda`) and by asili-wasm under Node (native code as a wasm module, as in the
 # playground), and the outputs must match. Needs the wasm32-unknown-unknown target, Node and a
 # `wasm-bindgen` CLI of the version in Cargo.lock.
+# Verifies: REQ-TGT-1
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
 out="$(mktemp -d)"

@@ -51,6 +51,7 @@ fn agree_program(
     }
 }
 
+// Verifies: REQ-NUM-1
 #[test]
 fn operators_on_every_type() {
     agree(
@@ -90,6 +91,7 @@ fn operators_on_every_type() {
     );
 }
 
+// Verifies: REQ-NUM-1
 #[test]
 fn casts_and_number_display() {
     agree(

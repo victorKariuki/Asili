@@ -248,6 +248,7 @@ fn n(x: f64) -> Arg {
     Arg::Num(x)
 }
 
+// Verifies: REQ-TGT-2, REQ-RUN-1
 #[test]
 fn the_controller_example_agrees() {
     let source = std::fs::read_to_string(concat!(
@@ -272,6 +273,7 @@ fn the_controller_example_agrees() {
     );
 }
 
+// Verifies: REQ-TGT-2
 #[test]
 fn integers_bits_and_calls_agree() {
     let source = r#"
@@ -369,6 +371,7 @@ fn integers_bits_and_calls_agree() {
     agree("hesabu", source, &calls);
 }
 
+// Verifies: REQ-TGT-2
 #[test]
 fn random_strict_programs_agree() {
     let count: u64 = std::env::var("ASILI_KIFAA_PROGRAMS")
@@ -390,4 +393,41 @@ fn random_strict_programs_agree() {
     }
     let calls: Vec<(&str, Vec<Arg>)> = calls.iter().map(|(f, a)| (f.as_str(), a.clone())).collect();
     agree("nasibu", &source, &calls);
+}
+
+/// Builds for the device only (no tools needed): what a device cannot run is a build error
+/// naming the function and the reason.
+// Verifies: REQ-TGT-3
+#[test]
+fn what_a_device_cannot_run_is_a_build_error() {
+    let build = |source: &str| -> Result<(), String> {
+        let tokens = asili_lexer::tokenize(source).expect("tokenize");
+        let module = asili_parser::parse_tokens(&tokens).expect("parse");
+        let program = compile_module_explained(&module).expect("bytecode");
+        let strict: Vec<usize> = module
+            .functions
+            .iter()
+            .filter(|f| asili_evaluator::salama::is_strict(f))
+            .filter_map(|f| program.functions.iter().position(|g| g.name == f.name))
+            .collect();
+        device::build(&program, &strict, "t").map(|_| ())
+    };
+    // A callee that writes the list it receives (inlined on a device, it would write the
+    // caller's list).
+    let e = build(
+        "#[salama]\nkazi weka_sifuri(l: Orodha<Namba>) -> Namba {\n    l[0] = 0\n    rejesha 1\n}\n\n\
+         #[salama]\nkazi f(l: Orodha<Namba>) -> Namba {\n    rejesha weka_sifuri(l)\n}\n",
+    )
+    .unwrap_err();
+    assert!(
+        e.contains("kazi salama 'f' haiwezi kujengwa kwa Cortex-M")
+            && e.contains("inayoandika kwenye orodha"),
+        "{e}"
+    );
+    // Within the subset a device runs, the same shapes build.
+    build(
+        "#[salama]\nkazi soma(l: Orodha<Namba>) -> Namba {\n    rejesha l[0] * 2\n}\n\n\
+         #[salama]\nkazi f(l: Orodha<Namba>, x: Namba) -> Namba {\n    rejesha soma(l) + x\n}\n",
+    )
+    .unwrap();
 }

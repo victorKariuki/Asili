@@ -263,6 +263,7 @@ fn run(source: &str, options: Options) -> Result<String, String> {
         .unwrap_or_else(|e| format!("ERR {e}")))
 }
 
+// Verifies: REQ-COMP-1, REQ-COMP-2
 #[test]
 fn optimized_code_computes_what_unoptimized_code_does() {
     if !nguvu::supported() {
@@ -303,6 +304,7 @@ fn optimized_code_computes_what_unoptimized_code_does() {
 
 /// The same source always builds the same bytes — bytecode and machine code — however the
 /// parallel code generator schedules its work, so a build can be reproduced and checked.
+// Verifies: REQ-COMP-3
 #[test]
 fn builds_are_reproducible() {
     if !nguvu::supported() {

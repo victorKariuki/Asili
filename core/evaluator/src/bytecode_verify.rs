@@ -151,11 +151,13 @@ mod tests {
             .expect("function")
     }
 
+    // Verifies: REQ-COMP-4
     #[test]
     fn what_the_compiler_emits_passes() {
         assert_eq!(verify(&program()), Ok(()));
     }
 
+    // Verifies: REQ-COMP-4
     #[test]
     fn damaged_programs_are_rejected() {
         let mut p = program();
@@ -195,6 +197,7 @@ mod tests {
         assert!(verify(&p).unwrap_err().contains("hauishii"));
     }
 
+    // Verifies: REQ-COMP-4
     #[test]
     fn a_damaged_kilele_file_does_not_load() {
         let mut p = program();

@@ -78,6 +78,7 @@ fn numeric_list_reads_lower_to_one_unboxed_load() {
     assert!(matches!(value, Value::Namba(n) if n == 5.0));
 }
 
+// Verifies: REQ-RUN-1
 #[test]
 fn out_of_bounds_numeric_read_propagates_tokeo_error() {
     let program = compile(

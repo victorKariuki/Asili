@@ -32,6 +32,7 @@ kazi zima_salama() -> Tupu {
 }
 "#;
 
+// Verifies: REQ-FAIL-1
 #[test]
 fn an_error_leaving_kuu_enters_the_safe_state() {
     let (code, out) = run_source(
@@ -52,6 +53,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {{
     assert_eq!(out.matches("vali zimefungwa").count(), 1, "{out}");
 }
 
+// Verifies: REQ-FAIL-2
 #[test]
 fn the_watchdog_enters_the_safe_state_when_not_fed() {
     let (code, out) = run_source(
@@ -78,6 +80,7 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {{
     assert_eq!(out.matches("vali zimefungwa").count(), 1, "{out}");
 }
 
+// Verifies: REQ-FAIL-3
 #[test]
 fn passing_the_memory_limit_enters_the_safe_state() {
     let (code, out) = run_source(

@@ -54,6 +54,7 @@ fn check(name: &str, source: &str, functions: &[&str]) {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+// Verifies: REQ-NUM-1
 #[test]
 fn signed_zero_remainders_and_floor_division() {
     check(
@@ -84,6 +85,7 @@ fn signed_zero_remainders_and_floor_division() {
     );
 }
 
+// Verifies: REQ-NUM-2
 #[test]
 fn integers_beyond_two_pow_53_stay_exact() {
     check(
@@ -115,6 +117,7 @@ fn integers_beyond_two_pow_53_stay_exact() {
     );
 }
 
+// Verifies: REQ-NUM-1
 #[test]
 fn shifts_and_bitwise_operators() {
     check(
@@ -139,6 +142,7 @@ fn shifts_and_bitwise_operators() {
     );
 }
 
+// Verifies: REQ-NUM-1
 #[test]
 fn nan_and_infinities() {
     check(
@@ -178,6 +182,7 @@ fn nan_and_infinities() {
     );
 }
 
+// Verifies: REQ-RUN-1
 #[test]
 fn list_access_errors_and_value_semantics() {
     check(
@@ -302,6 +307,7 @@ fn sudoku_example_matches() {
     check("sudoku", &source, &["tatua"]);
 }
 
+// Verifies: REQ-COMP-5
 #[test]
 fn nguvu_image_rejects_other_programs_and_corruption() {
     use asili_evaluator::nguvu::{load_image, supported, write_image};
@@ -415,6 +421,7 @@ fn unrolled_loops_if_conversion_and_bit_tests() {
     );
 }
 
+// Verifies: REQ-NUM-2
 #[test]
 fn division_by_constants_over_small_ranges() {
     check(
@@ -444,6 +451,7 @@ fn division_by_constants_over_small_ranges() {
     );
 }
 
+// Verifies: REQ-NUM-2
 #[test]
 fn division_by_large_constants() {
     check(

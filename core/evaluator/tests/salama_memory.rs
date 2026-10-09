@@ -66,6 +66,7 @@ const SOURCE: &str = r#"
     }
 "#;
 
+// Verifies: REQ-STRICT-3
 #[test]
 fn strict_code_allocates_nothing_while_it_runs() {
     if !asili_evaluator::nguvu::supported() {

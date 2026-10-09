@@ -45,6 +45,7 @@ const CONTROLLER: &str = r#"
     }
 "#;
 
+// Verifies: REQ-STRICT-2
 #[test]
 fn strict_functions_build_with_bounds_and_run() {
     let m = module(CONTROLLER);
@@ -65,6 +66,7 @@ fn strict_functions_build_with_bounds_and_run() {
     );
 }
 
+// Verifies: REQ-STRICT-1
 #[test]
 fn unbounded_loops_are_rejected() {
     let e = errors(
@@ -84,6 +86,7 @@ fn unbounded_loops_are_rejected() {
     assert!(e.contains("kigeuzi cha kitanzi 'i'"), "{e}");
 }
 
+// Verifies: REQ-STRICT-1
 #[test]
 fn recursion_and_calls_out_of_the_subset_are_rejected() {
     let e = errors("#[salama]\nkazi f(n: Namba) -> Namba {\n    rejesha f(n - 1)\n}\n");
@@ -96,6 +99,7 @@ fn recursion_and_calls_out_of_the_subset_are_rejected() {
     assert!(e.contains("inaita 'g', ambayo si kazi salama"), "{e}");
 }
 
+// Verifies: REQ-STRICT-1
 #[test]
 fn allocation_and_other_types_are_rejected() {
     let e = errors("#[salama]\nkazi f(a: Orodha<Namba>) -> Tupu {\n    a.ongeza(1)\n}\n");
@@ -106,6 +110,7 @@ fn allocation_and_other_types_are_rejected() {
     assert!(e.contains("operesheni"), "{e}");
 }
 
+// Verifies: REQ-FAIL-6
 #[test]
 fn the_safe_state_takes_nothing_and_there_is_one() {
     let e = errors("#[hali_salama]\nkazi zima(x: Namba) -> Tupu {\n}\n");

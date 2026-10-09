@@ -54,6 +54,11 @@ To build it locally:
   shipping `node_modules` in the packaged `.vsix`. `make install-ext` from the repo root builds,
   packages, and installs it in one step.
 - **lib/std/** — `.asi` interface stubs for the standard library; keep these in sync with built-in modules and `builtin_modules.rs`.
+- **driver/** — targets beside the native runner: `wasm` (the browser playground build) and
+  `kifaa` (`asili-kifaa`, the `no_std` runtime Cortex-M firmware links with strict code built by
+  `pata jenga --lengo cortex-m`).
+- **docs/assurance/** — safety requirements, traceability, risk register and tool-qualification
+  evidence.
 - **docs/spec/** — Formal language specification. Spec changes should be reflected in [docs/spec/CHANGELOG.md](docs/spec/CHANGELOG.md).
 
 ## Code and style
@@ -83,7 +88,22 @@ To build it locally:
   at or below clang `-O2` C and report 90,665 attempts. See
   [docs/design/performance.md](docs/design/performance.md).
 
+- **Optimizer fuzzing** (any change to `nguvu`'s lowering or optimizer):  
+  `ASILI_FUZZ_PROGRAMS=2000 cargo test --release -p asili-evaluator --test fuzz`
+- **Cortex-M** (any change to `nguvu/t32.rs`, `codegen_t32.rs`, `device.rs` or `driver/kifaa`):  
+  `cargo test -p asili-evaluator --test kifaa` — needs `clang`, `ld.lld`, `qemu-arm-static`
+  and `rustup target add thumbv7em-none-eabihf`; skipped with a note where they are missing.
+
 New behavior should be covered by tests where practical (parser, semantic, evaluator, or CLI tests as appropriate).
+
+**Safety requirements.** Behaviour listed in
+[docs/assurance/requirements.md](docs/assurance/requirements.md) is traced to the tests that
+verify it: a test names the requirements it verifies in a `// Verifies: REQ-…` comment above
+it, and `cargo test -p asili-evaluator --test traceability` fails when a requirement has no
+test or the generated matrix (`docs/assurance/traceability.md`) is stale — regenerate it with
+`ASILI_TRACE=write cargo test -p asili-evaluator --test traceability`. A change to such
+behaviour updates the requirement, its tests and, where the risks change,
+[docs/assurance/risk-register.md](docs/assurance/risk-register.md).
 
 ## Submitting changes
 

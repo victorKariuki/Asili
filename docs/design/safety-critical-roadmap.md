@@ -128,6 +128,15 @@ an ID), a traceability matrix from IDs to tests (generated from test annotations
 register, and tool-qualification evidence for `pata` and `nguvu` (the fuzzing and validation in
 §4 is the core of it).
 
+**Status: documents done** (issue #82), in `docs/assurance/`: the toolchain's safety requirements
+with IDs (strict code, failure handling, results, the compiler, targets — the safety-relevant
+behaviour rather than every rule of `docs/spec/`), a traceability matrix generated from
+`// Verifies:` comments on tests and kept current by a test (which also fails when a requirement
+has no test), a risk register in ISO 14971 form, and tool-qualification and SOUP evidence with
+the toolchain's limits. Certification itself is not something a repository can do: IEC 62304
+compliance belongs to a manufacturer's product and process, assessed by the manufacturer and an
+auditor; these documents are the toolchain's evidence for that file.
+
 ## Order
 
 Strict mode (§1–2) first: it turns "usually fast" into "fast or it won't build", and the failure
