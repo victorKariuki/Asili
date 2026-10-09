@@ -74,7 +74,6 @@ Neno("Jibu ni: 35")
   REPL ni kwa ajili ya kutathmini semi/kauli dhidi ya vitu vilivyojengwa tayari; andika kazi/umbo/
   moduli mpya kwenye faili la `.as` na uliendeshe kwa `pata jenga --tenda`. Tazama
   [?kazi](kazi.md) na [?umbo](umbo.md).
-- Mstari unaojirudia (kutathmini usemi wowote huhesabiwa) huchapisha mstari wa mwisho
-  `  (undani: N)` unaoonyesha undani wa juu wa wito wa tathmini — hii huonekana baada ya karibu
-  kila tathmini halisi lakini imeondolewa kwenye mifano ya hapo juu na kwenye hati nyingine za
-  mada kwa urahisi wa kusoma; itarajie kuiona kwa vitendo.
+- Kila mstari huendeshwa kama msimbo asilia: hujengwa ukipokea vigeuzi vya kikao, na vigeuzi
+  unavyoviacha huhifadhiwa kwa mstari unaofuata. Mstari unaoshindwa haubadilishi kigeuzi
+  chochote.

@@ -1,11 +1,11 @@
-//! REPL: read-eval-print loop with persistent env. Use `?topic` to show docs from
+//! REPL: read-eval-print loop; each line runs as native code with the session's bindings. Use `?topic` to show docs from
 //! docs/repl/{lang}/{topic}.md. `?lugha en`/`?lugha sw` switches the help language
 //! for the rest of the session (default: sw).
 
 use super::{CliError, CliResult};
-use asili_evaluator::{run_block_in_env_with_telemetry, Env, Value};
+use asili_evaluator::{ReplSession, Value};
 use asili_lexer::tokenize;
-use asili_parser::{parse_tokens, Stmt};
+use asili_parser::parse_tokens;
 use pulldown_cmark::{Event, Parser};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
@@ -14,8 +14,7 @@ const REPL_FUNC: &str = "__repl__";
 const PROMPT: &str = "> ";
 
 pub fn run(_args: &[String]) -> CliResult {
-    let mut env = Env::new();
-    env.seed_global_constants();
+    let mut session = ReplSession::new();
     let mut lang = "sw".to_string();
 
     let stdin = io::stdin();
@@ -74,13 +73,10 @@ pub fn run(_args: &[String]) -> CliResult {
             }
         };
 
-        match run_block_in_env_with_telemetry(&module, &body, &mut env) {
-            Ok((v, peak_depth)) => {
+        match session.run(&module, &body) {
+            Ok(v) => {
                 if !matches!(v, Value::Tupu) {
                     println!("{:?}", v);
-                }
-                if peak_depth > 0 {
-                    println!("  (undani: {})", peak_depth);
                 }
             }
             Err(e) => eprintln!("kosa: {}", e),
@@ -89,8 +85,8 @@ pub fn run(_args: &[String]) -> CliResult {
     Ok(())
 }
 
-/// Parse line as block or as "rejesha `<expr>`". No semantic check — REPL runs in persistent env
-/// and undefined/type errors are reported at runtime by the evaluator.
+/// Parse line as block or as "rejesha `<expr>`". No semantic check — the session's bindings are
+/// not declared in the line, so undefined names are reported when the line is compiled.
 fn parse_repl_line(
     line: &str,
 ) -> Result<(asili_parser::Module, asili_parser::Block), Vec<asili_diagnostics::Diagnostic>> {
@@ -109,23 +105,13 @@ fn parse_repl_line(
         Ok((module, body))
     };
 
-    let (module, mut body) = try_parse(&format!("kazi {}() -> Tupu {{ {} }}", REPL_FUNC, line))
-        .or_else(|_| {
-            try_parse(&format!(
-                "kazi {}() -> Tupu {{ rejesha {} }}",
-                REPL_FUNC, line
-            ))
-        })?;
-    // If the only statement is an expression, treat it as "rejesha <expr>" so we print the value.
-    if body.statements.len() == 1 {
-        if let Stmt::Expr { expr, line } = &body.statements[0] {
-            body.statements = vec![Stmt::Return {
-                value: Some(expr.clone()),
-                line: *line,
-            }];
-        }
-    }
-    Ok((module, body))
+    // A lone expression is the line's value (see `ReplSession::run`).
+    try_parse(&format!("kazi {}() -> Tupu {{ {} }}", REPL_FUNC, line)).or_else(|_| {
+        try_parse(&format!(
+            "kazi {}() -> Tupu {{ rejesha {} }}",
+            REPL_FUNC, line
+        ))
+    })
 }
 
 /// Print and render content of docs/repl/{lang}/{topic}.md if it exists. Path is relative to current dir.

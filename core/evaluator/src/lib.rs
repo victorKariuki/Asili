@@ -21,6 +21,8 @@ pub mod nguvu;
 #[cfg(not(target_arch = "wasm32"))]
 mod numlist;
 mod platform;
+#[cfg(not(target_arch = "wasm32"))]
+mod repl;
 pub mod runtime;
 #[cfg(not(target_arch = "wasm32"))]
 mod scalars;
@@ -42,11 +44,13 @@ pub use bytecode::{
 pub use compiled::NativeProgram;
 pub use env::Env;
 pub use eval::eval_expr;
+#[cfg(not(target_arch = "wasm32"))]
+pub use repl::ReplSession;
 pub use runtime::EvalMetrics;
 pub use tir::{emit_asb_from_tir, lower_to_tir, validate_module, TypedIrFunction, TypedIrModule};
 pub use value::{ErrorKind, EvalError, EvalOut, Value};
 
-use asili_parser::{Block, Function, Module};
+use asili_parser::{Function, Module};
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,37 +58,6 @@ pub struct TestResult {
     pub name: String,
     pub passed: bool,
     pub message: String,
-}
-
-/// Run a block with an existing env (e.g. for REPL). Uses the given module for symbol resolution.
-/// Pushes a new scope for the block; bindings do not persist after the block ends.
-pub fn run_block(module: &Module, block: &Block, env: &mut Env) -> Result<Value, EvalError> {
-    let mut rt = runtime::Runtime::new(env, module);
-    match eval::eval_block_impl(block, &mut rt) {
-        Ok(EvalOut::Return(v)) => Ok(v),
-        Ok(_) => Ok(Value::Tupu),
-        Err(e) => Err(e),
-    }
-}
-
-/// Run a block in the current env without a new scope. Use for REPL so that `weka` bindings persist.
-pub fn run_block_in_env(module: &Module, block: &Block, env: &mut Env) -> Result<Value, EvalError> {
-    run_block_in_env_with_telemetry(module, block, env).map(|(v, _)| v)
-}
-
-/// Like `run_block_in_env` but returns peak evaluation depth for telemetry (development/validation).
-pub fn run_block_in_env_with_telemetry(
-    module: &Module,
-    block: &Block,
-    env: &mut Env,
-) -> Result<(Value, usize), EvalError> {
-    let mut rt = runtime::Runtime::new(env, module);
-    let out = match eval::eval_block_in_env(block, &mut rt) {
-        Ok(EvalOut::Return(v)) => Ok(v),
-        Ok(_) => Ok(Value::Tupu),
-        Err(e) => Err(e),
-    };
-    out.map(|v| (v, rt.peak_depth()))
 }
 
 /// Run a single function by name with the given arguments. Used for both `kuu` and tests.

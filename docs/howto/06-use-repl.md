@@ -9,14 +9,15 @@ Asili REPL. Andika 'toka' au 'exit' kuondoka. ?mada = msaada (mf. ?hisabati). ?l
 >
 ```
 
-Type an expression or statement, press enter, see the result. State persists across lines.
+Type an expression or statement, press enter, see the result. State persists across lines:
+each line runs as native code, with the session's variables passed in and kept afterwards (a line
+that fails leaves them unchanged).
 
 ```
 > weka x = 10
 > weka y = 25
 > x + y
 Namba(35.0)
-  (undani: 2)
 ```
 
 `toka` or `exit` quits. `?mada` shows inline help for a topic (`?hisabati`, `?orodha`, etc.) —

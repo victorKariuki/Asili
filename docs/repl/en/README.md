@@ -74,7 +74,5 @@ Neno("Jibu ni: 35")
   REPL is for evaluating expressions/statements against already-defined builtins; write new
   functions/structs/modules in a `.as` file and run with `pata jenga --tenda`. See
   [?kazi](kazi.md) and [?umbo](umbo.md).
-- A line that recurses (evaluating any expression counts) prints a trailing `  (undani: N)`
-  line showing the evaluation's peak call depth — this appears after almost every real
-  evaluation but is omitted from the example transcripts above and in the other topic docs for
-  readability; expect to see it in practice.
+- Each line runs as native code: it is compiled with the session's variables as its inputs, and
+  the variables it leaves are kept for the next line. A line that fails changes none of them.

@@ -145,6 +145,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   statement (`Opcode::Line`, only under `CompileOptions::lines`, with inlining off), so the
   tree-walker no longer tracks lines.
 
+- **The REPL runs native code**: `pata repl` keeps the session's variables as values
+  (`ReplSession`) and compiles each line into a function that takes them as parameters and
+  returns the line's value with every variable it leaves; a line that fails leaves them as they
+  were. An unknown name is reported in the semantic checker's words. The `(undani: N)` line is
+  gone with the tree-walker REPL (`run_block`, `run_block_in_env*`).
+
 - **The debugger runs native code**: `pata-dap` builds the program with statement marks that
   also name the visible locals (`CompileOptions { lines, bindings }`), and the host reports each
   statement to the debugger: breakpoints pause the native code, and the variables view shows the
