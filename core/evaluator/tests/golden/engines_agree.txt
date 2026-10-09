@@ -1,0 +1,63 @@
+append::ongeza	[Neno("abbbbb7"),Neno("a"),Neno("abbbbb"),Neno("a")]
+call_vs_local::t	N4026000000000000
+calls::aina_tano	Neno("sifurimojanyinginyinginyingi")
+calls::kosa	NaN
+calls::t	[N4039000000000000,N4083100000000000]
+casts::maandishi	[Neno("Siyo_Namba"),Neno("Ukomo"),Neno("-Ukomo"),Neno("0.30000000000000004"),Neno("Siyo_Namba,Ukomo,2.5"),Neno("Siyo_Namba|Ukomo|2.5")]
+casts::nambari	[N4045000000000000,N0000000000000000,N3ff0000000000000,N4050400000000000]
+computed_constants::kosa_ndani	N7ff0000000000000
+computed_constants::t	Neno("asili-627")
+computed_map_keys::t	Neno("21")
+computed_map_keys::ufunguo_mbaya	ERR aina: kamusi: ufunguo lazima uwe Neno, Namba, Ukweli au Herufi
+cow::nakala	[Neno("4"),Neno("3"),Neno("2"),Neno("3"),Neno("moja"),Neno("moja"),Neno("mbili"),Neno("mbili!")]
+cow_maps::nakala	[N3ff0000000000000,N4000000000000000,N3ff0000000000000,N4014000000000000,N3ff0000000000000,N4000000000000000]
+fields::hesabu	[N4012000000000000,Nc010000000000000,N4000000000000000,N4021000000000000,Nbff0000000000000,N4008000000000000,Nc01a000000000000,Nc000000000000000,N4010000000000000,Nbfe0000000000000,Nc010000000000000,N4014000000000000,N401a000000000000,Nbff0000000000000,N4018000000000000,N4012000000000000]
+impl_clash::t	[N4045800000000000,N4018000000000000]
+index::jaribu_nje	ERR KOSA: Struct("KosaMipaka", [("ujumbe", Neno("fahirisi nje ya mipaka: 3 (urefu 3)"))])
+index::kamusi_pata	N4008000000000000
+index::maneno	Neno("ba")
+index::maneno_nje	ERR paparika: fahirisi nje ya mipaka: 2 (urefu 2)
+index::na_swali	Tokeo(Kosa(Struct("KosaMipaka", [("ujumbe", Neno("fahirisi nje ya mipaka: 3 (urefu 3)"))])))
+index::nje	ERR paparika: fahirisi nje ya mipaka: 3 (urefu 3)
+index::nje_hasi	ERR paparika: fahirisi nje ya mipaka: 7 (urefu 3)
+index::soma	N4050000000000000
+iter::maneno	N406cc00000000000
+iter::nukta	N40c0d60000000000
+literal_types::t	[N4014000000000000,N4014000000000000,N4010000000000000,N4014000000000000,N4014000000000000,N4010000000000000,N4014000000000000,N4014000000000000,N4010000000000000,N4008000000000000,N4010000000000000,N4008000000000000]
+loops::kamusi_jumla	N401c000000000000
+loops::lebo	N4028000000000000
+loops::masafa	[N0000000000000000,N3ff0000000000000,N4000000000000000,N4024000000000000,N4034000000000000,N403e000000000000]
+match::t	[Neno("sifuri"),Neno("moja"),Neno("nyingine 2"),Neno("nyingine 3"),Neno("nyingine 0.30000000000000004"),Neno("12"),Neno("9"),Neno("0"),Neno("ni a"),Neno("ni b"),Neno("x"),Neno("kweli"),Neno("hamna"),Neno("8"),Neno("nje"),Neno("b"),Neno("kuna 9"),Neno("hamna z"),Neno("3")]
+methods::kamusi_na_seti	[N4000000000000000,N4000000000000000,N4000000000000000,N3ff0000000000000]
+methods::maneno	[Neno("habari dunia"),Neno("Habari Asili"),Neno("Habari DuniaHabari Dunia"),Neno("Habari+Dunia")]
+methods::nje_ya_mipaka	ERR aina: ingiza: index nje ya mipaka
+methods::orodha	[N402c000000000000,N4018000000000000,N4020000000000000,N4024000000000000,N4010000000000000,N4010000000000000]
+methods_from_a_pattern_weka::t	[N4028000000000000,N4054000000000000]
+numlist::t	[N405b400000000000,N4057800000000000,N4054400000000000,N4051000000000000,N404c800000000000,N4047000000000000,N4042800000000000,N403c000000000000,N4035000000000000,N402c000000000000,N4022000000000000,N4010000000000000,N3ff0000000000000,Nc000000000000000,Nc008000000000000,Nc010000000000000,Nfff0000000000000,Nfff0000000000000,N8000000000000000,N4000000000000000,N4008000000000000,N3fe0000000000000,N8000000000000000,N4340000000000000,N7e37e43c8800759c,N4091a00000000000,N7e37e43c8800759c,N401c000000000000,N4018000000000000]
+ops::kosa_la_aina	Nbff0000000000000
+ops::maneno	[Ukweli(false),Ukweli(true),Ukweli(true),Ukweli(false),Ukweli(true),Ukweli(true),Ukweli(true)]
+ops::mantiki	[Ukweli(false),Ukweli(true),Ukweli(false),Ukweli(true),Ukweli(false)]
+ops::nambari	[N4016000000000000,N4023000000000000,Nc02e000000000000,Nc00e000000000000,N3ff8000000000000,N404c200000000000,N403c000000000000,N4008000000000000,N4008000000000000,N402e000000000000,N4000000000000000,N3ff0000000000000]
+ops::unganisha	Neno("n=3.25 b=kweli")
+pattern_bindings::haulingani	ERR aina: muundo wa weka haulingani na thamani
+pattern_bindings::jozi_mbili	N403d000000000000
+pattern_bindings::ndani	Neno("abc")
+push::sukuma	[N4010000000000000,N413374ad00000000,N415343bd80000000,N416599dbe0000000,N41732b4680000000,N417debf910000000,N4072600000000000,N408b900000000000,N4072e00000000000,N418562da98000000,N4068600000000000]
+scalars::inatoroka	N4020000000000000
+scalars::kina_juu	ERR undani mno
+scalars::kina_sawa	N3ff0000000000000
+scalars::maandishi	Neno("Amani 30")
+scalars::mzunguko	N40d9588000000000
+scalars::pishana	[N4035000000000000,N402e000000000000,N4083100000000000]
+shadow::t	N4069980000000000
+tupa::achilia	N4052400000000000
+tupa_outer::t	N4008000000000000
+unwrap::chaguo	N402e000000000000
+unwrap::jaribu_kosa	ERR KOSA: Struct("KosaMipaka", [("ujumbe", Neno("fahirisi nje ya mipaka: 9 (urefu 2)"))])
+unwrap::kosa	Tokeo(Kosa(Struct("KosaMipaka", [("ujumbe", Neno("fahirisi nje ya mipaka: 9 (urefu 2)"))])))
+unwrap::sawa	N4008000000000000
+user_methods::t	[N4028000000000000,N402c000000000000,N4054000000000000,N4028000000000000]
+values::maandishi	Neno("Struct(\"Nukta\", [(\"x\", Namba(1.0)), (\"y\", Namba(2.0)), (\"jina\", Neno(\"nukta\"))]) nukta Enum(\"Rangi\", \"Kijani\", Some(Namba(7.0))) Enum(\"Rangi\", \"Nyekundu\", None) 2 Chaguo(Kuna(Namba(3.0))) Chaguo(Kuna(Neno(\"nukta\")))")
+values::si_umbo	ERR aina: uga unahitaji kitu cha aina ya umbo
+values::t	[N4039000000000000,N401c000000000000,N7ff0000000000000,Nfff0000000000000,N400921fb54442d18]
+values::uga_mbaya	ERR aina: uga haijulikani: z

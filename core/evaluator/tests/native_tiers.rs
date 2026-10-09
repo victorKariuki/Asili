@@ -9,6 +9,9 @@ use asili_evaluator::{compile_module, run_bytecode_function_on, Engine, Value};
 use asili_lexer::tokenize;
 use asili_parser::parse_tokens;
 
+#[path = "support/golden.rs"]
+mod golden;
+
 /// Canonical text for a value; numbers by bit pattern so -0.0 is distinguished. NaN sign and
 /// payload bits are not observable from Asili (and not specified by Rust or LLVM), so every
 /// NaN compares equal.
@@ -41,7 +44,11 @@ fn check(name: &str, source: &str, functions: &[&str]) {
                 .map(|v| canon(&v))
                 .unwrap_or_else(|e| format!("ERR {e}"))
         };
-        let tree = run(Engine::Tree);
+        let tree = golden::expected(
+            "native_tiers",
+            &format!("{name}::{function}"),
+            &run(Engine::Tree),
+        );
         if let Some(own) = &own {
             assert_eq!(
                 run(Engine::Native(own)),

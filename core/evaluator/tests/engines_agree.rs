@@ -8,6 +8,9 @@ use asili_evaluator::{
 use asili_lexer::tokenize;
 use asili_parser::parse_tokens;
 
+#[path = "support/golden.rs"]
+mod golden;
+
 fn canon(v: &Value) -> String {
     match v {
         Value::Namba(n) if n.is_nan() => "NaN".to_string(),
@@ -44,6 +47,7 @@ fn agree_program(
     };
     for function in functions {
         let tree = show(run_function(module, function, vec![]));
+        let tree = golden::expected("engines_agree", &format!("{name}::{function}"), &tree);
         let host = |engine| show(run_bytecode_function_on(engine, program, function, vec![]));
         assert_eq!(
             host(Engine::Tree),
@@ -644,7 +648,7 @@ const METHODS: &str = r#"
 #[test]
 fn methods_dispatch_like_the_tree_walker() {
     agree(
-        "methods",
+        "user_methods",
         &format!(
             "{METHODS}{}",
             r#"
@@ -888,7 +892,7 @@ fn list_literal_element_types() {
 fn copies_of_maps_and_sets_stay_independent() {
     // `Kamusi` and `Seti` share storage between copies until one is written (copy on write).
     agree(
-        "cow",
+        "cow_maps",
         r#"
         kazi nakala() -> Orodha<Namba> {
             weka a: Kamusi<Neno, Namba> = {}
