@@ -33,6 +33,14 @@ fn strip_string_lexeme_quotes(lexeme: &str) -> String {
     }
 }
 
+/// The bytes of a `b"..."` token (lexeme `BAITI:<hex>`).
+fn bytes_of_lexeme(lexeme: &str) -> Vec<u8> {
+    let hex = lexeme.strip_prefix("BAITI:").unwrap_or("");
+    (0..hex.len() / 2)
+        .filter_map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok())
+        .collect()
+}
+
 impl<'a> Parser<'a> {
     pub(crate) fn parse_module(&mut self) -> Module {
         let (mut module, _) = self.parse_items();

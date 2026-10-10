@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`Baiti`, a byte type**: `b"..."` literals (printable ASCII, other characters as UTF-8,
+  escapes `\n \t \r \0 \\ \"` and `\xNN`), `+`, comparison, `b[i]` (a `Namba` 0–255),
+  `kwa x katika b`, `linganisha` patterns and `Kamusi`/`Seti` keys; methods `urefu`, `kata`,
+  `tafuta`, `ina`, `anza_na`, `maliza_na`, `gawanya`, `geuza`, `kwa_neno` (strict UTF-8),
+  `kwa_orodha`, `hex`, `base64`, `hashi_sha256`, `hashi_sha512`, `soma_nambari` (big- or
+  little-endian unsigned); `Neno.baiti()`, `kama Baiti`/`kama Neno`; builtins `baiti`,
+  `baiti_ya_nambari`, `soma_baiti`/`andika_baiti`/`ongeza_baiti`, `base64_fumbua_baiti`,
+  `hex_fumbua`; `Faili`/`Mkondo` `.soma_baiti()` and `.andika` of bytes. JSON writes bytes as
+  base64. `.asb` format 19.
+- **Editor word lists generated**: the VS Code grammar's type and builtin-function patterns and
+  the playground's keyword and type lists are generated from the compiler's own lists
+  (`pata-core`'s `editor_word_lists` test), replacing stale hand-kept copies.
+
 - **Builtin signatures in one place, with names and descriptions**: `core/parser/src/builtins.rs`
   now writes every builtin as an Asili signature (`name(p: T, q?: T, ...r: T) -> R`) with a
   Swahili description, and builtin `umbo`s (`OmbiHttp`, `JibuHttp`, `ChaguoHttp`) that programs

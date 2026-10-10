@@ -262,7 +262,8 @@ impl<'a> Printer<'a> {
 }
 
 /// Converts a lexer token's internal representation back into the source syntax it came from.
-/// Two token shapes need this:
+/// Three token shapes need this (the third: a byte string, `BAITI:<hex>`, printed by
+/// `asili_lexer::bytes_literal`):
 /// - A char literal like `'A'` is folded into one token whose lexeme is the debug form `CHAR:A`
 ///   (see `core/lexer/src/lib.rs`) — printing that debug form verbatim isn't valid Asili syntax
 ///   and doesn't round-trip (a second format pass would re-tokenize `CHAR:A` as three tokens).
@@ -273,6 +274,13 @@ impl<'a> Printer<'a> {
 ///   on the way out.
 /// Every other lexeme already prints as-is.
 fn render_lexeme(lexeme: &str) -> std::borrow::Cow<'_, str> {
+    // A byte string's lexeme is `BAITI:<hex>`.
+    if let Some(hex) = lexeme.strip_prefix("BAITI:") {
+        let bytes: Vec<u8> = (0..hex.len() / 2)
+            .filter_map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok())
+            .collect();
+        return std::borrow::Cow::Owned(asili_lexer::bytes_literal(&bytes));
+    }
     if let Some(rest) = lexeme.strip_prefix("CHAR:") {
         let ch = rest.chars().next().unwrap_or('\0');
         return std::borrow::Cow::Owned(match ch {
@@ -418,6 +426,14 @@ mod tests {
         assert!(output.contains("foo()"));
         assert!(output.contains("{\n"));
         assert!(output.contains("chapisha(\"x\")"));
+    }
+
+    #[test]
+    fn byte_strings_round_trip() {
+        let input = "kazi f() -> Baiti { rejesha b\"Hi\\x00\\xff\\n\" }\n";
+        let a = canonical_format(input);
+        assert!(a.contains(r#"b"Hi\x00\xff\n""#), "{a}");
+        assert_eq!(a, canonical_format(&a));
     }
 
     #[test]

@@ -99,6 +99,53 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
             Ok(Value::Namba(size))
         }),
     );
+    // Bytes: the same three as text, without UTF-8 in between.
+    m.insert(
+        "soma_baiti".to_string(),
+        Box::new(|args: &[Value]| {
+            let path = super::arg_str(args, 0);
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                Ok(match fs::read(&path) {
+                    Ok(b) => Value::sawa(Value::Baiti(b.into())),
+                    Err(e) => Value::kosa(e.to_string()),
+                })
+            }
+            #[cfg(target_arch = "wasm32")]
+            Ok(Value::kosa("soma_baiti: haipatikani kwenye kivinjari"))
+        }),
+    );
+    for (name, append) in [("andika_baiti", false), ("ongeza_baiti", true)] {
+        m.insert(
+            name.to_string(),
+            Box::new(move |args: &[Value]| {
+                let path = super::arg_str(args, 0);
+                let data = args
+                    .get(1)
+                    .and_then(crate::eval::methods::bytes_of)
+                    .unwrap_or_default();
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let written = fs::OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .append(append)
+                        .truncate(!append)
+                        .open(&path)
+                        .and_then(|mut f| std::io::Write::write_all(&mut f, &data));
+                    Ok(match written {
+                        Ok(()) => Value::sawa(Value::Tupu),
+                        Err(e) => Value::kosa(e.to_string()),
+                    })
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let _ = (append, data);
+                    Ok(Value::kosa(format!("{name}: haipatikani kwenye kivinjari")))
+                }
+            }),
+        );
+    }
     // Handle-based Faili: faili_fungua(njia, hali) — hali is "soma" | "andika" | "ongeza".
     // Returns Tokeo<Faili, Neno>. The returned handle closes automatically on drop (scope exit,
     // explicit tupa, or .funga()) via FailiHandle's own Drop impl.

@@ -7,6 +7,9 @@
 # Fumbua base64 ya kawaida; kosa isipokuwa base64 ya maandishi ya UTF-8.
 kazi base64_fumbua(maandishi: Neno) -> Tokeo<Neno, Neno>
 
+# Fumbua base64 ya kawaida kuwa baiti.
+kazi base64_fumbua_baiti(maandishi: Neno) -> Tokeo<Baiti, Neno>
+
 # Simba kwa base64 ya kawaida.
 kazi base64_simba(maandishi: Neno) -> Neno
 
@@ -15,6 +18,9 @@ kazi hashi_sha256(maandishi: Neno) -> Neno
 
 # SHA-512, kwa hex.
 kazi hashi_sha512(maandishi: Neno) -> Neno
+
+# Baiti kutoka hex (herufi kubwa au ndogo).
+kazi hex_fumbua(maandishi: Neno) -> Tokeo<Baiti, Neno>
 
 # Baiti kwa hex.
 kazi hex_simba(maandishi: Neno) -> Neno

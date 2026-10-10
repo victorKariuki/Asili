@@ -93,6 +93,36 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         }),
     );
     m.insert(
+        "base64_fumbua_baiti".to_string(),
+        Box::new(|args: &[Value]| {
+            let text = super::arg_str(args, 0);
+            Ok(
+                match base64::engine::general_purpose::STANDARD.decode(text.trim()) {
+                    Ok(b) => Value::sawa(Value::Baiti(b.into())),
+                    Err(e) => Value::kosa(format!("base64_fumbua_baiti: {e}")),
+                },
+            )
+        }),
+    );
+    m.insert(
+        "hex_fumbua".to_string(),
+        Box::new(|args: &[Value]| {
+            let text = super::arg_str(args, 0);
+            let text = text.trim();
+            let bytes = (text.len() % 2 == 0)
+                .then(|| {
+                    (0..text.len() / 2)
+                        .map(|i| u8::from_str_radix(text.get(2 * i..2 * i + 2)?, 16).ok())
+                        .collect::<Option<Vec<u8>>>()
+                })
+                .flatten();
+            Ok(match bytes {
+                Some(b) => Value::sawa(Value::Baiti(b.into())),
+                None => Value::kosa("hex_fumbua: si hex halali"),
+            })
+        }),
+    );
+    m.insert(
         "hmac_sha256".to_string(),
         Box::new(|args: &[Value]| {
             let (key, message) = (super::arg_str(args, 0), super::arg_str(args, 1));

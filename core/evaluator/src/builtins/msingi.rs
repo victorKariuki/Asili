@@ -7,6 +7,48 @@ use crate::value::Value;
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
     m.insert(
+        "baiti".to_string(),
+        Box::new(|args: &[Value]| {
+            let list = args.first().cloned().unwrap_or(Value::Hamna);
+            Ok(match crate::eval::methods::bytes_from_list(&list) {
+                Ok(b) => Value::sawa(Value::Baiti(b.into())),
+                Err(e) => Value::kosa(e),
+            })
+        }),
+    );
+    m.insert(
+        "baiti_ya_nambari".to_string(),
+        Box::new(|args: &[Value]| {
+            let n = crate::value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(-1.0);
+            let width = crate::value::as_f64(args.get(1).unwrap_or(&Value::Hamna)).unwrap_or(0.0);
+            let little = crate::value::as_string(args.get(2).unwrap_or(&Value::Hamna))
+                .is_some_and(|m| m == "le");
+            let width = width as usize;
+            let max = if width == 8 {
+                u64::MAX as f64
+            } else {
+                (1u128 << (8 * width)) as f64 - 1.0
+            };
+            Ok(if !matches!(width, 1 | 2 | 4 | 8) {
+                Value::kosa("baiti_ya_nambari: upana ni 1, 2, 4 au 8")
+            } else if n.fract() != 0.0 || n < 0.0 || n > max {
+                Value::kosa(format!("baiti_ya_nambari: {n} haitoshei baiti {width}"))
+            } else {
+                let full = if little {
+                    (n as u64).to_le_bytes()
+                } else {
+                    (n as u64).to_be_bytes()
+                };
+                let bytes = if little {
+                    &full[..width]
+                } else {
+                    &full[8 - width..]
+                };
+                Value::sawa(Value::Baiti(bytes.into()))
+            })
+        }),
+    );
+    m.insert(
         "orodha".to_string(),
         Box::new(|args: &[Value]| Ok(Value::list(args.to_vec()))),
     );

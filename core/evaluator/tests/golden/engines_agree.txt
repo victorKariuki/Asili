@@ -1,4 +1,8 @@
 append::ongeza	[Neno("abbbbb7"),Neno("a"),Neno("abbbbb"),Neno("a")]
+baiti::msingi	[Neno("Hi\0�\n"),Neno("5"),Neno("105"),Neno("442"),Neno("486900ff0a"),Neno("486900ff0a21"),Neno("kweli"),Neno("kweli")]
+baiti::nje	ERR paparika: fahirisi nje ya mipaka: 5 (urefu 2)
+baiti::njia	[Neno("habari"),Neno("6"),Neno("7"),Neno("2"),Neno("kweli"),Neno("ainud"),Neno("kweli"),Neno("16909060"),Neno("513"),Neno("-1"),Neno("YWJj"),Neno("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),Neno("AB")]
+baiti::zaidi	[Neno("Hi"),Neno("0102"),Neno("kweli"),Neno("0102"),Neno("ndiyo"),Neno("3")]
 call_vs_local::t	N4026000000000000
 calls::aina_tano	Neno("sifurimojanyinginyinginyingi")
 calls::kosa	NaN
@@ -8,7 +12,7 @@ casts::nambari	[N4045000000000000,N0000000000000000,N3ff0000000000000,N405040000
 computed_constants::kosa_ndani	N7ff0000000000000
 computed_constants::t	Neno("asili-627")
 computed_map_keys::t	Neno("21")
-computed_map_keys::ufunguo_mbaya	ERR aina: kamusi: ufunguo lazima uwe Neno, Namba, Ukweli au Herufi
+computed_map_keys::ufunguo_mbaya	ERR aina: kamusi: ufunguo lazima uwe Neno, Namba, Ukweli, Herufi au Baiti
 cow::nakala	[Neno("4"),Neno("3"),Neno("2"),Neno("3"),Neno("moja"),Neno("moja"),Neno("mbili"),Neno("mbili!")]
 cow_maps::nakala	[N3ff0000000000000,N4000000000000000,N3ff0000000000000,N4014000000000000,N3ff0000000000000,N4000000000000000]
 fields::hesabu	[N4012000000000000,Nc010000000000000,N4000000000000000,N4021000000000000,Nbff0000000000000,N4008000000000000,Nc01a000000000000,Nc000000000000000,N4010000000000000,Nbfe0000000000000,Nc010000000000000,N4014000000000000,N401a000000000000,Nbff0000000000000,N4018000000000000,N4012000000000000]

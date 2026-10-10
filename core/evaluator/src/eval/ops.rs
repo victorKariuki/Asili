@@ -71,10 +71,24 @@ pub(crate) fn binary_value(op: &BinaryOp, l: &Value, r: &Value) -> Result<Value,
             return Ok(result);
         }
     }
+    // Bytes compare byte by byte, as text does.
+    if let (Value::Baiti(a), Value::Baiti(b)) = (l, r) {
+        let o = a.cmp(b);
+        match op {
+            BinaryOp::Gt => return Ok(Value::Ukweli(o == Ordering::Greater)),
+            BinaryOp::Lt => return Ok(Value::Ukweli(o == Ordering::Less)),
+            BinaryOp::Ge => return Ok(Value::Ukweli(o != Ordering::Less)),
+            BinaryOp::Le => return Ok(Value::Ukweli(o != Ordering::Greater)),
+            _ => {}
+        }
+    }
     match op {
         BinaryOp::Add => match (l, r) {
             // One allocation of exactly the result's size; neither operand is copied first.
             (Value::Neno(s1), Value::Neno(s2)) => Ok(Value::Neno(value::concat_text(s1, s2))),
+            (Value::Baiti(a), Value::Baiti(b)) => {
+                Ok(Value::Baiti([&a[..], &b[..]].concat().into()))
+            }
             (l, r) => numeric(op, l, r, "+"),
         },
         BinaryOp::Sub => numeric(op, l, r, "-"),

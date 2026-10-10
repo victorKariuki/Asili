@@ -297,5 +297,13 @@ kazi kuu(hoja: Orodha<Neno>) -> Tupu {
   chapisha("Herufi: 0 kama Herufi urefu = " + ((herufi_zero() kama Neno).urefu() kama Neno))
   chapisha("Struct: Pika kama Neno = " + struct_kama_neno())
   chapisha("Orodha: orodha of Pika, urefu = " + (orodha_of_struct_urefu() kama Neno))
+  chapisha("Baiti: " + baiti_mfano())
   chapisha("--- mwisho ---")
+}
+
+kazi baiti_mfano() -> Neno {
+  weka b = b"Hi\x00\xff" + "!".baiti()
+  weka jumla = 0
+  kwa x katika b { jumla += x }
+  rejesha b.hex() + " " + (b.urefu() kama Neno) + " " + (jumla kama Neno) + " " + b.kata(0, 2).kwa_neno().angu("?")
 }

@@ -23,6 +23,8 @@ macro_rules! token_kinds {
             Str,
             /// A character literal (lexeme `CHAR:<c>`).
             Char,
+            /// A byte-string literal `b"..."` (lexeme `BAITI:<hex of the bytes>`).
+            Bytes,
             $($name,)*
         }
 
@@ -316,6 +318,26 @@ fn pair(a: char, b: char) -> Option<&'static str> {
     })
 }
 
+/// `bytes` written as a `b"..."` literal that reads back to the same bytes: printable ASCII as
+/// itself, everything else as an escape. The formatter and the runtime's display share it.
+pub fn bytes_literal(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() + 3);
+    out.push_str("b\"");
+    for &b in bytes {
+        match b {
+            b'"' => out.push_str("\\\""),
+            b'\\' => out.push_str("\\\\"),
+            b'\n' => out.push_str("\\n"),
+            b'\t' => out.push_str("\\t"),
+            b'\r' => out.push_str("\\r"),
+            0x20..=0x7e => out.push(b as char),
+            _ => out.push_str(&format!("\\x{b:02x}")),
+        }
+    }
+    out.push('"');
+    out
+}
+
 fn tokenize_inner(
     source: &str,
     mut trivia: Option<&mut Vec<Comment>>,
@@ -385,6 +407,78 @@ fn tokenize_inner(
                     });
                     continue;
                 }
+            }
+
+            // `b"..."`: bytes. Printable ASCII stands for itself, any other character for its
+            // UTF-8 bytes; escapes are those of text plus `\xNN` (one byte, in hexadecimal).
+            if ch == 'b' && chars.get(i + 1) == Some(&'"') {
+                let start_col = col;
+                let mut j = i + 2;
+                let mut bytes: Vec<u8> = Vec::new();
+                let mut closed = false;
+                let mut bad = false;
+                while j < chars.len() {
+                    let c = chars[j];
+                    j += 1;
+                    match c {
+                        '"' => {
+                            closed = true;
+                            break;
+                        }
+                        '\\' => {
+                            let Some(&e) = chars.get(j) else { break };
+                            j += 1;
+                            match e {
+                                'n' => bytes.push(b'\n'),
+                                't' => bytes.push(b'\t'),
+                                'r' => bytes.push(b'\r'),
+                                '0' => bytes.push(0),
+                                '"' => bytes.push(b'"'),
+                                '\\' => bytes.push(b'\\'),
+                                'x' => {
+                                    let hex: String = chars.iter().skip(j).take(2).collect();
+                                    match u8::from_str_radix(&hex, 16) {
+                                        Ok(b) if hex.len() == 2 => {
+                                            bytes.push(b);
+                                            j += 2;
+                                        }
+                                        _ => bad = true,
+                                    }
+                                }
+                                _ => bad = true,
+                            }
+                        }
+                        other => {
+                            let mut buf = [0u8; 4];
+                            bytes.extend_from_slice(other.encode_utf8(&mut buf).as_bytes());
+                        }
+                    }
+                }
+                col += j - i;
+                i = j;
+                if !closed {
+                    errors.push(
+                        Diagnostic::new("LEX001", "Kamba haijafungwa")
+                            .with_span(line_no, start_col),
+                    );
+                } else if bad {
+                    errors.push(
+                        Diagnostic::new(
+                            "LEX002",
+                            "baiti: herufi maalum si sahihi (tumia \\n, \\t, \\r, \\0, \\\\, \\\" au \\xNN)",
+                        )
+                        .with_span(line_no, start_col),
+                    );
+                } else {
+                    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+                    tokens.push(Token {
+                        kind: TokenKind::Bytes,
+                        lexeme: format!("BAITI:{hex}"),
+                        line: line_no,
+                        column: start_col,
+                    });
+                }
+                continue;
             }
 
             if ch == '"' {
@@ -567,6 +661,22 @@ mod tests {
             .into_iter()
             .map(|t| t.lexeme)
             .collect()
+    }
+
+    #[test]
+    fn byte_strings() {
+        assert_eq!(
+            lexemes(r#"x = b"Hi\x00\xff\n\"""#),
+            ["x", "=", "BAITI:486900ff0a22"]
+        );
+        // `ab"c"` is a name and a string, not bytes.
+        assert_eq!(lexemes(r#"ab"c""#), ["ab", "\"c\""]);
+        assert!(tokenize(r#"b"\q""#).is_err());
+        assert!(tokenize(r#"b"\x4""#).is_err());
+        assert_eq!(
+            bytes_literal(&[72, 105, 0, 255, b'"', b'\\']),
+            r#"b"Hi\x00\xff\"\\""#
+        );
     }
 
     #[test]

@@ -32,7 +32,7 @@ pub(crate) use numeric::{
     binary_cmp_neno, concat_text, format_namba, namba_text, parse_number, to_display_string,
 };
 
-/// Hashable key for Kamusi. Only Neno, Namba, Ukweli, Herufi are allowed as map keys.
+/// Hashable key for Kamusi. Only Neno, Namba, Ukweli, Herufi and Baiti are allowed as map keys.
 /// Namba uses f64::to_bits() for canonical hashing (NaN is supported). A `Neno` key shares its
 /// text with the value it came from, so looking a key up or listing keys allocates nothing.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -41,6 +41,7 @@ pub enum MapKey {
     Namba(u64),
     Ukweli(bool),
     Herufi(char),
+    Baiti(Rc<[u8]>),
 }
 
 impl MapKey {
@@ -50,6 +51,7 @@ impl MapKey {
             MapKey::Namba(b) => Value::Namba(f64::from_bits(*b)),
             MapKey::Ukweli(b) => Value::Ukweli(*b),
             MapKey::Herufi(c) => Value::Herufi(*c),
+            MapKey::Baiti(b) => Value::Baiti(b.clone()),
         }
     }
 
@@ -59,8 +61,9 @@ impl MapKey {
             Value::Namba(n) => Ok(MapKey::Namba(n.to_bits())),
             Value::Ukweli(b) => Ok(MapKey::Ukweli(*b)),
             Value::Herufi(c) => Ok(MapKey::Herufi(*c)),
+            Value::Baiti(b) => Ok(MapKey::Baiti(b.clone())),
             _ => Err(EvalError::TypeErr(
-                "kamusi: ufunguo lazima uwe Neno, Namba, Ukweli au Herufi".into(),
+                "kamusi: ufunguo lazima uwe Neno, Namba, Ukweli, Herufi au Baiti".into(),
             )),
         }
     }
@@ -71,6 +74,7 @@ impl MapKey {
             MapKey::Namba(b) => SendKey::Namba(*b),
             MapKey::Ukweli(b) => SendKey::Ukweli(*b),
             MapKey::Herufi(c) => SendKey::Herufi(*c),
+            MapKey::Baiti(b) => SendKey::Baiti(b.to_vec()),
         }
     }
 }
@@ -82,6 +86,7 @@ pub enum SendKey {
     Namba(u64),
     Ukweli(bool),
     Herufi(char),
+    Baiti(Vec<u8>),
 }
 
 impl SendKey {
@@ -91,6 +96,7 @@ impl SendKey {
             SendKey::Namba(b) => MapKey::Namba(b),
             SendKey::Ukweli(b) => MapKey::Ukweli(b),
             SendKey::Herufi(c) => MapKey::Herufi(c),
+            SendKey::Baiti(b) => MapKey::Baiti(b.into()),
         }
     }
 }
@@ -122,6 +128,8 @@ pub enum Value {
     Namba(f64),
     /// Text; never changed in place, so copies share it.
     Neno(Text),
+    /// Bytes: never changed in place, so copies share them.
+    Baiti(Rc<[u8]>),
     Ukweli(bool),
     Tupu,
     Hamna,
@@ -294,6 +302,7 @@ impl FungoCell {
 pub enum SendValue {
     Namba(f64),
     Neno(String),
+    Baiti(Vec<u8>),
     Ukweli(bool),
     Tupu,
     Hamna,
@@ -347,6 +356,7 @@ impl Value {
         Some(match self {
             Value::Namba(n) => SendValue::Namba(*n),
             Value::Neno(s) => SendValue::Neno(s.to_string()),
+            Value::Baiti(b) => SendValue::Baiti(b.to_vec()),
             Value::Ukweli(b) => SendValue::Ukweli(*b),
             Value::Tupu => SendValue::Tupu,
             Value::Hamna => SendValue::Hamna,
@@ -422,6 +432,7 @@ impl SendValue {
         match self {
             SendValue::Namba(n) => Value::Namba(n),
             SendValue::Neno(s) => Value::neno(s),
+            SendValue::Baiti(b) => Value::Baiti(b.into()),
             SendValue::Ukweli(b) => Value::Ukweli(b),
             SendValue::Tupu => Value::Tupu,
             SendValue::Hamna => Value::Hamna,
@@ -558,6 +569,7 @@ impl std::fmt::Debug for Value {
         match self {
             Value::Namba(n) => f.debug_tuple("Namba").field(n).finish(),
             Value::Neno(s) => f.debug_tuple("Neno").field(s).finish(),
+            Value::Baiti(b) => f.write_str(&asili_parser::bytes_literal(b)),
             Value::Ukweli(b) => f.debug_tuple("Ukweli").field(b).finish(),
             Value::Tupu => write!(f, "Tupu"),
             Value::Hamna => write!(f, "Hamna"),
@@ -633,6 +645,7 @@ impl PartialEq for Value {
         match (self, other) {
             (Value::Namba(a), Value::Namba(b)) => a == b,
             (Value::Neno(a), Value::Neno(b)) => a == b,
+            (Value::Baiti(a), Value::Baiti(b)) => a == b,
             (Value::Ukweli(a), Value::Ukweli(b)) => a == b,
             (Value::Tupu, Value::Tupu) => true,
             (Value::Hamna, Value::Hamna) => true,

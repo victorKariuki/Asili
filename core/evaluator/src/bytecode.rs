@@ -520,6 +520,7 @@ pub struct BytecodeProgram {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StoredConstant {
     Neno(String),
+    Baiti(Vec<u8>),
     Namba(f64),
     Tupu,
     Hamna,
@@ -535,6 +536,7 @@ impl StoredConstant {
     pub(crate) fn to_value(&self) -> Value {
         match self {
             StoredConstant::Neno(s) => Value::neno(s.clone()),
+            StoredConstant::Baiti(b) => Value::Baiti(b.as_slice().into()),
             StoredConstant::Namba(n) => Value::Namba(*n),
             StoredConstant::Ukweli(b) => Value::Ukweli(*b),
             StoredConstant::Herufi(c) => Value::Herufi(*c),
@@ -819,6 +821,7 @@ fn literal(exprs: &Exprs, expr: &Expr) -> Option<StoredConstant> {
     Some(match expr {
         Expr::Number(s) => StoredConstant::Namba(value::parse_number(s)),
         Expr::String(s) => StoredConstant::Neno(s.clone()),
+        Expr::Baiti(b) => StoredConstant::Baiti(b.clone()),
         Expr::Bool(b) => StoredConstant::Ukweli(*b),
         Expr::Char(c) => StoredConstant::Herufi(*c),
         Expr::Hamna => StoredConstant::Hamna,
@@ -873,6 +876,7 @@ fn inlinable(f: &Function, exprs: &Exprs) -> Option<Inline> {
         && nodes.iter().all(|id| match &exprs[*id] {
             Expr::Number(_)
             | Expr::String(_)
+            | Expr::Baiti(_)
             | Expr::Bool(_)
             | Expr::Char(_)
             | Expr::Hamna
@@ -1019,6 +1023,7 @@ fn probe_value(type_name: &str) -> Option<Value> {
         "Tokeo" => Value::sawa(Value::Tupu),
         "Jozi" => Value::Jozi(Box::new(Value::Tupu), Box::new(Value::Tupu)),
         "Wakati" => Value::Wakati(0.0),
+        "Baiti" => Value::Baiti(std::rc::Rc::from(&[][..])),
         _ => return None,
     })
 }
@@ -1345,6 +1350,7 @@ impl<'a> FunctionCompiler<'a> {
     fn type_name(&self, expr: &Expr) -> Option<String> {
         match expr {
             Expr::String(_) => Some("Neno".into()),
+            Expr::Baiti(_) => Some("Baiti".into()),
             // Items of one known type: `["a", "b"]` is an `Orodha<Neno>`.
             Expr::List {
                 elements: items, ..
@@ -2070,7 +2076,7 @@ impl<'a> FunctionCompiler<'a> {
                 let reg = self.num_const(if *b { 1.0 } else { 0.0 });
                 Some(Operand { ty: Ty::Bool, reg })
             }
-            Expr::String(_) | Expr::Char(_) | Expr::Hamna => {
+            Expr::String(_) | Expr::Baiti(_) | Expr::Char(_) | Expr::Hamna => {
                 let k = literal(self.exprs, expr)?;
                 let k = self.program.constant(k);
                 let out = self.dst_or_temp(dst, Ty::Val);

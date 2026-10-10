@@ -19,6 +19,7 @@ pub(crate) fn match_pattern(pat: &Pattern, v: &Value, bind: &mut dyn FnMut(Name,
             }
         }
         Pattern::Literal(Expr::String(s)) => matches!(v, Value::Neno(x) if **x == **s),
+        Pattern::Literal(Expr::Baiti(b)) => matches!(v, Value::Baiti(x) if **x == **b),
         Pattern::Literal(Expr::Bool(b)) => matches!(v, Value::Ukweli(x) if *x == *b),
         Pattern::Literal(Expr::Hamna) => matches!(v, Value::Hamna | Value::Chaguo(None)),
         Pattern::Literal(Expr::Char(c)) => matches!(v, Value::Herufi(x) if *x == *c),

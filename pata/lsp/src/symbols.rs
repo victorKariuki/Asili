@@ -11,10 +11,7 @@ use tower_lsp::lsp_types::{
 
 // ── Keywords always offered in completion ──────────────────────────────────────
 
-const BUILTIN_TYPES: &[&str] = &[
-    "Namba", "Neno", "Ukweli", "Herufi", "Tupu", "Hamna", "Orodha", "Kamusi", "Jozi", "Chaguo",
-    "Tokeo", "Biti8", "Biti16", "Biti32", "Biti64", "uBiti8", "uBiti16", "uBiti32", "uBiti64",
-];
+use asili_parser::builtins::BUILTIN_TYPE_NAMES as BUILTIN_TYPES;
 
 // ── Parse helpers ─────────────────────────────────────────────────────────────
 

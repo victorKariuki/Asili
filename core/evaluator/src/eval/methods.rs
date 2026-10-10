@@ -39,6 +39,12 @@ pub(crate) fn index_element(base: &Value, index: &Value) -> Result<Value, EvalEr
                 .cloned()
                 .ok_or_else(|| out_of_bounds_error(idx, v.len()))
         }
+        Value::Baiti(b) => {
+            let idx = list_index(index)?;
+            b.get(idx)
+                .map(|&x| Value::Namba(x as f64))
+                .ok_or_else(|| out_of_bounds_error(idx, b.len()))
+        }
         _ => index_value(base, index),
     }
 }
@@ -67,8 +73,16 @@ pub(crate) fn index_value(base: &Value, index: &Value) -> Result<Value, EvalErro
             }
         }
 
+        Value::Baiti(b) => {
+            let idx = list_index(index)?;
+            Ok(match b.get(idx) {
+                Some(&x) => Value::sawa(Value::Namba(x as f64)),
+                None => out_of_bounds(idx, b.len()),
+            })
+        }
+
         _ => Err(EvalError::TypeErr(
-            "fahirisi inahitaji Orodha au Kamusi".into(),
+            "fahirisi inahitaji Orodha, Baiti au Kamusi".into(),
         )),
     }
 }
@@ -173,8 +187,8 @@ fn method_names() -> &'static MethodNames {
                 .collect()
         };
         MethodNames {
-            pure: intern(&PURE_METHODS),
-            mutating: intern(&MUTATING_METHODS),
+            pure: intern(PURE_METHODS),
+            mutating: intern(MUTATING_METHODS),
         }
     })
 }
@@ -192,6 +206,7 @@ pub(crate) fn is_mutating_name(recv: &Value, method: Name) -> bool {
 fn receiver_kind(recv: &Value) -> Option<Kind> {
     Some(match recv {
         Value::Neno(_) => Kind::Neno,
+        Value::Baiti(_) => Kind::Baiti,
         Value::Orodha(_) => Kind::Orodha,
         Value::Kamusi(_) => Kind::Kamusi,
         Value::Seti(_) => Kind::Seti,
@@ -324,6 +339,8 @@ pub(crate) fn pure_method(
         (Value::Neno(s), "misimbo") => Ok(Value::list(
             s.chars().map(|c| Value::Namba(c as u32 as f64)).collect(),
         )),
+        (Value::Neno(s), "baiti") => Ok(Value::Baiti(s.as_bytes().into())),
+        (Value::Baiti(b), _) => bytes_method(b, method, args_val),
         (Value::Neno(s), "kwa_namba") => Ok(match s.trim().parse::<f64>() {
             Ok(n) => Value::sawa(Value::Namba(n)),
             Err(_) => Value::kosa(format!("'{s}' si namba")),
@@ -589,13 +606,26 @@ pub(crate) fn pure_method(
                 None => Ok(Value::kosa("faili: imefungwa tayari")),
             }
         }
-        (Value::Faili(cell), "andika") => {
-            use std::io::Write;
-            let data =
-                value::as_string(args_val.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
+        (Value::Faili(cell), "soma_baiti") => {
+            use std::io::Read;
             let mut guard = cell.borrow_mut();
             match guard.0.as_mut() {
-                Some(f) => match f.write_all(data.as_bytes()) {
+                Some(f) => {
+                    let mut bytes = Vec::new();
+                    match f.read_to_end(&mut bytes) {
+                        Ok(_) => Ok(Value::sawa(Value::Baiti(bytes.into()))),
+                        Err(e) => Ok(Value::kosa(e.to_string())),
+                    }
+                }
+                None => Ok(Value::kosa("faili: imefungwa tayari")),
+            }
+        }
+        (Value::Faili(cell), "andika") => {
+            use std::io::Write;
+            let data = bytes_of(args_val.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
+            let mut guard = cell.borrow_mut();
+            match guard.0.as_mut() {
+                Some(f) => match f.write_all(&data) {
                     Ok(()) => Ok(Value::sawa(Value::Tupu)),
                     Err(e) => Ok(Value::kosa(e.to_string())),
                 },
@@ -623,11 +653,10 @@ pub(crate) fn pure_method(
         }
         (Value::Mkondo(cell), "andika") => {
             use std::io::Write;
-            let data =
-                value::as_string(args_val.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
+            let data = bytes_of(args_val.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
             let mut guard = cell.borrow_mut();
             match guard.0.as_mut() {
-                Some(s) => match s.write_all(data.as_bytes()) {
+                Some(s) => match s.write_all(&data) {
                     Ok(()) => Ok(Value::sawa(Value::Tupu)),
                     Err(e) => Ok(Value::kosa(e.to_string())),
                 },
@@ -648,6 +677,27 @@ pub(crate) fn pure_method(
         // itself a failure). Additive alongside `.soma()`, which keeps its existing
         // behavior for every current caller (mkondo_unganisha's tests, examples/
         // mkondo_server/'s one-request-per-connection contract).
+        (Value::Mkondo(cell), "soma_baiti") => {
+            crate::platform::flush_stdout(); // about to block: show what was printed so far
+            use std::io::Read;
+            let kikomo = value::as_f64(args_val.first().unwrap_or(&Value::Hamna))
+                .unwrap_or(0.0)
+                .max(0.0) as usize;
+            let mut guard = cell.borrow_mut();
+            match guard.0.as_mut() {
+                Some(s) => {
+                    let mut buf = vec![0u8; kikomo];
+                    match s.read(&mut buf) {
+                        Ok(n) => {
+                            buf.truncate(n);
+                            Ok(Value::sawa(Value::Baiti(buf.into())))
+                        }
+                        Err(e) => Ok(Value::kosa(e.to_string())),
+                    }
+                }
+                None => Ok(Value::kosa("mkondo: imefungwa tayari")),
+            }
+        }
         (Value::Mkondo(cell), "soma_bailisi") => {
             crate::platform::flush_stdout(); // about to block: show what was printed so far
             use std::io::Read;
@@ -1458,10 +1508,26 @@ pub(crate) fn cast_value(v: Value, ty: &str) -> Result<Value, EvalError> {
             ),
         };
         Ok(Value::NambaSahihi(dec))
+    } else if t == "Baiti" {
+        Ok(match &v {
+            Value::Baiti(_) => v,
+            Value::Neno(s) => Value::Baiti(s.as_bytes().into()),
+            Value::Orodha(_) => match bytes_from_list(&v) {
+                Ok(b) => Value::Baiti(b.into()),
+                Err(e) => return Err(EvalError::TypeErr(e)),
+            },
+            _ => {
+                return Err(EvalError::TypeErr(
+                    "kama Baiti inahitaji Neno, Orodha<Namba> au Baiti".into(),
+                ))
+            }
+        })
     } else if t == "Neno" {
         match v {
             Value::Neno(_) => return Ok(v),
             Value::Namba(n) => return Ok(Value::Neno(value::namba_text(n))),
+            // Bytes as UTF-8, invalid sequences replaced (`.kwa_neno()` refuses them instead).
+            Value::Baiti(b) => return Ok(Value::neno(String::from_utf8_lossy(&b).into_owned())),
             _ => {}
         }
         Ok(Value::neno(match &v {
@@ -1518,6 +1584,127 @@ pub(crate) fn cast_value(v: Value, ty: &str) -> Result<Value, EvalError> {
     }
 }
 
+/// The bytes of `v` when it is `Baiti`, or the UTF-8 bytes of a `Neno` — what an operation on
+/// bytes accepts as a needle or as data to write.
+pub(crate) fn bytes_of(v: &Value) -> Option<std::borrow::Cow<'_, [u8]>> {
+    match v {
+        Value::Baiti(b) => Some(std::borrow::Cow::Borrowed(&b[..])),
+        Value::Neno(s) => Some(std::borrow::Cow::Borrowed(s.as_bytes())),
+        _ => None,
+    }
+}
+
+/// An `Orodha` of whole numbers 0–255 as bytes, or why not.
+pub(crate) fn bytes_from_list(v: &Value) -> Result<Vec<u8>, String> {
+    let items = match v {
+        Value::Orodha(items) => items,
+        _ => return Err("baiti zinahitaji Orodha<Namba>".into()),
+    };
+    items
+        .iter()
+        .enumerate()
+        .map(|(i, x)| match value::as_f64(x) {
+            Some(n) if n.fract() == 0.0 && (0.0..=255.0).contains(&n) => Ok(n as u8),
+            _ => Err(format!(
+                "baiti: kipengele #{i} si namba kamili kati ya 0 na 255"
+            )),
+        })
+        .collect()
+}
+
+/// Where `needle` (bytes, or one byte as a `Namba`) first occurs in `hay`.
+fn find_bytes(hay: &[u8], needle: &Value) -> Option<usize> {
+    match needle {
+        Value::Namba(n) => hay.iter().position(|&b| b as f64 == *n),
+        other => {
+            let n = bytes_of(other)?;
+            if n.is_empty() {
+                return Some(0);
+            }
+            hay.windows(n.len()).position(|w| w == &n[..])
+        }
+    }
+}
+
+/// The methods of a `Baiti`.
+fn bytes_method(b: &Rc<[u8]>, method: &str, args: &[Value]) -> Result<Value, EvalError> {
+    let num = |i: usize| args.get(i).and_then(value::as_f64);
+    let arg = |i: usize| args.get(i).unwrap_or(&Value::Hamna);
+    let hex = |bytes: &[u8]| bytes.iter().map(|x| format!("{x:02x}")).collect::<String>();
+    Ok(match method {
+        "clona" => Value::Baiti(b.clone()),
+        "urefu" => Value::Namba(b.len() as f64),
+        "tupu" => Value::Ukweli(b.is_empty()),
+        "kata" => {
+            let len = b.len() as f64;
+            let start = num(0).unwrap_or(0.0).clamp(0.0, len) as usize;
+            let end = num(1).unwrap_or(len).clamp(start as f64, len) as usize;
+            Value::Baiti(b[start..end].into())
+        }
+        "tafuta" => Value::Chaguo(find_bytes(b, arg(0)).map(|i| Box::new(Value::Namba(i as f64)))),
+        "ina" => Value::Ukweli(find_bytes(b, arg(0)).is_some()),
+        "anza_na" => Value::Ukweli(bytes_of(arg(0)).is_some_and(|p| b.starts_with(&p))),
+        "maliza_na" => Value::Ukweli(bytes_of(arg(0)).is_some_and(|p| b.ends_with(&p))),
+        "gawanya" => {
+            let sep = bytes_of(arg(0)).unwrap_or_default();
+            let mut parts = Vec::new();
+            if sep.is_empty() {
+                parts.push(Value::Baiti(b.clone()));
+            } else {
+                let mut rest = &b[..];
+                while let Some(i) = rest.windows(sep.len()).position(|w| w == &sep[..]) {
+                    parts.push(Value::Baiti(rest[..i].into()));
+                    rest = &rest[i + sep.len()..];
+                }
+                parts.push(Value::Baiti(rest.into()));
+            }
+            Value::list(parts)
+        }
+        "geuza" => Value::Baiti(b.iter().rev().copied().collect::<Vec<_>>().into()),
+        "kwa_neno" => match std::str::from_utf8(b) {
+            Ok(s) => Value::sawa(Value::neno(s)),
+            Err(e) => Value::kosa(format!(
+                "baiti si UTF-8 halali (kuanzia baiti #{})",
+                e.valid_up_to()
+            )),
+        },
+        "kwa_orodha" => Value::list(b.iter().map(|&x| Value::Namba(x as f64)).collect()),
+        "hex" => Value::neno(hex(b)),
+        "base64" => {
+            use base64::Engine;
+            Value::neno(base64::engine::general_purpose::STANDARD.encode(b))
+        }
+        "hashi_sha256" => {
+            use sha2::Digest;
+            Value::neno(hex(&sha2::Sha256::digest(b)))
+        }
+        "hashi_sha512" => {
+            use sha2::Digest;
+            Value::neno(hex(&sha2::Sha512::digest(b)))
+        }
+        "soma_nambari" => {
+            let at = num(0).unwrap_or(-1.0);
+            let width = num(1).unwrap_or(1.0) as usize;
+            let little = value::as_string(arg(2)).is_some_and(|m| m == "le");
+            let value = (at >= 0.0 && matches!(width, 1 | 2 | 4 | 8))
+                .then(|| b.get(at as usize..at as usize + width))
+                .flatten()
+                .map(|bytes| {
+                    let mut buf = [0u8; 8];
+                    if little {
+                        buf[..width].copy_from_slice(bytes);
+                        u64::from_le_bytes(buf)
+                    } else {
+                        buf[8 - width..].copy_from_slice(bytes);
+                        u64::from_be_bytes(buf)
+                    }
+                });
+            Value::Chaguo(value.map(|n| Box::new(Value::Namba(n as f64))))
+        }
+        _ => return Err(EvalError::Unknown(format!("njia '{method}' haijulikani"))),
+    })
+}
+
 /// The elements `kwa x katika v` visits: an `Orodha`'s items, or a `Kamusi`'s entries as
 /// `Jozi(ufunguo, thamani)`. The loop iterates this snapshot (shared, not copied), so the body
 /// may mutate `v`.
@@ -1530,8 +1717,9 @@ pub(crate) fn iter_items(v: Value) -> Result<Rc<Vec<Value>>, EvalError> {
                 .map(|(k, v)| Value::Jozi(Box::new(k.to_value()), Box::new(v)))
                 .collect(),
         )),
+        Value::Baiti(b) => Ok(Rc::new(b.iter().map(|&x| Value::Namba(x as f64)).collect())),
         _ => Err(EvalError::TypeErr(
-            "kwa...katika inashughulikia Orodha na Kamusi tu".to_string(),
+            "kwa...katika inashughulikia Orodha, Kamusi na Baiti tu".to_string(),
         )),
     }
 }

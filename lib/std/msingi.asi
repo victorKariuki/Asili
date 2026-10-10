@@ -8,6 +8,13 @@ thabiti KWELI: Ukweli
 thabiti SIYO_KWELI: Ukweli
 thabiti TUPU: Tupu
 
+# Baiti kutoka namba kamili 0–255; kosa kipengele kisipokuwa hivyo.
+kazi baiti(vipengele: Orodha<Namba>) -> Tokeo<Baiti, Neno>
+
+# Namba kamili isiyo hasi kama baiti `upana` (1, 2, 4 au 8), mpangilio "be" (kubwa kwanza) au
+# "le".
+kazi baiti_ya_nambari(namba: Namba, upana: Namba, mpangilio: Neno) -> Tokeo<Baiti, Neno>
+
 # `Chaguo::Kuna(thamani)`.
 kazi chaguo(thamani: Haijulikani) -> Haijulikani?
 

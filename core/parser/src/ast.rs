@@ -470,6 +470,8 @@ pub enum Pattern {
 pub enum Expr {
     Number(String),
     String(String),
+    /// A byte-string literal `b"..."`.
+    Baiti(Vec<u8>),
     Bool(bool),
     Char(char),
     // NOTE(syntax-highlighting): Ident used to be a bare Ident(String). It now carries its own
@@ -571,6 +573,7 @@ impl Expr {
         match self {
             Expr::Number(_)
             | Expr::String(_)
+            | Expr::Baiti(_)
             | Expr::Bool(_)
             | Expr::Char(_)
             | Expr::Ident { .. }
@@ -617,6 +620,7 @@ impl Expr {
         match &mut node {
             Expr::Number(_)
             | Expr::String(_)
+            | Expr::Baiti(_)
             | Expr::Bool(_)
             | Expr::Char(_)
             | Expr::Ident { .. }
@@ -743,6 +747,7 @@ impl fmt::Display for ValueType {
             ValueType::Orodha(t) => write!(f, "Orodha<{}>", t),
             ValueType::Kamusi(k, v) => write!(f, "Kamusi<{}, {}>", k, v),
             ValueType::Mfululizo(t) => write!(f, "Mfululizo<{}>", t),
+            ValueType::Baiti => write!(f, "Baiti"),
             ValueType::Jozi(a, b) => write!(f, "Jozi<{}, {}>", a, b),
             ValueType::Seti(t) => write!(f, "Seti<{}>", t),
             ValueType::Struct(name) => write!(f, "{}", name),
@@ -782,6 +787,8 @@ pub enum ValueType {
     Orodha(Box<ValueType>),
     Kamusi(Box<ValueType>, Box<ValueType>),
     Mfululizo(Box<ValueType>),
+    /// Bytes (`b"..."`, `baiti(...)`, `.baiti()`): immutable, any values 0–255.
+    Baiti,
     Jozi(Box<ValueType>, Box<ValueType>),
     Seti(Box<ValueType>),
     /// Named struct type (e.g. from umbo Foo).

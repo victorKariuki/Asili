@@ -180,6 +180,9 @@ pub fn parse_value_type_with(s: &str, resolve: &dyn Fn(&str) -> Option<ValueType
     if s == "Wakati" {
         return ValueType::Wakati;
     }
+    if s == "Baiti" {
+        return ValueType::Baiti;
+    }
     if s == "Anuani" {
         return ValueType::Anuani;
     }
@@ -202,6 +205,7 @@ pub fn format_value_type(t: &ValueType) -> String {
         ValueType::NambaKuu => "Namba_Kuu".to_string(),
         ValueType::NambaSahihi => "Namba_Sahihi".to_string(),
         ValueType::Wakati => "Wakati".to_string(),
+        ValueType::Baiti => "Baiti".to_string(),
         ValueType::Anuani => "Anuani".to_string(),
         ValueType::Unknown => "Haijulikani".to_string(),
         ValueType::Chaguo(t) => format!("{}?", format_value_type(t)),

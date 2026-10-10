@@ -85,6 +85,7 @@ impl<'a> Parser<'a> {
             !matches!(
                 t.kind,
                 TokenKind::Str
+                    | TokenKind::Bytes
                     | TokenKind::LParen
                     | TokenKind::RParen
                     | TokenKind::LBrace

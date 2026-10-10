@@ -10,7 +10,7 @@
 use crate::Name;
 use asili_diagnostics::Diagnostic;
 
-use super::{build_binary, strip_string_lexeme_quotes, MAX_NESTING};
+use super::{build_binary, bytes_of_lexeme, strip_string_lexeme_quotes, MAX_NESTING};
 use crate::cursor::Parser;
 use crate::{BinaryOp, Expr, ExprId, Exprs, UnaryOp};
 use asili_lexer::{tk, TokenKind};
@@ -376,6 +376,7 @@ impl<'a> Parser<'a> {
                 lexeme["CHAR:".len()..].chars().next().unwrap_or('\0'),
             )),
             TokenKind::Str => Some(Expr::String(strip_string_lexeme_quotes(lexeme))),
+            TokenKind::Bytes => Some(Expr::Baiti(bytes_of_lexeme(lexeme))),
             _ => None,
         };
         if let Some(literal) = literal {

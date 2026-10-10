@@ -7,6 +7,9 @@
 # Kitenganishi cha njia cha mfumo ("/" au "\\").
 thabiti NJIA_SEPARATOR: Neno
 
+# Andika baiti kwenye faili (huunda au hufuta yaliyokuwepo).
+kazi andika_baiti(njia: Neno, data: Baiti) -> Tokeo<Tupu, Neno>
+
 # Andika data kwenye faili (huunda au hufuta yaliyokuwepo).
 kazi andika_faili(njia: Neno, data: Neno) -> Tokeo<Tupu, Neno>
 
@@ -49,8 +52,14 @@ kazi njia_unganisha(a: Neno, b: Neno) -> Neno
 # Ongeza data mwishoni mwa faili.
 kazi ongeza(njia: Neno, data: Neno) -> Tokeo<Tupu, Neno>
 
+# Ongeza baiti mwishoni mwa faili.
+kazi ongeza_baiti(njia: Neno, data: Baiti) -> Tokeo<Tupu, Neno>
+
 # Majina yaliyomo kwenye saraka, kwa mpangilio.
 kazi orodha_saraka(njia: Neno) -> Tokeo<Orodha<Neno>, Neno>
+
+# Yaliyomo yote ya faili, kama baiti.
+kazi soma_baiti(njia: Neno) -> Tokeo<Baiti, Neno>
 
 # Yaliyomo yote ya faili.
 kazi soma_faili(njia: Neno) -> Tokeo<Neno, Neno>

@@ -22,6 +22,47 @@ pub const BUILTIN_MODULE_NAMES: &[&str] = &[
     "sambamba", "kasha_gc", "ruwaza", "usimbaji",
 ];
 
+/// The language's built-in type names, as written in source — the one list editors (LSP
+/// completion, the VS Code grammar, the playground) offer and highlight. Builtin `umbo`s
+/// ([`builtin_structs`]) come on top.
+pub const BUILTIN_TYPE_NAMES: &[&str] = &[
+    "Namba",
+    "Neno",
+    "Baiti",
+    "Ukweli",
+    "Herufi",
+    "Tupu",
+    "Hamna",
+    "Orodha",
+    "Kamusi",
+    "Seti",
+    "Jozi",
+    "Chaguo",
+    "Tokeo",
+    "Wakati",
+    "Anuani",
+    "Namba_Kuu",
+    "Namba_Sahihi",
+    "Kumbukumbu",
+    "Kasha_GC",
+    "Kasha_GC_Dhaifu",
+    "Faili",
+    "Mkondo",
+    "MkondoSikilizaji",
+    "TlsUsanidi",
+    "NjiaTx",
+    "NjiaRx",
+    "Fungo",
+    "Biti8",
+    "Biti16",
+    "Biti32",
+    "Biti64",
+    "uBiti8",
+    "uBiti16",
+    "uBiti32",
+    "uBiti64",
+];
+
 /// Export table: functions and constants for a builtin module.
 #[derive(Clone, Debug, Default)]
 pub struct BuiltinExportTable {
@@ -57,6 +98,8 @@ pub const BUILTIN_MODULES: &[BuiltinModule] = &[
         name: "msingi",
         doc: "Msingi: aina na viunda vya msingi; viko wigoni bila `leta`.",
         functions: &[
+            ("baiti(vipengele: Orodha<Namba>) -> Tokeo<Baiti, Neno>", "Baiti kutoka namba kamili 0–255; kosa kipengele kisipokuwa hivyo."),
+            ("baiti_ya_nambari(namba: Namba, upana: Namba, mpangilio: Neno) -> Tokeo<Baiti, Neno>", "Namba kamili isiyo hasi kama baiti `upana` (1, 2, 4 au 8), mpangilio \"be\" (kubwa kwanza) au \"le\"."),
             ("chaguo(thamani: Haijulikani) -> Haijulikani?", "`Chaguo::Kuna(thamani)`."),
             ("jozi(a: Haijulikani, b: Haijulikani) -> Jozi<Haijulikani, Haijulikani>", "Jozi ya thamani mbili."),
             ("kamusi() -> Kamusi<Haijulikani, Haijulikani>", "Kamusi tupu."),
@@ -285,6 +328,7 @@ pub const BUILTIN_MODULES: &[BuiltinModule] = &[
         name: "faili",
         doc: "Faili: kusoma na kuandika faili, saraka na njia.",
         functions: &[
+            ("andika_baiti(njia: Neno, data: Baiti) -> Tokeo<Tupu, Neno>", "Andika baiti kwenye faili (huunda au hufuta yaliyokuwepo)."),
             ("andika_faili(njia: Neno, data: Neno) -> Tokeo<Tupu, Neno>", "Andika data kwenye faili (huunda au hufuta yaliyokuwepo)."),
             ("badili_jina(kutoka: Neno, kwenda: Neno) -> Tokeo<Tupu, Neno>", "Hamisha au badili jina la faili au saraka."),
             ("faili_fungua(njia: Neno, hali: Neno) -> Tokeo<Faili, Neno>", "Kishikizo cha faili; hali ni \"soma\", \"andika\" au \"ongeza\"."),
@@ -299,7 +343,9 @@ pub const BUILTIN_MODULES: &[BuiltinModule] = &[
             ("njia_mzazi(njia: Neno) -> Neno?", "Saraka inayoshikilia njia."),
             ("njia_unganisha(a: Neno, b: Neno) -> Neno", "Unganisha njia mbili (maandishi tu)."),
             ("ongeza(njia: Neno, data: Neno) -> Tokeo<Tupu, Neno>", "Ongeza data mwishoni mwa faili."),
+            ("ongeza_baiti(njia: Neno, data: Baiti) -> Tokeo<Tupu, Neno>", "Ongeza baiti mwishoni mwa faili."),
             ("orodha_saraka(njia: Neno) -> Tokeo<Orodha<Neno>, Neno>", "Majina yaliyomo kwenye saraka, kwa mpangilio."),
+            ("soma_baiti(njia: Neno) -> Tokeo<Baiti, Neno>", "Yaliyomo yote ya faili, kama baiti."),
             ("soma_faili(njia: Neno) -> Tokeo<Neno, Neno>", "Yaliyomo yote ya faili."),
             ("ukubwa(njia: Neno) -> Namba", "Ukubwa wa faili kwa baiti (0 lisipokuwepo)."),
             ("unda_saraka(njia: Neno) -> Tokeo<Tupu, Neno>", "Unda saraka pamoja na wazazi wake."),
@@ -382,9 +428,11 @@ pub const BUILTIN_MODULES: &[BuiltinModule] = &[
         doc: "Usimbaji: base64, hex, hashi na vitambulisho (juu ya baiti za UTF-8; hex ni herufi ndogo).",
         functions: &[
             ("base64_fumbua(maandishi: Neno) -> Tokeo<Neno, Neno>", "Fumbua base64 ya kawaida; kosa isipokuwa base64 ya maandishi ya UTF-8."),
+            ("base64_fumbua_baiti(maandishi: Neno) -> Tokeo<Baiti, Neno>", "Fumbua base64 ya kawaida kuwa baiti."),
             ("base64_simba(maandishi: Neno) -> Neno", "Simba kwa base64 ya kawaida."),
             ("hashi_sha256(maandishi: Neno) -> Neno", "SHA-256, kwa hex."),
             ("hashi_sha512(maandishi: Neno) -> Neno", "SHA-512, kwa hex."),
+            ("hex_fumbua(maandishi: Neno) -> Tokeo<Baiti, Neno>", "Baiti kutoka hex (herufi kubwa au ndogo)."),
             ("hex_simba(maandishi: Neno) -> Neno", "Baiti kwa hex."),
             ("hmac_sha256(ufunguo: Neno, ujumbe: Neno) -> Neno", "HMAC-SHA256 ya ujumbe kwa ufunguo, kwa hex."),
             ("kitambulisho() -> Neno", "UUID ya nasibu (toleo 4); `nasibu_mbegu` huifanya irudiwe pia."),
@@ -684,12 +732,13 @@ pub enum MethodReceiver {
     NjiaTx,
     NjiaRx,
     Fungo,
+    Baiti,
 }
 
 /// Built-in methods that only read their receiver, per [`MethodReceiver`]. The one list: the
 /// semantic analyzer accepts exactly these (with [`MUTATING_METHODS`] and
 /// [`CALLBACK_METHODS`]), and both engines dispatch on them.
-pub const PURE_METHODS: [&[&str]; 16] = [
+pub const PURE_METHODS: &[&[&str]] = &[
     &[
         "clona",
         "urefu",
@@ -719,6 +768,7 @@ pub const PURE_METHODS: [&[&str]; 16] = [
         "geuza",
         "misimbo",
         "kwa_namba",
+        "baiti",
     ],
     &[
         "clona",
@@ -766,16 +816,35 @@ pub const PURE_METHODS: [&[&str]; 16] = [
     &["sekunde"],
     &["pata", "weka", "idadi", "shirikisha"],
     &["imarisha"],
-    &["soma", "andika", "funga"],
-    &["soma", "andika", "funga", "soma_bailisi"],
+    &["soma", "andika", "funga", "soma_baiti"],
+    &["soma", "andika", "funga", "soma_bailisi", "soma_baiti"],
     &["pata"],
     &["tuma"],
     &["pokea"],
     &["funga", "fungua", "pata", "weka"],
+    &[
+        "clona",
+        "urefu",
+        "tupu",
+        "kata",
+        "tafuta",
+        "ina",
+        "anza_na",
+        "maliza_na",
+        "gawanya",
+        "geuza",
+        "kwa_neno",
+        "kwa_orodha",
+        "hex",
+        "base64",
+        "hashi_sha256",
+        "hashi_sha512",
+        "soma_nambari",
+    ],
 ];
 
 /// Built-in methods that change their receiver in place, per [`MethodReceiver`].
-pub const MUTATING_METHODS: [&[&str]; 16] = [
+pub const MUTATING_METHODS: &[&[&str]] = &[
     &[],
     &[
         "ongeza",
@@ -799,10 +868,11 @@ pub const MUTATING_METHODS: [&[&str]; 16] = [
     &[],
     &[],
     &[],
+    &[],
 ];
 
 /// Built-in methods that call a `kazi` (or builtin) named by their first argument, per element.
-pub const CALLBACK_METHODS: [&[&str]; 16] = [
+pub const CALLBACK_METHODS: &[&[&str]] = &[
     &[],
     &[
         "ramani",
@@ -827,12 +897,13 @@ pub const CALLBACK_METHODS: [&[&str]; 16] = [
     &[],
     &[],
     &[],
+    &[],
 ];
 
 /// Whether `receiver` has a built-in method `name`.
 pub fn has_builtin_method(receiver: MethodReceiver, name: &str) -> bool {
     let i = receiver as usize;
-    [&PURE_METHODS, &MUTATING_METHODS, &CALLBACK_METHODS]
+    [PURE_METHODS, MUTATING_METHODS, CALLBACK_METHODS]
         .iter()
         .any(|table| table[i].contains(&name))
 }
@@ -863,6 +934,21 @@ pub fn method_return_type(receiver: &ValueType, method: &str) -> ValueType {
             ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno))
         }
         (ValueType::Neno, "tafuta") => ValueType::Chaguo(Box::new(ValueType::Namba)),
+        (ValueType::Neno, "baiti") => ValueType::Baiti,
+        (ValueType::Baiti, "clona" | "kata" | "geuza") => ValueType::Baiti,
+        (ValueType::Baiti, "urefu") => ValueType::Namba,
+        (ValueType::Baiti, "tupu" | "ina" | "anza_na" | "maliza_na") => ValueType::Ukweli,
+        (ValueType::Baiti, "tafuta") => ValueType::Chaguo(Box::new(ValueType::Namba)),
+        (ValueType::Baiti, "gawanya") => ValueType::Orodha(Box::new(ValueType::Baiti)),
+        (ValueType::Baiti, "kwa_neno") => {
+            ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno))
+        }
+        (ValueType::Baiti, "kwa_orodha") => ValueType::Orodha(Box::new(ValueType::Namba)),
+        (ValueType::Baiti, "hex" | "base64" | "hashi_sha256" | "hashi_sha512") => ValueType::Neno,
+        (ValueType::Baiti, "soma_nambari") => ValueType::Chaguo(Box::new(ValueType::Namba)),
+        (ValueType::Faili | ValueType::Mkondo, "soma_baiti") => {
+            ValueType::Tokeo(Box::new(ValueType::Baiti), Box::new(ValueType::Neno))
+        }
         (ValueType::Jozi(k, v), "clona") => ValueType::Jozi(k.clone(), v.clone()),
         (ValueType::Jozi(k, _), "kwanza") => *k,
         (ValueType::Jozi(_, v), "pili") => *v,

@@ -2,7 +2,7 @@
 //! sub-patterns wait on an operand stack and open brackets on a frame stack, as in the
 //! expression machine.
 
-use super::strip_string_lexeme_quotes;
+use super::{bytes_of_lexeme, strip_string_lexeme_quotes};
 use crate::cursor::Parser;
 use crate::Name;
 use crate::{Expr, Pattern};
@@ -136,6 +136,7 @@ impl<'a> Parser<'a> {
         }
         let literal = self.peek_n(0).and_then(|t| match t.kind {
             TokenKind::Str => Some(Expr::String(strip_string_lexeme_quotes(&t.lexeme))),
+            TokenKind::Bytes => Some(Expr::Baiti(bytes_of_lexeme(&t.lexeme))),
             TokenKind::Char => Some(Expr::Char(
                 t.lexeme["CHAR:".len()..].chars().next().unwrap_or('\0'),
             )),

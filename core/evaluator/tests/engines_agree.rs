@@ -1176,3 +1176,67 @@ fn tupa_of_an_outer_binding() {
         &["t"],
     );
 }
+
+#[test]
+fn baiti_bytes() {
+    agree(
+        "baiti",
+        r#"
+        kazi msingi() -> Orodha<Neno> {
+            weka b = b"Hi\x00\xff\n"
+            weka jumla = 0
+            kwa x katika b { jumla += x }
+            rejesha [
+                b kama Neno,
+                b.urefu() kama Neno,
+                b[1] kama Neno,
+                jumla kama Neno,
+                b.hex(),
+                (b + b"!").hex(),
+                (b"abc" < b"abd") kama Neno,
+                (b"ab" == "ab".baiti()) kama Neno,
+            ]
+        }
+        kazi njia() -> Orodha<Neno> {
+            weka b = "habari dunia".baiti()
+            rejesha [
+                b.kata(0, 6).kwa_neno().angu("?"),
+                b.tafuta(b" ").angu(-1) kama Neno,
+                b.tafuta(100).angu(-1) kama Neno,
+                b.gawanya(b" ").urefu() kama Neno,
+                b.anza_na("hab") kama Neno,
+                b.geuza().kata(0, 5).kwa_neno().angu("?"),
+                b"\xff".kwa_neno().ni_kosa() kama Neno,
+                b"\x01\x02\x03\x04".soma_nambari(0, 4, "be").angu(-1) kama Neno,
+                b"\x01\x02\x03\x04".soma_nambari(0, 2, "le").angu(-1) kama Neno,
+                b"\x01".soma_nambari(0, 2, "be").angu(-1) kama Neno,
+                b"abc".base64(),
+                b"".hashi_sha256(),
+                (b"\x41\x42" kama Neno),
+            ]
+        }
+        kazi zaidi() -> Orodha<Neno> {
+            weka x = jaribu baiti([72, 105])
+            weka y = jaribu baiti_ya_nambari(258, 2, "be")
+            weka z = "hapana"
+            linganisha b"ok" {
+                b"ok" => { z = "ndiyo" }
+                _ => { z = "hapana" }
+            }
+            rejesha [
+                x kama Neno,
+                y.hex(),
+                baiti([256]).ni_kosa() kama Neno,
+                ([1, 2] kama Baiti).hex(),
+                z,
+                b"abc".kwa_orodha().urefu() kama Neno,
+            ]
+        }
+        kazi nje() -> Namba {
+            weka b = b"ab"
+            rejesha b[5]
+        }
+        "#,
+        &["msingi", "njia", "zaidi", "nje"],
+    );
+}

@@ -6,27 +6,12 @@ use asili_parser::{
 use std::collections::{HashMap, HashSet};
 use tower_lsp::lsp_types::{SemanticToken, SemanticTokens};
 
-/// Convert a TypeExpr name string to ValueType (best effort).
+/// A type as written, as the compiler reads it (`asili_parser::parse_value_type_with`); a name
+/// the parser does not know is taken to be a `umbo`/`jenum`.
 pub fn type_expr_to_value_type(type_expr: &TypeExpr) -> ValueType {
-    match type_expr.name.as_str() {
-        "Nambari" | "Namba" => ValueType::Namba,
-        "Neno" => ValueType::Neno,
-        "Ukweli" => ValueType::Ukweli,
-        "Herufi" => ValueType::Herufi,
-        "Tupu" => ValueType::Tupu,
-        "Hamna" => ValueType::Hamna,
-        "NambaKuu" => ValueType::NambaKuu,
-        "NambaSahihi" => ValueType::NambaSahihi,
-        "Wakati" => ValueType::Wakati,
-        "Anuani" => ValueType::Anuani,
-        name => {
-            if name.ends_with('?') {
-                ValueType::Chaguo(Box::new(ValueType::Unknown))
-            } else {
-                ValueType::Struct(name.to_string())
-            }
-        }
-    }
+    asili_parser::parse_value_type_with(&type_expr.name, &|name| {
+        Some(ValueType::Struct(name.to_string()))
+    })
 }
 
 pub const TOKEN_TYPES: &[&str] = &[

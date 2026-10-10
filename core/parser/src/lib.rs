@@ -11,6 +11,7 @@ mod module_merge;
 mod name;
 mod parse;
 mod semantic;
+pub use asili_lexer::bytes_literal;
 pub use ast::*;
 pub use attrs::{item_survives, parse_sharti_predicate, ShartiPredicate, Target};
 pub use incremental::IncrementalParser;

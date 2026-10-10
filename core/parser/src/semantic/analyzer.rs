@@ -132,11 +132,22 @@ impl<'a> Analyzer<'a> {
                 }
                 (*inner.clone(), true)
             }
+            // A byte is its value 0–255.
+            ValueType::Baiti => {
+                if idx_ty != ValueType::Namba && idx_ty != ValueType::Unknown {
+                    self.errors.push(
+                        Diagnostic::new("SEM102", "fahirisi inahitaji Namba")
+                            .with_stage("semantiki")
+                            .with_span(line, 1),
+                    );
+                }
+                (ValueType::Namba, true)
+            }
             ValueType::Kamusi(_, v) => (*v.clone(), false),
             ValueType::Unknown => (ValueType::Unknown, false),
             _ => {
                 self.errors.push(
-                    Diagnostic::new("SEM103", "fahirisi inahitaji Orodha au Kamusi")
+                    Diagnostic::new("SEM103", "fahirisi inahitaji Orodha, Baiti au Kamusi")
                         .with_stage("semantiki")
                         .with_span(line, 1),
                 );
@@ -1084,6 +1095,7 @@ impl<'a> Analyzer<'a> {
         match expr {
             Expr::Number(_) => ValueType::Namba,
             Expr::String(_) => ValueType::Neno,
+            Expr::Baiti(_) => ValueType::Baiti,
             Expr::Bool(_) => ValueType::Ukweli,
             Expr::Char(_) => ValueType::Herufi,
             Expr::Hamna => ValueType::Hamna,
@@ -1283,6 +1295,11 @@ impl<'a> Analyzer<'a> {
                             && !(is_wild(&l) && is_wild(&r))
                         {
                             ValueType::Neno
+                        } else if (l == ValueType::Baiti || is_wild(&l))
+                            && (r == ValueType::Baiti || is_wild(&r))
+                            && !(is_wild(&l) && is_wild(&r))
+                        {
+                            ValueType::Baiti
                         } else if (l == ValueType::Namba || is_wild(&l))
                             && (r == ValueType::Namba || is_wild(&r))
                             && !(is_wild(&l) && is_wild(&r))
@@ -1292,7 +1309,7 @@ impl<'a> Analyzer<'a> {
                             self.errors.push(
                                 Diagnostic::new(
                                     "SEM033",
-                                    "opereta '+' inahitaji (Namba, Namba) au (Neno, Neno) pekee",
+                                    "opereta '+' inahitaji (Namba, Namba), (Neno, Neno) au (Baiti, Baiti) pekee",
                                 )
                                 .with_stage("semantiki")
                                 .with_span(*line, 1),
@@ -1513,26 +1530,15 @@ impl<'a> Analyzer<'a> {
                 line,
             } => {
                 let receiver_ty = self.check_expr(*receiver, scopes, UseMode::BorrowImm);
+                // A built-in type's methods come from the builtin tables (`method_receiver`);
+                // anything else needs to be a `umbo` or `jenum` with a `shughuli` block.
+                let builtin = method_receiver(&receiver_ty);
                 let receiver_ty_name = match &receiver_ty {
                     ValueType::Struct(name) => name.clone(),
-                    ValueType::Neno => "Neno".to_string(),
-                    ValueType::Orodha(_) => "Orodha".to_string(),
-                    ValueType::Kamusi(_, _) => "Kamusi".to_string(),
-                    ValueType::Jozi(_, _) => "Jozi".to_string(),
-                    ValueType::Chaguo(_) => "Chaguo".to_string(),
-                    ValueType::Tokeo(_, _) => "Tokeo".to_string(),
-                    ValueType::KashaGC(_) => "Kasha_GC".to_string(),
-                    ValueType::KashaGCDhaifu(_) => "Kasha_GC_Dhaifu".to_string(),
-                    ValueType::Faili => "Faili".to_string(),
-                    ValueType::Mkondo => "Mkondo".to_string(),
-                    ValueType::Kumbukumbu(_) => "Kumbukumbu".to_string(),
-                    ValueType::Seti(_) => "Seti".to_string(),
-                    ValueType::NjiaTx(_) => "NjiaTx".to_string(),
-                    ValueType::NjiaRx(_) => "NjiaRx".to_string(),
-                    ValueType::NjiaTxBounded(_) => "NjiaTxBounded".to_string(),
-                    ValueType::NjiaRxBounded(_) => "NjiaRxBounded".to_string(),
-                    ValueType::Fungo(_) => "Fungo".to_string(),
-                    ValueType::Wakati => "Wakati".to_string(),
+                    _ if builtin.is_some() => {
+                        let full = crate::format_value_type(&receiver_ty);
+                        full.split('<').next().unwrap_or(&full).to_string()
+                    }
                     _ => {
                         self.errors.push(
                             Diagnostic::new("SEM039", format!("aina '{}' haina njia", receiver_ty))
@@ -1548,34 +1554,14 @@ impl<'a> Analyzer<'a> {
                     .structs
                     .iter()
                     .any(|s| s.name == receiver_ty_name);
-                let is_builtin = matches!(
-                    receiver_ty,
-                    ValueType::Neno
-                        | ValueType::Orodha(_)
-                        | ValueType::Kamusi(_, _)
-                        | ValueType::Jozi(_, _)
-                        | ValueType::Chaguo(_)
-                        | ValueType::Tokeo(_, _)
-                        | ValueType::KashaGC(_)
-                        | ValueType::KashaGCDhaifu(_)
-                        | ValueType::Faili
-                        | ValueType::Mkondo
-                        | ValueType::Kumbukumbu(_)
-                        | ValueType::Seti(_)
-                        | ValueType::NjiaTx(_)
-                        | ValueType::NjiaRx(_)
-                        | ValueType::NjiaTxBounded(_)
-                        | ValueType::NjiaRxBounded(_)
-                        | ValueType::Fungo(_)
-                        | ValueType::Wakati
-                );
+                let is_builtin = builtin.is_some();
                 if is_builtin {
                     for arg in args {
                         let _ = self.check_expr(*arg, scopes, UseMode::Move);
                     }
                     // A method no built-in type has (and no `shughuli` block defines) is an error
                     // here, not a failure when the program runs.
-                    let known = method_receiver(&receiver_ty)
+                    let known = builtin
                         .is_none_or(|r| crate::builtins::has_builtin_method(r, method_name))
                         || self
                             .module
@@ -2271,6 +2257,7 @@ fn method_receiver(ty: &ValueType) -> Option<crate::builtins::MethodReceiver> {
         ValueType::NjiaRx(_) | ValueType::NjiaRxBounded(_) => R::NjiaRx,
         ValueType::Fungo(_) => R::Fungo,
         ValueType::Wakati => R::Wakati,
+        ValueType::Baiti => R::Baiti,
         _ => return None,
     })
 }

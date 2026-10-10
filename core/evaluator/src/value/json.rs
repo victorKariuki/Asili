@@ -36,6 +36,11 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
     Ok(match v {
         Value::Namba(n) => json_number(*n),
         Value::Neno(s) => J::String(s.to_string()),
+        // Bytes have no JSON form; base64 is the usual carrier.
+        Value::Baiti(b) => {
+            use base64::Engine;
+            J::String(base64::engine::general_purpose::STANDARD.encode(b))
+        }
         Value::Ukweli(b) => J::Bool(*b),
         Value::Tupu | Value::Hamna => J::Null,
         Value::Herufi(c) => J::String(c.to_string()),
@@ -153,6 +158,10 @@ fn map_key_to_json_field(k: &MapKey) -> String {
         MapKey::Namba(bits) => f64::from_bits(*bits).to_string(),
         MapKey::Ukweli(b) => b.to_string(),
         MapKey::Herufi(c) => c.to_string(),
+        MapKey::Baiti(b) => {
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD.encode(b)
+        }
     }
 }
 
