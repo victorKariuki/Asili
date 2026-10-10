@@ -18,8 +18,9 @@
 //!
 //! There is no option to turn certificate checking off. Unavailable in the browser build.
 
+use super::http_thamani::{kamusi_to_pairs as text_pairs, unwrap_some, Response};
 use super::BuiltinFn;
-use crate::value::{self, MapKey, Value};
+use crate::value::{self, Value};
 use std::collections::HashMap;
 
 /// The response body read into memory, by default (`kikomo` changes it): large enough for any
@@ -171,88 +172,6 @@ impl Options {
     }
 }
 
-/// `Chaguo::Kuna(x)` (either runtime shape) is `x`.
-fn unwrap_some(v: &Value) -> &Value {
-    match v {
-        Value::Chaguo(Some(inner)) => inner,
-        Value::Chaguo(None) => &Value::Hamna,
-        Value::Enum(e, variant, data) if &**e == "Chaguo" => match (&**variant, data) {
-            ("Kuna", Some(inner)) => inner,
-            _ => &Value::Hamna,
-        },
-        other => other,
-    }
-}
-
-/// A `Kamusi<Neno, Neno>` as ordered pairs (sorted, so a request is the same every run).
-fn text_pairs(v: &Value) -> Option<Vec<(String, String)>> {
-    let Value::Kamusi(m) = v else {
-        return None;
-    };
-    let mut pairs = m
-        .iter()
-        .map(|(k, v)| match k {
-            MapKey::Neno(k) => Some((k.to_string(), value::as_string(v)?)),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>()?;
-    pairs.sort();
-    Some(pairs)
-}
-
-/// The response, as `ureq` hands it over after the last redirect.
-struct Response {
-    status: u16,
-    reason: String,
-    version: String,
-    headers: Vec<(String, String)>,
-    body: String,
-    url: String,
-    seconds: f64,
-}
-
-impl Response {
-    /// `JibuHttp`, its fields in the order `builtins.rs` declares them.
-    fn into_value(self) -> Value {
-        let mut joined: Vec<(String, String)> = Vec::new();
-        for (k, v) in &self.headers {
-            match joined.iter_mut().find(|(n, _)| n == k) {
-                // Repeats of one header are one comma-separated value (RFC 9110 §5.3);
-                // `vichwa_vyote` keeps them apart (`set-cookie` cannot be joined).
-                Some((_, existing)) => {
-                    existing.push_str(", ");
-                    existing.push_str(v);
-                }
-                None => joined.push((k.clone(), v.clone())),
-            }
-        }
-        let mut headers =
-            crate::value::Kamusi::with_capacity_and_hasher(joined.len(), Default::default());
-        for (k, v) in joined {
-            headers.insert(MapKey::Neno(k.into()), Value::neno(v));
-        }
-        let all = self
-            .headers
-            .into_iter()
-            .map(|(k, v)| Value::Jozi(Box::new(Value::neno(k)), Box::new(Value::neno(v))))
-            .collect();
-        Value::Struct(
-            "JibuHttp".into(),
-            vec![
-                ("hali".into(), Value::Namba(self.status as f64)),
-                ("vichwa".into(), Value::Kamusi(std::rc::Rc::new(headers))),
-                ("mwili".into(), Value::neno(self.body)),
-                ("sababu".into(), Value::neno(self.reason)),
-                ("anwani".into(), Value::neno(self.url)),
-                ("toleo".into(), Value::neno(self.version)),
-                ("vichwa_vyote".into(), Value::Orodha(std::rc::Rc::new(all))),
-                ("muda".into(), Value::Namba(self.seconds)),
-            ]
-            .into(),
-        )
-    }
-}
-
 #[cfg(target_arch = "wasm32")]
 fn ombi(_method: &str, _url: &str, _options: Option<&Value>) -> Result<Value, String> {
     Err("HTTP haipatikani kwenye kivinjari".into())
@@ -269,7 +188,7 @@ fn ombi(method: &str, url: &str, options: Option<&Value>) -> Result<Value, Strin
         }
         return Err(format!("HTTP {}: {}", response.status, snippet.trim_end()));
     }
-    Ok(response.into_value())
+    Ok(super::http_thamani::response_to_value(response))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

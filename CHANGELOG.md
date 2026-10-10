@@ -641,6 +641,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The HTTP server (`mkondo_tumikia_http`) sent a body in answer to `HEAD`, corrupting the next
+  response on a keep-alive connection, and an empty reason phrase for every status but 200, 400,
+  404, 500 and 501 (`HTTP/1.1 201 `). `OmbiHttp.vichwa` names are now lowercase, as the client's
+  already were (and as HTTP/2 requires).
+
 - `kwa_json` (and `http_ombi`'s `json`) writes a whole number as `3`, not `3.0`, which servers
   reading an integer require.
 - `Chaguo::Kuna(x)` is a `Chaguo<T>` to the analyzer, so it can be passed where a builtin takes

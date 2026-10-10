@@ -150,7 +150,7 @@ fn request_headers_and_body_reach_kazi_jina() {
     let kazi = r#"
         kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
             weka vichwa = kamusi()
-            weka aina = jaribu (ombi.vichwa.pata("X-Aina"))
+            weka aina = jaribu (ombi.vichwa.pata("x-aina"))
             rejesha JibuHttp { hali: 200, vichwa: vichwa, mwili: (aina kama Neno) + "|" + ombi.mwili }
         }
     "#;
@@ -452,4 +452,37 @@ fn asili_client_and_server_without_declarations() {
         result,
         Value::Tokeo(Ok(Box::new(Value::neno("karibu a=1; b=2".to_string()))))
     );
+}
+
+/// HEAD gets the GET answer's headers (its `Content-Length` included) and no body, so the next
+/// request on the same keep-alive connection still reads cleanly; every status has its reason
+/// phrase.
+#[test]
+fn head_has_no_body_and_statuses_have_reasons() {
+    let kazi = r#"
+        kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
+            ikiwa ombi.anwani == "/mpya" {
+                rejesha JibuHttp { hali: 201, vichwa: kamusi(), mwili: "imeundwa" }
+            }
+            rejesha JibuHttp { hali: 200, vichwa: kamusi(), mwili: "habari" }
+        }
+    "#;
+    let addr = start_server(kazi, 1.0);
+    let mut client = connect_with_retry(&addr);
+    client
+        .write_all(b"HEAD / HTTP/1.1\r\nHost: x\r\n\r\nGET /mpya HTTP/1.1\r\nHost: x\r\n\r\n")
+        .expect("write");
+    let mut raw = Vec::new();
+    let mut chunk = [0u8; 4096];
+    while !String::from_utf8_lossy(&raw).contains("imeundwa") {
+        let n = client.read(&mut chunk).expect("read");
+        assert!(n > 0, "closed early: {}", String::from_utf8_lossy(&raw));
+        raw.extend_from_slice(&chunk[..n]);
+    }
+    let text = String::from_utf8_lossy(&raw);
+    let (head, rest) = text.split_once("\r\n\r\n").expect("head response");
+    assert!(head.starts_with("HTTP/1.1 200 OK"), "{head}");
+    assert!(head.contains("Content-Length: 6"), "{head}");
+    // Right after the HEAD answer's headers comes the next response, not a body.
+    assert!(rest.starts_with("HTTP/1.1 201 Created\r\n"), "{rest}");
 }

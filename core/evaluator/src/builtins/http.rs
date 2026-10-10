@@ -16,7 +16,7 @@ use std::io::{Read, Write};
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 
-use crate::value::{self, EvalError, MapKey, MkondoStream, Value};
+use crate::value::{EvalError, MkondoStream, Value};
 
 #[cfg(not(target_arch = "wasm32"))]
 use super::mkondo::{apply_connection_timeout, handshake_tls};
@@ -337,7 +337,7 @@ fn write_response(
     headers: &[(String, String)],
     body: &str,
 ) -> std::io::Result<()> {
-    let reason = status_reason(status);
+    let reason = super::http_thamani::reason_phrase(status);
     let mut out = format!("HTTP/1.1 {status} {reason}\r\n");
     let mut has_content_length = false;
     for (k, v) in headers {
@@ -352,86 +352,6 @@ fn write_response(
     out.push_str("\r\n");
     out.push_str(body);
     stream.write_all(out.as_bytes())
-}
-
-fn status_reason(status: u16) -> &'static str {
-    match status {
-        200 => "OK",
-        400 => "Bad Request",
-        404 => "Not Found",
-        500 => "Internal Server Error",
-        501 => "Not Implemented",
-        _ => "",
-    }
-}
-
-/// `OmbiHttp` -> `Value::Struct` fields: njia, anwani, vichwa, mwili. Reflection-friendly shape
-/// already established by the JSON codec (`Value::Struct` is name+field-list, no new runtime
-/// type needed) — `httparse`'s parsed method/path/headers map onto it directly.
-fn request_to_value(req: &ParsedRequest) -> Value {
-    let mut headers_map =
-        crate::value::Kamusi::with_capacity_and_hasher(req.headers.len(), Default::default());
-    for (k, v) in &req.headers {
-        headers_map.insert(MapKey::Neno(k.as_str().into()), Value::neno(v.clone()));
-    }
-    Value::Struct(
-        "OmbiHttp".into(),
-        vec![
-            ("njia".into(), Value::neno(req.method.clone())),
-            ("anwani".into(), Value::neno(req.path.clone())),
-            (
-                "vichwa".into(),
-                Value::Kamusi(std::rc::Rc::new(headers_map)),
-            ),
-            ("mwili".into(), Value::neno(req.body.clone())),
-        ]
-        .into(),
-    )
-}
-
-/// `JibuHttp` (`hali`, `vichwa`, `mwili`, and `vichwa_vyote` for repeated headers) -> the
-/// pieces `write_response` needs. `kazi_jina`'s own return value doesn't need to be this
-/// exact struct — anything with the right field names/types works, since `Value::Struct`'s name
-/// is never checked here, matching the JSON codec's own struct-shape leniency.
-fn value_to_response(v: &Value) -> Option<(u16, Vec<(String, String)>, String)> {
-    let Value::Struct(_, fields) = v else {
-        return None;
-    };
-    let hali = fields
-        .iter()
-        .find(|(n, _)| &**n == "hali")
-        .and_then(|(_, v)| value::as_f64(v))?;
-    let mwili = fields
-        .iter()
-        .find(|(n, _)| &**n == "mwili")
-        .and_then(|(_, v)| value::as_string(v))
-        .unwrap_or_default();
-    let vichwa = fields
-        .iter()
-        .find(|(n, _)| &**n == "vichwa")
-        .map(|(_, v)| match v {
-            Value::Kamusi(m) => m
-                .iter()
-                .filter_map(|(k, v)| match (k, value::as_string(v)) {
-                    (MapKey::Neno(k), Some(v)) => Some((k.to_string(), v)),
-                    _ => None,
-                })
-                .collect(),
-            _ => Vec::new(),
-        })
-        .unwrap_or_default();
-    // `vichwa_vyote` adds headers a `Kamusi` cannot hold twice (`set-cookie`).
-    let mut vichwa: Vec<(String, String)> = vichwa;
-    if let Some((_, Value::Orodha(all))) = fields.iter().find(|(n, _)| &**n == "vichwa_vyote") {
-        for item in all.iter() {
-            if let Value::Jozi(k, v) = item {
-                if let (Some(k), Some(v)) = (value::as_string(k), value::as_string(v)) {
-                    vichwa.push((k, v));
-                }
-            }
-        }
-    }
-    Some((hali as u16, vichwa, mwili))
 }
 
 /// `mkondo_tumikia_http(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls: Chaguo<TlsUsanidi>) ->
@@ -492,12 +412,28 @@ fn http_worker_loop(
                 }
             };
 
-            let ombi = request_to_value(&parsed);
+            // A HEAD answer carries the headers of the GET answer, and no body.
+            let head = parsed.method.eq_ignore_ascii_case("HEAD");
+            let ombi = super::http_thamani::request_to_value(super::http_thamani::Request {
+                method: parsed.method,
+                target: parsed.path,
+                headers: parsed.headers,
+                body: parsed.body,
+            });
             let jibu_result = call(kazi_name, vec![ombi]);
             let write_ok = match jibu_result {
-                Ok(jibu_val) => match value_to_response(&jibu_val) {
+                Ok(jibu_val) => match super::http_thamani::value_to_response(&jibu_val) {
                     Some((status, headers, body)) => {
-                        write_response(&mut mkondo_stream, status, &headers, &body).is_ok()
+                        let mut headers = headers;
+                        if head
+                            && !headers
+                                .iter()
+                                .any(|(k, _)| k.eq_ignore_ascii_case("content-length"))
+                        {
+                            headers.push(("Content-Length".into(), body.len().to_string()));
+                        }
+                        let body = if head { "" } else { body.as_str() };
+                        write_response(&mut mkondo_stream, status, &headers, body).is_ok()
                     }
                     None => write_response(
                         &mut mkondo_stream,

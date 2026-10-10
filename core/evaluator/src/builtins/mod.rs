@@ -18,6 +18,7 @@ mod faili;
 mod hisabati;
 pub(crate) mod http;
 mod http_mteja;
+mod http_thamani;
 mod json;
 mod kasha_gc;
 mod kiungo;
