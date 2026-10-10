@@ -1259,4 +1259,8 @@ impl crate::kazi_sawia::Context for Host<'_> {
     fn call_index(&mut self, index: usize, args: Vec<Value>) -> Result<Value, EvalError> {
         self.call_values(index, args)
     }
+
+    fn starter_named(&mut self, name: &str) -> Result<crate::kazi_sawia::Starter, EvalError> {
+        self.task_starter(name)
+    }
 }

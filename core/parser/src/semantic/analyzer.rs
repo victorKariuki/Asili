@@ -2295,6 +2295,7 @@ fn method_receiver(ty: &ValueType) -> Option<crate::builtins::MethodReceiver> {
         ValueType::Ahadi(_) => R::Ahadi,
         ValueType::MkondoSikilizaji => R::MkondoSikilizaji,
         ValueType::MkondoUdp => R::MkondoUdp,
+        ValueType::MkondoWs => R::MkondoWs,
         _ => return None,
     })
 }

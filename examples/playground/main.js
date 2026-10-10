@@ -32,7 +32,7 @@ const KEYWORDS = new Set([
 const BUILTIN_TYPES = new Set([
   "Namba", "Neno", "Baiti", "Ukweli", "Herufi", "Tupu", "Hamna", "Orodha", "Kamusi", "Seti",
   "Jozi", "Chaguo", "Tokeo", "Wakati", "Anuani", "Namba_Kuu", "Namba_Sahihi", "Kumbukumbu",
-  "Kasha_GC", "Kasha_GC_Dhaifu", "Faili", "Mkondo", "MkondoSikilizaji", "MkondoUdp",
+  "Kasha_GC", "Kasha_GC_Dhaifu", "Faili", "Mkondo", "MkondoSikilizaji", "MkondoUdp", "MkondoWs",
   "TlsUsanidi", "NjiaTx", "NjiaRx", "Fungo", "Ahadi", "Biti8", "Biti16", "Biti32", "Biti64",
   "uBiti8", "uBiti16", "uBiti32", "uBiti64", "OmbiHttp", "JibuHttp", "ChaguoSeva",
   "ChaguoMkondo", "ChaguoSikiliza", "ChaguoHttp",

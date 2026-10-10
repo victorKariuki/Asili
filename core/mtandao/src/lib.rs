@@ -14,6 +14,7 @@ mod listener;
 mod stream;
 pub mod tls;
 mod udp;
+pub mod ws;
 
 pub use dns::resolve;
 pub use listener::{bind, BindOptions, Listener, LocalListener};

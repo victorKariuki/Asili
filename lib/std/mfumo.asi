@@ -46,6 +46,9 @@ umbo JibuHttp {
     muda?: Namba,
     # Mwili kama baiti (seva hutuma huu badala ya `mwili`).
     mwili_baiti?: Baiti,
+    # Kazi itakayopokea WebSocket: ombi la uboreshaji hujibiwa 101 na kazi hii hupokea
+    # `MkondoWs` kwa kila muunganisho.
+    ws?: Neno,
     # NjiaRx (ya `njia` au `njia_na_kikomo`): seva hutuma kila thamani yake kama kipande cha
     # mwili, hadi njia ifungwe (`tukio_sse` kwa matukio).
     mwili_njia?: Haijulikani,
@@ -213,6 +216,10 @@ kazi toka(kodi: Namba) -> Tupu
 # Tukio moja la server-sent events (text/event-stream): mistari ya `id:`, `event:` na `data:`,
 # kisha mstari mtupu.
 kazi tukio_sse(data: Neno, tukio?: Neno, kitambulisho?: Neno) -> Neno
+
+# Unganisha WebSocket kwenye `ws://` au `wss://` (kwa TLS: `tls`, `cheti_ca`, `cheti`/`ufunguo`,
+# `jina_seva`, `muda`).
+kazi ws_unganisha(anwani: Neno, chaguo?: ChaguoMkondo) -> Tokeo<MkondoWs, Neno>
 
 # Soketi ya UDP kwenye anwani ("0.0.0.0:0": anwani yoyote, mlango wowote ulio wazi).
 kazi udp_fungua(anwani: Neno) -> Tokeo<MkondoUdp, Neno>

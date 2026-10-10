@@ -36,6 +36,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         m.insert("tafuta_anwani".to_string(), Box::new(native::tafuta_anwani));
         m.insert("tls_sanidi".to_string(), Box::new(native::tls_sanidi));
         m.insert("udp_fungua".to_string(), Box::new(native::udp_fungua));
+        m.insert("ws_unganisha".to_string(), Box::new(native::ws_unganisha));
     }
     #[cfg(target_arch = "wasm32")]
     for name in [
@@ -43,6 +44,7 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         "mkondo_sikiliza",
         "tafuta_anwani",
         "udp_fungua",
+        "ws_unganisha",
     ] {
         m.insert(
             name.to_string(),
@@ -85,6 +87,16 @@ pub(crate) fn sikilizaji_method(
     match *listener {}
 }
 
+/// No sockets in the browser (a `MkondoWs` cannot exist there).
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn ws_method(
+    w: &std::rc::Rc<std::cell::RefCell<crate::value::WsHandle>>,
+    _method: &str,
+    _args: &[Value],
+) -> Result<Value, EvalError> {
+    match w.borrow().0 {}
+}
+
 /// No sockets in the browser (a `MkondoUdp` cannot exist there).
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn udp_method(
@@ -107,7 +119,7 @@ mod native {
 
     use super::super::http_thamani::field;
     use crate::kazi_sawia::block_on;
-    use crate::value::{self, EvalError, MkondoHandle, Sikilizaji, Value};
+    use crate::value::{self, EvalError, MkondoHandle, Sikilizaji, Value, WsHandle};
 
     type Handle = Rc<RefCell<MkondoHandle>>;
 
@@ -418,6 +430,105 @@ mod native {
             "simama" => {
                 listener.stop();
                 Ok(Value::Tupu)
+            }
+            _ => Err(EvalError::Unknown(format!("njia '{method}' haijulikani"))),
+        }
+    }
+
+    /// `ws_unganisha(anwani, chaguo?: ChaguoMkondo) -> Tokeo<MkondoWs, Neno>`: `ws://` or `wss://`.
+    pub(super) fn ws_unganisha(args: &[Value]) -> Result<Value, EvalError> {
+        let addr = super::super::arg_str(args, 0);
+        let o = args.get(1).unwrap_or(&Value::Hamna);
+        let opts = ConnectOptions {
+            tls: false,
+            server_name: text(field(o, "jina_seva")),
+            timeout: seconds(field(o, "muda")),
+            ca_file: text(field(o, "cheti_ca")),
+            client_cert: text(field(o, "cheti")).zip(text(field(o, "ufunguo"))),
+            ip_family: value::as_f64(field(o, "familia_ip")).map(|f| f as u8),
+            alpn: Vec::new(),
+        };
+        crate::platform::flush_stdout(); // about to wait: show what was printed so far
+        let r = block_on(async move { asili_mtandao::ws::connect(&addr, &opts).await })?;
+        Ok(tokeo(r.map(|ws| {
+            Value::MkondoWs(Rc::new(RefCell::new(WsHandle(Some(ws)))))
+        })))
+    }
+
+    /// Wait for `op` on the open WebSocket `w`, as a `Tokeo`.
+    fn run_ws<T: 'static>(
+        w: &Rc<RefCell<WsHandle>>,
+        op: impl AsyncFnOnce(&mut asili_mtandao::ws::Ws) -> Result<T, String> + 'static,
+        out: impl FnOnce(T) -> Value,
+    ) -> Result<Value, EvalError> {
+        crate::platform::flush_stdout(); // about to wait: show what was printed so far
+        let w = w.clone();
+        let r = block_on(async move {
+            let mut g = w
+                .try_borrow_mut()
+                .map_err(|_| "WebSocket: unatumiwa na kazi nyingine".to_string())?;
+            let ws =
+                g.0.as_mut()
+                    .ok_or_else(|| "WebSocket: imefungwa tayari".to_string())?;
+            op(ws).await
+        })?;
+        Ok(tokeo(r.map(out)))
+    }
+
+    /// A method of `MkondoWs`.
+    pub(crate) fn ws_method(
+        w: &Rc<RefCell<WsHandle>>,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, EvalError> {
+        use asili_mtandao::ws::{self, Message};
+        let unit = |()| Value::Tupu;
+        let payload = |m: Message| match m {
+            Message::Binary(b) => b.to_vec(),
+            Message::Text(t) => t.as_bytes().to_vec(),
+            _ => Vec::new(),
+        };
+        match method {
+            "tuma" => {
+                let text = super::super::arg_str(args, 0);
+                run_ws(
+                    w,
+                    async move |ws| ws::send(ws, Message::Text(text.into())).await,
+                    unit,
+                )
+            }
+            "tuma_baiti" => {
+                let data = crate::eval::methods::bytes_of(args.first().unwrap_or(&Value::Hamna))
+                    .map(|b| b.into_owned())
+                    .unwrap_or_default();
+                run_ws(
+                    w,
+                    async move |ws| ws::send(ws, Message::Binary(data.into())).await,
+                    unit,
+                )
+            }
+            "pokea" => run_ws(
+                w,
+                async |ws| ws::recv(ws, None).await,
+                move |m| Value::Chaguo(m.map(|m| Box::new(Value::Baiti(payload(m).into())))),
+            ),
+            "pokea_neno" => run_ws(
+                w,
+                async |ws| ws::recv(ws, None).await,
+                move |m| {
+                    Value::Chaguo(m.map(|m| {
+                        Box::new(Value::neno(
+                            String::from_utf8_lossy(&payload(m)).into_owned(),
+                        ))
+                    }))
+                },
+            ),
+            "funga" => {
+                let taken = w.try_borrow_mut().ok().and_then(|mut h| h.0.take());
+                if let Some(mut ws) = taken {
+                    block_on(async move { ws::close(&mut ws).await })?;
+                }
+                Ok(Value::sawa(Value::Tupu))
             }
             _ => Err(EvalError::Unknown(format!("njia '{method}' haijulikani"))),
         }

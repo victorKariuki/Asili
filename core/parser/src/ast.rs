@@ -765,6 +765,7 @@ impl fmt::Display for ValueType {
             ValueType::Mkondo => write!(f, "Mkondo"),
             ValueType::MkondoSikilizaji => write!(f, "MkondoSikilizaji"),
             ValueType::MkondoUdp => write!(f, "MkondoUdp"),
+            ValueType::MkondoWs => write!(f, "MkondoWs"),
             ValueType::TlsUsanidi => write!(f, "TlsUsanidi"),
             ValueType::Kumbukumbu(t) => write!(f, "Kumbukumbu<{}>", t),
             ValueType::NjiaTx(t) => write!(f, "NjiaTx<{}>", t),
@@ -820,6 +821,8 @@ pub enum ValueType {
     MkondoSikilizaji,
     /// UDP socket (udp_fungua, leta mfumo).
     MkondoUdp,
+    /// An open WebSocket (ws_unganisha, or a server's WebSocket handler).
+    MkondoWs,
     /// Loaded TLS server certificate/key pair (tls_sanidi, leta mfumo); passed to
     /// mkondo_tumikia's optional TLS parameter.
     TlsUsanidi,

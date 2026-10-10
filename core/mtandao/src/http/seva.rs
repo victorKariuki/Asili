@@ -62,7 +62,13 @@ pub struct Jibu {
     pub reason: Option<String>,
     pub headers: Vec<(String, String)>,
     pub body: JibuMwili,
+    /// Turn the connection into a WebSocket and run this with it (the request must ask for an
+    /// upgrade; the answer is `101 Switching Protocols`).
+    pub websocket: Option<WsHandler>,
 }
+
+/// A WebSocket's handler, run once per upgraded connection on the server's thread.
+pub type WsHandler = Box<dyn FnOnce(crate::ws::Ws) -> Pin<Box<dyn Future<Output = ()>>>>;
 
 impl Jibu {
     /// A plain-text answer.
@@ -75,6 +81,7 @@ impl Jibu {
                 "text/plain; charset=utf-8".to_string(),
             )],
             body: JibuMwili::Full(body.as_bytes().to_vec()),
+            websocket: None,
         }
     }
 }
@@ -275,11 +282,13 @@ fn plain(status: StatusCode, msg: &str) -> Response<Body> {
 }
 
 async fn respond(
-    req: Request<Incoming>,
+    mut req: Request<Incoming>,
     peer: String,
     opts: &ServerOptions,
     handler: &Handler,
 ) -> Response<Body> {
+    let ws_accept = crate::ws::accept_key(&super::header_pairs(req.headers()));
+    let upgrade = ws_accept.as_ref().map(|_| hyper::upgrade::on(&mut req));
     let (parts, body) = req.into_parts();
     let body = match Limited::new(body, opts.body_limit).collect().await {
         Ok(c) => c.to_bytes().to_vec(),
@@ -317,7 +326,33 @@ async fn respond(
         body,
         peer,
     };
-    let jibu = handler(ombi).await;
+    let mut jibu = handler(ombi).await;
+    if let Some(run) = jibu.websocket.take() {
+        return match (ws_accept, upgrade) {
+            (Some(accept), Some(upgrade)) => {
+                tokio::task::spawn_local(async move {
+                    if let Ok(io) = upgrade.await {
+                        run(crate::ws::upgraded(io).await).await;
+                    }
+                });
+                let mut r = Response::new(Body::Full(None));
+                *r.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
+                r.headers_mut().insert(
+                    hyper::header::UPGRADE,
+                    HeaderValue::from_static("websocket"),
+                );
+                r.headers_mut().insert(
+                    hyper::header::CONNECTION,
+                    HeaderValue::from_static("Upgrade"),
+                );
+                if let Ok(v) = HeaderValue::try_from(accept) {
+                    r.headers_mut().insert("sec-websocket-accept", v);
+                }
+                r
+            }
+            _ => plain(StatusCode::BAD_REQUEST, "ombi si ombi la WebSocket"),
+        };
+    }
     answer(jibu, &accept_encoding, opts.compress)
 }
 

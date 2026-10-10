@@ -9,9 +9,14 @@ use std::time::Duration;
 
 use asili_mtandao::http::seva::{Handler, Jibu, ServerOptions};
 
+use std::cell::RefCell;
+
+use asili_mtandao::http::seva::WsHandler;
+
 use super::http_thamani::{field, request_to_value, value_to_response};
 use super::mkondo::{serve_pool, Worker};
-use crate::value::{self, EvalError, Value};
+use crate::kazi_sawia::Starter;
+use crate::value::{self, EvalError, Value, WsHandle};
 
 /// `mkondo_tumikia_http(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls?, chaguo?: ChaguoSeva) ->
 /// Tokeo<Tupu, Neno>`: serve until the listener is stopped (`.simama()`), then let open
@@ -54,8 +59,20 @@ pub(crate) fn mkondo_tumikia_http(
                     let task = starter.start(vec![request_to_value(ombi)]);
                     task.finished().await;
                     match task.result() {
-                        Some(Ok(v)) => value_to_response(&v)
-                            .unwrap_or_else(|| Jibu::text(500, "jibu batili kutoka kwa kazi_jina")),
+                        Some(Ok(v)) => match value_to_response(&v) {
+                            Some(mut jibu) => {
+                                if let Value::Neno(name) = field(&v, "ws") {
+                                    match starter.named(name) {
+                                        Ok(ws) => jibu.websocket = Some(ws_handler(ws)),
+                                        Err(_) => {
+                                            jibu = Jibu::text(500, "kazi ya WebSocket haijulikani")
+                                        }
+                                    }
+                                }
+                                jibu
+                            }
+                            None => Jibu::text(500, "jibu batili kutoka kwa kazi_jina"),
+                        },
                         _ => Jibu::text(500, "hitilafu ya ndani"),
                     }
                 })
@@ -63,4 +80,15 @@ pub(crate) fn mkondo_tumikia_http(
             Box::pin(asili_mtandao::http::seva::serve(w.listener, opts, handler))
         },
     )
+}
+
+/// The handler of a WebSocket: runs the program's function `starter` with the connection, as a
+/// task, and returns once that task has.
+fn ws_handler(starter: Starter) -> WsHandler {
+    Box::new(move |conn| {
+        Box::pin(async move {
+            let ws = Value::MkondoWs(Rc::new(RefCell::new(WsHandle(Some(conn)))));
+            starter.start(vec![ws]).finished().await;
+        })
+    })
 }

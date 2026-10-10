@@ -50,6 +50,7 @@ pub const BUILTIN_TYPE_NAMES: &[&str] = &[
     "Mkondo",
     "MkondoSikilizaji",
     "MkondoUdp",
+    "MkondoWs",
     "TlsUsanidi",
     "NjiaTx",
     "NjiaRx",
@@ -225,6 +226,7 @@ pub const BUILTIN_MODULES: &[BuiltinModule] = &[
             ("tls_sanidi(cheti_njia: Neno, ufunguo_njia: Neno) -> Tokeo<TlsUsanidi, Neno>", "Pakia cheti na ufunguo (PEM) kwa seva ya TLS."),
             ("toka(kodi: Namba) -> Tupu", "Maliza programu kwa msimbo wa kutoka."),
             ("tukio_sse(data: Neno, tukio?: Neno, kitambulisho?: Neno) -> Neno", "Tukio moja la server-sent events (text/event-stream): mistari ya `id:`, `event:` na `data:`, kisha mstari mtupu."),
+            ("ws_unganisha(anwani: Neno, chaguo?: ChaguoMkondo) -> Tokeo<MkondoWs, Neno>", "Unganisha WebSocket kwenye `ws://` au `wss://` (kwa TLS: `tls`, `cheti_ca`, `cheti`/`ufunguo`, `jina_seva`, `muda`)."),
             ("udp_fungua(anwani: Neno) -> Tokeo<MkondoUdp, Neno>", "Soketi ya UDP kwenye anwani (\"0.0.0.0:0\": anwani yoyote, mlango wowote ulio wazi)."),
             ("vigezo() -> Orodha<Neno>", "Hoja za mstari wa amri."),
             ("weka_env(jina: Neno, thamani: Neno) -> Tupu", "Weka kigezo cha mazingira."),
@@ -262,6 +264,7 @@ pub const BUILTIN_MODULES: &[BuiltinModule] = &[
                     ("vichwa_vyote?: Orodha<Jozi<Neno, Neno>>", "Kila kichwa kwa mpangilio, marudio yakiwa tofauti (`set-cookie`); seva huvituma vyote."),
                     ("muda?: Namba", "Sekunde ombi lilizochukua, pamoja na kuelekezwa na kujaribu tena."),
                     ("mwili_baiti?: Baiti", "Mwili kama baiti (seva hutuma huu badala ya `mwili`)."),
+                    ("ws?: Neno", "Kazi itakayopokea WebSocket: ombi la uboreshaji hujibiwa 101 na kazi hii hupokea `MkondoWs` kwa kila muunganisho."),
                     ("mwili_njia?: Haijulikani", "NjiaRx (ya `njia` au `njia_na_kikomo`): seva hutuma kila thamani yake kama kipande cha mwili, hadi njia ifungwe (`tukio_sse` kwa matukio)."),
                 ],
             },
@@ -784,6 +787,7 @@ pub enum MethodReceiver {
     Ahadi,
     MkondoSikilizaji,
     MkondoUdp,
+    MkondoWs,
 }
 
 /// Built-in methods that only read their receiver, per [`MethodReceiver`]. The one list: the
@@ -916,6 +920,7 @@ pub const PURE_METHODS: &[&[&str]] = &[
         "tangaza",
         "jiunge_kikundi",
     ],
+    &["tuma", "tuma_baiti", "pokea", "pokea_neno", "funga"],
 ];
 
 /// Built-in methods that change their receiver in place, per [`MethodReceiver`].
@@ -947,6 +952,7 @@ pub const MUTATING_METHODS: &[&[&str]] = &[
     &[],
     &[],
     &[],
+    &[],
 ];
 
 /// Built-in methods that call a `kazi` (or builtin) named by their first argument, per element.
@@ -961,6 +967,7 @@ pub const CALLBACK_METHODS: &[&[&str]] = &[
         "kila_mmoja",
         "panga_kwa",
     ],
+    &[],
     &[],
     &[],
     &[],
@@ -1058,6 +1065,17 @@ pub fn method_return_type(receiver: &ValueType, method: &str) -> ValueType {
             Box::new(ValueType::Neno),
         ),
         (ValueType::MkondoUdp, "anwani") => ValueType::Neno,
+        (ValueType::MkondoWs, "tuma" | "tuma_baiti" | "funga") => {
+            ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno))
+        }
+        (ValueType::MkondoWs, "pokea") => ValueType::Tokeo(
+            Box::new(ValueType::Chaguo(Box::new(ValueType::Baiti))),
+            Box::new(ValueType::Neno),
+        ),
+        (ValueType::MkondoWs, "pokea_neno") => ValueType::Tokeo(
+            Box::new(ValueType::Chaguo(Box::new(ValueType::Neno))),
+            Box::new(ValueType::Neno),
+        ),
         (ValueType::MkondoUdp, "weka_muda") => ValueType::Tupu,
         (ValueType::Faili | ValueType::Mkondo, "soma_baiti") => {
             ValueType::Tokeo(Box::new(ValueType::Baiti), Box::new(ValueType::Neno))

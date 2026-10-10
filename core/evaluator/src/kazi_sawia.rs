@@ -33,6 +33,8 @@ pub(crate) trait Context {
     fn swap_context(&mut self, saved: &mut [u64; 2]);
     /// Call function `index` of the program.
     fn call_index(&mut self, index: usize, args: Vec<Value>) -> Result<Value, EvalError>;
+    /// A starter for another function of the program.
+    fn starter_named(&mut self, name: &str) -> Result<Starter, EvalError>;
 }
 
 /// Starts one function of a host's program as a task (`Host::task_starter`).
@@ -43,6 +45,14 @@ pub(crate) struct Starter {
 }
 
 impl Starter {
+    /// A starter for the program's function `name`, on the same host.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    pub(crate) fn named(&self, name: &str) -> Result<Starter, EvalError> {
+        // SAFETY: as for `start`: the host outlives every task it starts, and is used by one
+        // code path at a time.
+        unsafe { (*self.host).starter_named(name) }
+    }
+
     /// Start the function with `args`: its task.
     pub(crate) fn start(&self, args: Vec<Value>) -> std::rc::Rc<Task> {
         spawn(self.host, self.index, args)

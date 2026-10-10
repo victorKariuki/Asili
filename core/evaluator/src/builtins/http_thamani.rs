@@ -179,6 +179,7 @@ pub(crate) fn value_to_response(v: &Value) -> Option<asili_mtandao::http::seva::
         reason,
         headers,
         body,
+        websocket: None,
     })
 }
 

@@ -18,6 +18,8 @@ fn handler() -> Handler {
                         reason: None,
                         headers: vec![],
                         body: JibuMwili::Stream(chunks),
+
+                        websocket: None,
                     }
                 }
                 "/kubwa" => Jibu {
@@ -25,6 +27,8 @@ fn handler() -> Handler {
                     reason: None,
                     headers: vec![("content-type".into(), "text/plain".into())],
                     body: JibuMwili::Full(b"a".repeat(5000)),
+
+                    websocket: None,
                 },
                 _ => Jibu {
                     status: 201,
@@ -41,6 +45,8 @@ fn handler() -> Handler {
                         )
                         .into_bytes(),
                     ),
+
+                    websocket: None,
                 },
             }
         })
@@ -234,5 +240,72 @@ fn client_negotiates_h2_decodes_and_limits() {
         let r = send(&t, &req).await.unwrap();
         let err = r.read_body(100, &mut |_| Ok(())).await.unwrap_err();
         assert!(err.contains("kikomo cha baiti 100"), "{err}");
+    });
+}
+
+/// A WebSocket: the handler upgrades `/ws` and echoes messages back, in order, until closed.
+#[test]
+fn websocket_upgrade_echo_and_close() {
+    use asili_mtandao::ws::{self, Message};
+    let echo: Handler = Rc::new(|o: Ombi| {
+        Box::pin(async move {
+            if o.path != "/ws" {
+                return Jibu::text(404, "hakuna");
+            }
+            Jibu {
+                status: 101,
+                reason: None,
+                headers: vec![],
+                body: JibuMwili::Full(vec![]),
+                websocket: Some(Box::new(|mut conn| {
+                    Box::pin(async move {
+                        while let Ok(Some(m)) = ws::recv(&mut conn, None).await {
+                            if ws::send(&mut conn, m).await.is_err() {
+                                break;
+                            }
+                        }
+                        ws::close(&mut conn).await;
+                    })
+                })),
+            }
+        })
+    });
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let local = tokio::task::LocalSet::new();
+    local.block_on(&rt, async {
+        let l = Arc::new(bind("127.0.0.1:0", &BindOptions::default()).unwrap());
+        let addr = l.local_addr();
+        tokio::task::spawn_local(serve(l.local().unwrap(), ServerOptions::default(), echo));
+        let mut c = ws::connect(&format!("ws://{addr}/ws"), &Default::default())
+            .await
+            .unwrap();
+        ws::send(&mut c, Message::Text("habari".into()))
+            .await
+            .unwrap();
+        ws::send(&mut c, Message::Binary(vec![0, 255].into()))
+            .await
+            .unwrap();
+        assert_eq!(
+            ws::recv(&mut c, None).await.unwrap(),
+            Some(Message::Text("habari".into()))
+        );
+        assert_eq!(
+            ws::recv(&mut c, None).await.unwrap(),
+            Some(Message::Binary(vec![0, 255].into()))
+        );
+        ws::close(&mut c).await;
+        assert_eq!(ws::recv(&mut c, None).await.unwrap(), None);
+        // A plain request to the same handler is refused as a WebSocket request.
+        let mut s = TcpStream::connect(&addr).await.unwrap();
+        s.write_all(b"GET /ws HTTP/1.1\r\nhost: h\r\nconnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let mut out = String::new();
+        s.read_to_string(&mut out).await.unwrap();
+        assert!(out.starts_with("HTTP/1.1 400"), "{out}");
+        l.stop();
     });
 }

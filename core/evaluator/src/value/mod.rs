@@ -177,6 +177,8 @@ pub enum Value {
     MkondoSikilizaji(Arc<Sikilizaji>),
     /// A UDP socket (`udp_fungua`); its time limit for `.pokea()`.
     MkondoUdp(Rc<MkondoUdp>),
+    /// An open WebSocket (`ws_unganisha`, or a server's WebSocket handler).
+    MkondoWs(Rc<RefCell<WsHandle>>),
     /// A loaded TLS server certificate/key pair, ready to hand to `mkondo_tumikia`
     /// (`tls_sanidi`). `rustls::ServerConfig` is `Send + Sync` by design — every rustls consumer
     /// `Arc`-shares it across connections — so this fits the worker pool's existing
@@ -422,6 +424,7 @@ impl Value {
             | Value::Faili(_)
             | Value::Mkondo(_)
             | Value::MkondoUdp(_)
+            | Value::MkondoWs(_)
             | Value::Kumbukumbu(_) => return None,
         })
     }
@@ -543,6 +546,14 @@ pub struct MkondoUdp {
 #[cfg(target_arch = "wasm32")]
 pub struct MkondoUdp(pub std::convert::Infallible);
 
+/// A WebSocket (`None` once closed by `.funga()`).
+#[cfg(not(target_arch = "wasm32"))]
+pub struct WsHandle(pub Option<asili_mtandao::ws::Ws>);
+
+/// No sockets in the browser.
+#[cfg(target_arch = "wasm32")]
+pub struct WsHandle(pub std::convert::Infallible);
+
 // Manual Debug impl (not #[derive]) so raw/REPL output uses Asili's own variant names —
 // `Tokeo`/`Chaguo` wrap Rust's `Result`/`Option`, whose derived Debug would otherwise print
 // the Rust-side `Ok(..)`/`Err(..)`/`Some(..)` literally instead of `Sawa(..)`/`Kosa(..)`/
@@ -607,6 +618,18 @@ impl std::fmt::Debug for Value {
             Value::MkondoSikilizaji(listener) => match **listener {},
             #[cfg(not(target_arch = "wasm32"))]
             Value::MkondoUdp(u) => write!(f, "MkondoUdp({})", u.udp.local_addr()),
+            #[cfg(not(target_arch = "wasm32"))]
+            Value::MkondoWs(w) => write!(
+                f,
+                "MkondoWs({})",
+                if w.borrow().0.is_some() {
+                    "wazi"
+                } else {
+                    "imefungwa"
+                }
+            ),
+            #[cfg(target_arch = "wasm32")]
+            Value::MkondoWs(w) => match w.borrow().0 {},
             #[cfg(target_arch = "wasm32")]
             Value::MkondoUdp(u) => match u.0 {},
             #[cfg(not(target_arch = "wasm32"))]
@@ -665,6 +688,7 @@ impl PartialEq for Value {
             (Value::Mkondo(a), Value::Mkondo(b)) => Rc::ptr_eq(a, b),
             (Value::MkondoSikilizaji(a), Value::MkondoSikilizaji(b)) => Arc::ptr_eq(a, b),
             (Value::MkondoUdp(a), Value::MkondoUdp(b)) => Rc::ptr_eq(a, b),
+            (Value::MkondoWs(a), Value::MkondoWs(b)) => Rc::ptr_eq(a, b),
             (Value::Kumbukumbu(a), Value::Kumbukumbu(b)) => a == b,
             (Value::Seti(a), Value::Seti(b)) => a == b,
             (Value::NambaKuu(a), Value::NambaKuu(b)) => a == b,
