@@ -136,7 +136,7 @@ token such as `PROPFIND`) to an `http://` or `https://` URL. It returns the whol
 whatever its status; a `Kosa` is a failed connection, TLS handshake, timeout, read or invalid
 option — or a non-2xx status when `kosa_hali` is set. `ChaguoHttp`, `JibuHttp` and `OmbiHttp`
 are builtin `umbo`s: a program uses them without declaring them, and every `ChaguoHttp` field
-may be left out of a literal. `h3: kweli` sends the request over HTTP/3 (QUIC) instead: one exchange, without redirects, retries or cookies.
+may be left out of a literal. `h3: kweli` sends the request over HTTP/3 (QUIC) instead, with the same redirects, retries and cookies. HTTP/3 connections are kept per server and reused on the same thread.
 
 | `ChaguoHttp` field | Type | Meaning |
 |---|---|---|

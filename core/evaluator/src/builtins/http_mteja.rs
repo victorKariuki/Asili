@@ -222,6 +222,7 @@ mod native {
         limit: u64,
         save_to: Option<String>,
         base64_response: bool,
+        h3: bool,
     }
 
     fn body_of(o: &Options) -> Result<(net::Body, Option<String>), String> {
@@ -321,65 +322,97 @@ mod native {
             limit: o.limit.unwrap_or(super::BODY_LIMIT),
             save_to: o.save_to.clone(),
             base64_response: o.base64_response,
+            h3: o.h3,
         };
-        if o.h3 {
-            return h3_send(plan);
-        }
         crate::platform::flush_stdout(); // about to wait: show what was printed so far
         crate::kazi_sawia::block_on(async move { run(plan).await }).map_err(|e| format!("{e:?}"))?
     }
 
-    /// One request over HTTP/3: no redirects, retries or cookies.
-    fn h3_send(p: Plan) -> Result<Response, String> {
-        let started = Instant::now();
-        let body = match &p.body {
-            net::Body::Empty => Vec::new(),
-            net::Body::Bytes(b) => b.clone(),
-            net::Body::File(path) => {
-                std::fs::read(path).map_err(|e| format!("faili {path}: {e}"))?
+    /// One answer, over HTTP/1.1, HTTP/2 or HTTP/3, read through the same policy.
+    enum Reply {
+        Net(net::Response),
+        H3(asili_mtandao::http::h3::Answer),
+    }
+
+    impl Reply {
+        fn status(&self) -> u16 {
+            match self {
+                Reply::Net(r) => r.status,
+                Reply::H3(a) => a.status,
             }
-        };
-        let url = p.url.clone();
-        let answer = crate::kazi_sawia::block_on(async move {
-            asili_mtandao::http::h3::fetch(
+        }
+
+        fn reason(&self) -> String {
+            match self {
+                Reply::Net(r) => r.reason.clone(),
+                Reply::H3(a) => a.reason.clone(),
+            }
+        }
+
+        fn version(&self) -> &'static str {
+            match self {
+                Reply::Net(r) => r.version,
+                Reply::H3(_) => "HTTP/3",
+            }
+        }
+
+        fn headers(&self) -> &[(String, String)] {
+            match self {
+                Reply::Net(r) => &r.headers,
+                Reply::H3(a) => &a.headers,
+            }
+        }
+
+        /// The body, decoded, to `sink`, at most `limit` bytes.
+        async fn read_body(
+            self,
+            limit: u64,
+            sink: &mut dyn FnMut(&[u8]) -> std::io::Result<()>,
+        ) -> Result<(), String> {
+            match self {
+                Reply::Net(r) => r.read_body(limit, sink).await,
+                Reply::H3(a) => {
+                    if a.body.len() as u64 > limit {
+                        return Err(format!("jibu limezidi kikomo cha baiti {limit}"));
+                    }
+                    sink(&a.body).map_err(|e| e.to_string())
+                }
+            }
+        }
+    }
+
+    /// Send the request once: over HTTP/3 when asked, else over HTTP/1.1 or HTTP/2 (ALPN).
+    async fn send_one(
+        p: &Plan,
+        headers: &[(String, String)],
+        body: &net::Body,
+    ) -> Result<Reply, String> {
+        if p.h3 {
+            let bytes = match body {
+                net::Body::Empty => Vec::new(),
+                net::Body::Bytes(b) => b.clone(),
+                net::Body::File(path) => {
+                    std::fs::read(path).map_err(|e| format!("faili {path}: {e}"))?
+                }
+            };
+            return asili_mtandao::http::h3::fetch(
                 &p.method,
                 &p.url,
-                &p.headers,
-                body,
+                headers,
+                bytes,
                 p.transport.ca_file.as_deref(),
                 p.limit,
             )
             .await
-        })
-        .map_err(|e| format!("{e:?}"))??;
-        let charset = answer
-            .headers
-            .iter()
-            .find(|(k, _)| k == "content-type")
-            .and_then(|(_, t)| {
-                t.split(';')
-                    .filter_map(|part| part.trim().split_once('='))
-                    .find(|(k, _)| k.trim().eq_ignore_ascii_case("charset"))
-                    .map(|(_, v)| v.trim().trim_matches('"').to_string())
-            });
-        let body = if let Some(path) = &p.save_to {
-            std::fs::write(path, &answer.body).map_err(|e| format!("hifadhi {path}: {e}"))?;
-            String::new()
-        } else if p.base64_response {
-            use base64::Engine;
-            base64::engine::general_purpose::STANDARD.encode(answer.body)
-        } else {
-            decode(answer.body, charset.as_deref())
-        };
-        Ok(Response {
-            status: answer.status,
-            reason: answer.reason,
-            version: "HTTP/3".into(),
-            headers: answer.headers,
+            .map(Reply::H3);
+        }
+        let request = net::Request {
+            method: &p.method,
+            url: &p.url,
+            headers,
             body,
-            url: url.to_string(),
-            seconds: started.elapsed().as_secs_f64(),
-        })
+        };
+        net::send(&p.transport, &request).await.map(Reply::Net)
     }
 
     async fn run(plan: Plan) -> Result<Response, String> {
@@ -411,13 +444,7 @@ mod native {
                     headers.push(("cookie".into(), cookie));
                 }
             }
-            let request = net::Request {
-                method: &p.method,
-                url: &p.url,
-                headers: &headers,
-                body: &p.body,
-            };
-            let result = match net::send(&p.transport, &request).await {
+            let result = match send_one(&p, &headers, &p.body).await {
                 Ok(r) => r,
                 // A connection that failed is retried like a 503.
                 Err(_) if attempt < p.retries && idempotent(&p.method) => {
@@ -429,7 +456,7 @@ mod native {
             };
             if p.cookies {
                 let set = result
-                    .headers
+                    .headers()
                     .iter()
                     .filter(|(k, _)| k == "set-cookie")
                     .filter_map(|(_, v)| cookie_store::RawCookie::parse(v.clone()).ok())
@@ -439,17 +466,17 @@ mod native {
                     .unwrap_or_else(|e| e.into_inner())
                     .store_response_cookies(set.into_iter(), &p.url);
             }
-            let status = result.status;
+            let status = result.status();
             if matches!(status, 429 | 502 | 503 | 504)
                 && attempt < p.retries
                 && idempotent(&p.method)
             {
                 attempt += 1;
-                tokio::time::sleep(backoff(attempt, retry_after(&result.headers))).await;
+                tokio::time::sleep(backoff(attempt, retry_after(result.headers()))).await;
                 continue;
             }
             let location = result
-                .headers
+                .headers()
                 .iter()
                 .find(|(k, _)| k == "location")
                 .map(|(_, v)| v.clone());
@@ -490,9 +517,8 @@ mod native {
                 _ => break (result, p.url.clone()),
             }
         };
-        let (status, reason, version) =
-            (response.status, response.reason.clone(), response.version);
-        let resp_headers = response.headers.clone();
+        let (status, reason, version) = (response.status(), response.reason(), response.version());
+        let resp_headers = response.headers().to_vec();
         let charset = resp_headers
             .iter()
             .find(|(k, _)| k == "content-type")
@@ -533,7 +559,7 @@ mod native {
 
     /// Stream the body to `path`, through a temporary file renamed into place when complete,
     /// so a failed download never leaves a partial file under the requested name.
-    async fn save(response: net::Response, limit: u64, path: &str) -> Result<(), String> {
+    async fn save(response: Reply, limit: u64, path: &str) -> Result<(), String> {
         let tmp = format!("{path}.sehemu");
         let result = async {
             let mut file = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;

@@ -331,7 +331,7 @@ pub const BUILTIN_MODULES: &[BuiltinModule] = &[
                     ("hifadhi?: Neno", "Andika mwili kwenye faili hili (kwa vipande; faili haliandikwi ombi likishindwa)."),
                     ("jibu_base64?: Ukweli", "Rudisha mwili kama base64 (kwa baiti zisizo maandishi)."),
                     ("kosa_hali?: Ukweli", "Hali isiyo 2xx iwe kosa lenye hali na mwanzo wa mwili."),
-                    ("h3?: Ukweli", "Tuma ombi hili kwa HTTP/3 (QUIC): ombi moja, bila kuelekezwa upya, kujaribu tena au vidakuzi."),
+                    ("h3?: Ukweli", "Tuma ombi hili kwa HTTP/3 (QUIC), pamoja na kuelekezwa upya, kujaribu tena na vidakuzi."),
                 ],
             },
         ],

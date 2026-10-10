@@ -154,8 +154,7 @@ umbo ChaguoHttp {
     jibu_base64?: Ukweli,
     # Hali isiyo 2xx iwe kosa lenye hali na mwanzo wa mwili.
     kosa_hali?: Ukweli,
-    # Tuma ombi hili kwa HTTP/3 (QUIC): ombi moja, bila kuelekezwa upya, kujaribu tena au
-    # vidakuzi.
+    # Tuma ombi hili kwa HTTP/3 (QUIC), pamoja na kuelekezwa upya, kujaribu tena na vidakuzi.
     h3?: Ukweli,
 }
 

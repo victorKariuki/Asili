@@ -27,7 +27,8 @@ from any thread stops every worker).
   crypto library. HTTP/3 is served on the listener's address; because UDP and TCP ports are
   separate, the HTTP/3 port is the TCP port number on UDP.
 - **Redirects, retries, cookies and proxies are client policy** and live in `http_mteja.rs`
-  (the client's `ChaguoHttp` options), not in the transport. HTTP/3 requests skip that policy.
+  (the client's `ChaguoHttp` options), not in the transport. HTTP/1.1, HTTP/2 and HTTP/3 answers
+  all pass through the same loop.
 - **WebSocket upgrades** go through hyper's upgrade mechanism; the handler gets a `MkondoWs` over
   the upgraded connection. Over HTTP/2 the upgrade is refused.
 - **Limits are explicit**: request and response body limits, header and connect timeouts, a
@@ -36,6 +37,7 @@ from any thread stops every worker).
 
 ## Known limits
 
-- HTTP/3 has no connection pool: each `h3: kweli` request opens its own QUIC connection.
+- HTTP/3 connections are pooled per thread and per server; a request on a pooled connection that
+  fails is retried once on a new connection.
 - Server-side HTTP/3 compresses answers only when the request accepts it, as HTTP/1.1 does.
 - The wasm (browser) build has no sockets; every network builtin reports that it is unavailable.

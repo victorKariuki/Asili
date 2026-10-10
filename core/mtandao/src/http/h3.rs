@@ -139,7 +139,28 @@ pub struct Answer {
     pub body: Vec<u8>,
 }
 
-/// Send one request to `url` over HTTP/3 and read the answer. `ca_file` as for `tls::connect`.
+/// An open HTTP/3 connection to one server, kept for reuse on this thread.
+struct Pooled {
+    // Kept so the socket stays open while the connection is pooled.
+    #[allow(dead_code)]
+    endpoint: quinn::Endpoint,
+    #[allow(dead_code)]
+    quic: quinn::Connection,
+    send: h3::client::SendRequest<h3_quinn::OpenStreams, Bytes>,
+}
+
+thread_local! {
+    static POOL: std::cell::RefCell<std::collections::HashMap<String, Pooled>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// How many HTTP/3 connections this thread keeps open.
+pub fn pooled_connections() -> usize {
+    POOL.with(|p| p.borrow().len())
+}
+
+/// Send one request to `url` over HTTP/3 and read the answer. Connections are reused per server
+/// and trust roots; a reused connection that has gone away is replaced, once.
 pub async fn fetch(
     method: &str,
     url: &url::Url,
@@ -155,7 +176,39 @@ pub async fn fetch(
         .trim_end_matches(']')
         .to_string();
     let port = url.port_or_known_default().ok_or("anwani haina mlango")?;
-    let addr = tokio::net::lookup_host((host.as_str(), port))
+    let key = format!("{host}:{port}|{}", ca_file.unwrap_or(""));
+    for attempt in 0..2 {
+        let (mut send, reused) = match POOL.with(|p| p.borrow().get(&key).map(|c| c.send.clone())) {
+            Some(send) => (send, true),
+            None => {
+                let c = connect(&host, port, ca_file).await?;
+                let send = c.send.clone();
+                POOL.with(|p| p.borrow_mut().insert(key.clone(), c));
+                (send, false)
+            }
+        };
+        match exchange(&mut send, method, url, headers, &body, limit).await {
+            Ok(answer) => return Ok(answer),
+            Err(Failure::Limit(e)) => return Err(e),
+            Err(Failure::Connection(e)) => {
+                POOL.with(|p| p.borrow_mut().remove(&key));
+                if !reused || attempt == 1 {
+                    return Err(e);
+                }
+            }
+        }
+    }
+    Err("HTTP/3: imeshindwa".to_string())
+}
+
+/// Why a request failed: the connection (try again on a new one) or the answer's size (no).
+enum Failure {
+    Connection(String),
+    Limit(String),
+}
+
+async fn connect(host: &str, port: u16, ca_file: Option<&str>) -> Result<Pooled, String> {
+    let addr = tokio::net::lookup_host((host, port))
         .await
         .map_err(|e| format!("kutafuta {host}: {e}"))?
         .next()
@@ -171,39 +224,49 @@ pub async fn fetch(
     let mut endpoint = quinn::Endpoint::client(bind).map_err(|e| format!("HTTP/3: {e}"))?;
     endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(qc)));
     let conn = endpoint
-        .connect(addr, &host)
+        .connect(addr, host)
         .map_err(|e| format!("HTTP/3: {e}"))?
         .await
         .map_err(|e| format!("HTTP/3: {e}"))?;
     let quic = conn.clone();
-    let (mut driver, mut send) = h3::client::new(h3_quinn::Connection::new(conn))
+    let (mut driver, send) = h3::client::new(h3_quinn::Connection::new(conn))
         .await
         .map_err(|e| format!("HTTP/3: {e}"))?;
     tokio::task::spawn_local(async move {
         let _ = std::future::poll_fn(|cx| driver.poll_close(cx)).await;
     });
+    Ok(Pooled {
+        endpoint,
+        quic,
+        send,
+    })
+}
 
+async fn exchange(
+    send: &mut h3::client::SendRequest<h3_quinn::OpenStreams, Bytes>,
+    method: &str,
+    url: &url::Url,
+    headers: &[(String, String)],
+    body: &[u8],
+    limit: u64,
+) -> Result<Answer, Failure> {
+    let conn_err = |e: &dyn std::fmt::Display| Failure::Connection(format!("HTTP/3: {e}"));
     let mut req = hyper::http::Request::builder()
         .method(method)
         .uri(url.as_str());
     for (k, v) in headers {
         req = req.header(k.as_str(), v.as_str());
     }
-    let mut stream = send
-        .send_request(req.body(()).map_err(|e| e.to_string())?)
-        .await
-        .map_err(|e| format!("HTTP/3: {e}"))?;
+    let req = req.body(()).map_err(|e| Failure::Limit(e.to_string()))?;
+    let mut stream = send.send_request(req).await.map_err(|e| conn_err(&e))?;
     if !body.is_empty() {
         stream
-            .send_data(Bytes::from(body))
+            .send_data(Bytes::copy_from_slice(body))
             .await
-            .map_err(|e| format!("HTTP/3: {e}"))?;
+            .map_err(|e| conn_err(&e))?;
     }
-    stream.finish().await.map_err(|e| format!("HTTP/3: {e}"))?;
-    let resp = stream
-        .recv_response()
-        .await
-        .map_err(|e| format!("HTTP/3: {e}"))?;
+    stream.finish().await.map_err(|e| conn_err(&e))?;
+    let resp = stream.recv_response().await.map_err(|e| conn_err(&e))?;
     let status = resp.status().as_u16();
     let resp_headers = super::header_pairs(resp.headers());
     let encoding = resp_headers
@@ -211,23 +274,20 @@ pub async fn fetch(
         .find(|(k, _)| k == "content-encoding")
         .map(|(_, v)| v.trim().to_ascii_lowercase());
     let mut raw = Vec::new();
-    while let Some(mut chunk) = stream
-        .recv_data()
-        .await
-        .map_err(|e| format!("HTTP/3: {e}"))?
-    {
+    while let Some(mut chunk) = stream.recv_data().await.map_err(|e| conn_err(&e))? {
         while chunk.has_remaining() {
             let piece = chunk.chunk();
             if raw.len() + piece.len() > limit as usize {
-                return Err(format!("jibu limezidi kikomo cha baiti {limit}"));
+                return Err(Failure::Limit(format!(
+                    "jibu limezidi kikomo cha baiti {limit}"
+                )));
             }
             raw.extend_from_slice(piece);
             let n = piece.len();
             chunk.advance(n);
         }
     }
-    quic.close(0u32.into(), b"done");
-    let body = decode(encoding.as_deref(), raw, limit)?;
+    let body = decode(encoding.as_deref(), raw, limit).map_err(Failure::Limit)?;
     let reason = hyper::StatusCode::from_u16(status)
         .ok()
         .and_then(|s| s.canonical_reason())

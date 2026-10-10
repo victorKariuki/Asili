@@ -80,6 +80,14 @@ fn http3_request_and_response() {
             .iter()
             .any(|(k, v)| k == "x-toleo" && v == "HTTP/3"));
 
+        // The next request to the same server reuses the connection.
+        assert_eq!(h3::pooled_connections(), 1);
+        let again = h3::fetch("GET", &url, &[], vec![], Some(&cert), 1 << 20)
+            .await
+            .expect("second request");
+        assert_eq!(again.status, 201);
+        assert_eq!(h3::pooled_connections(), 1);
+
         // The limit applies to the answer.
         let small = h3::fetch("GET", &url, &[], vec![], Some(&cert), 4).await;
         assert!(small.unwrap_err().contains("kikomo"));

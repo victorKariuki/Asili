@@ -25,7 +25,17 @@ const SERVER: &str = r#"
     leta matumizi
 
     kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
-        rejesha JibuHttp { hali: 200, vichwa: kamusi(), mwili: "karibu " + ombi.sehemu + " " + ombi.toleo }
+        ikiwa ombi.sehemu == "/elekeza" {
+            weka v = kamusi()
+            v.ingiza("location", "/karibu")
+            rejesha JibuHttp { hali: 302, vichwa: v, mwili: "" }
+        }
+        ikiwa ombi.sehemu == "/kuki" {
+            weka v = kamusi()
+            v.ingiza("set-cookie", "a=1; Path=/")
+            rejesha JibuHttp { hali: 200, vichwa: v, mwili: "kuki" }
+        }
+        rejesha JibuHttp { hali: 200, vichwa: kamusi(), mwili: "karibu " + ombi.sehemu + " " + ombi.toleo + " " + ombi.vichwa.pata("cookie").angu("-") }
     }
 
     kazi simamisha(s: MkondoSikilizaji, udhibiti: MkondoSikilizaji) -> Tupu {
@@ -109,7 +119,33 @@ fn http3_server_and_client_in_asili() {
     .expect("runs");
     assert_eq!(
         out,
-        Value::neno("200 HTTP/3 karibu /njia HTTP/3".to_string())
+        Value::neno("200 HTTP/3 karibu /njia HTTP/3 -".to_string())
+    );
+
+    // Redirects are followed, and cookies set over HTTP/3 are sent back over it.
+    let policy = compile(&format!(
+        r#"
+        leta mfumo
+        kazi jaribu(base: Neno, cheti: Neno) -> Neno {{
+            weka a = jaribu (http_ombi("GET", base + "/elekeza", ChaguoHttp {{ h3: kweli, cheti_ca: cheti.clona() }}))
+            jaribu (http_ombi("GET", base + "/kuki", ChaguoHttp {{ h3: kweli, cheti_ca: cheti.clona(), vidakuzi: kweli }}))
+            weka b = jaribu (http_ombi("GET", base + "/x", ChaguoHttp {{ h3: kweli, cheti_ca: cheti.clona(), vidakuzi: kweli }}))
+            rejesha a.mwili + " | " + b.mwili
+        }}
+        "#
+    ));
+    let out = run_function(
+        &policy,
+        "jaribu",
+        vec![
+            Value::neno(format!("https://127.0.0.1:{port}")),
+            Value::neno(cert.clone()),
+        ],
+    )
+    .expect("runs");
+    assert_eq!(
+        out,
+        Value::neno("karibu /karibu HTTP/3 - | karibu /x HTTP/3 a=1".to_string())
     );
 
     drop(TcpStream::connect(&control).expect("control"));
