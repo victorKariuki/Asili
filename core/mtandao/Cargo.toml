@@ -19,6 +19,10 @@ hyper = { version = "1", features = ["server", "client", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["tokio", "server", "server-auto", "http1", "http2"] }
 # WebSocket (RFC 6455), on the same streams as everything else.
 tokio-tungstenite = "0.30"
+# HTTP/3: QUIC (quinn, on the same rustls provider) and h3 over it.
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-aws-lc-rs", "log"] }
+h3 = "0.0.8"
+h3-quinn = "0.0.10"
 http-body-util = "0.1"
 bytes = "1"
 futures-core = "0.3"

@@ -3,6 +3,7 @@
 //! values is the caller's.
 
 pub mod bana;
+pub mod h3;
 pub mod mteja;
 pub mod seva;
 

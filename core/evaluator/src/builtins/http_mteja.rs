@@ -77,6 +77,7 @@ struct Options {
     save_to: Option<String>,
     base64_response: bool,
     status_error: bool,
+    h3: bool,
 }
 
 impl Options {
@@ -144,6 +145,7 @@ impl Options {
                 "hifadhi" => o.save_to = Some(text()?),
                 "jibu_base64" => o.base64_response = truth()?,
                 "kosa_hali" => o.status_error = truth()?,
+                "h3" => o.h3 = truth()?,
                 other => return Err(format!("ChaguoHttp haina uga '{other}'")),
             }
         }
@@ -320,8 +322,64 @@ mod native {
             save_to: o.save_to.clone(),
             base64_response: o.base64_response,
         };
+        if o.h3 {
+            return h3_send(plan);
+        }
         crate::platform::flush_stdout(); // about to wait: show what was printed so far
         crate::kazi_sawia::block_on(async move { run(plan).await }).map_err(|e| format!("{e:?}"))?
+    }
+
+    /// One request over HTTP/3: no redirects, retries or cookies.
+    fn h3_send(p: Plan) -> Result<Response, String> {
+        let started = Instant::now();
+        let body = match &p.body {
+            net::Body::Empty => Vec::new(),
+            net::Body::Bytes(b) => b.clone(),
+            net::Body::File(path) => {
+                std::fs::read(path).map_err(|e| format!("faili {path}: {e}"))?
+            }
+        };
+        let url = p.url.clone();
+        let answer = crate::kazi_sawia::block_on(async move {
+            asili_mtandao::http::h3::fetch(
+                &p.method,
+                &p.url,
+                &p.headers,
+                body,
+                p.transport.ca_file.as_deref(),
+                p.limit,
+            )
+            .await
+        })
+        .map_err(|e| format!("{e:?}"))??;
+        let charset = answer
+            .headers
+            .iter()
+            .find(|(k, _)| k == "content-type")
+            .and_then(|(_, t)| {
+                t.split(';')
+                    .filter_map(|part| part.trim().split_once('='))
+                    .find(|(k, _)| k.trim().eq_ignore_ascii_case("charset"))
+                    .map(|(_, v)| v.trim().trim_matches('"').to_string())
+            });
+        let body = if let Some(path) = &p.save_to {
+            std::fs::write(path, &answer.body).map_err(|e| format!("hifadhi {path}: {e}"))?;
+            String::new()
+        } else if p.base64_response {
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD.encode(answer.body)
+        } else {
+            decode(answer.body, charset.as_deref())
+        };
+        Ok(Response {
+            status: answer.status,
+            reason: answer.reason,
+            version: "HTTP/3".into(),
+            headers: answer.headers,
+            body,
+            url: url.to_string(),
+            seconds: started.elapsed().as_secs_f64(),
+        })
     }
 
     async fn run(plan: Plan) -> Result<Response, String> {

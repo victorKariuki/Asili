@@ -685,6 +685,8 @@ mod native {
         pub(crate) listener: LocalListener,
         pub(crate) tls: Option<Arc<rustls::ServerConfig>>,
         pub(crate) starter: crate::kazi_sawia::Starter,
+        /// 0 for the first worker of a pool (the one that also serves HTTP/3, once).
+        pub(crate) index: usize,
     }
 
     /// The worker pool of `mkondo_tumikia` and `mkondo_tumikia_http`: check `(sikilizaji,
@@ -732,7 +734,7 @@ mod native {
                 }
             };
         let handles: Vec<_> = (0..threads)
-            .map(|_| {
+            .map(|index| {
                 let (listener, program, kazi_name) =
                     (Arc::clone(&listener), program.clone(), kazi_name.clone());
                 let (tls, serve) = (tls_config.clone(), serve.clone());
@@ -747,6 +749,7 @@ mod native {
                                     listener,
                                     tls,
                                     starter,
+                                    index,
                                 })
                                 .await;
                             }

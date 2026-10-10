@@ -273,6 +273,7 @@ pub const BUILTIN_MODULES: &[BuiltinModule] = &[
                 doc: "Chaguo za `mkondo_tumikia_http`; kila uga ni wa hiari.",
                 fields: &[
                     ("kikomo_mwili?: Namba", "Baiti za juu za mwili wa ombi (kawaida 16 MiB); zaidi: 413."),
+                    ("h3?: Ukweli", "Jibu pia kwa HTTP/3 (QUIC, UDP) kwenye mlango ule ule; inahitaji `tls`. Pool ya nyuzi huanzisha moja tu."),
                     ("muda?: Namba", "Sekunde za TLS na kutuma vichwa vya ombi (kawaida 30)."),
                     ("bana?: Ukweli", "Bana majibu (gzip, brotli) mteja akikubali (kawaida kweli)."),
                     ("muda_kuzima?: Namba", "Sekunde ambazo miunganisho iliyo wazi hupewa kumaliza seva ikisimamishwa (kawaida 10)."),
@@ -330,6 +331,7 @@ pub const BUILTIN_MODULES: &[BuiltinModule] = &[
                     ("hifadhi?: Neno", "Andika mwili kwenye faili hili (kwa vipande; faili haliandikwi ombi likishindwa)."),
                     ("jibu_base64?: Ukweli", "Rudisha mwili kama base64 (kwa baiti zisizo maandishi)."),
                     ("kosa_hali?: Ukweli", "Hali isiyo 2xx iwe kosa lenye hali na mwanzo wa mwili."),
+                    ("h3?: Ukweli", "Tuma ombi hili kwa HTTP/3 (QUIC): ombi moja, bila kuelekezwa upya, kujaribu tena au vidakuzi."),
                 ],
             },
         ],

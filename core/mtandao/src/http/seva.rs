@@ -46,6 +46,30 @@ pub struct Ombi {
     pub peer: String,
 }
 
+/// The request a handler receives, from a parsed request and its body.
+pub(crate) fn ombi_of(parts: &hyper::http::request::Parts, body: Vec<u8>, peer: String) -> Ombi {
+    Ombi {
+        method: parts.method.as_str().to_string(),
+        target: parts
+            .uri
+            .path_and_query()
+            .map_or("/", |p| p.as_str())
+            .to_string(),
+        path: percent_encoding::percent_decode_str(parts.uri.path())
+            .decode_utf8_lossy()
+            .into_owned(),
+        query: parts
+            .uri
+            .query()
+            .map(|q| form_urlencoded::parse(q.as_bytes()).into_owned().collect())
+            .unwrap_or_default(),
+        version: super::version_name(parts.version),
+        headers: super::header_pairs(&parts.headers),
+        body,
+        peer,
+    }
+}
+
 /// Chunks of a streamed answer; the answer ends when the stream does.
 pub type Chunks = Pin<Box<dyn futures_core::Stream<Item = Vec<u8>>>>;
 
@@ -92,6 +116,8 @@ pub type Handler = Rc<dyn Fn(Ombi) -> Pin<Box<dyn Future<Output = Jibu>>>>;
 /// How to serve.
 #[derive(Clone, Debug)]
 pub struct ServerOptions {
+    /// Also answer HTTP/3 (QUIC over UDP on the listener's address). Needs `tls`.
+    pub http3: bool,
     /// Largest request body accepted (larger: `413`).
     pub body_limit: usize,
     /// Time to complete TLS and send a request's headers.
@@ -107,6 +133,7 @@ pub struct ServerOptions {
 impl Default for ServerOptions {
     fn default() -> Self {
         ServerOptions {
+            http3: false,
             body_limit: 16 << 20,
             header_timeout: Duration::from_secs(30),
             compress: true,
@@ -156,6 +183,22 @@ pub async fn serve(listener: LocalListener, mut opts: ServerOptions, handler: Ha
         }
         opts.tls = Some(Arc::new(cfg));
     }
+    // HTTP/3 on UDP, on the listener's address (its port): started with the TCP side, closed
+    // when the listener stops.
+    let h3 = match (&opts.tls, opts.http3) {
+        (Some(cfg), true) => {
+            let addr = listener.shared().local_addr();
+            let started = addr
+                .parse::<std::net::SocketAddr>()
+                .map_err(|e| e.to_string())
+                .and_then(|a| std::net::UdpSocket::bind(a).map_err(|e| e.to_string()))
+                .and_then(|sock| {
+                    super::h3::start(sock, cfg.clone(), handler.clone(), opts.clone())
+                });
+            started.ok()
+        }
+        _ => None,
+    };
     let opts = Rc::new(opts);
     let stop = Rc::new(Stop::default());
     let mut conns = JoinSet::new();
@@ -179,6 +222,9 @@ pub async fn serve(listener: LocalListener, mut opts: ServerOptions, handler: Ha
         ));
     }
     stop.stop();
+    if let Some(endpoint) = h3 {
+        endpoint.close(0u32.into(), b"stopped");
+    }
     let grace = opts.grace;
     let _ = tokio::time::timeout(grace, async { while conns.join_next().await.is_some() {} }).await;
     conns.abort_all();
@@ -306,26 +352,7 @@ async fn respond(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
-    let ombi = Ombi {
-        method: parts.method.as_str().to_string(),
-        target: parts
-            .uri
-            .path_and_query()
-            .map_or("/", |p| p.as_str())
-            .to_string(),
-        path: percent_encoding::percent_decode_str(parts.uri.path())
-            .decode_utf8_lossy()
-            .into_owned(),
-        query: parts
-            .uri
-            .query()
-            .map(|q| form_urlencoded::parse(q.as_bytes()).into_owned().collect())
-            .unwrap_or_default(),
-        version: super::version_name(parts.version),
-        headers: super::header_pairs(&parts.headers),
-        body,
-        peer,
-    };
+    let ombi = ombi_of(&parts, body, peer);
     let mut jibu = handler(ombi).await;
     if let Some(run) = jibu.websocket.take() {
         return match (ws_accept, upgrade) {
@@ -357,7 +384,8 @@ async fn respond(
 }
 
 /// The response for `jibu`: invalid header names or values are left out.
-fn answer(jibu: Jibu, accept_encoding: &str, compress: bool) -> Response<Body> {
+/// The answer for `jibu`, as the server sends it (also over HTTP/3).
+pub(crate) fn answer(jibu: Jibu, accept_encoding: &str, compress: bool) -> Response<Body> {
     let mut headers = hyper::HeaderMap::new();
     for (k, v) in &jibu.headers {
         if let (Ok(k), Ok(v)) = (

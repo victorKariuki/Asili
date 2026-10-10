@@ -41,6 +41,7 @@ pub(crate) fn mkondo_tumikia_http(
     if let Value::Ukweli(b) = field(o, "bana") {
         opts.compress = *b;
     }
+    let http3 = matches!(field(o, "h3"), Value::Ukweli(true));
     if let Some(d) = seconds(field(o, "muda_kuzima")) {
         opts.grace = d;
     }
@@ -53,6 +54,8 @@ pub(crate) fn mkondo_tumikia_http(
         move |w: Worker| {
             let mut opts = opts.clone();
             opts.tls = w.tls;
+            // HTTP/3 is served once per address: by the pool's first worker.
+            opts.http3 = http3 && w.index == 0;
             let starter = w.starter;
             let handler: Handler = Rc::new(move |ombi| {
                 Box::pin(async move {
