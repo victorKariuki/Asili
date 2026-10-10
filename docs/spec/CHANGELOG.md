@@ -4,6 +4,12 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Standard library ([05-standard-library.md](05-standard-library.md)): the HTTP server speaks
+  HTTP/1.1 and HTTP/2 and runs each request (and each raw connection) as a `sawia` task;
+  `OmbiHttp` gains `sehemu`, `hoja`, `mwili_baiti`, `mteja` and `toleo`; `JibuHttp` gains
+  `mwili_baiti` and `mwili_njia` (a streamed body); new `ChaguoSeva` and `tukio_sse`; servers
+  return once their listener is stopped. Decision ([08-resolved-decisions.md](08-resolved-decisions.md)):
+  the listener concurrency model is worker threads running `sawia` tasks.
 - Standard library ([05-standard-library.md](05-standard-library.md)): UDP — `udp_fungua` and
   `MkondoUdp` (datagrams, default peer, broadcast, multicast).
 - Standard library ([05-standard-library.md](05-standard-library.md)): sockets — `Mkondo`

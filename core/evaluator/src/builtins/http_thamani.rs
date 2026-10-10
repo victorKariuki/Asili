@@ -93,22 +93,31 @@ fn list_to_pairs(v: &Value) -> Vec<(String, String)> {
 }
 
 /// A request as the server hands it to a handler.
-pub(crate) struct Request {
-    pub method: String,
-    pub target: String,
-    pub headers: Vec<(String, String)>,
-    pub body: String,
-}
-
-/// `OmbiHttp { njia, anwani, vichwa, mwili }`.
-pub(crate) fn request_to_value(r: Request) -> Value {
+/// `OmbiHttp` for a request the server received.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn request_to_value(r: asili_mtandao::http::seva::Ombi) -> Value {
+    // A repeated parameter keeps its last value.
+    let mut query =
+        crate::value::Kamusi::with_capacity_and_hasher(r.query.len(), Default::default());
+    for (k, v) in r.query {
+        query.insert(MapKey::Neno(k.into()), Value::neno(v));
+    }
+    let query = Value::Kamusi(Rc::new(query));
     Value::Struct(
         "OmbiHttp".into(),
         vec![
             ("njia".into(), Value::neno(r.method)),
             ("anwani".into(), Value::neno(r.target)),
             ("vichwa".into(), headers_to_kamusi(&r.headers)),
-            ("mwili".into(), Value::neno(r.body)),
+            (
+                "mwili".into(),
+                Value::neno(String::from_utf8_lossy(&r.body).into_owned()),
+            ),
+            ("sehemu".into(), Value::neno(r.path)),
+            ("hoja".into(), query),
+            ("mwili_baiti".into(), Value::Baiti(r.body.into())),
+            ("mteja".into(), Value::neno(r.peer)),
+            ("toleo".into(), Value::neno(r.version.to_string())),
         ]
         .into(),
     )
@@ -143,82 +152,72 @@ pub(crate) fn response_to_value(r: Response) -> Value {
     )
 }
 
-/// A handler's `JibuHttp` read back for sending: status, headers (`vichwa`, then
-/// `vichwa_vyote`, which can repeat a name) and body. Any struct with `hali` works — the
-/// struct's name is not checked, as with the JSON codec. `None` without a numeric `hali`.
-pub(crate) fn value_to_response(v: &Value) -> Option<(u16, Vec<(String, String)>, String)> {
+/// A handler's `JibuHttp` read back for sending: status, reason, headers (`vichwa`, then
+/// `vichwa_vyote`, which can repeat a name) and body — `mwili_njia`'s chunks (a channel) when
+/// given, else `mwili_baiti`, else `mwili`. Any struct with `hali` works — the struct's name is
+/// not checked, as with the JSON codec. `None` without a numeric `hali`.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn value_to_response(v: &Value) -> Option<asili_mtandao::http::seva::Jibu> {
+    use asili_mtandao::http::seva::{Jibu, JibuMwili};
     let status = value::as_f64(field(v, "hali"))?;
-    let body = value::as_string(field(v, "mwili")).unwrap_or_default();
     let mut headers = kamusi_to_pairs(field(v, "vichwa")).unwrap_or_default();
     headers.extend(list_to_pairs(field(v, "vichwa_vyote")));
-    Some((status as u16, headers, body))
+    let body = match (field(v, "mwili_njia"), field(v, "mwili_baiti")) {
+        (Value::NjiaRx(rx) | Value::NjiaRxBounded(rx), _) => {
+            JibuMwili::Stream(Box::pin(Chunks(rx.clone().into_stream())))
+        }
+        (_, Value::Baiti(b)) => JibuMwili::Full(b.to_vec()),
+        _ => JibuMwili::Full(
+            value::as_string(field(v, "mwili"))
+                .unwrap_or_default()
+                .into_bytes(),
+        ),
+    };
+    let reason = value::as_string(field(v, "sababu")).filter(|r| !r.is_empty());
+    Some(Jibu {
+        status: status as u16,
+        reason,
+        headers,
+        body,
+    })
 }
 
-/// The reason phrase for `status` (RFC 9110 and registered extensions; `""` when unknown).
-pub(crate) fn reason_phrase(status: u16) -> &'static str {
-    match status {
-        100 => "Continue",
-        101 => "Switching Protocols",
-        102 => "Processing",
-        103 => "Early Hints",
-        200 => "OK",
-        201 => "Created",
-        202 => "Accepted",
-        203 => "Non-Authoritative Information",
-        204 => "No Content",
-        205 => "Reset Content",
-        206 => "Partial Content",
-        207 => "Multi-Status",
-        208 => "Already Reported",
-        226 => "IM Used",
-        300 => "Multiple Choices",
-        301 => "Moved Permanently",
-        302 => "Found",
-        303 => "See Other",
-        304 => "Not Modified",
-        305 => "Use Proxy",
-        307 => "Temporary Redirect",
-        308 => "Permanent Redirect",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        402 => "Payment Required",
-        403 => "Forbidden",
-        404 => "Not Found",
-        405 => "Method Not Allowed",
-        406 => "Not Acceptable",
-        407 => "Proxy Authentication Required",
-        408 => "Request Timeout",
-        409 => "Conflict",
-        410 => "Gone",
-        411 => "Length Required",
-        412 => "Precondition Failed",
-        413 => "Content Too Large",
-        414 => "URI Too Long",
-        415 => "Unsupported Media Type",
-        416 => "Range Not Satisfiable",
-        417 => "Expectation Failed",
-        418 => "I'm a teapot",
-        421 => "Misdirected Request",
-        422 => "Unprocessable Content",
-        423 => "Locked",
-        424 => "Failed Dependency",
-        425 => "Too Early",
-        426 => "Upgrade Required",
-        428 => "Precondition Required",
-        429 => "Too Many Requests",
-        431 => "Request Header Fields Too Large",
-        451 => "Unavailable For Legal Reasons",
-        500 => "Internal Server Error",
-        501 => "Not Implemented",
-        502 => "Bad Gateway",
-        503 => "Service Unavailable",
-        504 => "Gateway Timeout",
-        505 => "HTTP Version Not Supported",
-        506 => "Variant Also Negotiates",
-        507 => "Insufficient Storage",
-        508 => "Loop Detected",
-        510 => "Not Extended",
-        511 => "Network Authentication Required",
-        _ => "",
+/// A channel's values as body chunks: text and bytes as they are, anything else as it prints.
+#[cfg(not(target_arch = "wasm32"))]
+struct Chunks(flume::r#async::RecvStream<'static, value::SendValue>);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl futures_core::Stream for Chunks {
+    type Item = Vec<u8>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Vec<u8>>> {
+        std::pin::Pin::new(&mut self.0).poll_next(cx).map(|item| {
+            item.map(|v| match v.into_value() {
+                Value::Baiti(b) => b.to_vec(),
+                other => value::to_display_string(&other)
+                    .unwrap_or_else(|| format!("{other:?}"))
+                    .into_bytes(),
+            })
+        })
     }
+}
+
+/// One server-sent event (`text/event-stream`): `id:` and `event:` lines when given, a `data:`
+/// line per line of `data`, then a blank line.
+pub(crate) fn sse_event(data: &str, event: Option<&str>, id: Option<&str>) -> String {
+    let mut out = String::new();
+    if let Some(id) = id {
+        out.push_str(&format!("id: {}\n", id.replace(['\r', '\n'], "")));
+    }
+    if let Some(e) = event {
+        out.push_str(&format!("event: {}\n", e.replace(['\r', '\n'], "")));
+    }
+    for line in data.split('\n') {
+        out.push_str(&format!("data: {}\n", line.trim_end_matches('\r')));
+    }
+    out.push('\n');
+    out
 }

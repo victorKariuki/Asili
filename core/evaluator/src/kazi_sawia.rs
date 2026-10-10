@@ -35,6 +35,20 @@ pub(crate) trait Context {
     fn call_index(&mut self, index: usize, args: Vec<Value>) -> Result<Value, EvalError>;
 }
 
+/// Starts one function of a host's program as a task (`Host::task_starter`).
+#[derive(Clone, Copy)]
+pub(crate) struct Starter {
+    pub(crate) host: *mut dyn Context,
+    pub(crate) index: usize,
+}
+
+impl Starter {
+    /// Start the function with `args`: its task.
+    pub(crate) fn start(&self, args: Vec<Value>) -> std::rc::Rc<Task> {
+        spawn(self.host, self.index, args)
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 pub(crate) use eager::*;
 #[cfg(not(target_arch = "wasm32"))]
@@ -69,6 +83,18 @@ impl Task {
 
     pub(crate) fn is_done(&self) -> bool {
         self.state.borrow().is_some()
+    }
+
+    /// Wait (asynchronously) until the task has finished.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) async fn finished(&self) {
+        loop {
+            let n = self.done.notified();
+            if self.is_done() {
+                return;
+            }
+            n.await;
+        }
     }
 
     fn finish(&self, outcome: Result<Value, EvalError>) {
@@ -155,6 +181,8 @@ mod native {
         local: tokio::task::LocalSet,
         live: Cell<usize>,
         idle: tokio::sync::Notify,
+        /// Every task started on this thread that may still run.
+        tasks: std::cell::RefCell<Vec<std::rc::Weak<Task>>>,
     }
 
     thread_local! {
@@ -166,6 +194,7 @@ mod native {
             local: tokio::task::LocalSet::new(),
             live: Cell::new(0),
             idle: tokio::sync::Notify::new(),
+            tasks: std::cell::RefCell::new(Vec::new()),
         });
         /// The running task's yielder (null: the thread's own code is running).
         static CURRENT: Cell<*const Yielder<Resume, Wait>> = const { Cell::new(std::ptr::null()) };
@@ -249,6 +278,11 @@ mod native {
             });
         let rt = runtime();
         rt.live.set(rt.live.get() + 1);
+        {
+            let mut tasks = rt.tasks.borrow_mut();
+            tasks.retain(|t| t.upgrade().is_some_and(|t| !t.is_done()));
+            tasks.push(Rc::downgrade(&task));
+        }
         let t = task.clone();
         let rt2 = rt.clone();
         rt.local.spawn_local(async move {
@@ -296,6 +330,40 @@ mod native {
             }
         });
         task
+    }
+
+    /// Ask every unfinished task of this thread to stop (see [`Task::cancel`]).
+    pub(crate) fn cancel_all() {
+        let tasks: Vec<Rc<Task>> = runtime()
+            .tasks
+            .borrow()
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+            .collect();
+        for t in tasks {
+            t.cancel();
+        }
+    }
+
+    /// Wait up to `grace` for this thread's tasks to finish, then cancel the rest and wait for
+    /// them (a server stopping).
+    pub(crate) fn drain_within(grace: std::time::Duration) {
+        let rt = runtime();
+        let rt2 = rt.clone();
+        let _ = rt.local.block_on(&rt.rt, async move {
+            tokio::time::timeout(grace, async move {
+                while rt2.live.get() > 0 {
+                    let n = rt2.idle.notified();
+                    if rt2.live.get() == 0 {
+                        break;
+                    }
+                    n.await;
+                }
+            })
+            .await
+        });
+        cancel_all();
+        drain();
     }
 
     /// Run until every task of this thread has finished (a top-level call does this before it

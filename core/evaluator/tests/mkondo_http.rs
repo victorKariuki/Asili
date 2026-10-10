@@ -482,7 +482,10 @@ fn head_has_no_body_and_statuses_have_reasons() {
     let text = String::from_utf8_lossy(&raw);
     let (head, rest) = text.split_once("\r\n\r\n").expect("head response");
     assert!(head.starts_with("HTTP/1.1 200 OK"), "{head}");
-    assert!(head.contains("Content-Length: 6"), "{head}");
+    assert!(
+        head.to_ascii_lowercase().contains("content-length: 6"),
+        "{head}"
+    );
     // Right after the HEAD answer's headers comes the next response, not a body.
     assert!(rest.starts_with("HTTP/1.1 201 Created\r\n"), "{rest}");
 }

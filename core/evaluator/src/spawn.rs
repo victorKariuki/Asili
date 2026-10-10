@@ -44,6 +44,18 @@ impl Shared {
         }
     }
 
+    /// Run `body` with this program's engine (host) for the current thread.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    pub(crate) fn with_host<R>(&self, body: impl FnOnce(&mut crate::host::Host<'_>) -> R) -> R {
+        match self {
+            Shared::Code { program, native } => body(&mut crate::host::Host::new(
+                program,
+                native,
+                Some(self.clone()),
+            )),
+        }
+    }
+
     /// Run `body` with a caller for this program's `kazi` on the current thread. The host (its
     /// frame pool, builtins and module constants) is built once here and serves every call
     /// `body` makes.

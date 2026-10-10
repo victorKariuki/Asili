@@ -12,8 +12,18 @@ umbo OmbiHttp {
     anwani: Neno,
     # Vichwa vya ombi, majina kwa herufi ndogo.
     vichwa: Kamusi<Neno, Neno>,
-    # Mwili wa ombi.
+    # Mwili wa ombi (baiti zisizo UTF-8 hubadilishwa).
     mwili: Neno,
+    # Njia ya anwani bila hoja, iliyofumbuliwa ("/bidhaa").
+    sehemu: Neno,
+    # Hoja za anwani, zilizofumbuliwa (`?id=7` → id: "7").
+    hoja: Kamusi<Neno, Neno>,
+    # Mwili wa ombi kama baiti.
+    mwili_baiti: Baiti,
+    # Anwani ya mteja.
+    mteja: Neno,
+    # Toleo la HTTP ("HTTP/1.1", "HTTP/2").
+    toleo: Neno,
 }
 
 # Jibu la HTTP: kazi ya seva hulirudisha, `http_ombi` hulipokea.
@@ -34,6 +44,23 @@ umbo JibuHttp {
     vichwa_vyote?: Orodha<Jozi<Neno, Neno>>,
     # Sekunde ombi lilizochukua, pamoja na kuelekezwa na kujaribu tena.
     muda?: Namba,
+    # Mwili kama baiti (seva hutuma huu badala ya `mwili`).
+    mwili_baiti?: Baiti,
+    # NjiaRx (ya `njia` au `njia_na_kikomo`): seva hutuma kila thamani yake kama kipande cha
+    # mwili, hadi njia ifungwe (`tukio_sse` kwa matukio).
+    mwili_njia?: Haijulikani,
+}
+
+# Chaguo za `mkondo_tumikia_http`; kila uga ni wa hiari.
+umbo ChaguoSeva {
+    # Baiti za juu za mwili wa ombi (kawaida 16 MiB); zaidi: 413.
+    kikomo_mwili?: Namba,
+    # Sekunde za TLS na kutuma vichwa vya ombi (kawaida 30).
+    muda?: Namba,
+    # Bana majibu (gzip, brotli) mteja akikubali (kawaida kweli).
+    bana?: Ukweli,
+    # Sekunde ambazo miunganisho iliyo wazi hupewa kumaliza seva ikisimamishwa (kawaida 10).
+    muda_kuzima?: Namba,
 }
 
 # Chaguo za `mkondo_unganisha`; kila uga ni wa hiari.
@@ -148,11 +175,13 @@ kazi kwa_json(thamani: Haijulikani) -> Tokeo<Neno, Neno>
 # "unix:/njia"). `.kubali()` hupokea mmoja, `.simama()` husimamisha.
 kazi mkondo_sikiliza(anwani: Neno, chaguo?: ChaguoSikiliza) -> Tokeo<MkondoSikilizaji, Neno>
 
-# Hudumia kila muunganisho kwa kazi `kazi_jina(Mkondo)` kwenye nyuzi `idadi_ya_nyuzi`.
+# Hudumia kila muunganisho kwa `kazi_jina(Mkondo)` (kama kazi ya sawia) kwenye nyuzi
+# `idadi_ya_nyuzi`, hadi msikilizaji asimamishwe.
 kazi mkondo_tumikia(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls?: TlsUsanidi?) -> Tokeo<Tupu, Neno>
 
-# Seva ya HTTP/1.1: kila ombi ni `kazi_jina(OmbiHttp) -> JibuHttp`.
-kazi mkondo_tumikia_http(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls?: TlsUsanidi?) -> Tokeo<Tupu, Neno>
+# Seva ya HTTP/1.1 na HTTP/2: kila ombi ni `kazi_jina(OmbiHttp) -> JibuHttp` (kama kazi ya
+# sawia), hadi msikilizaji asimamishwe.
+kazi mkondo_tumikia_http(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls?: TlsUsanidi?, chaguo?: ChaguoSeva) -> Tokeo<Tupu, Neno>
 
 # Unganisha kwenye anwani ("mwenyeji:mlango", "[::1]:mlango" au "unix:/njia"), kwa TLS ikiombwa.
 kazi mkondo_unganisha(anwani: Neno, chaguo?: ChaguoMkondo) -> Tokeo<Mkondo, Neno>
@@ -180,6 +209,10 @@ kazi tls_sanidi(cheti_njia: Neno, ufunguo_njia: Neno) -> Tokeo<TlsUsanidi, Neno>
 
 # Maliza programu kwa msimbo wa kutoka.
 kazi toka(kodi: Namba) -> Tupu
+
+# Tukio moja la server-sent events (text/event-stream): mistari ya `id:`, `event:` na `data:`,
+# kisha mstari mtupu.
+kazi tukio_sse(data: Neno, tukio?: Neno, kitambulisho?: Neno) -> Neno
 
 # Soketi ya UDP kwenye anwani ("0.0.0.0:0": anwani yoyote, mlango wowote ulio wazi).
 kazi udp_fungua(anwani: Neno) -> Tokeo<MkondoUdp, Neno>

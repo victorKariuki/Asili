@@ -297,18 +297,22 @@ impl<'p> Host<'p> {
 
     /// Call the program's `kazi` called `name`. A top-level call (not one made from inside the
     /// program) also finishes every `sawia` task it started before returning.
+    /// Index of the program's function `name`.
+    fn function_index(&self, name: &str) -> Result<usize, EvalError> {
+        self.program
+            .functions
+            .iter()
+            .position(|f| f.name == name)
+            .ok_or_else(|| EvalError::UndefinedVar(name.to_string()))
+    }
+
     pub(crate) fn call_by_name(
         &mut self,
         name: &str,
         args: Vec<Value>,
     ) -> Result<Value, EvalError> {
         self.init_constants()?;
-        let index = self
-            .program
-            .functions
-            .iter()
-            .position(|f| f.name == name)
-            .ok_or_else(|| EvalError::UndefinedVar(name.to_string()))?;
+        let index = self.function_index(name)?;
         let result = self.call_values(index, args);
         if self.depth == 0 {
             crate::kazi_sawia::drain();
@@ -316,20 +320,26 @@ impl<'p> Host<'p> {
         result
     }
 
-    /// `anzisha(kazi_jina, hoja...)`: start the program's `kazi_jina` as a `sawia` task.
-    fn anzisha(&mut self, args: &[Value]) -> Result<Value, EvalError> {
-        let name = crate::builtins::arg_str(args, 0);
-        let index = self
-            .program
-            .functions
-            .iter()
-            .position(|f| f.name == name)
-            .ok_or_else(|| EvalError::UndefinedVar(name.clone()))?;
-        // The host outlives every task it starts (its top-level call drains them).
+    /// What starts the program's `name` as a `sawia` task on this host (module constants
+    /// computed first). The host must outlive every task it starts: a top-level call drains
+    /// them, and so must any other code that starts them.
+    pub(crate) fn task_starter(
+        &mut self,
+        name: &str,
+    ) -> Result<crate::kazi_sawia::Starter, EvalError> {
+        self.init_constants()?;
+        let index = self.function_index(name)?;
         let host =
             self as *mut Host<'p> as *mut Host<'static> as *mut dyn crate::kazi_sawia::Context;
-        let task = crate::kazi_sawia::spawn(host, index, args.get(1..).unwrap_or(&[]).to_vec());
-        Ok(Value::Ahadi(task))
+        Ok(crate::kazi_sawia::Starter { host, index })
+    }
+
+    /// `anzisha(kazi_jina, hoja...)`: start the program's `kazi_jina` as a `sawia` task.
+    fn anzisha(&mut self, args: &[Value]) -> Result<Value, EvalError> {
+        let starter = self.task_starter(&crate::builtins::arg_str(args, 0))?;
+        Ok(Value::Ahadi(
+            starter.start(args.get(1..).unwrap_or(&[]).to_vec()),
+        ))
     }
 
     /// Compute the program's non-literal module constants (once per host, before its first

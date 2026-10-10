@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **HTTP server on hyper: HTTP/2, streaming, server-sent events, compression, limits,
+  graceful stop**: `mkondo_tumikia_http` now speaks HTTP/1.1 and HTTP/2 (ALPN over TLS, or
+  prior knowledge in the clear) and runs every request as a `sawia` task, so one worker thread
+  answers many requests at once; `mkondo_tumikia` runs each connection the same way.
+  `OmbiHttp` gains `sehemu` (decoded path), `hoja` (decoded query), `mwili_baiti`, `mteja` and
+  `toleo`; a `JibuHttp` can stream its body from a channel (`mwili_njia`) — with the new
+  `tukio_sse` for server-sent events — or send bytes (`mwili_baiti`), and `sababu` sets the
+  reason phrase. Text bodies are compressed (brotli, gzip) for clients that accept it. New
+  `ChaguoSeva` (5th argument): `kikomo_mwili` (request body limit, `413` beyond it), `muda`,
+  `bana`, `muda_kuzima`. Stopping the listener (`.simama()`) lets open connections finish,
+  then the call returns.
+
 - **UDP**: `udp_fungua(anwani)` gives a `MkondoUdp` with `.tuma_kwa(anwani, data)`,
   `.pokea(kikomo?)` (the datagram as `Baiti` and its sender), `.unganisha(anwani)` and `.tuma`
   (a default peer), `.anwani()`, `.weka_muda(sekunde)`, `.tangaza(kweli)` (broadcast) and
@@ -295,6 +307,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   rejected instead of silently accepted. The Sudoku benchmark builds with `--namna release`.
 
 ### Changed
+
+- The HTTP server writes header names in lowercase (`content-length`), as HTTP/2 requires;
+  header names are case-insensitive in HTTP/1.1.
 
 - `mkondo_tumikia`/`mkondo_tumikia_http` workers limit each read and write to 30 s through the
   connection itself (as before, with the new layer); `.soma()` on a `Mkondo` now replaces invalid

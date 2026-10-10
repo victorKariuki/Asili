@@ -9,9 +9,26 @@ use std::collections::HashMap;
 
 use super::BuiltinFn;
 #[cfg(target_arch = "wasm32")]
-use crate::value::{EvalError, Value};
+use crate::value::EvalError;
+use crate::value::Value;
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
+    m.insert(
+        "tukio_sse".to_string(),
+        Box::new(|args: &[Value]| {
+            let opt = |i: usize| {
+                crate::value::as_string(super::http_thamani::unwrap_some(
+                    args.get(i).unwrap_or(&Value::Hamna),
+                ))
+            };
+            let data = super::arg_str(args, 0);
+            Ok(Value::neno(super::http_thamani::sse_event(
+                &data,
+                opt(1).as_deref(),
+                opt(2).as_deref(),
+            )))
+        }),
+    );
     #[cfg(not(target_arch = "wasm32"))]
     {
         m.insert("mkondo_unganisha".to_string(), Box::new(native::unganisha));
@@ -500,35 +517,82 @@ mod native {
     }
 
     /// Time limit of each read and write on a server's connection: a stalled or hostile peer
-    /// must not hold a worker forever. Shared with `http.rs`.
+    /// must not hold a connection forever.
     pub(crate) const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
+    /// How long a stopped `mkondo_tumikia`'s open connections may take to finish.
+    const GRACE: Duration = Duration::from_secs(10);
+
     /// `mkondo_tumikia(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls?) -> Tokeo<Tupu, Neno>`: serve
-    /// every connection to `kazi_jina(mkondo: Mkondo)` on `idadi_ya_nyuzi` worker threads, until
-    /// the listener is stopped (`.simama()`).
+    /// every connection to `kazi_jina(mkondo: Mkondo)`, each as a `sawia` task, on
+    /// `idadi_ya_nyuzi` worker threads, until the listener is stopped (`.simama()`).
     pub(crate) fn mkondo_tumikia(
         program: &crate::spawn::Shared,
         args: &[Value],
     ) -> Result<Value, EvalError> {
-        serve_pool("mkondo_tumikia", program, args, |call, kazi, mkondo| {
-            // One failing connection must not end the worker (and shrink the pool).
-            let _ = call(kazi, vec![mkondo]);
+        serve_pool("mkondo_tumikia", program, args, GRACE, |w: Worker| {
+            Box::pin(async move {
+                loop {
+                    let (stream, _) = match w.listener.accept().await {
+                        Ok(Some(c)) => c,
+                        Ok(None) => return,
+                        // Out of file descriptors and the like: pause instead of spinning.
+                        Err(_) => {
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                            continue;
+                        }
+                    };
+                    let (tls, starter) = (w.tls.clone(), w.starter);
+                    tokio::task::spawn_local(async move {
+                        let stream = match tls {
+                            Some(cfg) => {
+                                match tokio::time::timeout(
+                                    CONNECTION_TIMEOUT,
+                                    tls::accept(cfg, stream),
+                                )
+                                .await
+                                {
+                                    Ok(Ok(s)) => s,
+                                    // A failed handshake drops that one connection.
+                                    _ => return,
+                                }
+                            }
+                            None => stream,
+                        };
+                        let mut h = MkondoHandle::new(stream);
+                        h.timeout = Some(CONNECTION_TIMEOUT);
+                        // An error in one connection's `kazi` ends that connection only.
+                        starter.start(vec![Value::Mkondo(Rc::new(RefCell::new(h)))]);
+                    });
+                }
+            })
         })
     }
 
-    /// A worker's handling of one connection: `(caller, kazi_jina, mkondo)`.
-    pub(super) type Serve = fn(&mut crate::spawn::Caller<'_>, &str, Value);
+    /// What a server thread serves with: its listener, TLS, and the program's `kazi_jina`.
+    pub(crate) struct Worker {
+        pub(crate) listener: LocalListener,
+        pub(crate) tls: Option<Arc<rustls::ServerConfig>>,
+        pub(crate) starter: crate::kazi_sawia::Starter,
+    }
 
-    /// The worker pool shared by `mkondo_tumikia` and `mkondo_tumikia_http`: check
-    /// `(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls?)`, then on that many threads accept
-    /// connections (completing TLS when given), hand each to `serve`, and return once the
-    /// listener is stopped. Each worker builds its engine for `program` once.
-    pub(crate) fn serve_pool(
+    /// The worker pool of `mkondo_tumikia` and `mkondo_tumikia_http`: check `(sikilizaji,
+    /// kazi_jina, idadi_ya_nyuzi, tls?)`, then on that many threads (each with its own engine for
+    /// `program`) run `serve` until it ends — when the listener is stopped — give that thread's
+    /// tasks `grace` to finish, cancel the rest, and return.
+    pub(crate) fn serve_pool<S>(
         name: &str,
         program: &crate::spawn::Shared,
         args: &[Value],
-        serve: Serve,
-    ) -> Result<Value, EvalError> {
+        grace: Duration,
+        serve: S,
+    ) -> Result<Value, EvalError>
+    where
+        S: Fn(Worker) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>
+            + Clone
+            + Send
+            + 'static,
+    {
         let listener = match args.first() {
             Some(Value::MkondoSikilizaji(l)) => Arc::clone(l),
             _ => {
@@ -558,13 +622,28 @@ mod native {
             };
         let handles: Vec<_> = (0..threads)
             .map(|_| {
-                let listener = Arc::clone(&listener);
-                let program = program.clone();
-                let kazi_name = kazi_name.clone();
-                let tls_config = tls_config.clone();
+                let (listener, program, kazi_name) =
+                    (Arc::clone(&listener), program.clone(), kazi_name.clone());
+                let (tls, serve) = (tls_config.clone(), serve.clone());
                 std::thread::spawn(move || {
-                    program
-                        .with_caller(|call| worker(&listener, call, &kazi_name, tls_config, serve))
+                    program.with_host(|host| {
+                        let Ok(starter) = host.task_starter(&kazi_name) else {
+                            return;
+                        };
+                        let _ = block_on(async move {
+                            if let Ok(listener) = listener.local() {
+                                serve(Worker {
+                                    listener,
+                                    tls,
+                                    starter,
+                                })
+                                .await;
+                            }
+                        });
+                        crate::platform::flush_stdout();
+                        // The host outlives its tasks: they finish (or are cancelled) here.
+                        crate::kazi_sawia::drain_within(grace);
+                    })
                 })
             })
             .collect();
@@ -572,94 +651,6 @@ mod native {
             let _ = h.join();
         }
         Ok(Value::sawa(Value::Tupu))
-    }
-
-    fn worker(
-        listener: &Arc<Sikilizaji>,
-        call: &mut crate::spawn::Caller<'_>,
-        kazi_name: &str,
-        tls_config: Option<Arc<rustls::ServerConfig>>,
-        serve: Serve,
-    ) {
-        let l = listener.clone();
-        let Ok(Ok(local)) = block_on(async move { l.local() }) else {
-            return;
-        };
-        let local = Rc::new(local);
-        loop {
-            crate::platform::flush_stdout();
-            let (local, tls_config) = (local.clone(), tls_config.clone());
-            let accepted = block_on(async move { accept(&local, tls_config).await });
-            match accepted {
-                Ok(Ok(Some(stream))) => {
-                    let mut h = MkondoHandle::new(stream);
-                    h.timeout = Some(CONNECTION_TIMEOUT);
-                    serve(call, kazi_name, Value::Mkondo(Rc::new(RefCell::new(h))));
-                }
-                // A failed accept or handshake drops that one connection; a pause keeps a
-                // persistent failure (no file descriptors left) from spinning.
-                Ok(Err(_)) => {
-                    let _ = crate::kazi_sawia::lala(0.01);
-                }
-                Ok(Ok(None)) | Err(_) => return,
-            }
-        }
-    }
-
-    /// The next connection, with TLS completed when configured; `None` once stopped.
-    async fn accept(
-        local: &LocalListener,
-        tls_config: Option<Arc<rustls::ServerConfig>>,
-    ) -> Result<Option<Stream>, String> {
-        let Some((stream, _)) = local.accept().await? else {
-            return Ok(None);
-        };
-        match tls_config {
-            Some(cfg) => tokio::time::timeout(CONNECTION_TIMEOUT, tls::accept(cfg, stream))
-                .await
-                .map_err(|_| "TLS: muda umekwisha".to_string())?
-                .map(Some),
-            None => Ok(Some(stream)),
-        }
-    }
-
-    /// `std::io` reads and writes on a connection, for the HTTP server's parser.
-    pub(crate) struct Blocking(pub(crate) Handle);
-
-    impl std::io::Read for Blocking {
-        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            let max = buf.len();
-            let data = block_on(with_handle(self.0.clone(), async move |h| {
-                read_some(h, max).await
-            }))
-            .map_err(|e| std::io::Error::other(format!("{e:?}")))?
-            .map_err(|e| {
-                let kind = if e.ends_with("muda umekwisha") {
-                    std::io::ErrorKind::TimedOut
-                } else {
-                    std::io::ErrorKind::Other
-                };
-                std::io::Error::new(kind, e)
-            })?;
-            buf[..data.len()].copy_from_slice(&data);
-            Ok(data.len())
-        }
-    }
-
-    impl std::io::Write for Blocking {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            let data = buf.to_vec();
-            block_on(with_handle(self.0.clone(), async move |h| {
-                write_all(h, &data).await
-            }))
-            .map_err(|e| std::io::Error::other(format!("{e:?}")))?
-            .map_err(std::io::Error::other)?;
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
     }
 
     #[cfg(test)]

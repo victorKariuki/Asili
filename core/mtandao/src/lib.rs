@@ -9,6 +9,7 @@
 //! Errors are messages for the program (Swahili, with the OS's own text).
 
 mod dns;
+pub mod http;
 mod listener;
 mod stream;
 pub mod tls;
