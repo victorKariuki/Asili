@@ -159,6 +159,8 @@ the change. The current single sources:
 | Finding `pata.toml` / reading tool sections | the `pata-config` crate |
 | LSP raw-source scanning | `pata/lsp/src/scan.rs::code_chars` |
 | `pata-cli` test fixtures | `pata/cli/src/test_support.rs` |
+| Connecting, listening, TLS configuration, DNS | the `asili-mtandao` crate (`core/mtandao`) |
+| Waiting without blocking a `sawia` task | `kazi_sawia::block_on` (`core/evaluator/src/kazi_sawia.rs`) |
 | Tracing (events, spans, output formats) | the `asili-trace` crate (`emit`/`enter`/`phase`; sinks chosen by `install_spec`) |
 | Identifier interning, Fx hashing | `asili_parser::Name` / `FxHasher` / `FxHashMap` (`core/parser/src/name.rs`) |
 

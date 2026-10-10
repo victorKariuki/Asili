@@ -211,15 +211,16 @@ pub const BUILTIN_MODULES: &[BuiltinModule] = &[
             ("kikomo_kumbukumbu(baiti: Namba) -> Tupu", "Kikomo cha kumbukumbu ya programu, kwa baiti (0: hakuna); kukipita husimamisha programu."),
             ("kutoka_json(maandishi: Neno) -> Tokeo<Kamusi<Neno, Haijulikani>, Neno>", "Thamani kutoka maandishi ya JSON."),
             ("kwa_json(thamani: Haijulikani) -> Tokeo<Neno, Neno>", "Maandishi ya JSON ya thamani."),
-            ("mkondo_sikiliza(anwani: Neno) -> Tokeo<MkondoSikilizaji, Neno>", "Sikiliza miunganisho ya TCP kwenye anwani (\"mwenyeji:mlango\")."),
+            ("mkondo_sikiliza(anwani: Neno, chaguo?: ChaguoSikiliza) -> Tokeo<MkondoSikilizaji, Neno>", "Sikiliza miunganisho kwenye anwani (\"mwenyeji:mlango\"; mlango 0: wowote ulio wazi; \"unix:/njia\"). `.kubali()` hupokea mmoja, `.simama()` husimamisha."),
             ("mkondo_tumikia(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls?: TlsUsanidi?) -> Tokeo<Tupu, Neno>", "Hudumia kila muunganisho kwa kazi `kazi_jina(Mkondo)` kwenye nyuzi `idadi_ya_nyuzi`."),
             ("mkondo_tumikia_http(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls?: TlsUsanidi?) -> Tokeo<Tupu, Neno>", "Seva ya HTTP/1.1: kila ombi ni `kazi_jina(OmbiHttp) -> JibuHttp`."),
-            ("mkondo_unganisha(anwani: Neno) -> Tokeo<Mkondo, Neno>", "Unganisha kwa TCP kwenye anwani (\"mwenyeji:mlango\")."),
+            ("mkondo_unganisha(anwani: Neno, chaguo?: ChaguoMkondo) -> Tokeo<Mkondo, Neno>", "Unganisha kwenye anwani (\"mwenyeji:mlango\", \"[::1]:mlango\" au \"unix:/njia\"), kwa TLS ikiombwa."),
             ("mlinzi_anza(ms: Namba) -> Tokeo<Tupu, Neno>", "Anza mlinzi: programu isipomlisha ndani ya ms milisekunde, husimamishwa."),
             ("mlinzi_lisha() -> Tupu", "Lisha mlinzi aliyeanzishwa na `mlinzi_anza`."),
             ("pata_env(jina: Neno) -> Neno?", "Thamani ya kigezo cha mazingira, au `Hamna`."),
             ("rejesha_ishara(ishara: Namba) -> Tokeo<Tupu, Neno>", "Rudisha ishara ya OS kwenye ushughulikiaji wake wa kawaida."),
             ("sikiliza_ishara(ishara: Namba, kazi_jina: Neno) -> Tokeo<Tupu, Neno>", "Ita kazi `kazi_jina` ishara ya OS ikifika (Unix)."),
+            ("tafuta_anwani(jina: Neno) -> Tokeo<Orodha<Neno>, Neno>", "Anwani za IP za jina la mwenyeji (DNS)."),
             ("tls_sanidi(cheti_njia: Neno, ufunguo_njia: Neno) -> Tokeo<TlsUsanidi, Neno>", "Pakia cheti na ufunguo (PEM) kwa seva ya TLS."),
             ("toka(kodi: Namba) -> Tupu", "Maliza programu kwa msimbo wa kutoka."),
             ("vigezo() -> Orodha<Neno>", "Hoja za mstari wa amri."),
@@ -252,6 +253,27 @@ pub const BUILTIN_MODULES: &[BuiltinModule] = &[
                     ("toleo?: Neno", "Toleo la HTTP (\"HTTP/1.1\")."),
                     ("vichwa_vyote?: Orodha<Jozi<Neno, Neno>>", "Kila kichwa kwa mpangilio, marudio yakiwa tofauti (`set-cookie`); seva huvituma vyote."),
                     ("muda?: Namba", "Sekunde ombi lilizochukua, pamoja na kuelekezwa na kujaribu tena."),
+                ],
+            },
+            StructSrc {
+                name: "ChaguoMkondo",
+                doc: "Chaguo za `mkondo_unganisha`; kila uga ni wa hiari.",
+                fields: &[
+                    ("tls?: Ukweli", "Tumia TLS, ukithibitisha cheti cha seva."),
+                    ("jina_seva?: Neno", "Jina ambalo cheti cha seva lazima kiwe nalo (kawaida: mwenyeji wa anwani)."),
+                    ("muda?: Namba", "Sekunde za kuunganisha (kutafuta, kuunganisha na TLS)."),
+                    ("cheti_ca?: Neno", "Faili la PEM la vyeti vya mamlaka vitakavyoaminiwa pekee (badala ya orodha ya Mozilla)."),
+                    ("cheti?: Neno", "Cheti cha mteja (PEM) kwa TLS ya pande mbili, pamoja na `ufunguo`."),
+                    ("ufunguo?: Neno", "Ufunguo wa siri (PEM) wa `cheti`."),
+                    ("familia_ip?: Namba", "4 au 6: tumia IPv4 au IPv6 pekee."),
+                ],
+            },
+            StructSrc {
+                name: "ChaguoSikiliza",
+                doc: "Chaguo za `mkondo_sikiliza`; kila uga ni wa hiari.",
+                fields: &[
+                    ("tumia_tena?: Ukweli", "Ruhusu soketi (programu) kadhaa kusikiliza mlango mmoja (SO_REUSEPORT, Unix)."),
+                    ("foleni?: Namba", "Miunganisho mingapi inaweza kusubiri kukubaliwa (kawaida 1024)."),
                 ],
             },
             StructSrc {
@@ -740,6 +762,7 @@ pub enum MethodReceiver {
     Fungo,
     Baiti,
     Ahadi,
+    MkondoSikilizaji,
 }
 
 /// Built-in methods that only read their receiver, per [`MethodReceiver`]. The one list: the
@@ -824,7 +847,19 @@ pub const PURE_METHODS: &[&[&str]] = &[
     &["pata", "weka", "idadi", "shirikisha"],
     &["imarisha"],
     &["soma", "andika", "funga", "soma_baiti"],
-    &["soma", "andika", "funga", "soma_bailisi", "soma_baiti"],
+    &[
+        "soma",
+        "andika",
+        "funga",
+        "soma_bailisi",
+        "soma_baiti",
+        "soma_mstari",
+        "soma_kamili",
+        "funga_kuandika",
+        "anwani_mbali",
+        "anwani_yangu",
+        "weka_muda",
+    ],
     &["pata"],
     &["tuma"],
     &["pokea"],
@@ -849,6 +884,7 @@ pub const PURE_METHODS: &[&[&str]] = &[
         "soma_nambari",
     ],
     &["imekwisha", "ghairi"],
+    &["kubali", "anwani", "simama"],
 ];
 
 /// Built-in methods that change their receiver in place, per [`MethodReceiver`].
@@ -878,6 +914,7 @@ pub const MUTATING_METHODS: &[&[&str]] = &[
     &[],
     &[],
     &[],
+    &[],
 ];
 
 /// Built-in methods that call a `kazi` (or builtin) named by their first argument, per element.
@@ -892,6 +929,7 @@ pub const CALLBACK_METHODS: &[&[&str]] = &[
         "kila_mmoja",
         "panga_kwa",
     ],
+    &[],
     &[],
     &[],
     &[],
@@ -958,6 +996,23 @@ pub fn method_return_type(receiver: &ValueType, method: &str) -> ValueType {
         (ValueType::Ahadi(_), "imekwisha") => ValueType::Ukweli,
         (ValueType::Ahadi(_), "ghairi") => ValueType::Tupu,
         (ValueType::Baiti, "soma_nambari") => ValueType::Chaguo(Box::new(ValueType::Namba)),
+        (ValueType::Mkondo, "soma_kamili") => {
+            ValueType::Tokeo(Box::new(ValueType::Baiti), Box::new(ValueType::Neno))
+        }
+        (ValueType::Mkondo, "soma_mstari") => ValueType::Tokeo(
+            Box::new(ValueType::Chaguo(Box::new(ValueType::Neno))),
+            Box::new(ValueType::Neno),
+        ),
+        (ValueType::Mkondo, "funga_kuandika") => {
+            ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno))
+        }
+        (ValueType::Mkondo, "anwani_mbali" | "anwani_yangu") => ValueType::Neno,
+        (ValueType::Mkondo, "weka_muda") => ValueType::Tupu,
+        (ValueType::MkondoSikilizaji, "kubali") => {
+            ValueType::Tokeo(Box::new(ValueType::Mkondo), Box::new(ValueType::Neno))
+        }
+        (ValueType::MkondoSikilizaji, "anwani") => ValueType::Neno,
+        (ValueType::MkondoSikilizaji, "simama") => ValueType::Tupu,
         (ValueType::Faili | ValueType::Mkondo, "soma_baiti") => {
             ValueType::Tokeo(Box::new(ValueType::Baiti), Box::new(ValueType::Neno))
         }

@@ -1,0 +1,20 @@
+[package]
+name = "asili-mtandao"
+version = "0.1.0"
+edition = "2021"
+description = "Asili's network layer: TCP, TLS and Unix streams and listeners, DNS, on tokio."
+
+# One connection layer for every network builtin (sockets, the HTTP client and server): streams
+# are tokio's, so a `sawia` task waiting on one lets the thread's other tasks run.
+[dependencies]
+tokio = { version = "1", features = ["net", "io-util", "time", "rt", "sync", "macros"] }
+# One crypto provider for the whole program (aws-lc-rs), as the HTTP client already uses.
+rustls = "0.23"
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12", "logging"] }
+rustls-pemfile = "2"
+webpki-roots = "1"
+socket2 = { version = "0.6", features = ["all"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
+rcgen = "0.13"

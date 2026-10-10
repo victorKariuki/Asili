@@ -36,6 +36,32 @@ umbo JibuHttp {
     muda?: Namba,
 }
 
+# Chaguo za `mkondo_unganisha`; kila uga ni wa hiari.
+umbo ChaguoMkondo {
+    # Tumia TLS, ukithibitisha cheti cha seva.
+    tls?: Ukweli,
+    # Jina ambalo cheti cha seva lazima kiwe nalo (kawaida: mwenyeji wa anwani).
+    jina_seva?: Neno,
+    # Sekunde za kuunganisha (kutafuta, kuunganisha na TLS).
+    muda?: Namba,
+    # Faili la PEM la vyeti vya mamlaka vitakavyoaminiwa pekee (badala ya orodha ya Mozilla).
+    cheti_ca?: Neno,
+    # Cheti cha mteja (PEM) kwa TLS ya pande mbili, pamoja na `ufunguo`.
+    cheti?: Neno,
+    # Ufunguo wa siri (PEM) wa `cheti`.
+    ufunguo?: Neno,
+    # 4 au 6: tumia IPv4 au IPv6 pekee.
+    familia_ip?: Namba,
+}
+
+# Chaguo za `mkondo_sikiliza`; kila uga ni wa hiari.
+umbo ChaguoSikiliza {
+    # Ruhusu soketi (programu) kadhaa kusikiliza mlango mmoja (SO_REUSEPORT, Unix).
+    tumia_tena?: Ukweli,
+    # Miunganisho mingapi inaweza kusubiri kukubaliwa (kawaida 1024).
+    foleni?: Namba,
+}
+
 # Chaguo za `http_ombi`; kila uga ni wa hiari. Mwili ni mmoja tu kati ya `mwili`,
 # `mwili_base64`, `json`, `fomu`, `fomu_sehemu`/`fomu_faili` na `faili`.
 umbo ChaguoHttp {
@@ -118,8 +144,9 @@ kazi kutoka_json(maandishi: Neno) -> Tokeo<Kamusi<Neno, Haijulikani>, Neno>
 # Maandishi ya JSON ya thamani.
 kazi kwa_json(thamani: Haijulikani) -> Tokeo<Neno, Neno>
 
-# Sikiliza miunganisho ya TCP kwenye anwani ("mwenyeji:mlango").
-kazi mkondo_sikiliza(anwani: Neno) -> Tokeo<MkondoSikilizaji, Neno>
+# Sikiliza miunganisho kwenye anwani ("mwenyeji:mlango"; mlango 0: wowote ulio wazi;
+# "unix:/njia"). `.kubali()` hupokea mmoja, `.simama()` husimamisha.
+kazi mkondo_sikiliza(anwani: Neno, chaguo?: ChaguoSikiliza) -> Tokeo<MkondoSikilizaji, Neno>
 
 # Hudumia kila muunganisho kwa kazi `kazi_jina(Mkondo)` kwenye nyuzi `idadi_ya_nyuzi`.
 kazi mkondo_tumikia(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls?: TlsUsanidi?) -> Tokeo<Tupu, Neno>
@@ -127,8 +154,8 @@ kazi mkondo_tumikia(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuz
 # Seva ya HTTP/1.1: kila ombi ni `kazi_jina(OmbiHttp) -> JibuHttp`.
 kazi mkondo_tumikia_http(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls?: TlsUsanidi?) -> Tokeo<Tupu, Neno>
 
-# Unganisha kwa TCP kwenye anwani ("mwenyeji:mlango").
-kazi mkondo_unganisha(anwani: Neno) -> Tokeo<Mkondo, Neno>
+# Unganisha kwenye anwani ("mwenyeji:mlango", "[::1]:mlango" au "unix:/njia"), kwa TLS ikiombwa.
+kazi mkondo_unganisha(anwani: Neno, chaguo?: ChaguoMkondo) -> Tokeo<Mkondo, Neno>
 
 # Anza mlinzi: programu isipomlisha ndani ya ms milisekunde, husimamishwa.
 kazi mlinzi_anza(ms: Namba) -> Tokeo<Tupu, Neno>
@@ -144,6 +171,9 @@ kazi rejesha_ishara(ishara: Namba) -> Tokeo<Tupu, Neno>
 
 # Ita kazi `kazi_jina` ishara ya OS ikifika (Unix).
 kazi sikiliza_ishara(ishara: Namba, kazi_jina: Neno) -> Tokeo<Tupu, Neno>
+
+# Anwani za IP za jina la mwenyeji (DNS).
+kazi tafuta_anwani(jina: Neno) -> Tokeo<Orodha<Neno>, Neno>
 
 # Pakia cheti na ufunguo (PEM) kwa seva ya TLS.
 kazi tls_sanidi(cheti_njia: Neno, ufunguo_njia: Neno) -> Tokeo<TlsUsanidi, Neno>

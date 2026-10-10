@@ -13,14 +13,10 @@
 //! module.
 
 use std::io::{Read, Write};
-#[cfg(not(target_arch = "wasm32"))]
-use std::sync::Arc;
 
-use crate::value::{EvalError, MkondoStream, Value};
+use crate::value::{EvalError, Value};
 
-#[cfg(not(target_arch = "wasm32"))]
-use super::mkondo::{apply_connection_timeout, handshake_tls};
-use super::mkondo::{serve_pool, ServerTls};
+use super::mkondo::{serve_pool, Blocking as MkondoStream};
 
 /// How many bytes `.soma_bailisi`-equivalent reads pull at a time while accumulating a request.
 /// Not user-configurable in this pass — matches `CONNECTION_TIMEOUT`'s "fixed for now, a natural
@@ -368,32 +364,13 @@ pub(crate) fn mkondo_tumikia_http(
     serve_pool("mkondo_tumikia_http", program, args, http_worker_loop)
 }
 
-fn http_worker_loop(
-    listener: &std::net::TcpListener,
-    call: &mut crate::spawn::Caller<'_>,
-    kazi_name: &str,
-    #[cfg_attr(target_arch = "wasm32", allow(unused_variables))] tls_config: ServerTls,
-) {
-    loop {
-        crate::platform::flush_stdout();
-        let tcp_stream = match listener.accept() {
-            Ok((s, _addr)) => s,
-            Err(_) => return,
-        };
-        #[cfg(not(target_arch = "wasm32"))]
-        apply_connection_timeout(&tcp_stream);
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let mut mkondo_stream = match &tls_config {
-            Some(cfg) => match handshake_tls(Arc::clone(cfg), tcp_stream) {
-                Some(s) => s,
-                None => continue,
-            },
-            None => MkondoStream::Wazi(tcp_stream),
-        };
-        #[cfg(target_arch = "wasm32")]
-        let mut mkondo_stream = MkondoStream::Wazi(tcp_stream);
-
+/// One connection: answer its requests until it closes or asks to.
+fn http_worker_loop(call: &mut crate::spawn::Caller<'_>, kazi_name: &str, mkondo: Value) {
+    let Value::Mkondo(handle) = mkondo else {
+        return;
+    };
+    let mut mkondo_stream = MkondoStream(handle);
+    {
         // Bytes read off the wire but not yet consumed by a parsed request — carries a
         // pipelined next request's already-received bytes across keep-alive loop iterations
         // (issue #21) instead of them being read again or silently dropped.
@@ -450,7 +427,6 @@ fn http_worker_loop(
                 break;
             }
         }
-        // mkondo_stream drops here — MkondoStream's own Drop impl sends TLS close_notify if
-        // this was a Salama connection, same as the raw-bytes mkondo_tumikia path.
+        // The connection closes when its handle drops (TLS with close_notify).
     }
 }

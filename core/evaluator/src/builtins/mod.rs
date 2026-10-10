@@ -16,7 +16,21 @@
 
 mod faili;
 mod hisabati;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod http;
+/// No sockets in the browser.
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod http {
+    use crate::value::{EvalError, Value};
+    pub(crate) fn mkondo_tumikia_http(
+        _program: &crate::spawn::Shared,
+        _args: &[Value],
+    ) -> Result<Value, EvalError> {
+        Ok(Value::kosa(
+            "mkondo_tumikia_http: haipatikani kwenye kivinjari",
+        ))
+    }
+}
 mod http_mteja;
 mod http_thamani;
 mod json;

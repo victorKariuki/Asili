@@ -2,6 +2,8 @@
 //! built from and read back into Rust, for the server (`http.rs`) and the client
 //! (`http_mteja.rs`) alike. Field order follows the declarations in
 //! `core/parser/src/builtins.rs` (`BUILTIN_MODULES`), so field reads by slot hit first time.
+// Only the network builtins use these, and the browser has none.
+#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
 use crate::value::{self, MapKey, Value};
 use std::rc::Rc;

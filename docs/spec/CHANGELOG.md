@@ -4,6 +4,11 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Standard library ([05-standard-library.md](05-standard-library.md)): sockets — `Mkondo`
+  connects over TCP, TLS or Unix sockets (`ChaguoMkondo`), with line, exact and bounded reads,
+  half-close, addresses and time limits; `MkondoSikilizaji` gains `.kubali()`, `.anwani()` and
+  `.simama()` (which ends `mkondo_tumikia`/`mkondo_tumikia_http`) and `ChaguoSikiliza`; new
+  `tafuta_anwani` (DNS). A listener is a shared handle.
 - Standard library ([05-standard-library.md](05-standard-library.md)): `sawia`/`subiri` are
   defined — a `sawia kazi` call starts a task on the calling thread and gives an `Ahadi<T>`;
   waits overlap; `sambamba` gains `anzisha`, `subiri_zote`, `subiri_yoyote`, `muda_kikomo` and

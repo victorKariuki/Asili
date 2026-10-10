@@ -40,7 +40,9 @@ libc = "0.2"
 # driven by one single-threaded tokio runtime per thread, which also does the waiting (timers,
 # channels, sockets).
 corosensei = "0.3"
-tokio = { version = "1", features = ["rt", "time", "sync", "macros"] }
+tokio = { version = "1", features = ["rt", "time", "sync", "macros", "net", "io-util"] }
+# Sockets, TLS and DNS for every network builtin.
+asili-mtandao = { path = "../mtandao" }
 rustls = "0.23"
 rustls-pemfile = "2"
 # The HTTP client (`http_ombi`): rustls rather than the system TLS library, so the static runner

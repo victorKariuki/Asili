@@ -160,7 +160,7 @@ mod native {
     thread_local! {
         static RUNTIME: Rc<Runtime> = Rc::new(Runtime {
             rt: tokio::runtime::Builder::new_current_thread()
-                .enable_time()
+                .enable_all()
                 .build()
                 .unwrap_or_else(|e| panic!("tokio: {e}")),
             local: tokio::task::LocalSet::new(),

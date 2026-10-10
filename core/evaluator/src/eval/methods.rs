@@ -221,6 +221,7 @@ fn receiver_kind(recv: &Value) -> Option<Kind> {
         Value::KashaGCDhaifu(_) => Kind::KashaGCDhaifu,
         Value::Faili(_) => Kind::Faili,
         Value::Mkondo(_) => Kind::Mkondo,
+        Value::MkondoSikilizaji(_) => Kind::MkondoSikilizaji,
         Value::Kumbukumbu(_) => Kind::Kumbukumbu,
         Value::NjiaTx(_) | Value::NjiaTxBounded(_) => Kind::NjiaTx,
         Value::NjiaRx(_) | Value::NjiaRxBounded(_) => Kind::NjiaRx,
@@ -642,93 +643,9 @@ pub(crate) fn pure_method(
             cell.borrow_mut().0.take();
             Ok(Value::Tupu)
         }
-        (Value::Mkondo(cell), "soma") => {
-            crate::platform::flush_stdout(); // about to block: show what was printed so far
-            use std::io::Read;
-            let mut guard = cell.borrow_mut();
-            match guard.0.as_mut() {
-                Some(s) => {
-                    let mut buf = String::new();
-                    match s.read_to_string(&mut buf) {
-                        Ok(_) => Ok(Value::sawa(Value::neno(buf))),
-                        Err(e) => Ok(Value::kosa(e.to_string())),
-                    }
-                }
-                None => Ok(Value::kosa("mkondo: imefungwa tayari")),
-            }
-        }
-        (Value::Mkondo(cell), "andika") => {
-            use std::io::Write;
-            let data = bytes_of(args_val.first().unwrap_or(&Value::Hamna)).unwrap_or_default();
-            let mut guard = cell.borrow_mut();
-            match guard.0.as_mut() {
-                Some(s) => match s.write_all(&data) {
-                    Ok(()) => Ok(Value::sawa(Value::Tupu)),
-                    Err(e) => Ok(Value::kosa(e.to_string())),
-                },
-                None => Ok(Value::kosa("mkondo: imefungwa tayari")),
-            }
-        }
-        (Value::Mkondo(cell), "funga") => {
-            cell.borrow_mut().0.take();
-            Ok(Value::Tupu)
-        }
-        // `.soma()` (read_to_string) reads until EOF — structurally incompatible with
-        // HTTP/1.1 keep-alive, which must read exactly one request's bytes and then be
-        // able to read a *second* request over the same connection. `.soma_bailisi`
-        // (bounded read) is the primitive an HTTP parser loop actually needs: one
-        // Read::read() call, not read-to-EOF, returning whatever bytes were actually
-        // available (possibly fewer than kikomo, possibly zero on a timeout with nothing
-        // sent — surfaced as an empty Neno, not an error, since a zero-byte read isn't
-        // itself a failure). Additive alongside `.soma()`, which keeps its existing
-        // behavior for every current caller (mkondo_unganisha's tests, examples/
-        // mkondo_server/'s one-request-per-connection contract).
-        (Value::Mkondo(cell), "soma_baiti") => {
-            crate::platform::flush_stdout(); // about to block: show what was printed so far
-            use std::io::Read;
-            let kikomo = value::as_f64(args_val.first().unwrap_or(&Value::Hamna))
-                .unwrap_or(0.0)
-                .max(0.0) as usize;
-            let mut guard = cell.borrow_mut();
-            match guard.0.as_mut() {
-                Some(s) => {
-                    let mut buf = vec![0u8; kikomo];
-                    match s.read(&mut buf) {
-                        Ok(n) => {
-                            buf.truncate(n);
-                            Ok(Value::sawa(Value::Baiti(buf.into())))
-                        }
-                        Err(e) => Ok(Value::kosa(e.to_string())),
-                    }
-                }
-                None => Ok(Value::kosa("mkondo: imefungwa tayari")),
-            }
-        }
-        (Value::Mkondo(cell), "soma_bailisi") => {
-            crate::platform::flush_stdout(); // about to block: show what was printed so far
-            use std::io::Read;
-            let kikomo = value::as_f64(args_val.first().unwrap_or(&Value::Hamna))
-                .unwrap_or(0.0)
-                .max(0.0) as usize;
-            let mut guard = cell.borrow_mut();
-            match guard.0.as_mut() {
-                Some(s) => {
-                    let mut buf = vec![0u8; kikomo];
-                    match s.read(&mut buf) {
-                        Ok(n) => {
-                            // Lossy UTF-8: Neno is a Rust String throughout this
-                            // interpreter (no Value::Bytes variant exists) — a raw
-                            // binary body isn't safely round-trippable through this
-                            // method today, a known, documented limitation of this
-                            // minimal framing pass (see docs/design/http-framing-design.md).
-                            let text = String::from_utf8_lossy(&buf[..n]).into_owned();
-                            Ok(Value::sawa(Value::neno(text)))
-                        }
-                        Err(e) => Ok(Value::kosa(e.to_string())),
-                    }
-                }
-                None => Ok(Value::kosa("mkondo: imefungwa tayari")),
-            }
+        (Value::Mkondo(cell), _) => crate::builtins::mkondo::mkondo_method(cell, method, args_val),
+        (Value::MkondoSikilizaji(l), _) => {
+            crate::builtins::mkondo::sikilizaji_method(l, method, args_val)
         }
         // Kumbukumbu<T> is a plain owning Box, not a shared/interior-mutable cell like
         // Kasha_GC<T> — `.pata()` reads a clone of the boxed value; there is no `.weka()`

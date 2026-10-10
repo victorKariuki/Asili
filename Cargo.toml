@@ -5,6 +5,7 @@ members = [
   "core/parser",
   "core/evaluator",
   "core/trace",
+  "core/mtandao",
   "pata/core",
   "pata/config",
   "pata/cli",

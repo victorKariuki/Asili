@@ -125,6 +125,7 @@ version = "0.4.1"
 dependencies = [
  "asili-diagnostics",
  "asili-lexer",
+ "asili-mtandao",
  "asili-parser",
  "asili-trace",
  "base64 0.22.1",
@@ -177,6 +178,19 @@ dependencies = [
 [[package]]
 name = "asili-mem"
 version = "0.1.0"
+
+[[package]]
+name = "asili-mtandao"
+version = "0.1.0"
+dependencies = [
+ "rcgen",
+ "rustls",
+ "rustls-pemfile",
+ "socket2",
+ "tokio",
+ "tokio-rustls",
+ "webpki-roots",
+]
 
 [[package]]
 name = "asili-parser"
@@ -2273,6 +2287,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
+]
+
+[[package]]
+name = "tokio-rustls"
+version = "0.26.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9cc2678c2cdd569ef8215e2afd7954ada2ae20b4fdd2c5fe6139a3b02d105db"
+dependencies = [
+ "rustls",
+ "tokio",
 ]
 
 [[package]]

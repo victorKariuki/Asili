@@ -1,360 +1,582 @@
-//! Mkondo (network stream/socket): mkondo_unganisha (connect a TCP client stream),
-//! mkondo_sikiliza (bind a listening socket), mkondo_tumikia (bounded worker-thread pool
-//! serving accepted connections to a named kazi). Returns Tokeo<Mkondo, Neno>/
-//! Tokeo<MkondoSikilizaji, Neno>. Handles close automatically on drop (scope exit, explicit
-//! tupa, or .funga()) via MkondoHandle's own Drop impl — see docs/design/faili-mkondo-design.md
-//! and docs/design/http-server-design.md for the bounded-pool-over-async decision.
+//! Mkondo (network streams): `mkondo_unganisha` (connect: TCP, TLS or a Unix socket),
+//! `mkondo_sikiliza` (listen), `tafuta_anwani` (DNS), `tls_sanidi` (a server certificate), the
+//! methods of `Mkondo` and `MkondoSikilizaji`, and `mkondo_tumikia` (a pool of worker threads
+//! serving each accepted connection to a named `kazi`). Connecting, listening and TLS are
+//! `asili_mtandao`'s; every wait goes through `kazi_sawia::block_on`, so inside a `sawia` task
+//! it lets the thread's other tasks run. A handle closes on `.funga()` or when dropped.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::net::TcpStream;
-use std::rc::Rc;
-use std::sync::Arc;
 
 use super::BuiltinFn;
-use crate::value::{self, MkondoHandle, MkondoStream, Value};
+#[cfg(target_arch = "wasm32")]
+use crate::value::{EvalError, Value};
 
 pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
-    m.insert(
-        "mkondo_unganisha".to_string(),
-        Box::new(|args: &[Value]| {
-            let addr = super::arg_str(args, 0);
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                match TcpStream::connect(&addr) {
-                    Ok(s) => {
-                        let handle = MkondoHandle(Some(MkondoStream::Wazi(s)));
-                        Ok(Value::sawa(Value::Mkondo(Rc::new(RefCell::new(handle)))))
-                    }
-                    Err(e) => Ok(Value::kosa(e.to_string())),
-                }
-            }
-            #[cfg(target_arch = "wasm32")]
-            Ok(Value::kosa(
-                "mkondo_unganisha: haipatikani kwenye kivinjari",
-            ))
-        }),
-    );
-    m.insert(
-        "mkondo_sikiliza".to_string(),
-        Box::new(|args: &[Value]| {
-            let addr = super::arg_str(args, 0);
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                match std::net::TcpListener::bind(&addr) {
-                    Ok(l) => Ok(Value::sawa(Value::MkondoSikilizaji(Arc::new(l)))),
-                    Err(e) => Ok(Value::kosa(e.to_string())),
-                }
-            }
-            #[cfg(target_arch = "wasm32")]
-            Ok(Value::kosa("mkondo_sikiliza: haipatikani kwenye kivinjari"))
-        }),
-    );
     #[cfg(not(target_arch = "wasm32"))]
-    m.insert("tls_sanidi".to_string(), Box::new(tls_sanidi));
-}
-
-/// `tls_sanidi(cheti_njia: Neno, ufunguo_njia: Neno) -> Tokeo<TlsUsanidi, Neno>` — loads a PEM
-/// certificate chain and private key from disk, building a `rustls::ServerConfig` ready to hand
-/// to `mkondo_tumikia`'s optional `tls` parameter. Never panics on a missing/malformed
-/// file or a key/cert mismatch — every failure surfaces as `Tokeo(Kosa(...))`, matching every
-/// other constructor's error-handling convention in this codebase (`faili_fungua`,
-/// `mkondo_unganisha`, etc.).
-#[cfg(not(target_arch = "wasm32"))]
-fn tls_sanidi(args: &[Value]) -> Result<Value, value::EvalError> {
-    let cheti_njia = super::arg_str(args, 0);
-    let ufunguo_njia = super::arg_str(args, 1);
-
-    let cheti_bytes = match std::fs::read(&cheti_njia) {
-        Ok(b) => b,
-        Err(e) => return Ok(Value::kosa(format!("tls_sanidi: {e}"))),
-    };
-    let ufunguo_bytes = match std::fs::read(&ufunguo_njia) {
-        Ok(b) => b,
-        Err(e) => return Ok(Value::kosa(format!("tls_sanidi: {e}"))),
-    };
-
-    let certs: Result<Vec<_>, _> = rustls_pemfile::certs(&mut cheti_bytes.as_slice()).collect();
-    let certs = match certs {
-        Ok(c) if !c.is_empty() => c,
-        Ok(_) => {
-            return Ok(Value::kosa(
-                "tls_sanidi: hakuna cheti kwenye faili".to_string(),
-            ))
-        }
-        Err(e) => return Ok(Value::kosa(format!("tls_sanidi: cheti batili: {e}"))),
-    };
-    let key = match rustls_pemfile::private_key(&mut ufunguo_bytes.as_slice()) {
-        Ok(Some(k)) => k,
-        Ok(None) => {
-            return Ok(Value::kosa(
-                "tls_sanidi: hakuna ufunguo kwenye faili".to_string(),
-            ))
-        }
-        Err(e) => return Ok(Value::kosa(format!("tls_sanidi: ufunguo batili: {e}"))),
-    };
-
-    let config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key);
-    match config {
-        Ok(cfg) => Ok(Value::sawa(Value::TlsUsanidi(Arc::new(cfg)))),
-        Err(e) => Ok(Value::kosa(format!(
-            "tls_sanidi: cheti na ufunguo havilingani: {e}"
-        ))),
+    {
+        m.insert("mkondo_unganisha".to_string(), Box::new(native::unganisha));
+        m.insert("mkondo_sikiliza".to_string(), Box::new(native::sikiliza));
+        m.insert("tafuta_anwani".to_string(), Box::new(native::tafuta_anwani));
+        m.insert("tls_sanidi".to_string(), Box::new(native::tls_sanidi));
     }
-}
-
-/// Per-connection I/O timeout: an unbounded blocking read/write on a stalled or malicious peer
-/// would otherwise permanently occupy one of the pool's fixed worker threads, degrading the
-/// whole pool over time — this is not optional for a production listener (see the original
-/// production-readiness survey). Fixed rather than configurable for this pass; a configurable
-/// timeout is a natural follow-up once real usage data exists. `pub(crate)`: shared with
-/// `http.rs`'s `mkondo_tumikia_http`, which needs the identical per-connection timeout
-/// behavior — not redeclared there.
-pub(crate) const CONNECTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
-/// `mkondo_tumikia(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls: Chaguo<TlsUsanidi>) ->
-/// Tokeo<Tupu, Neno>`: spawns `idadi_ya_nyuzi` long-lived worker threads, each independently
-/// looping accept -> (optional TLS handshake) -> invoke `kazi_jina(mkondo: Mkondo) -> Tupu` via
-/// the same `run_function`-per-call pattern `tenda` already established -> repeat. Blocks the
-/// calling thread forever (joins every worker), matching a simple "kazi kuu's last statement
-/// starts the server" shape — there is no separate stop/handle mechanism in this pass.
-///
-/// The accepted `std::net::TcpStream` is constructed and consumed entirely inside the worker
-/// thread that accepted it — it never crosses a `SendValue` boundary, unlike `tenda`'s spawned
-/// function's arguments. This is what a fixed-size pool of N long-lived threads sharing one
-/// `Arc<TcpListener>` buys over `tenda`-per-connection: the worker's `kazi_jina` receives a real,
-/// live `Mkondo` handle it can `.soma()`/`.andika()` on directly, exactly like
-/// `mkondo_unganisha`'s client-side handle today.
-///
-/// `tls` is a 4th, optional-by-`Chaguo` parameter rather than a separate
-/// `mkondo_tumikia_salama` function: every other part of the worker-loop contract (pool size,
-/// per-connection timeout, `kazi_jina`'s `Mkondo`-handle contract) is identical whether or not
-/// TLS is active, so only the accept-then-wrap step branches.
-///
-/// Not registered as an ordinary `BuiltinFn` — like `tenda`, it needs the current `Module` to
-/// find `kazi_jina`, so it's special-cased in `eval/expr.rs`'s `Expr::Call` handling.
-pub(crate) fn mkondo_tumikia(
-    program: &crate::spawn::Shared,
-    args: &[Value],
-) -> Result<Value, value::EvalError> {
-    serve_pool("mkondo_tumikia", program, args, worker_loop)
-}
-
-/// TLS configuration handed to each server worker (`()` where TLS is unavailable).
-#[cfg(not(target_arch = "wasm32"))]
-pub(super) type ServerTls = Option<Arc<rustls::ServerConfig>>;
-#[cfg(target_arch = "wasm32")]
-pub(super) type ServerTls = ();
-
-/// The worker pool shared by `mkondo_tumikia` and `mkondo_tumikia_http`: validate
-/// `(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls)`, then run `worker` on that many threads, each
-/// accepting connections from the same listener, and wait for them. Each worker builds its
-/// engine for `program` once and calls `kazi_jina` on it for every connection.
-pub(super) fn serve_pool(
-    name: &str,
-    program: &crate::spawn::Shared,
-    args: &[Value],
-    worker: fn(&std::net::TcpListener, &mut crate::spawn::Caller<'_>, &str, ServerTls),
-) -> Result<Value, value::EvalError> {
-    let listener = match args.first() {
-        Some(Value::MkondoSikilizaji(l)) => Arc::clone(l),
-        _ => {
-            return Ok(Value::kosa(format!(
-                "{name}: hoja ya kwanza lazima iwe MkondoSikilizaji"
-            )))
-        }
-    };
-    let kazi_name = super::arg_str(args, 1);
-    if !program.has_kazi(&kazi_name) {
-        return Ok(Value::kosa(format!(
-            "{name}: kazi haijulikani: {kazi_name}"
-        )));
-    }
-    let idadi_ya_nyuzi = value::as_f64(args.get(2).unwrap_or(&Value::Hamna))
-        .unwrap_or(0.0)
-        .max(1.0) as usize;
-    // `Chaguo<T>` has two runtime shapes here, same as everywhere else in this codebase (see
-    // eval/expr.rs's match_and_bind_pattern comment on Tokeo/Chaguo): `Value::Chaguo(Some(_))`
-    // (from a builtin/cast producing one) and `Value::Enum("Chaguo", "Kuna", Some(_))` (from an
-    // explicit `Chaguo::Kuna(tls_sanidi(...))` construction, which is how an Asili caller
-    // actually writes this argument) — both must be accepted, or the explicit-construction path
-    // silently falls through to "no TLS" instead of an error.
-    #[cfg(not(target_arch = "wasm32"))]
-    let tls_inner: Option<&Value> = match args.get(3) {
-        Some(Value::Chaguo(Some(inner))) => Some(inner.as_ref()),
-        Some(Value::Enum(en, vn, Some(inner))) if en == "Chaguo" && vn == "Kuna" => {
-            Some(inner.as_ref())
-        }
-        Some(Value::Chaguo(None)) => None,
-        Some(Value::Enum(en, vn, None)) if en == "Chaguo" && vn == "Hamna" => None,
-        None | Some(Value::Hamna) => None,
-        Some(_) => {
-            return Ok(Value::kosa(format!(
-                "{name}: hoja ya nne (tls) lazima iwe Chaguo<TlsUsanidi>"
-            )))
-        }
-    };
-    #[cfg(not(target_arch = "wasm32"))]
-    let tls_config: ServerTls = match tls_inner {
-        Some(Value::TlsUsanidi(cfg)) => Some(Arc::clone(cfg)),
-        Some(_) => {
-            return Ok(Value::kosa(format!(
-                "{name}: hoja ya nne (tls) lazima iwe Chaguo<TlsUsanidi>"
-            )))
-        }
-        None => None,
-    };
-
     #[cfg(target_arch = "wasm32")]
-    let tls_config: ServerTls = ();
-
-    let mut handles = Vec::with_capacity(idadi_ya_nyuzi);
-    for _ in 0..idadi_ya_nyuzi {
-        let listener = Arc::clone(&listener);
-        let program = program.clone();
-        let kazi_name = kazi_name.clone();
-        let tls_config = tls_config.clone();
-        handles.push(std::thread::spawn(move || {
-            program.with_caller(|call| worker(&listener, call, &kazi_name, tls_config))
-        }));
-    }
-    for h in handles {
-        let _ = h.join();
-    }
-    Ok(Value::sawa(Value::Tupu))
-}
-
-/// `kazi_jina`'s contract: `kazi_jina(mkondo: Mkondo) -> Tupu` — it owns the whole connection
-/// lifecycle itself via the same `.soma()`/`.andika()`/`.funga()` methods `mkondo_unganisha`'s
-/// client-side handle already exposes (read the request, write a response, done). The handle
-/// closes automatically via `MkondoHandle`'s `Drop` impl once `run_function` returns, whether
-/// `kazi_jina` called `.funga()` explicitly or not — identical to every other `Mkondo`/`Faili`
-/// teardown path in this codebase. Transparent to whether the connection is plain or TLS — both
-/// are just `Mkondo` handles wrapping a `MkondoStream`.
-fn worker_loop(
-    listener: &std::net::TcpListener,
-    call: &mut crate::spawn::Caller<'_>,
-    kazi_name: &str,
-    #[cfg_attr(target_arch = "wasm32", allow(unused_variables))] tls_config: ServerTls,
-) {
-    loop {
-        crate::platform::flush_stdout();
-        let stream = match listener.accept() {
-            Ok((s, _addr)) => s,
-            // The listener itself closing (every Arc clone dropped, or a real bind error) ends
-            // this worker's loop rather than spinning on a permanently-broken accept.
-            Err(_) => return,
-        };
-        // The timeout applies to the raw TCP socket before any TLS handshake — a stalled
-        // handshake needs the same protection a stalled plaintext read does.
-        apply_connection_timeout(&stream);
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let mkondo_stream = match &tls_config {
-            Some(cfg) => match handshake_tls(Arc::clone(cfg), stream) {
-                Some(s) => s,
-                // A handshake failure (bad client, protocol mismatch, garbage bytes) drops just
-                // this one connection — it must not be treated as a fatal error for the whole
-                // worker thread, matching the "one connection's failure doesn't take down the
-                // worker" principle already used for kazi_jina errors below.
-                None => continue,
-            },
-            None => MkondoStream::Wazi(stream),
-        };
-        #[cfg(target_arch = "wasm32")]
-        let mkondo_stream = MkondoStream::Wazi(stream);
-
-        let mkondo = Value::Mkondo(Rc::new(RefCell::new(MkondoHandle(Some(mkondo_stream)))));
-        // A panic or error inside kazi_jina for one connection must not take down this worker
-        // thread (and silently shrink the pool) — log-and-continue is the only reasonable
-        // behavior for a long-lived server loop; there's no caller left to propagate the error
-        // to once we're this deep inside a spawned worker thread.
-        let _ = call(kazi_name, vec![mkondo]);
+    for name in ["mkondo_unganisha", "mkondo_sikiliza", "tafuta_anwani"] {
+        m.insert(
+            name.to_string(),
+            Box::new(move |_: &[Value]| {
+                Ok(Value::kosa(format!("{name}: haipatikani kwenye kivinjari")))
+            }),
+        );
     }
 }
 
-/// `pub(crate)`: shared with `http.rs`'s `mkondo_tumikia_http`, which performs the identical
-/// TLS handshake step on an accepted connection — not reimplemented there.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn handshake_tls(
-    config: Arc<rustls::ServerConfig>,
-    stream: TcpStream,
-) -> Option<MkondoStream> {
-    let conn = rustls::ServerConnection::new(config).ok()?;
-    Some(MkondoStream::Salama(Box::new(rustls::StreamOwned::new(
-        conn, stream,
-    ))))
+pub(crate) use native::*;
+
+/// No sockets in the browser.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn mkondo_tumikia(
+    _program: &crate::spawn::Shared,
+    _args: &[Value],
+) -> Result<Value, EvalError> {
+    Ok(Value::kosa("mkondo_tumikia: haipatikani kwenye kivinjari"))
 }
 
-/// Extracted so the timeout value actually applied to an accepted socket is independently
-/// unit-testable (`tests::connection_timeout_is_set_on_accept`) without needing a live,
-/// real-time 30-second stall to observe the effect end-to-end. `pub(crate)`: shared with
-/// `http.rs`.
-pub(crate) fn apply_connection_timeout(stream: &TcpStream) {
-    let _ = stream.set_read_timeout(Some(CONNECTION_TIMEOUT));
-    let _ = stream.set_write_timeout(Some(CONNECTION_TIMEOUT));
+/// No sockets in the browser (a `Mkondo` cannot exist there).
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn mkondo_method(
+    cell: &std::rc::Rc<std::cell::RefCell<crate::value::MkondoHandle>>,
+    _method: &str,
+    _args: &[Value],
+) -> Result<Value, EvalError> {
+    match cell.borrow().0 {}
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// No sockets in the browser (a `MkondoSikilizaji` cannot exist there).
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn sikilizaji_method(
+    listener: &crate::value::Sikilizaji,
+    _method: &str,
+    _args: &[Value],
+) -> Result<Value, EvalError> {
+    match *listener {}
+}
 
-    #[test]
-    fn connection_timeout_is_set_on_accept() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        let addr = listener.local_addr().expect("addr");
-        let server = std::thread::spawn(move || {
-            let (stream, _) = listener.accept().expect("accept");
-            apply_connection_timeout(&stream);
-            (
-                stream.read_timeout().expect("read_timeout"),
-                stream.write_timeout().expect("write_timeout"),
-            )
-        });
-        let _client = TcpStream::connect(addr).expect("connect");
-        let (read_timeout, write_timeout) = server.join().expect("server thread");
-        assert_eq!(read_timeout, Some(CONNECTION_TIMEOUT));
-        assert_eq!(write_timeout, Some(CONNECTION_TIMEOUT));
-    }
+#[cfg(not(target_arch = "wasm32"))]
+mod native {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::sync::Arc;
+    use std::time::Duration;
 
-    #[test]
-    fn tls_sanidi_missing_cert_file_returns_kosa_not_panic() {
-        let result = tls_sanidi(&[
-            Value::neno("/nonexistent/path/cert.pem".to_string()),
-            Value::neno("/nonexistent/path/key.pem".to_string()),
-        ]);
-        match result {
-            Ok(Value::Tokeo(Err(_))) => {}
-            other => panic!("expected Tokeo(Kosa(...)), got {other:?}"),
+    use asili_mtandao::{tls, BindOptions, ConnectOptions, LocalListener, Stream};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    use super::super::http_thamani::field;
+    use crate::kazi_sawia::block_on;
+    use crate::value::{self, EvalError, MkondoHandle, Sikilizaji, Value};
+
+    type Handle = Rc<RefCell<MkondoHandle>>;
+
+    /// A wait's outcome as the program sees it: `Sawa(v)` or `Kosa(message)`.
+    fn tokeo(r: Result<Value, String>) -> Value {
+        match r {
+            Ok(v) => Value::sawa(v),
+            Err(e) => Value::kosa(e),
         }
     }
 
-    #[test]
-    fn tls_sanidi_malformed_cert_returns_kosa_not_panic() {
-        let dir = std::env::temp_dir();
-        let cert_path = dir.join(format!(
-            "asili-bad-cert-{:?}.pem",
-            std::thread::current().id()
-        ));
-        let key_path = dir.join(format!(
-            "asili-bad-key-{:?}.pem",
-            std::thread::current().id()
-        ));
-        std::fs::write(&cert_path, "hii sio PEM halali").unwrap();
-        std::fs::write(&key_path, "hii sio PEM halali pia").unwrap();
+    fn text(v: &Value) -> Option<String> {
+        match v {
+            Value::Neno(s) => Some(s.to_string()),
+            _ => None,
+        }
+    }
 
-        let result = tls_sanidi(&[
-            Value::neno(cert_path.to_string_lossy().to_string()),
-            Value::neno(key_path.to_string_lossy().to_string()),
-        ]);
-        match result {
-            Ok(Value::Tokeo(Err(_))) => {}
-            other => panic!("expected Tokeo(Kosa(...)), got {other:?}"),
+    fn seconds(v: &Value) -> Option<Duration> {
+        value::as_f64(v)
+            .filter(|s| *s > 0.0 && s.is_finite())
+            .map(Duration::from_secs_f64)
+    }
+
+    fn handle(stream: Stream) -> Value {
+        Value::Mkondo(Rc::new(RefCell::new(MkondoHandle::new(stream))))
+    }
+
+    /// `mkondo_unganisha(anwani, chaguo?: ChaguoMkondo) -> Tokeo<Mkondo, Neno>`.
+    pub(super) fn unganisha(args: &[Value]) -> Result<Value, EvalError> {
+        let addr = super::super::arg_str(args, 0);
+        let o = args.get(1).unwrap_or(&Value::Hamna);
+        let opts = ConnectOptions {
+            tls: matches!(field(o, "tls"), Value::Ukweli(true)),
+            server_name: text(field(o, "jina_seva")),
+            timeout: seconds(field(o, "muda")),
+            ca_file: text(field(o, "cheti_ca")),
+            client_cert: text(field(o, "cheti")).zip(text(field(o, "ufunguo"))),
+            ip_family: value::as_f64(field(o, "familia_ip")).map(|f| f as u8),
+            alpn: Vec::new(),
+        };
+        crate::platform::flush_stdout(); // about to wait: show what was printed so far
+        let r = block_on(async move { asili_mtandao::connect(&addr, &opts).await })?;
+        Ok(tokeo(r.map(handle)))
+    }
+
+    /// `mkondo_sikiliza(anwani, chaguo?: ChaguoSikiliza) -> Tokeo<MkondoSikilizaji, Neno>`.
+    pub(super) fn sikiliza(args: &[Value]) -> Result<Value, EvalError> {
+        let addr = super::super::arg_str(args, 0);
+        let o = args.get(1).unwrap_or(&Value::Hamna);
+        let opts = BindOptions {
+            reuse_port: matches!(field(o, "tumia_tena"), Value::Ukweli(true)),
+            backlog: value::as_f64(field(o, "foleni")).map(|n| n.max(1.0) as i32),
+        };
+        Ok(tokeo(
+            asili_mtandao::bind(&addr, &opts).map(|l| Value::MkondoSikilizaji(Arc::new(l))),
+        ))
+    }
+
+    /// `tafuta_anwani(jina) -> Tokeo<Orodha<Neno>, Neno>`.
+    pub(super) fn tafuta_anwani(args: &[Value]) -> Result<Value, EvalError> {
+        let host = super::super::arg_str(args, 0);
+        let r = block_on(async move { asili_mtandao::resolve(&host).await })?;
+        Ok(tokeo(r.map(|ips| {
+            Value::list(ips.into_iter().map(Value::neno).collect())
+        })))
+    }
+
+    /// `tls_sanidi(cheti_njia, ufunguo_njia) -> Tokeo<TlsUsanidi, Neno>`: a certificate chain and
+    /// its key (PEM files) for a TLS server. Every failure is a `Kosa`.
+    pub(crate) fn tls_sanidi(args: &[Value]) -> Result<Value, EvalError> {
+        let cert = super::super::arg_str(args, 0);
+        let key = super::super::arg_str(args, 1);
+        Ok(match tls::server_config(&cert, &key, &[]) {
+            Ok(cfg) => Value::sawa(Value::TlsUsanidi(cfg)),
+            Err(e) => Value::kosa(format!("tls_sanidi: {e}")),
+        })
+    }
+
+    fn closed() -> String {
+        "mkondo: imefungwa tayari".to_string()
+    }
+
+    /// `fut`, failing with "muda umekwisha" after `limit`.
+    async fn within<T>(
+        limit: Option<Duration>,
+        fut: impl std::future::Future<Output = std::io::Result<T>>,
+    ) -> Result<T, String> {
+        match limit {
+            Some(d) => match tokio::time::timeout(d, fut).await {
+                Ok(r) => r.map_err(|e| e.to_string()),
+                Err(_) => Err("mkondo: muda umekwisha".to_string()),
+            },
+            None => fut.await.map_err(|e| e.to_string()),
+        }
+    }
+
+    /// Run one operation on the handle: it is borrowed for the whole wait, so two tasks cannot
+    /// use one `Mkondo` at once (the second gets an error, not a mixed stream).
+    async fn with_handle<T>(
+        h: Handle,
+        op: impl AsyncFnOnce(&mut MkondoHandle) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut g = h
+            .try_borrow_mut()
+            .map_err(|_| "mkondo: unatumiwa na kazi nyingine".to_string())?;
+        op(&mut g).await
+    }
+
+    /// Up to `max` bytes: what was read ahead first, else one read (empty at the end).
+    pub(crate) async fn read_some(h: &mut MkondoHandle, max: usize) -> Result<Vec<u8>, String> {
+        if !h.buffered.is_empty() {
+            let n = max.min(h.buffered.len());
+            return Ok(h.buffered.drain(..n).collect());
+        }
+        let limit = h.timeout;
+        let s = h.stream.as_mut().ok_or_else(closed)?;
+        let mut buf = vec![0u8; max];
+        let n = within(limit, s.read(&mut buf)).await?;
+        buf.truncate(n);
+        Ok(buf)
+    }
+
+    async fn read_to_end(h: &mut MkondoHandle) -> Result<Vec<u8>, String> {
+        let limit = h.timeout;
+        let mut out = std::mem::take(&mut h.buffered);
+        let s = h.stream.as_mut().ok_or_else(closed)?;
+        within(limit, s.read_to_end(&mut out)).await?;
+        Ok(out)
+    }
+
+    async fn read_exact(h: &mut MkondoHandle, n: usize) -> Result<Vec<u8>, String> {
+        let limit = h.timeout;
+        let mut out: Vec<u8> = h.buffered.drain(..n.min(h.buffered.len())).collect();
+        if out.len() < n {
+            let s = h.stream.as_mut().ok_or_else(closed)?;
+            let have = out.len();
+            out.resize(n, 0);
+            within(limit, s.read_exact(&mut out[have..]))
+                .await
+                .map_err(|e| format!("mkondo: baiti {n} hazikupatikana: {e}"))?;
+        }
+        Ok(out)
+    }
+
+    /// Longest line `.soma_mstari()` accepts.
+    const MAX_LINE: usize = 1 << 20;
+
+    /// The next line without its `\n` / `\r\n`; `None` at the end of the stream.
+    async fn read_line(h: &mut MkondoHandle) -> Result<Option<Vec<u8>>, String> {
+        let limit = h.timeout;
+        let mut searched = 0;
+        loop {
+            if let Some(i) = h.buffered[searched..].iter().position(|b| *b == b'\n') {
+                let mut line: Vec<u8> = h.buffered.drain(..=searched + i).collect();
+                line.pop();
+                if line.last() == Some(&b'\r') {
+                    line.pop();
+                }
+                return Ok(Some(line));
+            }
+            searched = h.buffered.len();
+            if searched > MAX_LINE {
+                return Err("mkondo: mstari mrefu mno".to_string());
+            }
+            let s = h.stream.as_mut().ok_or_else(closed)?;
+            let mut chunk = [0u8; 8192];
+            let n = within(limit, s.read(&mut chunk)).await?;
+            if n == 0 {
+                return Ok((!h.buffered.is_empty()).then(|| std::mem::take(&mut h.buffered)));
+            }
+            h.buffered.extend_from_slice(&chunk[..n]);
+        }
+    }
+
+    pub(crate) async fn write_all(h: &mut MkondoHandle, data: &[u8]) -> Result<(), String> {
+        let limit = h.timeout;
+        let s = h.stream.as_mut().ok_or_else(closed)?;
+        within(limit, async {
+            s.write_all(data).await?;
+            s.flush().await
+        })
+        .await
+    }
+
+    /// Wait for `op` on the handle `cell`, as a `Tokeo`.
+    fn run<T: 'static>(
+        cell: &Handle,
+        op: impl AsyncFnOnce(&mut MkondoHandle) -> Result<T, String> + 'static,
+        out: impl FnOnce(T) -> Value,
+    ) -> Result<Value, EvalError> {
+        crate::platform::flush_stdout(); // about to wait: show what was printed so far
+        let r = block_on(with_handle(cell.clone(), op))?;
+        Ok(tokeo(r.map(out)))
+    }
+
+    fn count(args: &[Value]) -> usize {
+        value::as_f64(args.first().unwrap_or(&Value::Hamna))
+            .unwrap_or(0.0)
+            .max(0.0) as usize
+    }
+
+    /// A method of `Mkondo`.
+    pub(crate) fn mkondo_method(
+        cell: &Handle,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, EvalError> {
+        match method {
+            "soma" => run(cell, read_to_end, |b| match String::from_utf8(b) {
+                Ok(s) => Value::neno(s),
+                Err(e) => Value::neno(String::from_utf8_lossy(e.as_bytes()).into_owned()),
+            }),
+            "soma_baiti" => {
+                let max = count(args);
+                run(
+                    cell,
+                    async move |h| read_some(h, max).await,
+                    |b| Value::Baiti(b.into()),
+                )
+            }
+            // The same read, as text (invalid UTF-8 replaced).
+            "soma_bailisi" => {
+                let max = count(args);
+                run(
+                    cell,
+                    async move |h| read_some(h, max).await,
+                    |b| Value::neno(String::from_utf8_lossy(&b).into_owned()),
+                )
+            }
+            "soma_kamili" => {
+                let n = count(args);
+                run(
+                    cell,
+                    async move |h| read_exact(h, n).await,
+                    |b| Value::Baiti(b.into()),
+                )
+            }
+            "soma_mstari" => run(cell, read_line, |line| {
+                Value::Chaguo(
+                    line.map(|l| Box::new(Value::neno(String::from_utf8_lossy(&l).into_owned()))),
+                )
+            }),
+            "andika" => {
+                let data = crate::eval::methods::bytes_of(args.first().unwrap_or(&Value::Hamna))
+                    .map(|b| b.into_owned())
+                    .unwrap_or_default();
+                run(
+                    cell,
+                    async move |h| write_all(h, &data).await,
+                    |()| Value::Tupu,
+                )
+            }
+            "funga_kuandika" => run(
+                cell,
+                async |h| {
+                    let limit = h.timeout;
+                    let s = h.stream.as_mut().ok_or_else(closed)?;
+                    within(limit, s.shutdown()).await
+                },
+                |()| Value::Tupu,
+            ),
+            "funga" => {
+                let stream = cell.try_borrow_mut().ok().and_then(|mut h| h.stream.take());
+                if let Some(mut s) = stream {
+                    // Closing waits (briefly) for TLS's goodbye; the socket closes either way.
+                    let _ = block_on(async move {
+                        let _ = tokio::time::timeout(Duration::from_secs(5), s.shutdown()).await;
+                    });
+                }
+                Ok(Value::Tupu)
+            }
+            "anwani_mbali" | "anwani_yangu" => {
+                let h = cell.borrow();
+                Ok(Value::neno(match h.stream.as_ref() {
+                    Some(s) if method == "anwani_mbali" => s.peer_addr(),
+                    Some(s) => s.local_addr(),
+                    None => String::new(),
+                }))
+            }
+            "weka_muda" => {
+                cell.borrow_mut().timeout = seconds(args.first().unwrap_or(&Value::Hamna));
+                Ok(Value::Tupu)
+            }
+            _ => Err(EvalError::Unknown(format!("njia '{method}' haijulikani"))),
+        }
+    }
+
+    /// A method of `MkondoSikilizaji`.
+    pub(crate) fn sikilizaji_method(
+        listener: &Arc<Sikilizaji>,
+        method: &str,
+        _args: &[Value],
+    ) -> Result<Value, EvalError> {
+        match method {
+            "kubali" => {
+                crate::platform::flush_stdout();
+                let l = listener.clone();
+                let r = block_on(async move {
+                    match l.local()?.accept().await? {
+                        Some((s, _)) => Ok(handle(s)),
+                        None => Err("mkondo: msikilizaji amesimamishwa".to_string()),
+                    }
+                })?;
+                Ok(tokeo(r))
+            }
+            "anwani" => Ok(Value::neno(listener.local_addr())),
+            "simama" => {
+                listener.stop();
+                Ok(Value::Tupu)
+            }
+            _ => Err(EvalError::Unknown(format!("njia '{method}' haijulikani"))),
+        }
+    }
+
+    /// Time limit of each read and write on a server's connection: a stalled or hostile peer
+    /// must not hold a worker forever. Shared with `http.rs`.
+    pub(crate) const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
+
+    /// `mkondo_tumikia(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls?) -> Tokeo<Tupu, Neno>`: serve
+    /// every connection to `kazi_jina(mkondo: Mkondo)` on `idadi_ya_nyuzi` worker threads, until
+    /// the listener is stopped (`.simama()`).
+    pub(crate) fn mkondo_tumikia(
+        program: &crate::spawn::Shared,
+        args: &[Value],
+    ) -> Result<Value, EvalError> {
+        serve_pool("mkondo_tumikia", program, args, |call, kazi, mkondo| {
+            // One failing connection must not end the worker (and shrink the pool).
+            let _ = call(kazi, vec![mkondo]);
+        })
+    }
+
+    /// A worker's handling of one connection: `(caller, kazi_jina, mkondo)`.
+    pub(super) type Serve = fn(&mut crate::spawn::Caller<'_>, &str, Value);
+
+    /// The worker pool shared by `mkondo_tumikia` and `mkondo_tumikia_http`: check
+    /// `(sikilizaji, kazi_jina, idadi_ya_nyuzi, tls?)`, then on that many threads accept
+    /// connections (completing TLS when given), hand each to `serve`, and return once the
+    /// listener is stopped. Each worker builds its engine for `program` once.
+    pub(crate) fn serve_pool(
+        name: &str,
+        program: &crate::spawn::Shared,
+        args: &[Value],
+        serve: Serve,
+    ) -> Result<Value, EvalError> {
+        let listener = match args.first() {
+            Some(Value::MkondoSikilizaji(l)) => Arc::clone(l),
+            _ => {
+                return Ok(Value::kosa(format!(
+                    "{name}: hoja ya kwanza lazima iwe MkondoSikilizaji"
+                )))
+            }
+        };
+        let kazi_name = super::super::arg_str(args, 1);
+        if !program.has_kazi(&kazi_name) {
+            return Ok(Value::kosa(format!(
+                "{name}: kazi haijulikani: {kazi_name}"
+            )));
+        }
+        let threads = value::as_f64(args.get(2).unwrap_or(&Value::Hamna))
+            .unwrap_or(0.0)
+            .max(1.0) as usize;
+        let tls_config =
+            match super::super::http_thamani::unwrap_some(args.get(3).unwrap_or(&Value::Hamna)) {
+                Value::Hamna => None,
+                Value::TlsUsanidi(cfg) => Some(Arc::clone(cfg)),
+                _ => {
+                    return Ok(Value::kosa(format!(
+                        "{name}: hoja ya nne (tls) lazima iwe Chaguo<TlsUsanidi>"
+                    )))
+                }
+            };
+        let handles: Vec<_> = (0..threads)
+            .map(|_| {
+                let listener = Arc::clone(&listener);
+                let program = program.clone();
+                let kazi_name = kazi_name.clone();
+                let tls_config = tls_config.clone();
+                std::thread::spawn(move || {
+                    program
+                        .with_caller(|call| worker(&listener, call, &kazi_name, tls_config, serve))
+                })
+            })
+            .collect();
+        for h in handles {
+            let _ = h.join();
+        }
+        Ok(Value::sawa(Value::Tupu))
+    }
+
+    fn worker(
+        listener: &Arc<Sikilizaji>,
+        call: &mut crate::spawn::Caller<'_>,
+        kazi_name: &str,
+        tls_config: Option<Arc<rustls::ServerConfig>>,
+        serve: Serve,
+    ) {
+        let l = listener.clone();
+        let Ok(Ok(local)) = block_on(async move { l.local() }) else {
+            return;
+        };
+        let local = Rc::new(local);
+        loop {
+            crate::platform::flush_stdout();
+            let (local, tls_config) = (local.clone(), tls_config.clone());
+            let accepted = block_on(async move { accept(&local, tls_config).await });
+            match accepted {
+                Ok(Ok(Some(stream))) => {
+                    let mut h = MkondoHandle::new(stream);
+                    h.timeout = Some(CONNECTION_TIMEOUT);
+                    serve(call, kazi_name, Value::Mkondo(Rc::new(RefCell::new(h))));
+                }
+                // A failed accept or handshake drops that one connection; a pause keeps a
+                // persistent failure (no file descriptors left) from spinning.
+                Ok(Err(_)) => {
+                    let _ = crate::kazi_sawia::lala(0.01);
+                }
+                Ok(Ok(None)) | Err(_) => return,
+            }
+        }
+    }
+
+    /// The next connection, with TLS completed when configured; `None` once stopped.
+    async fn accept(
+        local: &LocalListener,
+        tls_config: Option<Arc<rustls::ServerConfig>>,
+    ) -> Result<Option<Stream>, String> {
+        let Some((stream, _)) = local.accept().await? else {
+            return Ok(None);
+        };
+        match tls_config {
+            Some(cfg) => tokio::time::timeout(CONNECTION_TIMEOUT, tls::accept(cfg, stream))
+                .await
+                .map_err(|_| "TLS: muda umekwisha".to_string())?
+                .map(Some),
+            None => Ok(Some(stream)),
+        }
+    }
+
+    /// `std::io` reads and writes on a connection, for the HTTP server's parser.
+    pub(crate) struct Blocking(pub(crate) Handle);
+
+    impl std::io::Read for Blocking {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let max = buf.len();
+            let data = block_on(with_handle(self.0.clone(), async move |h| {
+                read_some(h, max).await
+            }))
+            .map_err(|e| std::io::Error::other(format!("{e:?}")))?
+            .map_err(|e| {
+                let kind = if e.ends_with("muda umekwisha") {
+                    std::io::ErrorKind::TimedOut
+                } else {
+                    std::io::ErrorKind::Other
+                };
+                std::io::Error::new(kind, e)
+            })?;
+            buf[..data.len()].copy_from_slice(&data);
+            Ok(data.len())
+        }
+    }
+
+    impl std::io::Write for Blocking {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            let data = buf.to_vec();
+            block_on(with_handle(self.0.clone(), async move |h| {
+                write_all(h, &data).await
+            }))
+            .map_err(|e| std::io::Error::other(format!("{e:?}")))?
+            .map_err(std::io::Error::other)?;
+            Ok(buf.len())
         }
 
-        let _ = std::fs::remove_file(&cert_path);
-        let _ = std::fs::remove_file(&key_path);
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn tls_sanidi_missing_or_malformed_files_are_kosa() {
+            let result = tls_sanidi(&[
+                Value::neno("/nonexistent/path/cert.pem".to_string()),
+                Value::neno("/nonexistent/path/key.pem".to_string()),
+            ]);
+            assert!(matches!(result, Ok(Value::Tokeo(Err(_)))), "{result:?}");
+
+            let dir = std::env::temp_dir();
+            let cert = dir.join(format!("asili-bad-cert-{}.pem", std::process::id()));
+            let key = dir.join(format!("asili-bad-key-{}.pem", std::process::id()));
+            std::fs::write(&cert, "hii sio PEM halali").unwrap();
+            std::fs::write(&key, "hii sio PEM halali pia").unwrap();
+            let result = tls_sanidi(&[
+                Value::neno(cert.to_string_lossy().to_string()),
+                Value::neno(key.to_string_lossy().to_string()),
+            ]);
+            assert!(matches!(result, Ok(Value::Tokeo(Err(_)))), "{result:?}");
+            let _ = std::fs::remove_file(&cert);
+            let _ = std::fs::remove_file(&key);
+        }
     }
 }

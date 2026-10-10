@@ -18,7 +18,7 @@
 //!
 //! There is no option to turn certificate checking off. Unavailable in the browser build.
 
-use super::http_thamani::{kamusi_to_pairs as text_pairs, unwrap_some, Response};
+use super::http_thamani::{kamusi_to_pairs as text_pairs, unwrap_some};
 use super::BuiltinFn;
 use crate::value::{self, Value};
 use std::collections::HashMap;
@@ -193,7 +193,8 @@ fn ombi(method: &str, url: &str, options: Option<&Value>) -> Result<Value, Strin
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
-    use super::{Options, Response};
+    use super::super::http_thamani::Response;
+    use super::Options;
     use std::io::Read;
     use std::sync::{Arc, Mutex, OnceLock};
     use std::time::{Duration, Instant};

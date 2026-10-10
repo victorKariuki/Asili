@@ -172,17 +172,9 @@ pub enum Value {
     Faili(Rc<RefCell<FailiHandle>>),
     /// TCP stream handle. Same drop semantics as `Faili`.
     Mkondo(Rc<RefCell<MkondoHandle>>),
-    /// TCP listening socket (`mkondo_sikiliza`). Unlike `Mkondo`/`Faili`, this genuinely crosses
-    /// thread boundaries by design — `mkondo_tumikia`'s worker pool has every worker thread
-    /// calling `.accept()` on the same listener concurrently (safe: `TcpListener::accept` takes
-    /// `&self`, and the OS itself serializes concurrent accepts on one socket — no lock needed
-    /// on the hot path) — so this is `Arc<TcpListener>`, not `Rc`, the one justified exception
-    /// in the Faili/Mkondo family for the same reason `NjiaTx`/`NjiaRx`/`Fungo` are `Arc`
-    /// instead of `Rc`. No explicit `.funga()`: closing happens only via every `Arc` clone
-    /// (main handle + every worker thread's copy) dropping, which is what actually stopping a
-    /// server means under the "blocks forever" `mkondo_tumikia` model this plan adopted — an
-    /// explicit close while workers still hold clones would be a footgun, not a useful control.
-    MkondoSikilizaji(Arc<std::net::TcpListener>),
+    /// A listening socket (`mkondo_sikiliza`). Shared between threads (`Arc`): a server's
+    /// workers all accept from it, and `.simama()` from any thread stops them all.
+    MkondoSikilizaji(Arc<Sikilizaji>),
     /// A loaded TLS server certificate/key pair, ready to hand to `mkondo_tumikia`
     /// (`tls_sanidi`). `rustls::ServerConfig` is `Send + Sync` by design — every rustls consumer
     /// `Arc`-shares it across connections — so this fits the worker pool's existing
@@ -329,6 +321,7 @@ pub enum SendValue {
     NjiaTxBounded(flume::Sender<SendValue>),
     NjiaRxBounded(flume::Receiver<SendValue>),
     Fungo(Arc<FungoCell>),
+    MkondoSikilizaji(Arc<Sikilizaji>),
 }
 
 impl Value {
@@ -413,6 +406,7 @@ impl Value {
             Value::NjiaTxBounded(tx) => SendValue::NjiaTxBounded(tx.clone()),
             Value::NjiaRxBounded(rx) => SendValue::NjiaRxBounded(rx.clone()),
             Value::Fungo(cell) => SendValue::Fungo(Arc::clone(cell)),
+            Value::MkondoSikilizaji(l) => SendValue::MkondoSikilizaji(Arc::clone(l)),
             // MkondoSikilizaji (Arc<TcpListener>) and TlsUsanidi (Arc<rustls::ServerConfig>) are
             // technically Send-safe on their own, but mkondo_tumikia's worker pool spawns and
             // manages its own threads directly rather than routing through tenda/SendValue —
@@ -425,7 +419,6 @@ impl Value {
             | Value::KashaGCDhaifu(_)
             | Value::Faili(_)
             | Value::Mkondo(_)
-            | Value::MkondoSikilizaji(_)
             | Value::Kumbukumbu(_) => return None,
         })
     }
@@ -479,6 +472,7 @@ impl SendValue {
             SendValue::NjiaTxBounded(tx) => Value::NjiaTxBounded(tx),
             SendValue::NjiaRxBounded(rx) => Value::NjiaRxBounded(rx),
             SendValue::Fungo(cell) => Value::Fungo(cell),
+            SendValue::MkondoSikilizaji(l) => Value::MkondoSikilizaji(l),
         }
     }
 }
@@ -494,75 +488,46 @@ impl Drop for FailiHandle {
     }
 }
 
-/// The backing stream a `Mkondo` handle wraps — plain TCP, or a TLS session negotiated over TCP.
-/// Distinguishing these as an enum (rather than a second `Value`/`MkondoHandle` type for TLS)
-/// means `.soma()`/`.andika()`/`.funga()` (`eval/expr.rs`) stay completely unchanged: they call
-/// through `MkondoStream`'s own `Read`/`Write` impls below, which dispatch to whichever variant
-/// is active. `mkondo_unganisha`'s plaintext client path constructs `Wazi`; `mkondo_tumikia`'s
-/// TLS branch (when a `TlsUsanidi` is passed) constructs `Salama` after a successful handshake.
-///
-/// `Salama`'s payload is boxed — `rustls::StreamOwned` is large relative to a bare `TcpStream`,
-/// and boxing keeps the common (plaintext) case of `Value::Mkondo`'s `Rc<RefCell<MkondoHandle>>`
-/// from paying that size cost when TLS isn't in use at all.
-pub enum MkondoStream {
-    Wazi(std::net::TcpStream),
-    #[cfg(not(target_arch = "wasm32"))]
-    Salama(Box<rustls::StreamOwned<rustls::ServerConnection, std::net::TcpStream>>),
+/// A listening socket.
+#[cfg(not(target_arch = "wasm32"))]
+pub type Sikilizaji = asili_mtandao::Listener;
+/// No sockets in the browser.
+#[cfg(target_arch = "wasm32")]
+pub type Sikilizaji = std::convert::Infallible;
+
+/// An open connection (`mkondo_unganisha`, `.kubali()`, a server's worker): its stream (`None`
+/// once closed), the bytes read ahead by `.soma_mstari()`, and the time limit of each read or
+/// write (`.weka_muda`). Closed by `.funga()` or when dropped (TLS ends with `close_notify`).
+#[cfg(not(target_arch = "wasm32"))]
+pub struct MkondoHandle {
+    pub stream: Option<asili_mtandao::Stream>,
+    pub buffered: Vec<u8>,
+    pub timeout: Option<std::time::Duration>,
 }
 
-impl std::io::Read for MkondoStream {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        match self {
-            MkondoStream::Wazi(s) => s.read(buf),
-            #[cfg(not(target_arch = "wasm32"))]
-            MkondoStream::Salama(s) => s.read(buf),
+#[cfg(not(target_arch = "wasm32"))]
+impl MkondoHandle {
+    pub fn new(stream: asili_mtandao::Stream) -> Self {
+        MkondoHandle {
+            stream: Some(stream),
+            buffered: Vec::new(),
+            timeout: None,
         }
     }
 }
 
-impl std::io::Write for MkondoStream {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        match self {
-            MkondoStream::Wazi(s) => s.write(buf),
-            #[cfg(not(target_arch = "wasm32"))]
-            MkondoStream::Salama(s) => s.write(buf),
-        }
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        match self {
-            MkondoStream::Wazi(s) => s.flush(),
-            #[cfg(not(target_arch = "wasm32"))]
-            MkondoStream::Salama(s) => s.flush(),
-        }
-    }
-}
-
-impl Drop for MkondoStream {
-    fn drop(&mut self) {
-        // TLS requires a protocol-level `close_notify` before the underlying TCP socket closes
-        // — a bare TCP close (what happens for free on `Wazi`) is indistinguishable to the peer
-        // from a truncation attack, and rustls correctly treats it as an error
-        // ("peer closed connection without sending TLS close_notify") rather than a clean EOF.
-        // Without this, every `.funga()`/scope-exit/drop of a TLS `Mkondo` handle would make the
-        // *peer's* next read fail even though every application byte arrived correctly.
-        #[cfg(not(target_arch = "wasm32"))]
-        if let MkondoStream::Salama(s) = self {
-            use std::io::Write as _;
-            s.conn.send_close_notify();
-            let _ = s.flush();
-        }
-    }
-}
-
-/// Owns an open TCP stream (plain or TLS); same drop discipline as `FailiHandle`.
-pub struct MkondoHandle(pub Option<MkondoStream>);
-
+#[cfg(not(target_arch = "wasm32"))]
 impl Drop for MkondoHandle {
     fn drop(&mut self) {
-        let _ = self.0.take();
+        if let Some(s) = self.stream.as_mut() {
+            s.close_now();
+        }
     }
 }
+
+/// No sockets in the browser.
+#[cfg(target_arch = "wasm32")]
+pub struct MkondoHandle(pub std::convert::Infallible);
 
 // Manual Debug impl (not #[derive]) so raw/REPL output uses Asili's own variant names —
 // `Tokeo`/`Chaguo` wrap Rust's `Result`/`Option`, whose derived Debug would otherwise print
@@ -613,13 +578,19 @@ impl std::fmt::Debug for Value {
                 let open = cell.borrow().0.is_some();
                 write!(f, "Faili({})", if open { "wazi" } else { "imefungwa" })
             }
+            #[cfg(not(target_arch = "wasm32"))]
             Value::Mkondo(cell) => {
-                let open = cell.borrow().0.is_some();
+                let open = cell.borrow().stream.is_some();
                 write!(f, "Mkondo({})", if open { "wazi" } else { "imefungwa" })
             }
+            #[cfg(target_arch = "wasm32")]
+            Value::Mkondo(cell) => match cell.borrow().0 {},
+            #[cfg(not(target_arch = "wasm32"))]
             Value::MkondoSikilizaji(listener) => {
-                write!(f, "MkondoSikilizaji({:?})", listener.local_addr())
+                write!(f, "MkondoSikilizaji({})", listener.local_addr())
             }
+            #[cfg(target_arch = "wasm32")]
+            Value::MkondoSikilizaji(listener) => match **listener {},
             #[cfg(not(target_arch = "wasm32"))]
             Value::TlsUsanidi(_) => write!(f, "TlsUsanidi"),
             Value::Kumbukumbu(v) => f.debug_tuple("Kumbukumbu").field(v).finish(),

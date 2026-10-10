@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Sockets on one network layer (`asili-mtandao`, on tokio)**: `mkondo_unganisha` connects over
+  TCP, TLS (`ChaguoMkondo`: `tls`, `jina_seva`, `muda`, `cheti_ca`, client `cheti`/`ufunguo`,
+  `familia_ip`) or a Unix socket (`"unix:/njia"`); `Mkondo` gains `.soma_mstari()`,
+  `.soma_kamili(n)`, `.funga_kuandika()`, `.anwani_mbali()`, `.anwani_yangu()` and
+  `.weka_muda(sekunde)`; `mkondo_sikiliza` takes `ChaguoSikiliza` (`tumia_tena`, `foleni`) and
+  Unix addresses, binds port 0 to any free port, and its `MkondoSikilizaji` gains `.kubali()`,
+  `.anwani()` and `.simama()` — stopping ends `mkondo_tumikia`/`mkondo_tumikia_http`, which no
+  longer block forever. New `tafuta_anwani` (DNS). Inside a `sawia` task, a socket wait lets the
+  thread's other tasks run: one thread serves many connections at once. Connecting, listening and
+  TLS live in the new `core/mtandao` crate, one place for every network builtin.
+
 - **`sawia kazi` and `subiri`: tasks whose waits overlap**: calling a `sawia kazi` starts a task
   and gives its `Ahadi<T>`; `subiri a` waits for its value (a `paparika` in the task comes out
   of the `subiri`). While one task waits (`lala`, a `njia`, `subiri`), the thread's other tasks
@@ -279,6 +290,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   rejected instead of silently accepted. The Sudoku benchmark builds with `--namna release`.
 
 ### Changed
+
+- `mkondo_tumikia`/`mkondo_tumikia_http` workers limit each read and write to 30 s through the
+  connection itself (as before, with the new layer); `.soma()` on a `Mkondo` now replaces invalid
+  UTF-8 instead of failing. A `MkondoSikilizaji` (and `TlsUsanidi`) is a shared handle: passing
+  it on (to `tenda` too) no longer moves it.
 
 - **`sawia` and `subiri` are keywords** (breaking): a variable or function with either name must
   be renamed.

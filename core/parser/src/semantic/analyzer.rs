@@ -2106,6 +2106,9 @@ impl<'a> Analyzer<'a> {
                 | ValueType::Herufi
                 | ValueType::Wakati
                 | ValueType::Anuani
+                // Shared handles: a copy is the same listener / configuration.
+                | ValueType::MkondoSikilizaji
+                | ValueType::TlsUsanidi
         )
     }
 
@@ -2290,6 +2293,7 @@ fn method_receiver(ty: &ValueType) -> Option<crate::builtins::MethodReceiver> {
         ValueType::Wakati => R::Wakati,
         ValueType::Baiti => R::Baiti,
         ValueType::Ahadi(_) => R::Ahadi,
+        ValueType::MkondoSikilizaji => R::MkondoSikilizaji,
         _ => return None,
     })
 }
