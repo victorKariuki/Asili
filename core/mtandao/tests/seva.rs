@@ -172,3 +172,67 @@ fn http2_with_prior_knowledge() {
         l.stop();
     });
 }
+
+/// The client against the server over TLS: HTTP/2 is chosen by ALPN, bodies are decoded and
+/// limited, and connections are reused.
+#[test]
+fn client_negotiates_h2_decodes_and_limits() {
+    use asili_mtandao::http::mteja::{send, Body, Request, Transport};
+    let ck = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+    let dir = std::env::temp_dir();
+    let (cert, key) = (
+        dir.join(format!("mteja-cert-{}.pem", std::process::id())),
+        dir.join(format!("mteja-key-{}.pem", std::process::id())),
+    );
+    std::fs::write(&cert, ck.cert.pem()).unwrap();
+    std::fs::write(&key, ck.key_pair.serialize_pem()).unwrap();
+    let (cert, key) = (cert.display().to_string(), key.display().to_string());
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let local = tokio::task::LocalSet::new();
+    local.block_on(&rt, async {
+        let l = Arc::new(bind("127.0.0.1:0", &BindOptions::default()).unwrap());
+        let port = l.local_addr().rsplit(':').next().unwrap().to_string();
+        let opts = ServerOptions {
+            tls: Some(asili_mtandao::tls::server_config(&cert, &key, &[]).unwrap()),
+            ..Default::default()
+        };
+        tokio::task::spawn_local(serve(l.local().unwrap(), opts, handler()));
+        let t = Transport {
+            proxy: Some(String::new()),
+            ca_file: Some(cert.clone()),
+            ..Default::default()
+        };
+        let url = url::Url::parse(&format!("https://localhost:{port}/kubwa")).unwrap();
+        let req = Request {
+            method: "GET",
+            url: &url,
+            headers: &[],
+            body: &Body::Empty,
+        };
+        for _ in 0..2 {
+            let r = send(&t, &req).await.unwrap();
+            assert_eq!((r.status, r.version), (200, "HTTP/2"));
+            assert_eq!(
+                r.headers
+                    .iter()
+                    .find(|(k, _)| k == "content-encoding")
+                    .map(|(_, v)| v.as_str()),
+                Some("br")
+            );
+            let mut got = Vec::new();
+            r.read_body(1 << 20, &mut |c| {
+                got.extend_from_slice(c);
+                Ok(())
+            })
+            .await
+            .unwrap();
+            assert_eq!(got, b"a".repeat(5000));
+        }
+        let r = send(&t, &req).await.unwrap();
+        let err = r.read_body(100, &mut |_| Ok(())).await.unwrap_err();
+        assert!(err.contains("kikomo cha baiti 100"), "{err}");
+    });
+}

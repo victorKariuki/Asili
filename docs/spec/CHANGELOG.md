@@ -4,6 +4,8 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Standard library ([05-standard-library.md](05-standard-library.md)): `http_ombi` speaks HTTP/2
+  (by ALPN) as well as HTTP/1.1; its responses report `toleo` as `HTTP/1.1` or `HTTP/2`.
 - Standard library ([05-standard-library.md](05-standard-library.md)): the HTTP server speaks
   HTTP/1.1 and HTTP/2 and runs each request (and each raw connection) as a `sawia` task;
   `OmbiHttp` gains `sehemu`, `hoja`, `mwili_baiti`, `mteja` and `toleo`; `JibuHttp` gains

@@ -187,7 +187,11 @@ pub async fn connect(addr: &str, opts: &ConnectOptions) -> Result<Stream, String
 }
 
 /// A TCP connection to the first of `host`'s addresses that answers.
-async fn connect_tcp(host: &str, port: u16, family: Option<u8>) -> Result<TcpStream, String> {
+pub(crate) async fn connect_tcp(
+    host: &str,
+    port: u16,
+    family: Option<u8>,
+) -> Result<TcpStream, String> {
     let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port))
         .await
         .map_err(|e| format!("kutafuta {host}: {e}"))?

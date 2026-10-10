@@ -3,7 +3,18 @@
 //! values is the caller's.
 
 pub mod bana;
+pub mod mteja;
 pub mod seva;
+
+/// HTTP/2's per-stream work runs as local tasks of the calling thread's event loop.
+#[derive(Clone, Copy)]
+pub(crate) struct Local;
+
+impl<F: std::future::Future + 'static> hyper::rt::Executor<F> for Local {
+    fn execute(&self, fut: F) {
+        tokio::task::spawn_local(fut);
+    }
+}
 
 /// The protocol name of an HTTP version, as messages show it.
 pub fn version_name(v: hyper::Version) -> &'static str {

@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`http_ombi` on hyper, with HTTP/2**: the client speaks HTTP/1.1 or HTTP/2 (chosen by ALPN),
+  keeps connections open per thread, and waits through the `sawia` runtime, so a task doing a
+  request lets the thread's other tasks run. Proxies (HTTP via CONNECT, SOCKS5, and
+  `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`/`NO_PROXY` including IPv4 ranges), private roots, mutual
+  TLS, redirects, retries, cookies, gzip/brotli, charsets, size limits and `hifadhi` behave as
+  before. The `ureq` dependency is gone from the evaluator (`pata-package` still uses it).
+
 - **HTTP server on hyper: HTTP/2, streaming, server-sent events, compression, limits,
   graceful stop**: `mkondo_tumikia_http` now speaks HTTP/1.1 and HTTP/2 (ALPN over TLS, or
   prior knowledge in the clear) and runs every request as a `sawia` task, so one worker thread

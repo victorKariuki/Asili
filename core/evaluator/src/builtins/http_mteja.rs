@@ -5,11 +5,10 @@
 //! IPv4/IPv6, custom roots and client certificates, cookies, size limits, streaming the body to a
 //! file, and turning a non-2xx status into an error.
 //!
-//! Built on `ureq` (blocking, rustls with the aws-lc-rs provider the TLS server also uses, the
-//! Mozilla roots, gzip and brotli). Agents — each holding a keep-alive connection pool — are
-//! shared by every request with the same transport settings (proxy, roots, client certificate,
-//! IP family), so a program reuses connections across calls and threads. Redirects, retries and
-//! cookies are followed here rather than inside `ureq`, so that:
+//! Built on `asili_mtandao::http::mteja` (hyper: HTTP/1.1 and HTTP/2, rustls with the aws-lc-rs
+//! provider the TLS server also uses, the Mozilla roots, gzip and brotli, pooled keep-alive
+//! connections). The wait goes through `kazi_sawia::block_on`, so inside a `sawia` task it lets
+//! the thread's other tasks run. Redirects, retries and cookies are followed here, so that:
 //! - an HTTPS request is never redirected to plain HTTP;
 //! - `Authorization`, `Proxy-Authorization` and `Cookie` headers are dropped when a redirect
 //!   leaves the origin;
@@ -195,95 +194,11 @@ fn ombi(method: &str, url: &str, options: Option<&Value>) -> Result<Value, Strin
 mod native {
     use super::super::http_thamani::Response;
     use super::Options;
-    use std::io::Read;
-    use std::sync::{Arc, Mutex, OnceLock};
+    use asili_mtandao::http::mteja as net;
+    use std::io::Write;
+    use std::sync::{Mutex, OnceLock};
     use std::time::{Duration, Instant};
-    use ureq::http::{self, header, HeaderName, HeaderValue, Method};
     use url::Url;
-
-    /// What an agent is built from; requests with the same key share its connection pool.
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    struct AgentKey {
-        proxy: Option<String>,
-        ip_family: Option<u8>,
-        ca: Option<String>,
-        cert: Option<(String, String)>,
-    }
-
-    fn agent(key: &AgentKey) -> Result<ureq::Agent, String> {
-        static AGENTS: OnceLock<Mutex<std::collections::HashMap<AgentKey, ureq::Agent>>> =
-            OnceLock::new();
-        let agents = AGENTS.get_or_init(Default::default);
-        if let Some(a) = agents.lock().unwrap_or_else(|e| e.into_inner()).get(key) {
-            return Ok(a.clone());
-        }
-        let built = build_agent(key)?;
-        Ok(agents
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .entry(key.clone())
-            .or_insert(built)
-            .clone())
-    }
-
-    fn build_agent(key: &AgentKey) -> Result<ureq::Agent, String> {
-        use ureq::tls::{Certificate, ClientCert, PrivateKey, RootCerts, TlsConfig, TlsProvider};
-        // The crypto provider the TLS server uses (aws-lc-rs), so the program holds one.
-        let crypto = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-        let mut tls = TlsConfig::builder()
-            .provider(TlsProvider::Rustls)
-            .unversioned_rustls_crypto_provider(crypto);
-        if let Some(path) = &key.ca {
-            let pem = std::fs::read(path).map_err(|e| format!("cheti_ca {path}: {e}"))?;
-            let certs = ureq::tls::parse_pem(&pem)
-                .filter_map(|item| match item {
-                    Ok(ureq::tls::PemItem::Certificate(c)) => Some(c),
-                    _ => None,
-                })
-                .collect::<Vec<Certificate<'static>>>();
-            if certs.is_empty() {
-                return Err(format!("cheti_ca {path}: hakuna cheti cha PEM"));
-            }
-            tls = tls.root_certs(RootCerts::new_with_certs(&certs));
-        }
-        if let Some((cert, key)) = &key.cert {
-            let pem = std::fs::read(cert).map_err(|e| format!("cheti {cert}: {e}"))?;
-            let chain = ureq::tls::parse_pem(&pem)
-                .filter_map(|item| match item {
-                    Ok(ureq::tls::PemItem::Certificate(c)) => Some(c),
-                    _ => None,
-                })
-                .collect::<Vec<Certificate<'static>>>();
-            let key_pem = std::fs::read(key).map_err(|e| format!("ufunguo {key}: {e}"))?;
-            let key = PrivateKey::from_pem(&key_pem).map_err(|e| format!("ufunguo {key}: {e}"))?;
-            tls = tls.client_cert(Some(ClientCert::new_with_certs(&chain, key)));
-        }
-        let proxy = match &key.proxy {
-            // `wakala: ""` turns the environment's proxy off.
-            Some(p) if p.is_empty() => None,
-            Some(p) => Some(ureq::Proxy::new(p).map_err(|e| format!("wakala {p}: {e}"))?),
-            None => ureq::Proxy::try_from_env(),
-        };
-        let ip_family = match key.ip_family {
-            Some(4) => ureq::config::IpFamily::Ipv4Only,
-            Some(6) => ureq::config::IpFamily::Ipv6Only,
-            _ => ureq::config::IpFamily::Any,
-        };
-        Ok(ureq::Agent::config_builder()
-            .tls_config(tls.build())
-            .proxy(proxy)
-            .ip_family(ip_family)
-            .http_status_as_error(false)
-            // Redirects are followed in `send`.
-            .max_redirects(0)
-            .max_redirects_will_error(false)
-            .allow_non_standard_methods(true)
-            .user_agent(concat!("asili/", env!("CARGO_PKG_VERSION")))
-            .max_idle_connections(100)
-            .max_idle_connections_per_host(10)
-            .build()
-            .into())
-    }
 
     /// One jar for every request that asks for cookies.
     fn jar() -> &'static Mutex<cookie_store::CookieStore> {
@@ -291,59 +206,74 @@ mod native {
         JAR.get_or_init(Default::default)
     }
 
-    /// The request body, rebuilt for every attempt.
-    enum Body {
-        Empty,
-        Bytes(Vec<u8>, Option<&'static str>),
-        File(String),
-        Multipart,
+    /// Everything a request needs, owned, so it can wait on the network.
+    struct Plan {
+        method: String,
+        url: Url,
+        headers: Vec<(String, String)>,
+        body: net::Body,
+        transport: net::Transport,
+        cookies: bool,
+        retries: u32,
+        redirects: u32,
+        timeout: f64,
+        limit: u64,
+        save_to: Option<String>,
+        base64_response: bool,
     }
 
-    fn body_of(o: &Options) -> Result<Body, String> {
+    fn body_of(o: &Options) -> Result<(net::Body, Option<String>), String> {
         use base64::Engine;
         Ok(if let Some(text) = &o.body {
-            Body::Bytes(text.clone().into_bytes(), Some("text/plain; charset=utf-8"))
+            (
+                net::Body::Bytes(text.clone().into_bytes()),
+                Some("text/plain; charset=utf-8".into()),
+            )
         } else if let Some(b64) = &o.body_base64 {
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(b64.trim())
                 .map_err(|e| format!("mwili_base64: {e}"))?;
-            Body::Bytes(bytes, Some("application/octet-stream"))
+            (
+                net::Body::Bytes(bytes),
+                Some("application/octet-stream".into()),
+            )
         } else if let Some(v) = &o.json {
             let json = v.to_json().map_err(|e| format!("json: {e}"))?;
             let bytes = serde_json::to_vec(&json).map_err(|e| format!("json: {e}"))?;
-            Body::Bytes(bytes, Some("application/json"))
+            (net::Body::Bytes(bytes), Some("application/json".into()))
         } else if !o.form.is_empty() {
             let encoded = url::form_urlencoded::Serializer::new(String::new())
                 .extend_pairs(&o.form)
                 .finish();
-            Body::Bytes(
-                encoded.into_bytes(),
-                Some("application/x-www-form-urlencoded"),
+            (
+                net::Body::Bytes(encoded.into_bytes()),
+                Some("application/x-www-form-urlencoded".into()),
             )
         } else if !o.multipart_text.is_empty() || !o.multipart_files.is_empty() {
-            Body::Multipart
+            let (kind, bytes) = net::multipart(&o.multipart_text, &o.multipart_files)?;
+            (net::Body::Bytes(bytes), Some(kind))
         } else if let Some(path) = &o.file {
-            Body::File(path.clone())
+            (
+                net::Body::File(path.clone()),
+                Some("application/octet-stream".into()),
+            )
         } else {
-            Body::Empty
+            (net::Body::Empty, None)
         })
     }
 
     /// `Retry-After` in seconds (only the delay form; a date waits the default).
-    fn retry_after(r: &http::Response<ureq::Body>) -> Option<f64> {
-        r.headers()
-            .get(header::RETRY_AFTER)?
-            .to_str()
-            .ok()?
+    fn retry_after(headers: &[(String, String)]) -> Option<f64> {
+        headers
+            .iter()
+            .find(|(k, _)| k == "retry-after")?
+            .1
             .trim()
             .parse::<f64>()
             .ok()
     }
 
     pub(super) fn send(method: &str, url: &str, o: &Options) -> Result<Response, String> {
-        let started = Instant::now();
-        let mut method = Method::from_bytes(method.trim().to_ascii_uppercase().as_bytes())
-            .map_err(|_| "njia si sahihi".to_string())?;
         let mut url = Url::parse(url.trim()).map_err(|e| format!("anwani si sahihi: {e}"))?;
         if !matches!(url.scheme(), "http" | "https") {
             return Err("anwani lazima ianze na http:// au https://".into());
@@ -351,113 +281,127 @@ mod native {
         if !o.query.is_empty() {
             url.query_pairs_mut().extend_pairs(&o.query);
         }
-        let agent = agent(&AgentKey {
-            proxy: o.proxy.clone(),
-            ip_family: o.ip_family,
-            ca: o.ca.clone(),
-            cert: o.cert.clone().zip(o.key.clone()),
-        })?;
-        let mut body = body_of(o)?;
-        let mut headers: Vec<(HeaderName, HeaderValue)> = Vec::new();
-        let mut push = |name: &str, value: &str| -> Result<(), String> {
-            let n = HeaderName::from_bytes(name.trim().as_bytes())
-                .map_err(|_| format!("jina la kichwa si sahihi: {name}"))?;
-            let v = HeaderValue::from_str(value)
-                .map_err(|_| format!("thamani ya kichwa '{name}' si sahihi"))?;
-            headers.push((n, v));
-            Ok(())
-        };
-        for (k, v) in &o.headers {
-            push(k, v)?;
-        }
+        let (body, body_type) = body_of(o)?;
+        let mut headers = o.headers.clone();
         if let Some(user) = &o.user {
             use base64::Engine;
             let pair = format!("{user}:{}", o.password.as_deref().unwrap_or(""));
             let encoded = base64::engine::general_purpose::STANDARD.encode(pair);
-            push("authorization", &format!("Basic {encoded}"))?;
+            headers.push(("authorization".into(), format!("Basic {encoded}")));
         } else if let Some(token) = &o.token {
-            push("authorization", &format!("Bearer {token}"))?;
+            headers.push(("authorization".into(), format!("Bearer {token}")));
         }
-        let explicit_type = o
-            .content_type
-            .clone()
-            .or_else(|| match &body {
-                Body::Bytes(_, t) => t.map(str::to_string),
-                Body::File(_) => Some("application/octet-stream".into()),
-                _ => None,
-            })
-            .filter(|_| {
-                !o.headers
-                    .iter()
-                    .any(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-            });
-        if let Some(t) = &explicit_type {
-            push("content-type", t)?;
+        let has_type = headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
+        if let Some(t) = o.content_type.clone().or(body_type).filter(|_| !has_type) {
+            headers.push(("content-type".into(), t));
         }
-        let max_redirects = o.redirects.unwrap_or(super::MAX_REDIRECTS);
-        let timeout = o.timeout.unwrap_or(super::TIMEOUT_SECS);
+        let plan = Plan {
+            method: method.trim().to_ascii_uppercase(),
+            url,
+            headers,
+            body,
+            transport: net::Transport {
+                proxy: o.proxy.clone(),
+                ip_family: o.ip_family,
+                ca_file: o.ca.clone(),
+                client_cert: o.cert.clone().zip(o.key.clone()),
+                connect_timeout_ms: o
+                    .connect_timeout
+                    .filter(|s| *s > 0.0)
+                    .map(|s| (s * 1000.0) as u64),
+            },
+            cookies: o.cookies,
+            retries: o.retries,
+            redirects: o.redirects.unwrap_or(super::MAX_REDIRECTS),
+            timeout: o.timeout.unwrap_or(super::TIMEOUT_SECS),
+            limit: o.limit.unwrap_or(super::BODY_LIMIT),
+            save_to: o.save_to.clone(),
+            base64_response: o.base64_response,
+        };
+        crate::platform::flush_stdout(); // about to wait: show what was printed so far
+        crate::kazi_sawia::block_on(async move { run(plan).await }).map_err(|e| format!("{e:?}"))?
+    }
+
+    async fn run(plan: Plan) -> Result<Response, String> {
+        let timeout = plan.timeout;
+        let work = exchange(plan);
+        if timeout > 0.0 {
+            tokio::time::timeout(Duration::from_secs_f64(timeout), work)
+                .await
+                .map_err(|_| "muda umekwisha".to_string())?
+        } else {
+            work.await
+        }
+    }
+
+    async fn exchange(mut p: Plan) -> Result<Response, String> {
+        let started = Instant::now();
         let mut redirects = 0;
         let mut attempt = 0;
-        let mut response = loop {
-            let mut builder = http::Request::builder()
-                .method(method.clone())
-                .uri(url.as_str());
-            for (k, v) in &headers {
-                builder = builder.header(k, v);
-            }
-            if o.cookies {
+        let (response, final_url) = loop {
+            let mut headers = p.headers.clone();
+            if p.cookies {
                 let jar = jar().lock().unwrap_or_else(|e| e.into_inner());
                 let cookie = jar
-                    .get_request_values(&url)
+                    .get_request_values(&p.url)
                     .map(|(n, v)| format!("{n}={v}"))
                     .collect::<Vec<_>>()
                     .join("; ");
                 if !cookie.is_empty() {
-                    builder = builder.header(header::COOKIE, cookie);
+                    headers.push(("cookie".into(), cookie));
                 }
             }
-            let result = run(&agent, builder, &body, o, timeout);
-            let result = match result {
+            let request = net::Request {
+                method: &p.method,
+                url: &p.url,
+                headers: &headers,
+                body: &p.body,
+            };
+            let result = match net::send(&p.transport, &request).await {
                 Ok(r) => r,
                 // A connection that failed is retried like a 503.
-                Err(_) if attempt < o.retries && idempotent(&method) => {
+                Err(_) if attempt < p.retries && idempotent(&p.method) => {
                     attempt += 1;
-                    std::thread::sleep(backoff(attempt, None));
+                    tokio::time::sleep(backoff(attempt, None)).await;
                     continue;
                 }
                 Err(e) => return Err(e),
             };
-            if o.cookies {
+            if p.cookies {
                 let set = result
-                    .headers()
-                    .get_all(header::SET_COOKIE)
+                    .headers
                     .iter()
-                    .filter_map(|v| v.to_str().ok())
-                    .filter_map(|s| cookie_store::RawCookie::parse(s.to_string()).ok())
+                    .filter(|(k, _)| k == "set-cookie")
+                    .filter_map(|(_, v)| cookie_store::RawCookie::parse(v.clone()).ok())
                     .collect::<Vec<_>>();
                 jar()
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .store_response_cookies(set.into_iter(), &url);
+                    .store_response_cookies(set.into_iter(), &p.url);
             }
-            let status = result.status().as_u16();
-            if matches!(status, 429 | 502 | 503 | 504) && attempt < o.retries && idempotent(&method)
+            let status = result.status;
+            if matches!(status, 429 | 502 | 503 | 504)
+                && attempt < p.retries
+                && idempotent(&p.method)
             {
                 attempt += 1;
-                std::thread::sleep(backoff(attempt, retry_after(&result)));
+                tokio::time::sleep(backoff(attempt, retry_after(&result.headers))).await;
                 continue;
             }
             let location = result
-                .headers()
-                .get(header::LOCATION)
-                .and_then(|l| l.to_str().ok())
-                .map(str::to_string);
+                .headers
+                .iter()
+                .find(|(k, _)| k == "location")
+                .map(|(_, v)| v.clone());
             match (status, location) {
-                (301 | 302 | 303 | 307 | 308, Some(location)) if redirects < max_redirects => {
-                    let next = url
+                (301 | 302 | 303 | 307 | 308, Some(location)) if redirects < p.redirects => {
+                    let next = p
+                        .url
                         .join(&location)
                         .map_err(|e| format!("kuelekezwa kwenda '{location}': {e}"))?;
-                    if url.scheme() == "https" && next.scheme() != "https" {
+                    if p.url.scheme() == "https" && next.scheme() != "https" {
                         return Err(format!(
                             "kuelekezwa kutoka HTTPS kwenda {} kumekataliwa",
                             next.scheme()
@@ -466,60 +410,52 @@ mod native {
                     if !matches!(next.scheme(), "http" | "https") {
                         return Err(format!("kuelekezwa kwenda '{next}' kumekataliwa"));
                     }
-                    if next.origin() != url.origin() {
-                        headers.retain(|(k, _)| {
-                            *k != header::AUTHORIZATION
-                                && *k != header::PROXY_AUTHORIZATION
-                                && *k != header::COOKIE
+                    if next.origin() != p.url.origin() {
+                        p.headers.retain(|(k, _)| {
+                            !["authorization", "proxy-authorization", "cookie"]
+                                .iter()
+                                .any(|h| k.eq_ignore_ascii_case(h))
                         });
                     }
                     // 303, and 301/302 after a POST, continue as a GET without the body.
-                    if status == 303 || (matches!(status, 301 | 302) && method == Method::POST) {
-                        if method != Method::HEAD {
-                            method = Method::GET;
+                    if status == 303 || (matches!(status, 301 | 302) && p.method == "POST") {
+                        if p.method != "HEAD" {
+                            p.method = "GET".into();
                         }
-                        body = Body::Empty;
-                        headers.retain(|(k, _)| *k != header::CONTENT_TYPE);
+                        p.body = net::Body::Empty;
+                        p.headers
+                            .retain(|(k, _)| !k.eq_ignore_ascii_case("content-type"));
                     }
                     redirects += 1;
-                    url = next;
+                    p.url = next;
                 }
-                _ => break result,
+                _ => break (result, p.url.clone()),
             }
         };
-        let status = response.status();
-        let version = format!("{:?}", response.version());
-        let reason = status.canonical_reason().unwrap_or("").to_string();
-        let resp_headers: Vec<(String, String)> = response
-            .headers()
+        let (status, reason, version) =
+            (response.status, response.reason.clone(), response.version);
+        let resp_headers = response.headers.clone();
+        let charset = resp_headers
             .iter()
-            .map(|(k, v)| {
-                (
-                    k.as_str().to_string(),
-                    String::from_utf8_lossy(v.as_bytes()).into_owned(),
-                )
-            })
-            .collect();
-        let charset = response
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|t| {
+            .find(|(k, _)| k == "content-type")
+            .and_then(|(_, t)| {
                 t.split(';')
-                    .filter_map(|p| p.trim().split_once('='))
+                    .filter_map(|part| part.trim().split_once('='))
                     .find(|(k, _)| k.trim().eq_ignore_ascii_case("charset"))
                     .map(|(_, v)| v.trim().trim_matches('"').to_string())
             });
-        let limit = o.limit.unwrap_or(super::BODY_LIMIT);
-        let reader = response.body_mut().with_config().limit(limit).reader();
-        let body = if let Some(path) = &o.save_to {
-            save(reader, path)?;
+        let body = if let Some(path) = &p.save_to {
+            save(response, p.limit, path).await?;
             String::new()
         } else {
             let mut bytes = Vec::new();
-            let mut reader = reader;
-            reader.read_to_end(&mut bytes).map_err(read_error)?;
-            if o.base64_response {
+            response
+                .read_body(p.limit, &mut |c| {
+                    bytes.extend_from_slice(c);
+                    Ok(())
+                })
+                .await?;
+            if p.base64_response {
                 use base64::Engine;
                 base64::engine::general_purpose::STANDARD.encode(bytes)
             } else {
@@ -527,90 +463,33 @@ mod native {
             }
         };
         Ok(Response {
-            status: status.as_u16(),
+            status,
             reason,
-            version,
+            version: version.to_string(),
             headers: resp_headers,
             body,
-            url: url.to_string(),
+            url: final_url.to_string(),
             seconds: started.elapsed().as_secs_f64(),
         })
     }
 
-    fn run(
-        agent: &ureq::Agent,
-        builder: http::request::Builder,
-        body: &Body,
-        o: &Options,
-        timeout: f64,
-    ) -> Result<http::Response<ureq::Body>, String> {
-        let secs = |s: f64| (s > 0.0).then(|| Duration::from_secs_f64(s));
-        macro_rules! send {
-            ($builder:expr, $body:expr) => {{
-                let request = $builder.body($body).map_err(|e| e.to_string())?;
-                let request = agent
-                    .configure_request(request)
-                    .timeout_global(secs(timeout))
-                    .timeout_connect(o.connect_timeout.and_then(secs))
-                    .build();
-                agent.run(request).map_err(describe)
-            }};
-        }
-        match body {
-            Body::Empty => send!(builder, ()),
-            Body::Bytes(bytes, _) => send!(builder, bytes.as_slice()),
-            Body::File(path) => {
-                let file = std::fs::File::open(path).map_err(|e| format!("faili {path}: {e}"))?;
-                send!(builder, file)
-            }
-            Body::Multipart => {
-                let mut form = ureq::unversioned::multipart::Form::new();
-                let builder = if builder
-                    .headers_ref()
-                    .is_some_and(|h| h.contains_key(header::CONTENT_TYPE))
-                {
-                    builder
-                } else {
-                    let kind = format!("multipart/form-data; boundary={}", form.boundary());
-                    builder.header(header::CONTENT_TYPE, kind)
-                };
-                for (k, v) in &o.multipart_text {
-                    form = form.text(k, v);
-                }
-                for (k, path) in &o.multipart_files {
-                    form = form
-                        .file(k, path)
-                        .map_err(|e| format!("fomu_faili {path}: {e}"))?;
-                }
-                send!(builder, form)
-            }
-        }
-    }
-
     /// Stream the body to `path`, through a temporary file renamed into place when complete,
     /// so a failed download never leaves a partial file under the requested name.
-    /// `reader` stops with an error at the size limit.
-    fn save(mut reader: impl Read, path: &str) -> Result<(), String> {
+    async fn save(response: net::Response, limit: u64, path: &str) -> Result<(), String> {
         let tmp = format!("{path}.sehemu");
-        let result = (|| {
-            let mut file = std::fs::File::create(&tmp)?;
-            std::io::copy(&mut reader, &mut file)?;
-            file.sync_all()?;
-            std::fs::rename(&tmp, path)
-        })();
+        let result = async {
+            let mut file = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+            response
+                .read_body(limit, &mut |c| file.write_all(c))
+                .await?;
+            file.sync_all().map_err(|e| e.to_string())?;
+            std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+        }
+        .await;
         result.map_err(|e| {
             let _ = std::fs::remove_file(&tmp);
-            format!("hifadhi {path}: {}", read_error(e))
+            format!("hifadhi {path}: {e}")
         })
-    }
-
-    /// A body read's error; `ureq`'s own (the size limit, a timeout) come wrapped in `io::Error`.
-    fn read_error(e: std::io::Error) -> String {
-        match e.into_inner().map(|inner| inner.downcast::<ureq::Error>()) {
-            Some(Ok(e)) => describe(*e),
-            Some(Err(inner)) => format!("kusoma jibu: {inner}"),
-            None => "kusoma jibu kumeshindwa".into(),
-        }
     }
 
     /// The body as text in its declared charset (UTF-8 when none); invalid bytes become U+FFFD.
@@ -626,29 +505,13 @@ mod native {
         }
     }
 
-    fn idempotent(m: &Method) -> bool {
-        matches!(
-            *m,
-            Method::GET
-                | Method::HEAD
-                | Method::PUT
-                | Method::DELETE
-                | Method::OPTIONS
-                | Method::TRACE
-        )
+    fn idempotent(m: &str) -> bool {
+        matches!(m, "GET" | "HEAD" | "PUT" | "DELETE" | "OPTIONS" | "TRACE")
     }
 
     /// 0.5 s, 1 s, 2 s, … (or the server's `Retry-After`), never more than 30 s.
     fn backoff(attempt: u32, server: Option<f64>) -> Duration {
         let wait = server.unwrap_or(0.25 * 2f64.powi(attempt as i32));
         Duration::from_secs_f64(wait.clamp(0.0, super::MAX_RETRY_WAIT_SECS))
-    }
-
-    fn describe(e: ureq::Error) -> String {
-        match e {
-            ureq::Error::Timeout(_) => "muda umekwisha".into(),
-            ureq::Error::BodyExceedsLimit(n) => format!("jibu limezidi kikomo cha baiti {n}"),
-            other => other.to_string(),
-        }
     }
 }

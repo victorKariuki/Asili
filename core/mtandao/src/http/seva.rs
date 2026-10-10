@@ -112,15 +112,7 @@ impl Default for ServerOptions {
 /// Bodies smaller than this are not worth compressing.
 const MIN_COMPRESS: usize = 860;
 
-/// HTTP/2's per-stream work runs as local tasks of the server's thread.
-#[derive(Clone, Copy)]
-struct Local;
-
-impl<F: Future + 'static> hyper::rt::Executor<F> for Local {
-    fn execute(&self, fut: F) {
-        tokio::task::spawn_local(fut);
-    }
-}
+use super::Local;
 
 /// Set once the server stops; connections then finish gracefully.
 #[derive(Default)]
