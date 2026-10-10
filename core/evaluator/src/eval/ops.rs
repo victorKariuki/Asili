@@ -202,6 +202,10 @@ pub(crate) fn unary_value(op: &UnaryOp, v: Value) -> Result<Value, EvalError> {
             Ok(Value::Ukweli(!b))
         }
         UnaryOp::Jaribu => jaribu(&v),
+        UnaryOp::Subiri => match v {
+            Value::Ahadi(t) => crate::kazi_sawia::subiri(&t),
+            other => Ok(other),
+        },
         UnaryOp::BitNot => {
             let n = value::as_f64(&v)
                 .ok_or_else(|| EvalError::TypeErr("siyo_biti inahitaji Namba".into()))?;

@@ -698,7 +698,8 @@ fn compile_module_inner(
                     .collect(),
                 ret: Ty::from_type_name(&function.return_type.name),
                 ret_name: function.return_type.name.clone(),
-                inline: inlinable(function, &module.exprs),
+                inline: inlinable(function, &module.exprs).filter(|_| !function.is_async),
+                is_async: function.is_async,
             },
         );
     }
@@ -720,6 +721,7 @@ fn compile_module_inner(
                 ret: Ty::from_type_name(&f.return_type.name),
                 ret_name: f.return_type.name.clone(),
                 inline: None,
+                is_async: false,
             },
         );
         program
@@ -845,6 +847,8 @@ struct FunctionSig {
     ret_name: String,
     /// Set when calls compile to the body itself (see [`inlinable`]).
     inline: Option<Inline>,
+    /// `sawia kazi`: a call starts a task (`anzisha`) and gives its `Ahadi`.
+    is_async: bool,
 }
 
 /// A `kazi` whose body is one `rejesha` of a small expression that calls nothing, mutates
@@ -1274,11 +1278,12 @@ impl<'a> FunctionCompiler<'a> {
                     {
                         Ty::Num
                     } else {
-                        // The program's own `kazi` first: it shadows a builtin.
+                        // The program's own `kazi` first: it shadows a builtin. A `sawia kazi`
+                        // gives an `Ahadi`.
                         self.program
                             .functions
                             .get(name.as_str())
-                            .map(|f| f.ret)
+                            .map(|f| if f.is_async { Ty::Val } else { f.ret })
                             .unwrap_or(Ty::Val)
                     }
                 }
@@ -1408,11 +1413,13 @@ impl<'a> FunctionCompiler<'a> {
             }
             // The program's own `kazi` (which shadows a builtin of the same name).
             Expr::Call { callee, .. } => match self.node(*callee) {
-                Expr::Ident { name, .. } => self
-                    .program
-                    .functions
-                    .get(name.as_str())
-                    .map(|f| f.ret_name.clone()),
+                Expr::Ident { name, .. } => self.program.functions.get(name.as_str()).map(|f| {
+                    if f.is_async {
+                        format!("Ahadi<{}>", f.ret_name)
+                    } else {
+                        f.ret_name.clone()
+                    }
+                }),
                 _ => None,
             },
             _ => None,
@@ -2329,6 +2336,18 @@ impl<'a> FunctionCompiler<'a> {
                 op, expr: inner, ..
             } => match op {
                 UnaryOp::BorrowImm | UnaryOp::BorrowMut => self.expr_to(self.node(*inner), dst),
+                // `subiri a`: the builtin that waits for the task (`kazi_sawia`).
+                UnaryOp::Subiri => {
+                    let builtin = *self.program.builtins.get("__subiri")?;
+                    let src = self.expr_as(self.node(*inner), Ty::Val)?;
+                    let out = self.dst_or_temp(dst, Ty::Val);
+                    self.emit(Opcode::CallBuiltin(Box::new(BuiltinOp {
+                        builtin,
+                        args: vec![src.reg].into(),
+                        dst: out.reg,
+                    })));
+                    Some(out)
+                }
                 UnaryOp::Not => {
                     let src = self.expr_as(self.node(*inner), Ty::Bool)?;
                     let out = self.dst_or_temp(dst, Ty::Bool);
@@ -2667,7 +2686,26 @@ impl<'a> FunctionCompiler<'a> {
             })));
             return Some(out);
         }
-        let index = self.program.functions.get(name.as_str())?.index;
+        let sig = self.program.functions.get(name.as_str())?;
+        if sig.is_async {
+            // `anzisha(jina, hoja...)`: the host starts the task.
+            let builtin = *self.program.builtins.get("anzisha")?;
+            let name_reg = self.temp(Ty::Val).reg;
+            let k = self
+                .program
+                .constant(StoredConstant::Neno(name.to_string()));
+            self.emit(Opcode::ConstVal { dst: name_reg, k });
+            let mut regs = vec![name_reg];
+            regs.extend(self.val_args(args)?.iter().copied());
+            let out = self.dst_or_temp(dst, Ty::Val);
+            self.emit(Opcode::CallBuiltin(Box::new(BuiltinOp {
+                builtin,
+                args: regs.into(),
+                dst: out.reg,
+            })));
+            return Some(out);
+        }
+        let index = sig.index;
         {
             let exprs = self.exprs;
             self.call_index(index, args.iter().map(|a| &exprs[*a]), dst)

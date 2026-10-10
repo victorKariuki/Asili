@@ -55,9 +55,11 @@ mixed only with `Namba`) stay in exact integer arithmetic.
 | Swahili | Technical |
 |---------|------------|
 | **Neno** | String (UTF-8, heap) |
+| **Baiti** | Immutable bytes (`b"..."`, `\xNN` escapes); `b[i]` is a `Namba` 0–255 |
 | **Orodha\<T\>** | Vec\<T\> |
 | **Kamusi\<K,V\>** | HashMap\<K,V\> |
 | **Tokeo\<T, E\>** | Result\<T, E\> — user-defined error types supported; `KOSA(maelezo)` is the common case. |
+| **Ahadi\<T\>** | A running `sawia` task's eventual `T`; `subiri` gives it ([05](05-standard-library.md#async-sawia-subiri)) |
 
 ---
 

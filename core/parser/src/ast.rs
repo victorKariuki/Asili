@@ -229,6 +229,9 @@ pub struct Function {
     pub body: Block,
     pub is_test: bool,
     pub is_public: bool,
+    /// `sawia kazi`: a call starts it as a task and returns its `Ahadi`.
+    #[serde(default)]
+    pub is_async: bool,
     pub line: usize,
     pub column: usize,
     pub attrs: Vec<Attribute>,
@@ -703,6 +706,8 @@ pub enum UnaryOp {
     BorrowImm,
     BorrowMut,
     Jaribu,
+    /// `subiri a`: wait for `Ahadi` `a` and take its value.
+    Subiri,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -748,6 +753,7 @@ impl fmt::Display for ValueType {
             ValueType::Kamusi(k, v) => write!(f, "Kamusi<{}, {}>", k, v),
             ValueType::Mfululizo(t) => write!(f, "Mfululizo<{}>", t),
             ValueType::Baiti => write!(f, "Baiti"),
+            ValueType::Ahadi(t) => write!(f, "Ahadi<{}>", t),
             ValueType::Jozi(a, b) => write!(f, "Jozi<{}, {}>", a, b),
             ValueType::Seti(t) => write!(f, "Seti<{}>", t),
             ValueType::Struct(name) => write!(f, "{}", name),
@@ -789,6 +795,8 @@ pub enum ValueType {
     Mfululizo(Box<ValueType>),
     /// Bytes (`b"..."`, `baiti(...)`, `.baiti()`): immutable, any values 0–255.
     Baiti,
+    /// A `sawia` task's eventual result (what calling a `sawia kazi` returns; `subiri` waits).
+    Ahadi(Box<ValueType>),
     Jozi(Box<ValueType>, Box<ValueType>),
     Seti(Box<ValueType>),
     /// Named struct type (e.g. from umbo Foo).

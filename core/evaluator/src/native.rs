@@ -118,7 +118,7 @@ pub(crate) const DIRECT_CALL_HEADROOM: usize = 256 * 1024;
 pub(crate) fn stack_limit() -> usize {
     let marker = 0u8;
     let sp = std::hint::black_box(&marker) as *const u8 as usize;
-    match stacker::remaining_stack() {
+    match crate::stack::remaining() {
         Some(left) if left > DIRECT_CALL_HEADROOM => sp - left + DIRECT_CALL_HEADROOM,
         _ => usize::MAX,
     }

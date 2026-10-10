@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`sawia kazi` and `subiri`: tasks whose waits overlap**: calling a `sawia kazi` starts a task
+  and gives its `Ahadi<T>`; `subiri a` waits for its value (a `paparika` in the task comes out
+  of the `subiri`). While one task waits (`lala`, a `njia`, `subiri`), the thread's other tasks
+  run — 100 tasks that each sleep 0.2 s finish in about 0.2 s. `sambamba` gains `anzisha`
+  (start any function as a task), `subiri_zote`, `subiri_yoyote` (the first to finish, with its
+  position), `muda_kikomo` (wait at most n seconds) and `ghairi`; an `Ahadi` has
+  `.imekwisha()` and `.ghairi()`. Cancelling is cooperative: the task's current or next wait
+  returns an error. A call returns only when every task it started has finished. Each task has
+  its own stack (4 MiB, committed as used), driven by one event loop per thread; `njia`
+  channels now work from both tasks and threads. New checks: `SEM106` (`kazi kuu` cannot be
+  `sawia`), `SEM107` (`subiri` needs an `Ahadi`). `.asb` format 20.
+
 - **`Baiti`, a byte type**: `b"..."` literals (printable ASCII, other characters as UTF-8,
   escapes `\n \t \r \0 \\ \"` and `\xNN`), `+`, comparison, `b[i]` (a `Namba` 0–255),
   `kwa x katika b`, `linganisha` patterns and `Kamusi`/`Seti` keys; methods `urefu`, `kata`,
@@ -267,6 +279,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   rejected instead of silently accepted. The Sudoku benchmark builds with `--namna release`.
 
 ### Changed
+
+- **`sawia` and `subiri` are keywords** (breaking): a variable or function with either name must
+  be renamed.
 
 - **One table of built-in method result types**: the analyzer's types for built-in methods and
   the bytecode compiler's (for following method chains) were two separate lists; both now read
@@ -653,6 +668,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was not built.
 
 ### Fixed
+
+- Returning `Tokeo::Kosa(e)`, `Tokeo::Sawa(v)` or `Chaguo::Hamna` from a function declared
+  `-> Tokeo<T, E>` / `-> Chaguo<T>` was rejected (`SEM026`).
 
 - The HTTP server (`mkondo_tumikia_http`) sent a body in answer to `HEAD`, corrupting the next
   response on a keep-alive connection, and an empty reason phrase for every status but 200, 400,

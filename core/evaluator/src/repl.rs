@@ -113,6 +113,7 @@ impl ReplSession {
             body: Block { statements },
             is_test: false,
             is_public: false,
+            is_async: false,
             line,
             column: 0,
             attrs: Vec::new(),

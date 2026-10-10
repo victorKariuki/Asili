@@ -53,6 +53,7 @@ pub const BUILTIN_TYPE_NAMES: &[&str] = &[
     "NjiaTx",
     "NjiaRx",
     "Fungo",
+    "Ahadi",
     "Biti8",
     "Biti16",
     "Biti32",
@@ -356,8 +357,13 @@ pub const BUILTIN_MODULES: &[BuiltinModule] = &[
     },
     BuiltinModule {
         name: "sambamba",
-        doc: "Sambamba: nyuzi za OS (1:1), njia za ujumbe na kufuli.",
+        doc: "Sambamba: nyuzi za OS (1:1), kazi za sawia (Ahadi), njia za ujumbe na kufuli. Kazi ya sawia ikisubiri (subiri, lala, njia, mtandao), kazi nyingine za uzi huo huendelea.",
         functions: &[
+            ("anzisha(kazi_jina: Neno, ...hoja: Haijulikani) -> Ahadi<Haijulikani>", "Anzisha kazi `kazi_jina(hoja...)` kama kazi ya sawia; Ahadi yake (kama kuita `sawia kazi`)."),
+            ("ghairi(ahadi: Ahadi<Haijulikani>) -> Tupu", "Ghairi kazi: kusubiri kwake kwa sasa (au kunakofuata) hurudisha kosa."),
+            ("muda_kikomo(ahadi: Ahadi<Haijulikani>, sekunde: Namba) -> Haijulikani?", "Subiri kazi kwa sekunde hizo zaidi; `Hamna` muda ukiisha kwanza (kazi huendelea)."),
+            ("subiri_yoyote(ahadi: Orodha<Ahadi<Haijulikani>>) -> Jozi<Namba, Haijulikani>", "Subiri ya kwanza kumaliza kati ya kazi hizo: (nafasi yake, thamani yake)."),
+            ("subiri_zote(ahadi: Orodha<Ahadi<Haijulikani>>) -> Orodha<Haijulikani>", "Subiri kazi zote; thamani zao kwa mpangilio (kosa la kwanza likitokea, hilo)."),
             ("fungo(thamani: Haijulikani) -> Tokeo<Fungo<Haijulikani>, Neno>", "Kufuli inayolinda thamani inayoshirikiwa na nyuzi."),
             ("njia() -> Jozi<NjiaTx<Haijulikani>, NjiaRx<Haijulikani>>", "Njia ya ujumbe: (mtumaji, mpokeaji)."),
             ("njia_na_kikomo(kikomo: Namba) -> Jozi<NjiaTxBounded<Haijulikani>, NjiaRxBounded<Haijulikani>>", "Njia yenye nafasi `kikomo`; kutuma husubiri ikijaa."),
@@ -733,6 +739,7 @@ pub enum MethodReceiver {
     NjiaRx,
     Fungo,
     Baiti,
+    Ahadi,
 }
 
 /// Built-in methods that only read their receiver, per [`MethodReceiver`]. The one list: the
@@ -841,6 +848,7 @@ pub const PURE_METHODS: &[&[&str]] = &[
         "hashi_sha512",
         "soma_nambari",
     ],
+    &["imekwisha", "ghairi"],
 ];
 
 /// Built-in methods that change their receiver in place, per [`MethodReceiver`].
@@ -869,6 +877,7 @@ pub const MUTATING_METHODS: &[&[&str]] = &[
     &[],
     &[],
     &[],
+    &[],
 ];
 
 /// Built-in methods that call a `kazi` (or builtin) named by their first argument, per element.
@@ -883,6 +892,7 @@ pub const CALLBACK_METHODS: &[&[&str]] = &[
         "kila_mmoja",
         "panga_kwa",
     ],
+    &[],
     &[],
     &[],
     &[],
@@ -945,6 +955,8 @@ pub fn method_return_type(receiver: &ValueType, method: &str) -> ValueType {
         }
         (ValueType::Baiti, "kwa_orodha") => ValueType::Orodha(Box::new(ValueType::Namba)),
         (ValueType::Baiti, "hex" | "base64" | "hashi_sha256" | "hashi_sha512") => ValueType::Neno,
+        (ValueType::Ahadi(_), "imekwisha") => ValueType::Ukweli,
+        (ValueType::Ahadi(_), "ghairi") => ValueType::Tupu,
         (ValueType::Baiti, "soma_nambari") => ValueType::Chaguo(Box::new(ValueType::Namba)),
         (ValueType::Faili | ValueType::Mkondo, "soma_baiti") => {
             ValueType::Tokeo(Box::new(ValueType::Baiti), Box::new(ValueType::Neno))

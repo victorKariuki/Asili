@@ -89,11 +89,15 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
+            // `sawia` may come before or after `umma`.
+            let mut is_async = self.match_tok(tk!("sawia"));
             let is_public = self.match_tok(tk!("umma"));
+            is_async |= self.match_tok(tk!("sawia"));
             if self.match_tok(tk!("kazi")) {
-                if let Some(func) =
+                if let Some(mut func) =
                     self.parse_function(is_public, pending_test, mem::take(&mut pending_attrs))
                 {
+                    func.is_async = is_async;
                     functions.push(func);
                 }
                 pending_test = false;
@@ -494,6 +498,7 @@ impl<'a> Parser<'a> {
             body,
             is_test,
             is_public,
+            is_async: false,
             line,
             column,
             attrs,

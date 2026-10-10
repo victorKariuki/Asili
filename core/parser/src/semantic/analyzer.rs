@@ -459,6 +459,13 @@ impl<'a> Analyzer<'a> {
     }
 
     fn check_main_sig(&mut self, f: &Function) {
+        if f.is_async {
+            self.errors.push(
+                Diagnostic::new("SEM106", "kazi kuu haiwezi kuwa sawia")
+                    .with_stage("semantiki")
+                    .with_span(f.line, 1),
+            );
+        }
         if f.return_type.name.trim() != "Tupu" {
             self.errors.push(
                 Diagnostic::new("SEM001", "kazi kuu lazima irudishe Tupu")
@@ -1207,6 +1214,18 @@ impl<'a> Analyzer<'a> {
                     }
                     UnaryOp::BorrowImm => ValueType::Rejeo(Box::new(t), false),
                     UnaryOp::BorrowMut => ValueType::Rejeo(Box::new(t), true),
+                    UnaryOp::Subiri => match t {
+                        ValueType::Ahadi(inner) => *inner,
+                        ValueType::Unknown => ValueType::Unknown,
+                        _ => {
+                            self.errors.push(
+                                Diagnostic::new("SEM107", "subiri inahitaji Ahadi")
+                                    .with_stage("semantiki")
+                                    .with_span(*line, 1),
+                            );
+                            ValueType::Unknown
+                        }
+                    },
                     UnaryOp::Jaribu => match t {
                         ValueType::Tokeo(ok, _) => *ok,
                         ValueType::Chaguo(inner) => *inner,
@@ -1438,7 +1457,13 @@ impl<'a> Analyzer<'a> {
                                 }
                             }
                         }
-                        return self.type_from_decl(&f.return_type.name);
+                        let ret = self.type_from_decl(&f.return_type.name);
+                        // A `sawia kazi` starts a task: the call gives its `Ahadi`.
+                        return if f.is_async {
+                            ValueType::Ahadi(Box::new(ret))
+                        } else {
+                            ret
+                        };
                     }
                     if let Some(sig) = self.extern_fn_map.get(name.as_str()).cloned() {
                         // Evaluate all arg types upfront for both validation and generic instantiation.
@@ -2106,6 +2131,12 @@ impl<'a> Analyzer<'a> {
                 self.compatible(a1, b1) && self.compatible(a2, b2)
             }
             (ValueType::Chaguo(a1), ValueType::Chaguo(b1)) => self.compatible(a1, b1),
+            (ValueType::Ahadi(a1), ValueType::Ahadi(b1)) => self.compatible(a1, b1),
+            // `Tokeo::Kosa(e)` / `Chaguo::Hamna` are typed by their enum alone.
+            (ValueType::Tokeo(..), ValueType::Struct(n))
+            | (ValueType::Struct(n), ValueType::Tokeo(..)) => n == "Tokeo",
+            (ValueType::Chaguo(_), ValueType::Struct(n))
+            | (ValueType::Struct(n), ValueType::Chaguo(_)) => n == "Chaguo",
             (ValueType::Tokeo(a1, a2), ValueType::Tokeo(b1, b2)) => {
                 self.compatible(a1, b1) && self.compatible(a2, b2)
             }
@@ -2258,6 +2289,7 @@ fn method_receiver(ty: &ValueType) -> Option<crate::builtins::MethodReceiver> {
         ValueType::Fungo(_) => R::Fungo,
         ValueType::Wakati => R::Wakati,
         ValueType::Baiti => R::Baiti,
+        ValueType::Ahadi(_) => R::Ahadi,
         _ => return None,
     })
 }

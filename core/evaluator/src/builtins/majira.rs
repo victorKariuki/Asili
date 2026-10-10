@@ -162,13 +162,9 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         "lala".to_string(),
         Box::new(|args: &[Value]| {
             let secs = value::as_f64(args.first().unwrap_or(&Value::Hamna)).unwrap_or(0.0);
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                crate::platform::flush_stdout();
-                std::thread::sleep(std::time::Duration::from_secs_f64(secs));
-            }
-            #[cfg(target_arch = "wasm32")]
-            let _ = secs;
+            crate::platform::flush_stdout();
+            // Only the calling task sleeps; the thread's other tasks run meanwhile.
+            crate::kazi_sawia::lala(secs)?;
             Ok(Value::Tupu)
         }),
     );

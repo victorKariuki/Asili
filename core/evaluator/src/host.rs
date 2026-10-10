@@ -77,9 +77,9 @@ pub(crate) struct Host<'p> {
     /// This program as other threads receive it (`tenda`, server workers); made on first use
     /// when the host was not started from a shared program.
     shared: Option<crate::spawn::Shared>,
-    /// Builtin indices of `tenda`, `mkondo_tumikia` and `mkondo_tumikia_http`, which need the
-    /// program itself.
-    spawners: [usize; 3],
+    /// Builtin indices of `tenda`, `mkondo_tumikia`, `mkondo_tumikia_http` and `anzisha`,
+    /// which need the program itself.
+    spawners: [usize; 4],
     /// Argument buffer for builtin and method calls, reused so a call allocates nothing (see
     /// [`Host::take_args`]).
     args: Vec<Value>,
@@ -295,7 +295,8 @@ impl<'p> Host<'p> {
         }
     }
 
-    /// Call the program's `kazi` called `name`.
+    /// Call the program's `kazi` called `name`. A top-level call (not one made from inside the
+    /// program) also finishes every `sawia` task it started before returning.
     pub(crate) fn call_by_name(
         &mut self,
         name: &str,
@@ -308,7 +309,27 @@ impl<'p> Host<'p> {
             .iter()
             .position(|f| f.name == name)
             .ok_or_else(|| EvalError::UndefinedVar(name.to_string()))?;
-        self.call_values(index, args)
+        let result = self.call_values(index, args);
+        if self.depth == 0 {
+            crate::kazi_sawia::drain();
+        }
+        result
+    }
+
+    /// `anzisha(kazi_jina, hoja...)`: start the program's `kazi_jina` as a `sawia` task.
+    fn anzisha(&mut self, args: &[Value]) -> Result<Value, EvalError> {
+        let name = crate::builtins::arg_str(args, 0);
+        let index = self
+            .program
+            .functions
+            .iter()
+            .position(|f| f.name == name)
+            .ok_or_else(|| EvalError::UndefinedVar(name.clone()))?;
+        // The host outlives every task it starts (its top-level call drains them).
+        let host =
+            self as *mut Host<'p> as *mut Host<'static> as *mut dyn crate::kazi_sawia::Context;
+        let task = crate::kazi_sawia::spawn(host, index, args.get(1..).unwrap_or(&[]).to_vec());
+        Ok(Value::Ahadi(task))
     }
 
     /// Compute the program's non-literal module constants (once per host, before its first
@@ -411,7 +432,7 @@ impl<'p> Host<'p> {
         // Calls native code makes directly to native code bypass the host and are not traced.
         let function = &self.program.functions[index];
         let span = asili_trace::enter(&function.name, function.line);
-        let result = stacker::maybe_grow(red_zone, 2 * 1024 * 1024, || {
+        let result = crate::stack::maybe_grow(red_zone, 2 * 1024 * 1024, || {
             self.run_native(native, index, frame)
         });
         self.depth -= 1;
@@ -1036,6 +1057,8 @@ impl<'p> Host<'p> {
                 }
                 let result = match self.spawners.iter().position(|s| *s == builtin) {
                     // Threads that run this program's `kazi` on this engine.
+                    // `anzisha`: a `sawia` task on this host.
+                    Some(3) => self.anzisha(&args),
                     Some(which) => self.shared_program().and_then(|shared| match which {
                         0 => crate::builtins::sambamba::tenda(&shared, &args),
                         1 => crate::builtins::mkondo::mkondo_tumikia(&shared, &args),
@@ -1215,4 +1238,15 @@ fn store_value(frame: &mut Frame, dst: Operand, v: Value) -> Result<(), EvalErro
         Ty::Val => frame.vals[dst.reg as usize] = v,
     }
     Ok(())
+}
+
+impl crate::kazi_sawia::Context for Host<'_> {
+    fn swap_context(&mut self, saved: &mut [u64; 2]) {
+        std::mem::swap(&mut self.depth, &mut saved[0]);
+        std::mem::swap(&mut self.stack_limit, &mut saved[1]);
+    }
+
+    fn call_index(&mut self, index: usize, args: Vec<Value>) -> Result<Value, EvalError> {
+        self.call_values(index, args)
+    }
 }

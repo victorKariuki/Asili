@@ -25,16 +25,16 @@ globalThis.asili_nguvu_load = (bytes, count, memory, table) => {
 const KEYWORDS = new Set([
   "au", "au_biti", "au_ikiwa", "azima", "azima_tenda", "endelea", "hadi", "ikiwa", "jaribu",
   "jenum", "kama", "katika", "kazi", "kutoka", "kwa", "kweli", "lebo", "leta", "linganisha",
-  "milele", "na", "na_biti", "rejesha", "shughuli", "si_kweli", "sifa", "siyo", "siyo_biti",
-  "sogeza_kulia", "sogeza_kushoto", "thabiti", "tupa", "umbo", "umma", "vinginevyo", "vunja",
-  "wakati", "weka", "xor_biti", "ya",
+  "milele", "na", "na_biti", "rejesha", "sawia", "shughuli", "si_kweli", "sifa", "siyo",
+  "siyo_biti", "sogeza_kulia", "sogeza_kushoto", "subiri", "thabiti", "tupa", "umbo", "umma",
+  "vinginevyo", "vunja", "wakati", "weka", "xor_biti", "ya",
 ]);
 const BUILTIN_TYPES = new Set([
   "Namba", "Neno", "Baiti", "Ukweli", "Herufi", "Tupu", "Hamna", "Orodha", "Kamusi", "Seti",
   "Jozi", "Chaguo", "Tokeo", "Wakati", "Anuani", "Namba_Kuu", "Namba_Sahihi", "Kumbukumbu",
   "Kasha_GC", "Kasha_GC_Dhaifu", "Faili", "Mkondo", "MkondoSikilizaji", "TlsUsanidi", "NjiaTx",
-  "NjiaRx", "Fungo", "Biti8", "Biti16", "Biti32", "Biti64", "uBiti8", "uBiti16", "uBiti32",
-  "uBiti64", "OmbiHttp", "JibuHttp", "ChaguoHttp",
+  "NjiaRx", "Fungo", "Ahadi", "Biti8", "Biti16", "Biti32", "Biti64", "uBiti8", "uBiti16",
+  "uBiti32", "uBiti64", "OmbiHttp", "JibuHttp", "ChaguoHttp",
 ]);
 // </generated>
 

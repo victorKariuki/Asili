@@ -152,6 +152,10 @@ pub fn parse_value_type_with(s: &str, resolve: &dyn Fn(&str) -> Option<ValueType
         let inner = s[14..s.len() - 1].trim();
         return ValueType::NjiaRxBounded(Box::new(parse_value_type_with(inner, resolve)));
     }
+    if s.starts_with("Ahadi<") && s.ends_with('>') {
+        let inner = s[6..s.len() - 1].trim();
+        return ValueType::Ahadi(Box::new(parse_value_type_with(inner, resolve)));
+    }
     if s.starts_with("Fungo<") && s.ends_with('>') {
         let inner = s[6..s.len() - 1].trim();
         return ValueType::Fungo(Box::new(parse_value_type_with(inner, resolve)));
@@ -206,6 +210,7 @@ pub fn format_value_type(t: &ValueType) -> String {
         ValueType::NambaSahihi => "Namba_Sahihi".to_string(),
         ValueType::Wakati => "Wakati".to_string(),
         ValueType::Baiti => "Baiti".to_string(),
+        ValueType::Ahadi(t) => format!("Ahadi<{}>", format_value_type(t)),
         ValueType::Anuani => "Anuani".to_string(),
         ValueType::Unknown => "Haijulikani".to_string(),
         ValueType::Chaguo(t) => format!("{}?", format_value_type(t)),

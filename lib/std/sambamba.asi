@@ -2,7 +2,23 @@
 # Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;
 # badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs
 #
-# Sambamba: nyuzi za OS (1:1), njia za ujumbe na kufuli.
+# Sambamba: nyuzi za OS (1:1), kazi za sawia (Ahadi), njia za ujumbe na kufuli. Kazi ya sawia
+# ikisubiri (subiri, lala, njia, mtandao), kazi nyingine za uzi huo huendelea.
+
+# Anzisha kazi `kazi_jina(hoja...)` kama kazi ya sawia; Ahadi yake (kama kuita `sawia kazi`).
+kazi anzisha(kazi_jina: Neno, ...hoja: Haijulikani) -> Ahadi<Haijulikani>
+
+# Ghairi kazi: kusubiri kwake kwa sasa (au kunakofuata) hurudisha kosa.
+kazi ghairi(ahadi: Ahadi<Haijulikani>) -> Tupu
+
+# Subiri kazi kwa sekunde hizo zaidi; `Hamna` muda ukiisha kwanza (kazi huendelea).
+kazi muda_kikomo(ahadi: Ahadi<Haijulikani>, sekunde: Namba) -> Haijulikani?
+
+# Subiri ya kwanza kumaliza kati ya kazi hizo: (nafasi yake, thamani yake).
+kazi subiri_yoyote(ahadi: Orodha<Ahadi<Haijulikani>>) -> Jozi<Namba, Haijulikani>
+
+# Subiri kazi zote; thamani zao kwa mpangilio (kosa la kwanza likitokea, hilo).
+kazi subiri_zote(ahadi: Orodha<Ahadi<Haijulikani>>) -> Orodha<Haijulikani>
 
 # Kufuli inayolinda thamani inayoshirikiwa na nyuzi.
 kazi fungo(thamani: Haijulikani) -> Tokeo<Fungo<Haijulikani>, Neno>

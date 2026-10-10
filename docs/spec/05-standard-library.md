@@ -1,3 +1,41 @@
+A `sawia kazi` (async function) runs as a **task** on the calling thread. Calling it starts the
+task and gives an `Ahadi<T>` (a promise of its return value `T`); `subiri a` (await) waits for
+that value, re-raising a `paparika` from the task. While a task waits — `lala`, a `njia`
+`.tuma`/`.pokea`, `subiri`, network I/O — the thread's other tasks run, so many waits overlap
+on one thread. Tasks start when first waited on (or when the starting call returns), and a
+top-level call returns only once every task it started has finished.
+
+```asili
+leta sambamba
+leta majira
+
+sawia kazi baada(sekunde: Namba, jina: Neno) -> Neno {
+    lala(sekunde)
+    rejesha jina
+}
+
+kazi kuu() -> Tupu {
+    weka a = baada(0.3, "a")
+    weka b = baada(0.3, "b")
+    chapisha(subiri a + subiri b)   # "ab", after about 0.3 s, not 0.6 s
+}
+```
+
+| `sambamba` | |
+|---|---|
+| `anzisha(kazi_jina, ...hoja)` | Start any function as a task: its `Ahadi`. |
+| `subiri_zote(orodha)` | Every task's value, in order. |
+| `subiri_yoyote(orodha)` | The first to finish: `(nafasi, thamani)`. |
+| `muda_kikomo(ahadi, sekunde)` | The value, or `Hamna` if time runs out first (the task goes on). |
+| `ghairi(ahadi)` / `a.ghairi()` | Cancel: the task's current or next wait returns an error. |
+| `a.imekwisha()` | Whether the task has finished. |
+
+`kazi kuu` cannot be `sawia` (`SEM106`); `subiri` needs an `Ahadi` (`SEM107`). Tasks are
+single-threaded: an `Ahadi` cannot be sent to another thread; use `tenda` and `njia` for
+parallelism. In the browser playground a task runs to completion when started.
+
+---
+
 # 5. Standard Library (Msingi / Mfumo)
 
 Previous: [Type System](04-type-system.md) | [Overview](../SPECIFICATION.md) | Next: [Tooling and Ecosystem](06-tooling-and-ecosystem.md)

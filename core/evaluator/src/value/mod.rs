@@ -22,7 +22,7 @@ pub use text::Text;
 use std::cell::{RefCell, UnsafeCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub use bigdecimal::BigDecimal;
 pub use num_bigint::BigInt;
@@ -128,6 +128,9 @@ pub enum Value {
     Namba(f64),
     /// Text; never changed in place, so copies share it.
     Neno(Text),
+    /// A `sawia` task (`kazi_sawia`): its outcome once it has finished. Bound to the thread
+    /// that started it.
+    Ahadi(Rc<crate::kazi_sawia::Task>),
     /// Bytes: never changed in place, so copies share them.
     Baiti(Rc<[u8]>),
     Ukweli(bool),
@@ -206,19 +209,19 @@ pub enum Value {
     /// own `Sync` impl requires `T: Send`, and `Value` isn't unconditionally `Send` — the
     /// `Arc<Mutex<_>>` wrapper alone doesn't fix that, it just moves the requirement one level
     /// up), so the payload type itself has to be the already-restricted one.
-    NjiaTx(Arc<Mutex<std::sync::mpsc::Sender<SendValue>>>),
+    NjiaTx(flume::Sender<SendValue>),
     /// Channel receiver half (njia). Same `SendValue`-payload reasoning as `NjiaTx`.
-    NjiaRx(Arc<Mutex<std::sync::mpsc::Receiver<SendValue>>>),
+    NjiaRx(flume::Receiver<SendValue>),
     /// Bounded channel sender half (`njia_na_kikomo`) — `mpsc::SyncSender`, a distinct Rust type
     /// from `mpsc::Sender` (hence its own `Value` variant rather than an internal enum inside
     /// `NjiaTx`), whose `.send()` blocks once the bound is full instead of growing memory
     /// without limit the way the unbounded `njia()` channel does. This is an additive
     /// constructor alongside `njia()`, not a change to its existing behavior.
-    NjiaTxBounded(Arc<Mutex<std::sync::mpsc::SyncSender<SendValue>>>),
+    NjiaTxBounded(flume::Sender<SendValue>),
     /// Receiver half for a bounded channel. `mpsc::sync_channel` returns a plain
     /// `mpsc::Receiver` (identical to the unbounded case) — reuses `NjiaRx`'s exact payload
     /// type, so no separate receiver variant is needed, only a separate sender one.
-    NjiaRxBounded(Arc<Mutex<std::sync::mpsc::Receiver<SendValue>>>),
+    NjiaRxBounded(flume::Receiver<SendValue>),
     /// Mutex (fungo) — protects a shared value across tenda-spawned threads with **explicit**
     /// `.funga()`/`.fungua()` (lock/unlock), not a Rust-style scoped guard (Asili has no
     /// closures to scope a critical section with). Holds `SendValue` for the same reason
@@ -321,10 +324,10 @@ pub enum SendValue {
     Enum(Name, Name, Option<Box<SendValue>>),
     /// `Value`'s `NjiaTx`/`NjiaRx`/`Fungo` already carry `SendValue` payloads (see their own
     /// doc comments on `Value`), so these clone the `Arc` handle directly — no conversion.
-    NjiaTx(Arc<Mutex<std::sync::mpsc::Sender<SendValue>>>),
-    NjiaRx(Arc<Mutex<std::sync::mpsc::Receiver<SendValue>>>),
-    NjiaTxBounded(Arc<Mutex<std::sync::mpsc::SyncSender<SendValue>>>),
-    NjiaRxBounded(Arc<Mutex<std::sync::mpsc::Receiver<SendValue>>>),
+    NjiaTx(flume::Sender<SendValue>),
+    NjiaRx(flume::Receiver<SendValue>),
+    NjiaTxBounded(flume::Sender<SendValue>),
+    NjiaRxBounded(flume::Receiver<SendValue>),
     Fungo(Arc<FungoCell>),
 }
 
@@ -405,10 +408,10 @@ impl Value {
                     None => None,
                 },
             ),
-            Value::NjiaTx(tx) => SendValue::NjiaTx(Arc::clone(tx)),
-            Value::NjiaRx(rx) => SendValue::NjiaRx(Arc::clone(rx)),
-            Value::NjiaTxBounded(tx) => SendValue::NjiaTxBounded(Arc::clone(tx)),
-            Value::NjiaRxBounded(rx) => SendValue::NjiaRxBounded(Arc::clone(rx)),
+            Value::NjiaTx(tx) => SendValue::NjiaTx(tx.clone()),
+            Value::NjiaRx(rx) => SendValue::NjiaRx(rx.clone()),
+            Value::NjiaTxBounded(tx) => SendValue::NjiaTxBounded(tx.clone()),
+            Value::NjiaRxBounded(rx) => SendValue::NjiaRxBounded(rx.clone()),
             Value::Fungo(cell) => SendValue::Fungo(Arc::clone(cell)),
             // MkondoSikilizaji (Arc<TcpListener>) and TlsUsanidi (Arc<rustls::ServerConfig>) are
             // technically Send-safe on their own, but mkondo_tumikia's worker pool spawns and
@@ -418,6 +421,7 @@ impl Value {
             #[cfg(not(target_arch = "wasm32"))]
             Value::TlsUsanidi(_) => return None,
             Value::KashaGC(_)
+            | Value::Ahadi(_)
             | Value::KashaGCDhaifu(_)
             | Value::Faili(_)
             | Value::Mkondo(_)
@@ -570,6 +574,7 @@ impl std::fmt::Debug for Value {
             Value::Namba(n) => f.debug_tuple("Namba").field(n).finish(),
             Value::Neno(s) => f.debug_tuple("Neno").field(s).finish(),
             Value::Baiti(b) => f.write_str(&asili_parser::bytes_literal(b)),
+            Value::Ahadi(t) => write!(f, "Ahadi({t:?})"),
             Value::Ukweli(b) => f.debug_tuple("Ukweli").field(b).finish(),
             Value::Tupu => write!(f, "Tupu"),
             Value::Hamna => write!(f, "Hamna"),
@@ -646,6 +651,7 @@ impl PartialEq for Value {
             (Value::Namba(a), Value::Namba(b)) => a == b,
             (Value::Neno(a), Value::Neno(b)) => a == b,
             (Value::Baiti(a), Value::Baiti(b)) => a == b,
+            (Value::Ahadi(a), Value::Ahadi(b)) => Rc::ptr_eq(a, b),
             (Value::Ukweli(a), Value::Ukweli(b)) => a == b,
             (Value::Tupu, Value::Tupu) => true,
             (Value::Hamna, Value::Hamna) => true,
@@ -673,10 +679,10 @@ impl PartialEq for Value {
             (Value::Seti(a), Value::Seti(b)) => a == b,
             (Value::NambaKuu(a), Value::NambaKuu(b)) => a == b,
             (Value::NambaSahihi(a), Value::NambaSahihi(b)) => a == b,
-            (Value::NjiaTx(a), Value::NjiaTx(b)) => Arc::ptr_eq(a, b),
-            (Value::NjiaRx(a), Value::NjiaRx(b)) => Arc::ptr_eq(a, b),
-            (Value::NjiaTxBounded(a), Value::NjiaTxBounded(b)) => Arc::ptr_eq(a, b),
-            (Value::NjiaRxBounded(a), Value::NjiaRxBounded(b)) => Arc::ptr_eq(a, b),
+            (Value::NjiaTx(a), Value::NjiaTx(b)) => a.same_channel(b),
+            (Value::NjiaRx(a), Value::NjiaRx(b)) => a.same_channel(b),
+            (Value::NjiaTxBounded(a), Value::NjiaTxBounded(b)) => a.same_channel(b),
+            (Value::NjiaRxBounded(a), Value::NjiaRxBounded(b)) => a.same_channel(b),
             (Value::Fungo(a), Value::Fungo(b)) => Arc::ptr_eq(a, b),
             _ => false,
         }
@@ -704,7 +710,7 @@ pub enum ErrorKind {
     Unavailable,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EvalError {
     Panic(String),
     UndefinedVar(String),

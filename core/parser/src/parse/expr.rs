@@ -53,6 +53,7 @@ fn prefix_op(kind: TokenKind) -> Option<UnaryOp> {
         K::KwAzima => UnaryOp::BorrowImm,
         K::KwAzimaTenda => UnaryOp::BorrowMut,
         K::KwJaribu => UnaryOp::Jaribu,
+        K::KwSubiri => UnaryOp::Subiri,
         _ => return None,
     })
 }

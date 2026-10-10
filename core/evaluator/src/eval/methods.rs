@@ -207,6 +207,7 @@ fn receiver_kind(recv: &Value) -> Option<Kind> {
     Some(match recv {
         Value::Neno(_) => Kind::Neno,
         Value::Baiti(_) => Kind::Baiti,
+        Value::Ahadi(_) => Kind::Ahadi,
         Value::Orodha(_) => Kind::Orodha,
         Value::Kamusi(_) => Kind::Kamusi,
         Value::Seti(_) => Kind::Seti,
@@ -341,6 +342,11 @@ pub(crate) fn pure_method(
         )),
         (Value::Neno(s), "baiti") => Ok(Value::Baiti(s.as_bytes().into())),
         (Value::Baiti(b), _) => bytes_method(b, method, args_val),
+        (Value::Ahadi(t), "imekwisha") => Ok(Value::Ukweli(t.is_done())),
+        (Value::Ahadi(t), "ghairi") => {
+            t.cancel();
+            Ok(Value::Tupu)
+        }
         (Value::Neno(s), "kwa_namba") => Ok(match s.trim().parse::<f64>() {
             Ok(n) => Value::sawa(Value::Namba(n)),
             Err(_) => Value::kosa(format!("'{s}' si namba")),
@@ -730,61 +736,45 @@ pub(crate) fn pure_method(
         // mutating that clone's Box would not affect the original `weka`-bound value.
         // Reassign the whole Kumbukumbu (`weka k = kumbukumbu_unda(newval)`) instead.
         (Value::Kumbukumbu(v), "pata") => Ok((**v).clone()),
-        (Value::NjiaTx(tx), "tuma") => {
+        // `.tuma()` on a bounded channel waits while it is full; `.pokea()` waits for a value.
+        // Both wait through `kazi_sawia`, so other tasks of the thread run meanwhile.
+        (Value::NjiaTx(tx) | Value::NjiaTxBounded(tx), "tuma") => {
             let v = args_val.first().cloned().unwrap_or(Value::Hamna);
-            match v.try_into_send() {
-                Some(sv) => {
-                    let sent = crate::sync::lock(&tx).send(sv).is_ok();
-                    Ok(Value::Tokeo(if sent {
-                        Ok(Box::new(Value::Tupu))
-                    } else {
-                        Err(Box::new(Value::Neno(
-                            "njia: upande wa pili umefungwa".into(),
-                        )))
-                    }))
-                }
-                None => Ok(Value::kosa(
+            let Some(sv) = v.try_into_send() else {
+                return Ok(Value::kosa(
                     "tuma: thamani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)",
-                )),
-            }
-        }
-        (Value::NjiaRx(rx), "pokea") => {
-            crate::platform::flush_stdout(); // about to block: show what was printed so far
-            let guard = crate::sync::lock(&rx);
-            match guard.recv() {
-                Ok(sv) => Ok(Value::sawa(sv.into_value())),
-                Err(_) => Ok(Value::kosa("pokea: upande wa kutuma umefungwa")),
-            }
-        }
-        // Bounded njia_na_kikomo: same .tuma()/.pokea() contract as the unbounded njia()
-        // above, except `.tuma()` blocks the caller once the bound is full instead of
-        // growing memory without limit — that backpressure is `SyncSender::send`'s own
-        // behavior, transparent to this dispatch code.
-        (Value::NjiaTxBounded(tx), "tuma") => {
-            let v = args_val.first().cloned().unwrap_or(Value::Hamna);
-            match v.try_into_send() {
-                Some(sv) => {
-                    let sent = crate::sync::lock(&tx).send(sv).is_ok();
-                    Ok(Value::Tokeo(if sent {
-                        Ok(Box::new(Value::Tupu))
-                    } else {
-                        Err(Box::new(Value::Neno(
-                            "njia: upande wa pili umefungwa".into(),
-                        )))
-                    }))
+                ));
+            };
+            let sent = match tx.try_send(sv) {
+                Ok(()) => true,
+                Err(flume::TrySendError::Disconnected(_)) => false,
+                Err(flume::TrySendError::Full(sv)) => {
+                    let tx = tx.clone();
+                    crate::kazi_sawia::block_on(async move { tx.send_async(sv).await.is_ok() })?
                 }
-                None => Ok(Value::kosa(
-                    "tuma: thamani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)",
-                )),
-            }
+            };
+            Ok(if sent {
+                Value::sawa(Value::Tupu)
+            } else {
+                Value::kosa("njia: upande wa pili umefungwa")
+            })
         }
-        (Value::NjiaRxBounded(rx), "pokea") => {
-            crate::platform::flush_stdout(); // about to block: show what was printed so far
-            let guard = crate::sync::lock(&rx);
-            match guard.recv() {
-                Ok(sv) => Ok(Value::sawa(sv.into_value())),
-                Err(_) => Ok(Value::kosa("pokea: upande wa kutuma umefungwa")),
-            }
+        (Value::NjiaRx(rx) | Value::NjiaRxBounded(rx), "pokea") => {
+            let received = match rx.try_recv() {
+                Ok(sv) => Ok(sv),
+                Err(flume::TryRecvError::Disconnected) => Err(()),
+                Err(flume::TryRecvError::Empty) => {
+                    crate::platform::flush_stdout(); // about to wait: show what was printed
+                    let rx = rx.clone();
+                    crate::kazi_sawia::block_on(
+                        async move { rx.recv_async().await.map_err(|_| ()) },
+                    )?
+                }
+            };
+            Ok(match received {
+                Ok(sv) => Value::sawa(sv.into_value()),
+                Err(()) => Value::kosa("pokea: upande wa kutuma umefungwa"),
+            })
         }
         // .funga()/.fungua() are an explicit, best-effort lock/unlock pair for holding
         // the lock across several operations — Asili has no closures to scope a critical
@@ -796,7 +786,7 @@ pub(crate) fn pure_method(
         // level — see FungoCell's `unlock()` safety contract in core/evaluator/src/
         // value/mod.rs, which this dispatch arm is responsible for upholding).
         (Value::Fungo(cell), "funga") => {
-            cell.lock();
+            lock_fungo(cell)?;
             Ok(Value::Tupu)
         }
         (Value::Fungo(cell), "fungua") => {
@@ -819,7 +809,7 @@ pub(crate) fn pure_method(
         // .pata()/.weka() are self-contained: lock, act, unlock, all in one call — the
         // safe, usual way to use a Fungo, not requiring .funga()/.fungua() at all.
         (Value::Fungo(cell), "pata") => {
-            cell.lock();
+            lock_fungo(cell)?;
             let v = unsafe { cell.read() };
             unsafe { cell.unlock() };
             Ok(v.into_value())
@@ -831,7 +821,7 @@ pub(crate) fn pure_method(
                     "fungo: weka: thamani haiwezi kuvuka nyuzi (Kasha_GC/Faili/Mkondo)".into(),
                 ));
             };
-            cell.lock();
+            lock_fungo(cell)?;
             unsafe { cell.write(sv) };
             unsafe { cell.unlock() };
             Ok(Value::Tupu)
@@ -1581,6 +1571,17 @@ pub(crate) fn cast_value(v: Value, ty: &str) -> Result<Value, EvalError> {
         }
     } else {
         Ok(v)
+    }
+}
+
+/// Take `cell`'s lock: blocking the thread, or — while `sawia` tasks are about — waiting so that
+/// they run (a task holding the lock may be the one that has to run to release it).
+fn lock_fungo(cell: &crate::value::FungoCell) -> Result<(), EvalError> {
+    if crate::kazi_sawia::tasks_active() {
+        crate::kazi_sawia::wait_until(|| cell.try_lock())
+    } else {
+        cell.lock();
+        Ok(())
     }
 }
 

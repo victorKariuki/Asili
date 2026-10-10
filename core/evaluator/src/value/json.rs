@@ -132,7 +132,8 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
                 ),
             });
         }
-        Value::NjiaTx(_)
+        Value::Ahadi(_)
+        | Value::NjiaTx(_)
         | Value::NjiaRx(_)
         | Value::NjiaTxBounded(_)
         | Value::NjiaRxBounded(_)
@@ -175,6 +176,7 @@ fn variant_name(v: &Value) -> &'static str {
         Value::Faili(_) => "Faili",
         Value::Mkondo(_) => "Mkondo",
         Value::Kumbukumbu(_) => "Kumbukumbu",
+        Value::Ahadi(_) => "Ahadi",
         Value::NjiaTx(_) => "NjiaTx",
         Value::NjiaRx(_) => "NjiaRx",
         Value::NjiaTxBounded(_) => "NjiaTxBounded",
@@ -350,9 +352,9 @@ mod tests {
         // These pass `Value::try_into_send` (they ARE Send-safe, for tenda's benefit) but have
         // no JSON representation — the JSON codec's exclusion set is intentionally stricter
         // than SendValue's, not a reuse of it. See the module doc comment.
-        let (tx, rx) = std::sync::mpsc::channel::<super::super::SendValue>();
-        let tx_val = Value::NjiaTx(std::sync::Arc::new(std::sync::Mutex::new(tx)));
-        let rx_val = Value::NjiaRx(std::sync::Arc::new(std::sync::Mutex::new(rx)));
+        let (tx, rx) = flume::unbounded::<super::super::SendValue>();
+        let tx_val = Value::NjiaTx(tx);
+        let rx_val = Value::NjiaRx(rx);
         assert!(
             tx_val.try_into_send().is_some(),
             "sanity: NjiaTx is Send-safe"

@@ -44,7 +44,8 @@ pub type BuiltinFn = Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>;
 /// Builtins that need the running program (they run its named `kazi` on other threads), so each
 /// engine dispatches them itself, passing the program as a `spawn::Shared`, rather than through
 /// the plain builtin table. Native code's host hands threads its own bytecode and native code.
-pub const MODULE_BUILTINS: [&str; 3] = ["tenda", "mkondo_tumikia", "mkondo_tumikia_http"];
+pub const MODULE_BUILTINS: [&str; 4] =
+    ["tenda", "mkondo_tumikia", "mkondo_tumikia_http", "anzisha"];
 
 /// Every builtin module's registrations: the single list of what exists.
 /// Argument `i` as a `Neno` (empty when missing or not text) — the lenient string-argument

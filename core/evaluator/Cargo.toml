@@ -23,6 +23,8 @@ lock_api = "0.4"
 foldhash = "0.2"
 # `ruwaza` (regular expressions) and `usimbaji` (hashes and base64): pure Rust, on every target.
 regex = "1"
+# `njia` channels: blocking and async receive (a `sawia` task waits without blocking its thread).
+flume = "0.11"
 sha2 = "0.11"
 base64 = "0.22"
 
@@ -34,6 +36,11 @@ libc = "0.2"
 # gated out on wasm32 — no raw sockets in a browser), so rustls (and its crypto backend, which
 # doesn't cross-compile cleanly to wasm32-unknown-unknown) is scoped to non-wasm32 targets only.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# `sawia`/`subiri` (src/kazi_sawia.rs): each task a coroutine with its own stack (corosensei),
+# driven by one single-threaded tokio runtime per thread, which also does the waiting (timers,
+# channels, sockets).
+corosensei = "0.3"
+tokio = { version = "1", features = ["rt", "time", "sync", "macros"] }
 rustls = "0.23"
 rustls-pemfile = "2"
 # The HTTP client (`http_ombi`): rustls rather than the system TLS library, so the static runner

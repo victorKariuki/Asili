@@ -4,6 +4,11 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Standard library ([05-standard-library.md](05-standard-library.md)): `sawia`/`subiri` are
+  defined — a `sawia kazi` call starts a task on the calling thread and gives an `Ahadi<T>`;
+  waits overlap; `sambamba` gains `anzisha`, `subiri_zote`, `subiri_yoyote`, `muda_kikomo` and
+  `ghairi`. `sawia` and `subiri` are now reserved keywords.
+- Types ([04-type-system.md](04-type-system.md)): `Baiti` (bytes, `b"..."`) and `Ahadi<T>`.
 - Standard library ([05-standard-library.md](05-standard-library.md)): HTTP client
   (`http_ombi` with `ChaguoHttp` options and a `JibuHttp` response; builtin `umbo`s whose `?`
   fields may be left out of a literal), new `ruwaza` (regular expressions) and `usimbaji`
