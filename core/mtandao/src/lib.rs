@@ -1,4 +1,5 @@
-//! Asili's network layer: TCP, TLS and Unix-socket streams and listeners, and DNS, on tokio.
+//! Asili's network layer: TCP, TLS and Unix-socket streams and listeners, UDP sockets and DNS,
+//! on tokio.
 //! Every network builtin (sockets, the HTTP client and server) connects, listens and handles
 //! TLS here, once. The futures run on the calling thread's event loop
 //! (`asili_evaluator::kazi_sawia`), so a `sawia` task waiting on the network lets the thread's
@@ -11,7 +12,9 @@ mod dns;
 mod listener;
 mod stream;
 pub mod tls;
+mod udp;
 
 pub use dns::resolve;
 pub use listener::{bind, BindOptions, Listener, LocalListener};
 pub use stream::{connect, split_host_port, ConnectOptions, Stream};
+pub use udp::{udp_bind, Udp};

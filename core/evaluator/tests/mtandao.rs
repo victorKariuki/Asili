@@ -231,3 +231,30 @@ fn tls_client_with_a_private_root_and_dns() {
     );
     assert_eq!(text(out), "salama: habari TLS kweli");
 }
+
+#[test]
+fn udp_datagrams_between_tasks() {
+    let out = run(
+        r#"
+        sawia kazi mwangwi(u: MkondoUdp) -> Tupu {
+            weka j = jaribu (u.pokea())
+            jaribu (u.tuma_kwa(j.pili(), b"mwangwi: " + j.kwanza()))
+        }
+
+        kazi jaribu() -> Neno {
+            weka seva = jaribu (udp_fungua("127.0.0.1:0"))
+            weka k = mwangwi(seva)
+            weka mteja = jaribu (udp_fungua("127.0.0.1:0"))
+            jaribu (mteja.unganisha(seva.anwani()))
+            jaribu (mteja.tuma("habari"))
+            weka jibu = jaribu (mteja.pokea())
+            subiri k
+            mteja.weka_muda(0.05)
+            weka kosa = mteja.pokea().kosa()
+            rejesha jaribu (jibu.kwanza().kwa_neno()) + " | " + kosa
+        }
+    "#,
+        vec![],
+    );
+    assert_eq!(text(out), "mwangwi: habari | udp: muda umekwisha");
+}

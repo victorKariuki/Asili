@@ -181,6 +181,9 @@ kazi tls_sanidi(cheti_njia: Neno, ufunguo_njia: Neno) -> Tokeo<TlsUsanidi, Neno>
 # Maliza programu kwa msimbo wa kutoka.
 kazi toka(kodi: Namba) -> Tupu
 
+# Soketi ya UDP kwenye anwani ("0.0.0.0:0": anwani yoyote, mlango wowote ulio wazi).
+kazi udp_fungua(anwani: Neno) -> Tokeo<MkondoUdp, Neno>
+
 # Hoja za mstari wa amri.
 kazi vigezo() -> Orodha<Neno>
 

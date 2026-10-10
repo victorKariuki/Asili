@@ -175,6 +175,8 @@ pub enum Value {
     /// A listening socket (`mkondo_sikiliza`). Shared between threads (`Arc`): a server's
     /// workers all accept from it, and `.simama()` from any thread stops them all.
     MkondoSikilizaji(Arc<Sikilizaji>),
+    /// A UDP socket (`udp_fungua`); its time limit for `.pokea()`.
+    MkondoUdp(Rc<MkondoUdp>),
     /// A loaded TLS server certificate/key pair, ready to hand to `mkondo_tumikia`
     /// (`tls_sanidi`). `rustls::ServerConfig` is `Send + Sync` by design — every rustls consumer
     /// `Arc`-shares it across connections — so this fits the worker pool's existing
@@ -419,6 +421,7 @@ impl Value {
             | Value::KashaGCDhaifu(_)
             | Value::Faili(_)
             | Value::Mkondo(_)
+            | Value::MkondoUdp(_)
             | Value::Kumbukumbu(_) => return None,
         })
     }
@@ -529,6 +532,17 @@ impl Drop for MkondoHandle {
 #[cfg(target_arch = "wasm32")]
 pub struct MkondoHandle(pub std::convert::Infallible);
 
+/// A UDP socket and the time limit of a `.pokea()`.
+#[cfg(not(target_arch = "wasm32"))]
+pub struct MkondoUdp {
+    pub udp: asili_mtandao::Udp,
+    pub timeout: std::cell::Cell<Option<std::time::Duration>>,
+}
+
+/// No sockets in the browser.
+#[cfg(target_arch = "wasm32")]
+pub struct MkondoUdp(pub std::convert::Infallible);
+
 // Manual Debug impl (not #[derive]) so raw/REPL output uses Asili's own variant names —
 // `Tokeo`/`Chaguo` wrap Rust's `Result`/`Option`, whose derived Debug would otherwise print
 // the Rust-side `Ok(..)`/`Err(..)`/`Some(..)` literally instead of `Sawa(..)`/`Kosa(..)`/
@@ -592,6 +606,10 @@ impl std::fmt::Debug for Value {
             #[cfg(target_arch = "wasm32")]
             Value::MkondoSikilizaji(listener) => match **listener {},
             #[cfg(not(target_arch = "wasm32"))]
+            Value::MkondoUdp(u) => write!(f, "MkondoUdp({})", u.udp.local_addr()),
+            #[cfg(target_arch = "wasm32")]
+            Value::MkondoUdp(u) => match u.0 {},
+            #[cfg(not(target_arch = "wasm32"))]
             Value::TlsUsanidi(_) => write!(f, "TlsUsanidi"),
             Value::Kumbukumbu(v) => f.debug_tuple("Kumbukumbu").field(v).finish(),
             Value::Seti(s) => f.debug_tuple("Seti").field(s).finish(),
@@ -646,6 +664,7 @@ impl PartialEq for Value {
             (Value::Faili(a), Value::Faili(b)) => Rc::ptr_eq(a, b),
             (Value::Mkondo(a), Value::Mkondo(b)) => Rc::ptr_eq(a, b),
             (Value::MkondoSikilizaji(a), Value::MkondoSikilizaji(b)) => Arc::ptr_eq(a, b),
+            (Value::MkondoUdp(a), Value::MkondoUdp(b)) => Rc::ptr_eq(a, b),
             (Value::Kumbukumbu(a), Value::Kumbukumbu(b)) => a == b,
             (Value::Seti(a), Value::Seti(b)) => a == b,
             (Value::NambaKuu(a), Value::NambaKuu(b)) => a == b,

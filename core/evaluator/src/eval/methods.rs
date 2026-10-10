@@ -222,6 +222,7 @@ fn receiver_kind(recv: &Value) -> Option<Kind> {
         Value::Faili(_) => Kind::Faili,
         Value::Mkondo(_) => Kind::Mkondo,
         Value::MkondoSikilizaji(_) => Kind::MkondoSikilizaji,
+        Value::MkondoUdp(_) => Kind::MkondoUdp,
         Value::Kumbukumbu(_) => Kind::Kumbukumbu,
         Value::NjiaTx(_) | Value::NjiaTxBounded(_) => Kind::NjiaTx,
         Value::NjiaRx(_) | Value::NjiaRxBounded(_) => Kind::NjiaRx,
@@ -647,6 +648,7 @@ pub(crate) fn pure_method(
         (Value::MkondoSikilizaji(l), _) => {
             crate::builtins::mkondo::sikilizaji_method(l, method, args_val)
         }
+        (Value::MkondoUdp(u), _) => crate::builtins::mkondo::udp_method(u, method, args_val),
         // Kumbukumbu<T> is a plain owning Box, not a shared/interior-mutable cell like
         // Kasha_GC<T> — `.pata()` reads a clone of the boxed value; there is no `.weka()`
         // (in-place mutation) since `recv` here is already a clone of the binding, and

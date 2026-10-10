@@ -169,6 +169,9 @@ pub fn parse_value_type_with(s: &str, resolve: &dyn Fn(&str) -> Option<ValueType
     if s == "MkondoSikilizaji" {
         return ValueType::MkondoSikilizaji;
     }
+    if s == "MkondoUdp" {
+        return ValueType::MkondoUdp;
+    }
     if s == "TlsUsanidi" {
         return ValueType::TlsUsanidi;
     }
@@ -240,6 +243,7 @@ pub fn format_value_type(t: &ValueType) -> String {
         ValueType::Faili => "Faili".to_string(),
         ValueType::Mkondo => "Mkondo".to_string(),
         ValueType::MkondoSikilizaji => "MkondoSikilizaji".to_string(),
+        ValueType::MkondoUdp => "MkondoUdp".to_string(),
         ValueType::TlsUsanidi => "TlsUsanidi".to_string(),
         ValueType::Kumbukumbu(t) => format!("Kumbukumbu<{}>", format_value_type(t)),
         ValueType::NjiaTx(t) => format!("NjiaTx<{}>", format_value_type(t)),

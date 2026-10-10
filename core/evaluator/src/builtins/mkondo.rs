@@ -18,9 +18,15 @@ pub(crate) fn register(m: &mut HashMap<String, BuiltinFn>) {
         m.insert("mkondo_sikiliza".to_string(), Box::new(native::sikiliza));
         m.insert("tafuta_anwani".to_string(), Box::new(native::tafuta_anwani));
         m.insert("tls_sanidi".to_string(), Box::new(native::tls_sanidi));
+        m.insert("udp_fungua".to_string(), Box::new(native::udp_fungua));
     }
     #[cfg(target_arch = "wasm32")]
-    for name in ["mkondo_unganisha", "mkondo_sikiliza", "tafuta_anwani"] {
+    for name in [
+        "mkondo_unganisha",
+        "mkondo_sikiliza",
+        "tafuta_anwani",
+        "udp_fungua",
+    ] {
         m.insert(
             name.to_string(),
             Box::new(move |_: &[Value]| {
@@ -60,6 +66,16 @@ pub(crate) fn sikilizaji_method(
     _args: &[Value],
 ) -> Result<Value, EvalError> {
     match *listener {}
+}
+
+/// No sockets in the browser (a `MkondoUdp` cannot exist there).
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn udp_method(
+    u: &crate::value::MkondoUdp,
+    _method: &str,
+    _args: &[Value],
+) -> Result<Value, EvalError> {
+    match u.0 {}
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -386,6 +402,99 @@ mod native {
                 listener.stop();
                 Ok(Value::Tupu)
             }
+            _ => Err(EvalError::Unknown(format!("njia '{method}' haijulikani"))),
+        }
+    }
+
+    /// `udp_fungua(anwani) -> Tokeo<MkondoUdp, Neno>`.
+    pub(super) fn udp_fungua(args: &[Value]) -> Result<Value, EvalError> {
+        let addr = super::super::arg_str(args, 0);
+        let r = block_on(async move { asili_mtandao::udp_bind(&addr).await })?;
+        Ok(tokeo(r.map(|udp| {
+            Value::MkondoUdp(Rc::new(value::MkondoUdp {
+                udp,
+                timeout: std::cell::Cell::new(None),
+            }))
+        })))
+    }
+
+    fn payload(args: &[Value], i: usize) -> Vec<u8> {
+        crate::eval::methods::bytes_of(args.get(i).unwrap_or(&Value::Hamna))
+            .map(|b| b.into_owned())
+            .unwrap_or_default()
+    }
+
+    /// Wait for `op` on the UDP socket `u`, as a `Tokeo`.
+    fn run_udp<T: 'static>(
+        u: &Rc<value::MkondoUdp>,
+        op: impl AsyncFnOnce(&value::MkondoUdp) -> Result<T, String> + 'static,
+        out: impl FnOnce(T) -> Value,
+    ) -> Result<Value, EvalError> {
+        crate::platform::flush_stdout(); // about to wait: show what was printed so far
+        let u = u.clone();
+        let r = block_on(async move { op(&u).await })?;
+        Ok(tokeo(r.map(out)))
+    }
+
+    /// A method of `MkondoUdp`.
+    pub(crate) fn udp_method(
+        u: &Rc<value::MkondoUdp>,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, EvalError> {
+        let unit = |()| Value::Tupu;
+        match method {
+            "tuma_kwa" => {
+                let (to, data) = (super::super::arg_str(args, 0), payload(args, 1));
+                run_udp(u, async move |u| u.udp.send_to(&data, &to).await, unit)
+            }
+            "tuma" => {
+                let data = payload(args, 0);
+                run_udp(u, async move |u| u.udp.send(&data).await, unit)
+            }
+            "unganisha" => {
+                let to = super::super::arg_str(args, 0);
+                run_udp(u, async move |u| u.udp.connect(&to).await, unit)
+            }
+            "pokea" => {
+                let max = match args.first() {
+                    Some(v) => value::as_f64(v).unwrap_or(0.0).max(1.0) as usize,
+                    None => 65536,
+                };
+                run_udp(
+                    u,
+                    async move |u| {
+                        let limit = u.timeout.get();
+                        match limit {
+                            Some(d) => tokio::time::timeout(d, u.udp.recv_from(max))
+                                .await
+                                .map_err(|_| "udp: muda umekwisha".to_string())?,
+                            None => u.udp.recv_from(max).await,
+                        }
+                    },
+                    |(data, from)| {
+                        Value::Jozi(
+                            Box::new(Value::Baiti(data.into())),
+                            Box::new(Value::neno(from)),
+                        )
+                    },
+                )
+            }
+            "anwani" => Ok(Value::neno(u.udp.local_addr())),
+            "weka_muda" => {
+                u.timeout
+                    .set(seconds(args.first().unwrap_or(&Value::Hamna)));
+                Ok(Value::Tupu)
+            }
+            "tangaza" => {
+                let on = !matches!(args.first(), Some(Value::Ukweli(false)));
+                Ok(tokeo(u.udp.set_broadcast(on).map(unit)))
+            }
+            "jiunge_kikundi" => Ok(tokeo(
+                u.udp
+                    .join_multicast(&super::super::arg_str(args, 0))
+                    .map(unit),
+            )),
             _ => Err(EvalError::Unknown(format!("njia '{method}' haijulikani"))),
         }
     }

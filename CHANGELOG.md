@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **UDP**: `udp_fungua(anwani)` gives a `MkondoUdp` with `.tuma_kwa(anwani, data)`,
+  `.pokea(kikomo?)` (the datagram as `Baiti` and its sender), `.unganisha(anwani)` and `.tuma`
+  (a default peer), `.anwani()`, `.weka_muda(sekunde)`, `.tangaza(kweli)` (broadcast) and
+  `.jiunge_kikundi(anwani)` (multicast). Waits in a `sawia` task let the thread's other tasks run.
+
 - **Sockets on one network layer (`asili-mtandao`, on tokio)**: `mkondo_unganisha` connects over
   TCP, TLS (`ChaguoMkondo`: `tls`, `jina_seva`, `muda`, `cheti_ca`, client `cheti`/`ufunguo`,
   `familia_ip`) or a Unix socket (`"unix:/njia"`); `Mkondo` gains `.soma_mstari()`,

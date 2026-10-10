@@ -151,3 +151,21 @@ async fn names_addresses_and_timeouts() {
         .unwrap();
     assert!(err.starts_with("kuunganisha"), "{err}");
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn udp_datagrams_and_default_peer() {
+    let a = asili_mtandao::udp_bind("127.0.0.1:0").await.unwrap();
+    let b = asili_mtandao::udp_bind("127.0.0.1:0").await.unwrap();
+    a.send_to(b"jambo", &b.local_addr()).await.unwrap();
+    let (data, from) = b.recv_from(1500).await.unwrap();
+    assert_eq!((data.as_slice(), from), (&b"jambo"[..], a.local_addr()));
+    b.connect(&a.local_addr()).await.unwrap();
+    b.send(b"sawa").await.unwrap();
+    assert_eq!(
+        a.recv_from(2).await.unwrap().0,
+        b"sa",
+        "a longer datagram is cut"
+    );
+    b.set_broadcast(true).unwrap();
+    assert!(b.join_multicast("si-anwani").is_err());
+}

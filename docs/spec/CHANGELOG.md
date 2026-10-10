@@ -4,6 +4,8 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Standard library ([05-standard-library.md](05-standard-library.md)): UDP — `udp_fungua` and
+  `MkondoUdp` (datagrams, default peer, broadcast, multicast).
 - Standard library ([05-standard-library.md](05-standard-library.md)): sockets — `Mkondo`
   connects over TCP, TLS or Unix sockets (`ChaguoMkondo`), with line, exact and bounded reads,
   half-close, addresses and time limits; `MkondoSikilizaji` gains `.kubali()`, `.anwani()` and

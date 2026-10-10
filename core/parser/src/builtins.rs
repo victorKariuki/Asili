@@ -49,6 +49,7 @@ pub const BUILTIN_TYPE_NAMES: &[&str] = &[
     "Faili",
     "Mkondo",
     "MkondoSikilizaji",
+    "MkondoUdp",
     "TlsUsanidi",
     "NjiaTx",
     "NjiaRx",
@@ -223,6 +224,7 @@ pub const BUILTIN_MODULES: &[BuiltinModule] = &[
             ("tafuta_anwani(jina: Neno) -> Tokeo<Orodha<Neno>, Neno>", "Anwani za IP za jina la mwenyeji (DNS)."),
             ("tls_sanidi(cheti_njia: Neno, ufunguo_njia: Neno) -> Tokeo<TlsUsanidi, Neno>", "Pakia cheti na ufunguo (PEM) kwa seva ya TLS."),
             ("toka(kodi: Namba) -> Tupu", "Maliza programu kwa msimbo wa kutoka."),
+            ("udp_fungua(anwani: Neno) -> Tokeo<MkondoUdp, Neno>", "Soketi ya UDP kwenye anwani (\"0.0.0.0:0\": anwani yoyote, mlango wowote ulio wazi)."),
             ("vigezo() -> Orodha<Neno>", "Hoja za mstari wa amri."),
             ("weka_env(jina: Neno, thamani: Neno) -> Tupu", "Weka kigezo cha mazingira."),
         ],
@@ -763,6 +765,7 @@ pub enum MethodReceiver {
     Baiti,
     Ahadi,
     MkondoSikilizaji,
+    MkondoUdp,
 }
 
 /// Built-in methods that only read their receiver, per [`MethodReceiver`]. The one list: the
@@ -885,6 +888,16 @@ pub const PURE_METHODS: &[&[&str]] = &[
     ],
     &["imekwisha", "ghairi"],
     &["kubali", "anwani", "simama"],
+    &[
+        "tuma_kwa",
+        "pokea",
+        "unganisha",
+        "tuma",
+        "anwani",
+        "weka_muda",
+        "tangaza",
+        "jiunge_kikundi",
+    ],
 ];
 
 /// Built-in methods that change their receiver in place, per [`MethodReceiver`].
@@ -915,6 +928,7 @@ pub const MUTATING_METHODS: &[&[&str]] = &[
     &[],
     &[],
     &[],
+    &[],
 ];
 
 /// Built-in methods that call a `kazi` (or builtin) named by their first argument, per element.
@@ -929,6 +943,7 @@ pub const CALLBACK_METHODS: &[&[&str]] = &[
         "kila_mmoja",
         "panga_kwa",
     ],
+    &[],
     &[],
     &[],
     &[],
@@ -1013,6 +1028,19 @@ pub fn method_return_type(receiver: &ValueType, method: &str) -> ValueType {
         }
         (ValueType::MkondoSikilizaji, "anwani") => ValueType::Neno,
         (ValueType::MkondoSikilizaji, "simama") => ValueType::Tupu,
+        (
+            ValueType::MkondoUdp,
+            "tuma_kwa" | "unganisha" | "tuma" | "tangaza" | "jiunge_kikundi",
+        ) => ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
+        (ValueType::MkondoUdp, "pokea") => ValueType::Tokeo(
+            Box::new(ValueType::Jozi(
+                Box::new(ValueType::Baiti),
+                Box::new(ValueType::Neno),
+            )),
+            Box::new(ValueType::Neno),
+        ),
+        (ValueType::MkondoUdp, "anwani") => ValueType::Neno,
+        (ValueType::MkondoUdp, "weka_muda") => ValueType::Tupu,
         (ValueType::Faili | ValueType::Mkondo, "soma_baiti") => {
             ValueType::Tokeo(Box::new(ValueType::Baiti), Box::new(ValueType::Neno))
         }
