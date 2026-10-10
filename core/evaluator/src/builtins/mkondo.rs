@@ -466,7 +466,7 @@ mod native {
         let r = block_on(async move {
             let mut g = w
                 .try_borrow_mut()
-                .map_err(|_| "WebSocket: unatumiwa na kazi nyingine".to_string())?;
+                .map_err(|_| "WebSocket: inatumiwa na kazi nyingine".to_string())?;
             let ws =
                 g.0.as_mut()
                     .ok_or_else(|| "WebSocket: imefungwa tayari".to_string())?;

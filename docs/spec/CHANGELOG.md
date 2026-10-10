@@ -4,6 +4,8 @@ All notable changes to the Asili specification are recorded here.
 
 ## Unreleased
 
+- Standard library ([05-standard-library.md](05-standard-library.md)): WebSocket (`ws_unganisha`,
+  `MkondoWs`, `JibuHttp.ws`) and HTTP/3 (`ChaguoSeva.h3`, `ChaguoHttp.h3`).
 - Standard library ([05-standard-library.md](05-standard-library.md)): `http_ombi` speaks HTTP/2
   (by ALPN) as well as HTTP/1.1; its responses report `toleo` as `HTTP/1.1` or `HTTP/2`.
 - Standard library ([05-standard-library.md](05-standard-library.md)): the HTTP server speaks

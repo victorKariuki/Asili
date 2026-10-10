@@ -448,3 +448,8 @@ starting:
 ungated `syscall` finding), [takwimu-akili-design.md](takwimu-akili-design.md) (tensors/data
 loading/NLP — unphased in the roadmap, unlike everything else here), and
 [kielelezo-macros-design.md](kielelezo-macros-design.md).
+
+Two of these are now implemented: `sawia`/`subiri` (async tasks on each thread's event loop)
+and the networking stack (sockets, UDP, HTTP/1.1, HTTP/2 and HTTP/3, WebSocket). Their decisions
+are in [networking-design.md](networking-design.md); the async design doc records the reasoning
+behind the task model.

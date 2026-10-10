@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **WebSocket**: `ws_unganisha(anwani, chaguo?: ChaguoMkondo)` connects to `ws://` or `wss://` and
+  gives a `MkondoWs` with `.tuma(Neno)`, `.tuma_baiti(Baiti)`, `.pokea()` / `.pokea_neno()` (the
+  next message, `Hamna` once the peer closes) and `.funga()`. A server answers an upgrade request
+  with `JibuHttp { hali: 101, ws: "kazi" }`: `kazi` runs once per connection as a `sawia` task and
+  receives the `MkondoWs`. Pings are answered by the protocol layer.
+- **HTTP/3 (QUIC)**: `ChaguoSeva { h3: kweli }` also answers on UDP, on the listener's address
+  (the TLS configuration is needed); `ChaguoHttp { h3: kweli }` sends one request over HTTP/3
+  (no redirects, retries or cookies in that mode). Both use `tls_sanidi` / `cheti_ca` as HTTPS does.
 - **`http_ombi` on hyper, with HTTP/2**: the client speaks HTTP/1.1 or HTTP/2 (chosen by ALPN),
   keeps connections open per thread, and waits through the `sawia` runtime, so a task doing a
   request lets the thread's other tasks run. Proxies (HTTP via CONNECT, SOCKS5, and

@@ -58,8 +58,8 @@ umbo JibuHttp {
 umbo ChaguoSeva {
     # Baiti za juu za mwili wa ombi (kawaida 16 MiB); zaidi: 413.
     kikomo_mwili?: Namba,
-    # Jibu pia kwa HTTP/3 (QUIC, UDP) kwenye mlango ule ule; inahitaji `tls`. Pool ya nyuzi
-    # huanzisha moja tu.
+    # Jibu pia kwa HTTP/3 (QUIC, UDP) kwenye mlango ule ule; inahitaji `tls`. Nyuzi ya kwanza
+    # pekee ndiyo huanzisha HTTP/3.
     h3?: Ukweli,
     # Sekunde za TLS na kutuma vichwa vya ombi (kawaida 30).
     muda?: Namba,
