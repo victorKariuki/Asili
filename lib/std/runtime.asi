@@ -1,9 +1,26 @@
-# Runtime (kitekelezi) – interface stub
+# Kiolesura cha moduli ya `runtime`, kwa Asili.
+# Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;
+# badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs
+#
+# Runtime: habari kuhusu kitekelezi na mfumo kinachoendeshwa.
 
-kazi toleo() -> Neno
-kazi jina_os() -> Neno
+# Usanifu wa CPU ("x86_64", "aarch64", "wasm32").
 kazi arch() -> Neno
-kazi ni_debug() -> Ukweli
-kazi ni_wasm() -> Ukweli
+
+# Jina la mfumo wa uendeshaji.
+kazi jina_os() -> Neno
+
+# Vigezo vyote vya mazingira.
 kazi mazingira() -> Kamusi<Neno, Neno>
+
+# Wakati programu ilipoanza.
 kazi muda_wa_kuanza() -> Wakati
+
+# Kweli kwa ujenzi wa debug.
+kazi ni_debug() -> Ukweli
+
+# Kweli ndani ya kivinjari (wasm).
+kazi ni_wasm() -> Ukweli
+
+# Toleo la Asili.
+kazi toleo() -> Neno

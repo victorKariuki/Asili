@@ -19,13 +19,14 @@ fn kwa_json_encodes_a_number() {
         leta mfumo
 
         kazi thamani() -> Neno {
-            weka encoded = jaribu (kwa_json(42.0))
+            weka encoded = jaribu (kwa_json([42.0, 0.5, -3.0, -0.0]))
             rejesha encoded
         }
     "#;
     let module = compile(src);
     let result = run_function(&module, "thamani", vec![]).expect("runs");
-    assert_eq!(result, Value::neno("42.0".to_string()));
+    // Whole numbers without a fraction, so a server parsing an integer accepts them.
+    assert_eq!(result, Value::neno("[42,0.5,-3,-0.0]".to_string()));
 }
 
 #[test]
@@ -47,7 +48,7 @@ fn kwa_json_encodes_a_struct_reflectively() {
         panic!("expected Neno")
     };
     let parsed: serde_json::Value = serde_json::from_str(&s).expect("valid json");
-    assert_eq!(parsed, serde_json::json!({"x": 1.0, "y": "hi"}));
+    assert_eq!(parsed, serde_json::json!({"x": 1, "y": "hi"}));
 }
 
 #[test]

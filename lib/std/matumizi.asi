@@ -1,7 +1,20 @@
-# Matumizi (I/O) – interface stub
+# Kiolesura cha moduli ya `matumizi`, kwa Asili.
+# Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;
+# badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs
+#
+# Matumizi: kuandika na kusoma kwenye skrini.
 
+# Andika mstari kwenye stdout.
 kazi chapisha(ujumbe: Neno) -> Tupu
-kazi onyo(ujumbe: Neno) -> Tupu
+
+# Andika "KOSA: ujumbe" kwenye stderr.
 kazi makosa(ujumbe: Neno) -> Tupu
-kazi paparika(ujumbe: Neno) -> Tupu
+
+# Soma mstari mmoja kutoka stdin.
 kazi omba(swali: Neno) -> Neno
+
+# Andika onyo kwenye stderr.
+kazi onyo(ujumbe: Neno) -> Tupu
+
+# Simamisha programu kwa ujumbe huo.
+kazi paparika(ujumbe: Neno) -> Tupu

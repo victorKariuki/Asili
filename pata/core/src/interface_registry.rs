@@ -3,8 +3,7 @@
 use crate::builtin_modules;
 use crate::Error;
 use asili_parser::{
-    parse_value_type, split_generic_args, FnContract, Param, TraitDecl, TraitMethodSig, TypeExpr,
-    ValueType,
+    parse_value_type, FnContract, Param, TraitDecl, TraitMethodSig, TypeExpr, ValueType,
 };
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -116,31 +115,10 @@ pub struct InterfaceRegistry {
     modules: HashMap<String, Arc<ModuleInterface>>,
 }
 
+/// One `kazi` line of an `.asi` file — the signature syntax builtin tables use too.
 fn parse_fn_sahihi(line: &str) -> Option<(String, FnContract)> {
-    let tail = line.strip_prefix("kazi ")?;
-    let open = tail.find('(')?;
-    let close = tail.rfind(')')?;
-    let name = tail[..open].trim().to_string();
-    let params_raw = &tail[open + 1..close];
-    let mut params = Vec::new();
-    // Commas inside `<...>` (`Kamusi<Neno, Neno>`) belong to the type, not between parameters.
-    for p in split_generic_args(params_raw)
-        .into_iter()
-        .filter(|s| !s.is_empty())
-    {
-        let ty = if let Some((_, t)) = p.split_once(':') {
-            parse_value_type(t.trim())
-        } else {
-            ValueType::Unknown
-        };
-        params.push(ty);
-    }
-    let ret = if let Some((_, r)) = tail[close + 1..].split_once("->") {
-        parse_value_type(r.trim())
-    } else {
-        ValueType::Tupu
-    };
-    Some((name, FnContract { params, ret }))
+    line.starts_with("kazi ").then_some(())?;
+    asili_parser::builtins::parse_signature(line, &asili_parser::builtins::resolve_builtin_type)
 }
 
 fn parse_thabiti_line(line: &str) -> Option<(String, ValueType)> {
@@ -179,10 +157,18 @@ fn parse_asi_content(
     let mut traits = HashMap::new();
 
     let mut lines = content.lines();
+    // `#` lines right above a `kazi` are its description (LSP hover).
+    let mut doc: Vec<&str> = Vec::new();
     while let Some(raw) = lines.next() {
         let line = raw.trim();
+        if let Some(comment) = line.strip_prefix('#') {
+            doc.push(comment.trim());
+            continue;
+        }
+        let above = std::mem::take(&mut doc);
         if line.starts_with("kazi ") {
-            if let Some((name, sig)) = parse_fn_sahihi(line) {
+            if let Some((name, mut sig)) = parse_fn_sahihi(line) {
+                sig.doc = above.join(" ");
                 functions.insert(name, sig);
             }
         } else if line.starts_with("thabiti ") {
@@ -345,119 +331,67 @@ impl InterfaceRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use asili_parser::format_value_type;
+    use asili_parser::builtins::{render_stub, BUILTIN_MODULES};
+    use std::path::Path;
 
-    /// Whether a stub's (possibly looser) type agrees with the builtin's: equal, or either side
-    /// leaves that position open (`Unknown`, or a type variable like `T`).
-    fn compatible(stub: &ValueType, real: &ValueType) -> bool {
-        use ValueType::*;
-        let open = |t: &ValueType| matches!(t, Unknown | TypeVar(_));
-        if open(stub) || open(real) || stub == real {
-            return true;
-        }
-        match (stub, real) {
-            (Chaguo(a), Chaguo(b))
-            | (Orodha(a), Orodha(b))
-            | (Seti(a), Seti(b))
-            | (Mfululizo(a), Mfululizo(b))
-            | (KashaGC(a), KashaGC(b))
-            | (KashaGCDhaifu(a), KashaGCDhaifu(b))
-            | (Kumbukumbu(a), Kumbukumbu(b))
-            | (NjiaTx(a), NjiaTx(b))
-            | (NjiaRx(a), NjiaRx(b))
-            | (NjiaTxBounded(a), NjiaTxBounded(b))
-            | (NjiaRxBounded(a), NjiaRxBounded(b))
-            | (Fungo(a), Fungo(b)) => compatible(a, b),
-            (Rejeo(a, m), Rejeo(b, n)) => m == n && compatible(a, b),
-            (Tokeo(a, b), Tokeo(c, d))
-            | (Kamusi(a, b), Kamusi(c, d))
-            | (Jozi(a, b), Jozi(c, d)) => compatible(a, c) && compatible(b, d),
-            _ => false,
-        }
-    }
-
-    fn sahihi(name: &str, c: &FnContract) -> String {
-        let params: Vec<String> = c.params.iter().map(format_value_type).collect();
-        format!(
-            "kazi {name}({}) -> {}",
-            params.join(", "),
-            format_value_type(&c.ret)
-        )
-    }
-
-    /// `lib/std/<m>.asi` is the in-language description of builtin module `<m>`, but the loader
-    /// prefers the builtin table, so nothing else notices when the two drift apart. Every builtin
-    /// module needs a stub, and each stub must list exactly its module's functions and constants
-    /// with compatible signatures.
+    /// `lib/std/<m>.asi` is generated from the builtin table (`core/parser/src/builtins.rs`), so
+    /// it cannot drift: this test fails when a file differs from what the table renders, and
+    /// `ASILI_GOLDEN=write` rewrites them. A stub for a module that no longer exists fails too.
     #[test]
-    fn stdlib_stubs_match_builtin_export_tables() {
+    fn stdlib_stubs_are_generated() {
         let std_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../lib/std");
+        let write = std::env::var_os("ASILI_GOLDEN").is_some_and(|v| v == "write");
         let mut problems = Vec::new();
-        for module in builtin_modules::BUILTIN_MODULE_NAMES {
-            let table = builtin_modules::builtin_module_exports(module).expect("export table");
-            let path = std_dir.join(format!("{module}.asi"));
-            let Ok(content) = fs::read_to_string(&path) else {
-                problems.push(format!("{module}: lib/std/{module}.asi haipo"));
-                continue;
-            };
-            let (functions, constants, _) = parse_asi_content(&content);
-            let mut names: Vec<_> = table.functions.keys().collect();
-            names.sort();
-            for name in names {
-                let real = &table.functions[name];
-                match functions.get(name) {
-                    None => problems.push(format!("{module}: add `{}`", sahihi(name, real))),
-                    Some(stub) => {
-                        let arity_ok = stub.params.len() == real.params.len();
-                        let types_ok = arity_ok
-                            && stub
-                                .params
-                                .iter()
-                                .zip(&real.params)
-                                .all(|(a, b)| compatible(a, b))
-                            && compatible(&stub.ret, &real.ret);
-                        if !types_ok {
-                            problems.push(format!(
-                                "{module}: `{}` should be `{}`",
-                                sahihi(name, stub),
-                                sahihi(name, real)
-                            ));
-                        }
-                    }
-                }
+        for m in BUILTIN_MODULES {
+            let path = std_dir.join(format!("{}.asi", m.name));
+            let want = render_stub(m);
+            if write {
+                fs::write(&path, &want).expect("write stub");
+            } else if fs::read_to_string(&path).ok().as_deref() != Some(want.as_str()) {
+                problems.push(format!("lib/std/{}.asi", m.name));
             }
-            for name in functions
-                .keys()
-                .filter(|n| !table.functions.contains_key(*n))
+            // What the stub says is what the compiler knows.
+            let (functions, constants, _) = parse_asi_content(&want);
+            let table = builtin_modules::builtin_module_exports(m.name).expect("table");
+            assert_eq!(functions.len(), table.functions.len(), "{}", m.name);
+            for (name, real) in &table.functions {
+                let stub = &functions[name];
+                assert_eq!(
+                    (
+                        &stub.params,
+                        &stub.ret,
+                        &stub.names,
+                        stub.optional,
+                        stub.variadic,
+                        &stub.doc
+                    ),
+                    (
+                        &real.params,
+                        &real.ret,
+                        &real.names,
+                        real.optional,
+                        real.variadic,
+                        &real.doc
+                    ),
+                    "{}::{name}",
+                    m.name
+                );
+            }
+            assert_eq!(constants, table.constants, "{}", m.name);
+        }
+        for entry in fs::read_dir(&std_dir).expect("lib/std") {
+            let path = entry.expect("entry").path();
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if path.extension().is_some_and(|e| e == "asi")
+                && !BUILTIN_MODULES.iter().any(|m| m.name == stem)
             {
-                problems.push(format!("{module}: remove `kazi {name}` (no such builtin)"));
-            }
-            for (name, ty) in &table.constants {
-                match constants.get(name) {
-                    None => problems.push(format!(
-                        "{module}: add `thabiti {name}: {}`",
-                        format_value_type(ty)
-                    )),
-                    Some(stub) if !compatible(stub, ty) => problems.push(format!(
-                        "{module}: `thabiti {name}` should be `{}`",
-                        format_value_type(ty)
-                    )),
-                    _ => {}
-                }
-            }
-            for name in constants
-                .keys()
-                .filter(|n| !table.constants.contains_key(*n))
-            {
-                problems.push(format!(
-                    "{module}: remove `thabiti {name}` (no such builtin)"
-                ));
+                problems.push(format!("{} (no such builtin module)", path.display()));
             }
         }
-        problems.sort();
         assert!(
             problems.is_empty(),
-            "lib/std stubs drifted:\n{}",
+            "lib/std stubs differ from core/parser/src/builtins.rs; run \
+             `ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs`:\n{}",
             problems.join("\n")
         );
     }

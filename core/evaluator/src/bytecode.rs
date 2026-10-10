@@ -650,18 +650,31 @@ fn compile_module_inner(
             .enumerate()
             .map(|(i, name)| (name, i as u32))
             .collect(),
-        structs: module
-            .structs
+        structs: asili_parser::builtins::builtin_structs()
             .iter()
             .map(|s| {
-                (
-                    s.name.clone(),
-                    s.fields
-                        .iter()
-                        .map(|(f, t)| (f.clone(), t.as_ref().map(|t| t.name.replace(' ', ""))))
-                        .collect(),
-                )
+                let fields = s
+                    .fields
+                    .iter()
+                    .map(|f| (f.name.clone(), Some(f.ty.replace(' ', "")), f.optional))
+                    .collect();
+                (s.name.clone(), fields)
             })
+            // The module's own `umbo` replaces a builtin one of the same name.
+            .chain(module.structs.iter().map(|s| {
+                let fields = s
+                    .fields
+                    .iter()
+                    .map(|(f, t)| {
+                        (
+                            f.clone(),
+                            t.as_ref().map(|t| t.name.replace(' ', "")),
+                            false,
+                        )
+                    })
+                    .collect();
+                (s.name.clone(), fields)
+            }))
             .collect(),
         enums: module.enums.iter().map(|e| e.name.clone()).collect(),
         impl_methods: module
@@ -901,7 +914,8 @@ struct ProgramCompiler {
     module_consts: HashMap<String, (Ty, StoredConstant, String)>,
     builtins: HashMap<String, u32>,
     /// `umbo` name -> field names in declaration order.
-    structs: HashMap<String, Vec<(String, Option<String>)>>,
+    /// Every `umbo`'s fields in order: name, declared type, whether a literal may omit it.
+    structs: HashMap<String, Vec<(String, Option<String>, bool)>>,
     /// Declared `jenum` names.
     enums: std::collections::HashSet<String>,
     /// Method names some `impl` block defines (a call may reach a user method even where a
@@ -1319,7 +1333,7 @@ impl<'a> FunctionCompiler<'a> {
     fn field_decl(&self, receiver: &Expr, field: &str) -> Option<(u32, Option<String>)> {
         let umbo = self.type_name(receiver)?;
         let fields = self.program.structs.get(&umbo)?;
-        let slot = fields.iter().position(|(f, _)| f == field)?;
+        let slot = fields.iter().position(|(f, _, _)| f == field)?;
         Some((slot as u32, fields[slot].1.clone()))
     }
 
@@ -2109,9 +2123,18 @@ impl<'a> FunctionCompiler<'a> {
                 // runs, so leave the `kazi` to it.
                 let declared = self.program.structs.get(struct_name)?.clone();
                 let mut regs = Vec::with_capacity(declared.len());
-                for (fname, _) in declared {
-                    let (_, fexpr) = fields.iter().find(|(n, _)| *n == fname)?;
-                    let reg = self.expr_as(self.node(*fexpr), Ty::Val)?.reg;
+                for (fname, _, optional) in declared {
+                    let reg = match fields.iter().find(|(n, _)| *n == fname) {
+                        Some((_, fexpr)) => self.expr_as(self.node(*fexpr), Ty::Val)?.reg,
+                        // A `?` field left out of the literal holds `Hamna`.
+                        None if optional => {
+                            let k = self.program.constant(StoredConstant::Hamna);
+                            let reg = self.temp(Ty::Val).reg;
+                            self.emit(Opcode::ConstVal { dst: reg, k });
+                            reg
+                        }
+                        None => return None,
+                    };
                     regs.push((self.program.constant(StoredConstant::Neno(fname)), reg));
                 }
                 let out = self.dst_or_temp(dst, Ty::Val);

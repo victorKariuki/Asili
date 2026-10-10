@@ -189,6 +189,12 @@ umbo Mtu {
 weka m = Mtu { jina: "Baraka", umri: 30, hai: kweli }
 ```
 
+**Builtin `umbo`s.** A few `umbo`s come with the standard library — `OmbiHttp`, `JibuHttp` and
+`ChaguoHttp` (`mfumo`) — and are used without declaring them; a program's own `umbo` of the same
+name takes the builtin's place. Their fields marked `?` in `lib/std/mfumo.asi` (every
+`ChaguoHttp` field, `JibuHttp`'s `sababu`, `anwani`, ...) may be left out of a literal, and then
+hold `Hamna`: `ChaguoHttp { muda: 5 }`.
+
 ### Kupata Vipande (Field Access)
 
 ```asili

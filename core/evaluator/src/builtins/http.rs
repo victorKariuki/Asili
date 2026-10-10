@@ -389,8 +389,8 @@ fn request_to_value(req: &ParsedRequest) -> Value {
     )
 }
 
-/// `JibuHttp` (`Value::Struct("JibuHttp", [("hali", Namba), ("vichwa", Kamusi), ("mwili", Neno)])`)
-/// -> the pieces `write_response` needs. `kazi_jina`'s own return value doesn't need to be this
+/// `JibuHttp` (`hali`, `vichwa`, `mwili`, and `vichwa_vyote` for repeated headers) -> the
+/// pieces `write_response` needs. `kazi_jina`'s own return value doesn't need to be this
 /// exact struct — anything with the right field names/types works, since `Value::Struct`'s name
 /// is never checked here, matching the JSON codec's own struct-shape leniency.
 fn value_to_response(v: &Value) -> Option<(u16, Vec<(String, String)>, String)> {
@@ -420,6 +420,17 @@ fn value_to_response(v: &Value) -> Option<(u16, Vec<(String, String)>, String)> 
             _ => Vec::new(),
         })
         .unwrap_or_default();
+    // `vichwa_vyote` adds headers a `Kamusi` cannot hold twice (`set-cookie`).
+    let mut vichwa: Vec<(String, String)> = vichwa;
+    if let Some((_, Value::Orodha(all))) = fields.iter().find(|(n, _)| &**n == "vichwa_vyote") {
+        for item in all.iter() {
+            if let Value::Jozi(k, v) = item {
+                if let (Some(k), Some(v)) = (value::as_string(k), value::as_string(v)) {
+                    vichwa.push((k, v));
+                }
+            }
+        }
+    }
     Some((hali as u16, vichwa, mwili))
 }
 

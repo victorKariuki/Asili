@@ -30,6 +30,7 @@ fn test_extern_env() -> (HashMap<String, FnContract>, HashMap<String, ValueType>
         FnContract {
             params: vec![],
             ret: ValueType::Orodha(Box::new(ValueType::Unknown)),
+            ..Default::default()
         },
     );
     fns.insert(
@@ -37,6 +38,7 @@ fn test_extern_env() -> (HashMap<String, FnContract>, HashMap<String, ValueType>
         FnContract {
             params: vec![],
             ret: ValueType::Kamusi(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown)),
+            ..Default::default()
         },
     );
     fns.insert(
@@ -44,11 +46,13 @@ fn test_extern_env() -> (HashMap<String, FnContract>, HashMap<String, ValueType>
         FnContract {
             params: vec![ValueType::Unknown, ValueType::Unknown],
             ret: ValueType::Jozi(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown)),
+            ..Default::default()
         },
     );
     let neno_tupu = FnContract {
         params: vec![ValueType::Neno],
         ret: ValueType::Tupu,
+        ..Default::default()
     };
     fns.insert("chapisha".to_string(), neno_tupu.clone());
     fns.insert("onyo".to_string(), neno_tupu.clone());
@@ -59,6 +63,7 @@ fn test_extern_env() -> (HashMap<String, FnContract>, HashMap<String, ValueType>
         FnContract {
             params: vec![ValueType::Neno],
             ret: ValueType::Neno,
+            ..Default::default()
         },
     );
     let mut consts = HashMap::new();

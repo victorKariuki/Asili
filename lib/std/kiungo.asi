@@ -1,4 +1,11 @@
-# Kiungo (FFI) – interface stub
+# Kiolesura cha moduli ya `kiungo`, kwa Asili.
+# Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;
+# badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs
+#
+# Kiungo (FFI): bado haijatengenezwa; kila kazi hurudisha kosa.
 
+# Pakia maktaba ya nje (bado haijatengenezwa).
 kazi saza_kiungo(njia: Neno) -> Tokeo<Anuani, Neno>
-kazi wito_kiungo(anuani: Anuani, jina: Neno) -> Tokeo<Namba, Neno>
+
+# Ita kazi ya maktaba ya nje (bado haijatengenezwa).
+kazi wito_kiungo(anuani: Anuani, jina: Neno) -> Tokeo<Haijulikani, Neno>

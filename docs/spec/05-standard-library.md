@@ -82,6 +82,7 @@ Builtin exports are ambient; `leta mfumo` remains optional documentation. OS-dep
   string. Rejects (`Kosa`) resource handles (`Kasha_GC<T>`, `Faili`, `Mkondo`,
   `Kumbukumbu<T>`) and concurrency primitives (`NjiaTx`/`NjiaRx`/`Fungo`, and their bounded
   variants) — none have a JSON representation — and structures nested past a fixed depth cap.
+  A whole `Namba` within ±2^53 is written without a fraction (`3`, not `3.0`).
   `NambaKuu`/`NambaSahihi`/`Anuani` encode as JSON strings, not numbers (arbitrary precision and
   raw memory addresses don't round-trip through/belong as a JSON number). See
   [json-codec-design.md](../design/json-codec-design.md) for the full per-variant mapping.
@@ -91,12 +92,53 @@ Builtin exports are ambient; `leta mfumo` remains optional documentation. OS-dep
 
 ### HTTP (client)
 
-- `http_pata(anwani) -> Tokeo<Neno, Neno>` (GET) and `http_tuma(anwani, mwili, aina) ->
-  Tokeo<Neno, Neno>` (POST; `aina` is the `Content-Type`): the body of a 2xx response, else a
-  `Kosa` naming the status.
-- `http_ombi(njia, anwani, vichwa: Kamusi<Neno, Neno>, mwili) -> Tokeo<JibuHttp, Neno>`: any
-  method; the whole response (`hali`, `vichwa` with lowercase names, `mwili`) whatever its
-  status. Only a failed connection, TLS handshake or read is a `Kosa`.
+One function, `http_ombi(njia, anwani, chaguo?: ChaguoHttp) -> Tokeo<JibuHttp, Neno>`, sends any
+method (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`, `TRACE`, or a non-standard
+token such as `PROPFIND`) to an `http://` or `https://` URL. It returns the whole response,
+whatever its status; a `Kosa` is a failed connection, TLS handshake, timeout, read or invalid
+option — or a non-2xx status when `kosa_hali` is set. `ChaguoHttp`, `JibuHttp` and `OmbiHttp`
+are builtin `umbo`s: a program uses them without declaring them, and every `ChaguoHttp` field
+may be left out of a literal.
+
+| `ChaguoHttp` field | Type | Meaning |
+|---|---|---|
+| `vichwa` | `Kamusi<Neno, Neno>` | Request headers |
+| `hoja` | `Kamusi<Neno, Neno>` | Appended to the URL's query, percent-encoded |
+| `mwili` | `Neno` | Text body (`text/plain; charset=utf-8`) |
+| `mwili_base64` | `Neno` | Binary body, given as base64 (`application/octet-stream`) |
+| `json` | any | A value sent as JSON (`application/json`), encoded as `kwa_json` does |
+| `fomu` | `Kamusi<Neno, Neno>` | `application/x-www-form-urlencoded` form |
+| `fomu_sehemu` / `fomu_faili` | `Kamusi<Neno, Neno>` | `multipart/form-data`: text parts / file parts (part name → path) |
+| `faili` | `Neno` | Send this file as the body, streamed |
+| `aina` | `Neno` | `Content-Type` instead of the body's default |
+| `mtumiaji` / `nenosiri` | `Neno` | Basic authentication |
+| `tokeni` | `Neno` | Bearer authentication |
+| `muda` | `Namba` | Seconds for the whole request (default 60; `0`: none) |
+| `muda_kuunganisha` | `Namba` | Seconds to connect |
+| `elekezo` | `Namba` | Redirects followed (default 10; `0`: the 3xx response is returned) |
+| `jaribu_tena` | `Namba` | Retries (up to 10) of an idempotent method after a failed connection or a 429/502/503/504, waiting 0.5 s, 1 s, 2 s, … or the server's `Retry-After` (at most 30 s) |
+| `wakala` | `Neno` | Proxy: `http://host:port`, `socks5://…` (with `user:password@`); `""` ignores `HTTPS_PROXY`/`HTTP_PROXY` |
+| `familia_ip` | `Namba` | `4` or `6`: IPv4 or IPv6 only |
+| `cheti_ca` | `Neno` | PEM file of the only certificate authorities trusted (instead of the Mozilla roots) |
+| `cheti` / `ufunguo` | `Neno` | Client certificate and private key (PEM), for mutual TLS |
+| `vidakuzi` | `Ukweli` | Use the program's one cookie jar: store `Set-Cookie`, send `Cookie` |
+| `kikomo` | `Namba` | Most bytes of response body read (default 64 MiB) |
+| `hifadhi` | `Neno` | Stream the body to this file (written whole or not at all); `mwili` is then empty |
+| `jibu_base64` | `Ukweli` | Return the body as base64 (binary responses) |
+| `kosa_hali` | `Ukweli` | A non-2xx status is a `Kosa` with the status and the start of the body |
+
+At most one body option may be given. `JibuHttp` holds `hali` (status), `vichwa` (lowercase
+names; a repeated header joined with `", "`), `mwili`, `sababu` (reason phrase), `anwani` (the
+final URL), `toleo` (`"HTTP/1.1"`), `vichwa_vyote` (every header in order as `Jozi`, repeats kept
+— `set-cookie`) and `muda` (seconds taken).
+
+Behaviour: HTTPS uses rustls with the Mozilla roots, and certificate checking cannot be turned
+off. A redirect from HTTPS to plain HTTP is refused; a redirect to another origin drops
+`Authorization`, `Proxy-Authorization` and `Cookie`; `303` (and `301`/`302` after a `POST`)
+continues as a `GET` without the body, `307`/`308` keep method and body. gzip and brotli responses
+are decoded; a body is decoded in its declared charset (UTF-8 otherwise). Requests with the same
+transport settings (proxy, roots, client certificate, IP family) share a keep-alive connection
+pool across the program and its threads. Not available in the browser build.
 
 ### Ruwaza (regular expressions)
 

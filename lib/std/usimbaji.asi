@@ -1,10 +1,26 @@
-# Usimbaji (encodings, hashes) – interface stub
+# Kiolesura cha moduli ya `usimbaji`, kwa Asili.
+# Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;
+# badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs
+#
+# Usimbaji: base64, hex, hashi na vitambulisho (juu ya baiti za UTF-8; hex ni herufi ndogo).
 
-kazi base64_simba(maandishi: Neno) -> Neno
+# Fumbua base64 ya kawaida; kosa isipokuwa base64 ya maandishi ya UTF-8.
 kazi base64_fumbua(maandishi: Neno) -> Tokeo<Neno, Neno>
-kazi hex_simba(maandishi: Neno) -> Neno
+
+# Simba kwa base64 ya kawaida.
+kazi base64_simba(maandishi: Neno) -> Neno
+
+# SHA-256, kwa hex.
 kazi hashi_sha256(maandishi: Neno) -> Neno
+
+# SHA-512, kwa hex.
 kazi hashi_sha512(maandishi: Neno) -> Neno
+
+# Baiti kwa hex.
+kazi hex_simba(maandishi: Neno) -> Neno
+
+# HMAC-SHA256 ya ujumbe kwa ufunguo, kwa hex.
 kazi hmac_sha256(ufunguo: Neno, ujumbe: Neno) -> Neno
+
 # UUID ya nasibu (toleo 4); `nasibu_mbegu` huifanya irudiwe pia.
 kazi kitambulisho() -> Neno

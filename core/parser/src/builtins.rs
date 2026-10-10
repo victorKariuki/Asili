@@ -3,6 +3,7 @@
 
 use crate::{FnContract, ValueType};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// Builtin modules whose exports are *not* ambient: they must be brought in with `leta` (the
 /// managed-memory wrapper is opt-in by design — see docs/design/kasha-gc-design.md).
@@ -28,997 +29,639 @@ pub struct BuiltinExportTable {
     pub constants: HashMap<String, ValueType>,
 }
 
-fn namba_namba_namba() -> FnContract {
-    FnContract {
-        params: vec![ValueType::Namba, ValueType::Namba],
-        ret: ValueType::Namba,
-    }
+/// One builtin module's surface, written in Asili: the single source for the analyzer's
+/// contracts, LSP hover and signature help, and the generated `lib/std/<name>.asi` stubs.
+///
+/// A function is `(signature, doc)` with the signature `name(p: T, q?: T, ...r: T) -> R`: `q?`
+/// may be left out of a call (trailing parameters only), `...r` takes any number of arguments of
+/// type `T`. A constant is `(NAME: T, doc)`. A struct ([`StructSrc`]) is a `umbo` a builtin
+/// takes or returns, usable without declaring it.
+pub struct BuiltinModule {
+    pub name: &'static str,
+    pub doc: &'static str,
+    pub functions: &'static [(&'static str, &'static str)],
+    pub constants: &'static [(&'static str, &'static str)],
+    pub structs: &'static [StructSrc],
 }
 
-fn namba_namba_tokeo_namba() -> FnContract {
-    FnContract {
-        params: vec![ValueType::Namba, ValueType::Namba],
-        ret: ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno)),
-    }
+/// A builtin `umbo` as [`BUILTIN_MODULES`] writes it: each field `(name: T, doc)`, where a `?`
+/// after the name lets a literal leave the field out (it then holds `Hamna`).
+pub struct StructSrc {
+    pub name: &'static str,
+    pub doc: &'static str,
+    pub fields: &'static [(&'static str, &'static str)],
 }
 
-fn namba_namba() -> FnContract {
-    FnContract {
-        params: vec![ValueType::Namba],
-        ret: ValueType::Namba,
-    }
-}
-
-fn namba_tokeo_namba() -> FnContract {
-    FnContract {
-        params: vec![ValueType::Namba],
-        ret: ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno)),
-    }
-}
-
-fn namba_namba_tokeo_namba_opt() -> FnContract {
-    FnContract {
-        params: vec![ValueType::Namba, ValueType::Namba],
-        ret: ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno)),
-    }
-}
-
-fn namba_namba_namba_namba() -> FnContract {
-    FnContract {
-        params: vec![ValueType::Namba, ValueType::Namba, ValueType::Namba],
-        ret: ValueType::Namba,
-    }
-}
-
-fn namba_ukweli() -> FnContract {
-    FnContract {
-        params: vec![ValueType::Namba],
-        ret: ValueType::Ukweli,
-    }
-}
-
-fn ret_namba() -> FnContract {
-    FnContract {
-        params: vec![],
-        ret: ValueType::Namba,
-    }
-}
-
-/// Prelude: foundation types and constructors. Always in scope.
-/// Add `name(params) -> ret` to an export table.
-fn contract(
-    functions: &mut HashMap<String, FnContract>,
-    name: &str,
-    params: Vec<ValueType>,
-    ret: ValueType,
-) {
-    functions.insert(name.to_string(), FnContract { params, ret });
-}
-
-pub fn msingi_exports() -> BuiltinExportTable {
-    let mut functions = HashMap::new();
-    functions.insert(
-        "orodha".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Orodha(Box::new(ValueType::Unknown)),
-        },
-    );
-    functions.insert(
-        "orodha_rudia".to_string(),
-        FnContract {
-            params: vec![ValueType::Unknown, ValueType::Namba],
-            ret: ValueType::Orodha(Box::new(ValueType::Unknown)),
-        },
-    );
-    functions.insert(
-        "kamusi".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Kamusi(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown)),
-        },
-    );
-    functions.insert(
-        "kamusi_tupu".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Kamusi(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown)),
-        },
-    );
-    functions.insert(
-        "jozi".to_string(),
-        FnContract {
-            params: vec![ValueType::Unknown, ValueType::Unknown],
-            ret: ValueType::Jozi(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown)),
-        },
-    );
-    functions.insert(
-        "tokeo".to_string(),
-        FnContract {
-            params: vec![ValueType::Unknown],
-            ret: ValueType::Tokeo(Box::new(ValueType::Unknown), Box::new(ValueType::Unknown)),
-        },
-    );
-    functions.insert(
-        "kosa".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Unknown), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "chaguo".to_string(),
-        FnContract {
-            params: vec![ValueType::Unknown],
-            ret: ValueType::Chaguo(Box::new(ValueType::Unknown)),
-        },
-    );
-    functions.insert(
-        "kumbukumbu_unda".to_string(),
-        FnContract {
-            params: vec![ValueType::Unknown],
-            ret: ValueType::Kumbukumbu(Box::new(ValueType::Unknown)),
-        },
-    );
-    functions.insert(
-        "seti".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Seti(Box::new(ValueType::Unknown)),
-        },
-    );
-    functions.insert(
-        "seti_tupu".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Seti(Box::new(ValueType::Unknown)),
-        },
-    );
-    let mut constants = HashMap::new();
-    constants.insert("KWELI".to_string(), ValueType::Ukweli);
-    constants.insert("SIYO_KWELI".to_string(), ValueType::Ukweli);
-    constants.insert("TUPU".to_string(), ValueType::Tupu);
-    BuiltinExportTable {
-        functions,
-        constants,
-    }
-}
-
-pub fn hisabati_exports() -> BuiltinExportTable {
-    let mut functions = HashMap::new();
-    contract(
-        &mut functions,
-        "nasibu_kamili",
-        vec![ValueType::Namba, ValueType::Namba],
-        ValueType::Namba,
-    );
-    contract(
-        &mut functions,
-        "nasibu_mbegu",
-        vec![ValueType::Namba],
-        ValueType::Tupu,
-    );
-    contract(
-        &mut functions,
-        "changanya",
-        vec![ValueType::Orodha(Box::new(ValueType::Unknown))],
-        ValueType::Orodha(Box::new(ValueType::Unknown)),
-    );
-    contract(
-        &mut functions,
-        "chagua_nasibu",
-        vec![ValueType::Orodha(Box::new(ValueType::Unknown))],
-        ValueType::Chaguo(Box::new(ValueType::Unknown)),
-    );
-    functions.insert(
-        "namba_kuu_kutoka".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::NambaKuu), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "namba_sahihi_kutoka".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::NambaSahihi), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert("jumla".to_string(), namba_namba_namba());
-    functions.insert("tofauti".to_string(), namba_namba_namba());
-    functions.insert("zao".to_string(), namba_namba_namba());
-    functions.insert("gawio".to_string(), namba_namba_tokeo_namba());
-    functions.insert("duara".to_string(), namba_namba());
-    functions.insert("absolute".to_string(), namba_namba());
-    functions.insert("kipeo".to_string(), namba_namba_tokeo_namba_opt());
-    functions.insert("mizizi".to_string(), namba_tokeo_namba());
-    functions.insert("abs".to_string(), namba_namba());
-    functions.insert("ishara".to_string(), namba_namba());
-    functions.insert("upeo".to_string(), namba_namba_tokeo_namba_opt());
-    functions.insert("kipeuo2".to_string(), namba_tokeo_namba());
-    functions.insert("kipeuo3".to_string(), namba_namba());
-    functions.insert("haipot".to_string(), namba_namba_namba());
-    functions.insert("upeo_wa_e".to_string(), namba_namba());
-    functions.insert("expm1".to_string(), namba_namba());
-    functions.insert("sakafu".to_string(), namba_namba());
-    functions.insert("dari".to_string(), namba_namba());
-    functions.insert("duara_maeneo".to_string(), namba_namba_namba());
-    functions.insert("punguza".to_string(), namba_namba());
-    functions.insert("kubwa".to_string(), namba_namba_namba());
-    functions.insert("ndogo".to_string(), namba_namba_namba());
-    functions.insert("kikwazo".to_string(), namba_namba_namba_namba());
-    functions.insert("kwenda_radiani".to_string(), namba_namba());
-    functions.insert("kwenda_nyuzi".to_string(), namba_namba());
-    functions.insert("mzizi".to_string(), namba_namba_tokeo_namba());
-    functions.insert("faktoriali".to_string(), namba_tokeo_namba());
-    functions.insert("baki".to_string(), namba_namba_tokeo_namba());
-    functions.insert("logi".to_string(), namba_tokeo_namba());
-    functions.insert("logi10".to_string(), namba_tokeo_namba());
-    functions.insert("logi2".to_string(), namba_tokeo_namba());
-    functions.insert("logi1p".to_string(), namba_tokeo_namba());
-    functions.insert("asini".to_string(), namba_tokeo_namba());
-    functions.insert("akosini".to_string(), namba_tokeo_namba());
-    functions.insert("atanjenti".to_string(), namba_tokeo_namba());
-    functions.insert("asini_h".to_string(), namba_tokeo_namba());
-    functions.insert("akosini_h".to_string(), namba_tokeo_namba());
-    functions.insert("atanjenti_h".to_string(), namba_tokeo_namba());
-    functions.insert("sini".to_string(), namba_namba());
-    functions.insert("kosini".to_string(), namba_namba());
-    functions.insert("tanjenti".to_string(), namba_namba());
-    functions.insert("atanjenti2".to_string(), namba_namba_namba());
-    functions.insert("sini_h".to_string(), namba_namba());
-    functions.insert("kosini_h".to_string(), namba_namba());
-    functions.insert("tanjenti_h".to_string(), namba_namba());
-    functions.insert("ni_namba".to_string(), namba_ukweli());
-    functions.insert("si_namba".to_string(), namba_ukweli());
-    functions.insert("ni_ukomo".to_string(), namba_ukweli());
-    functions.insert("nasibu".to_string(), ret_namba());
-    functions.insert("nasibu_chini".to_string(), namba_namba_namba());
-
-    let mut constants = HashMap::new();
-    constants.insert("Ukomo".to_string(), ValueType::Namba);
-    constants.insert("Siyo_Namba".to_string(), ValueType::Namba);
-    constants.insert("PI".to_string(), ValueType::Namba);
-    constants.insert("E".to_string(), ValueType::Namba);
-    constants.insert("PHI".to_string(), ValueType::Namba);
-    constants.insert("TAU".to_string(), ValueType::Namba);
-    constants.insert("LN10".to_string(), ValueType::Namba);
-    constants.insert("LN2".to_string(), ValueType::Namba);
-    constants.insert("LOG10E".to_string(), ValueType::Namba);
-    constants.insert("LOG2E".to_string(), ValueType::Namba);
-    constants.insert("KIPEUO1_2".to_string(), ValueType::Namba);
-    constants.insert("KIPEUO2".to_string(), ValueType::Namba);
-    constants.insert("KIPEUO3".to_string(), ValueType::Namba);
-    constants.insert("KIPEUO5".to_string(), ValueType::Namba);
-    constants.insert("EPSILON".to_string(), ValueType::Namba);
-    constants.insert("INF".to_string(), ValueType::Namba);
-    constants.insert("NAN".to_string(), ValueType::Namba);
-
-    BuiltinExportTable {
-        functions,
-        constants,
-    }
-}
-
-/// System: env, args, exit. Requires `leta mfumo`.
-pub fn mfumo_exports() -> BuiltinExportTable {
-    let mut functions = HashMap::new();
-    contract(
-        &mut functions,
-        "weka_env",
-        vec![ValueType::Neno, ValueType::Neno],
-        ValueType::Tupu,
-    );
-    contract(
-        &mut functions,
-        "http_pata",
-        vec![ValueType::Neno],
-        tokeo_neno(ValueType::Neno),
-    );
-    contract(
-        &mut functions,
-        "http_tuma",
-        vec![ValueType::Neno, ValueType::Neno, ValueType::Neno],
-        tokeo_neno(ValueType::Neno),
-    );
-    // The response is a `JibuHttp { hali, vichwa, mwili }` struct, Unknown at the signature level
-    // like the server's `OmbiHttp`/`JibuHttp` (see `mkondo_tumikia_http`).
-    contract(
-        &mut functions,
-        "http_ombi",
-        vec![
-            ValueType::Neno,
-            ValueType::Neno,
-            ValueType::Kamusi(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
-            ValueType::Neno,
+pub const BUILTIN_MODULES: &[BuiltinModule] = &[
+    BuiltinModule {
+        name: "msingi",
+        doc: "Msingi: aina na viunda vya msingi; viko wigoni bila `leta`.",
+        functions: &[
+            ("chaguo(thamani: Haijulikani) -> Haijulikani?", "`Chaguo::Kuna(thamani)`."),
+            ("jozi(a: Haijulikani, b: Haijulikani) -> Jozi<Haijulikani, Haijulikani>", "Jozi ya thamani mbili."),
+            ("kamusi() -> Kamusi<Haijulikani, Haijulikani>", "Kamusi tupu."),
+            ("kamusi_tupu() -> Kamusi<Haijulikani, Haijulikani>", "Kamusi tupu."),
+            ("kosa(ujumbe: Neno) -> Tokeo<Haijulikani, Neno>", "`Tokeo::Kosa(ujumbe)`."),
+            ("kumbukumbu_unda(thamani: Haijulikani) -> Kumbukumbu<Haijulikani>", "Kisanduku cha heap kinachomiliki thamani."),
+            ("orodha(...vipengele: Haijulikani) -> Orodha<Haijulikani>", "Orodha ya vipengele vilivyotolewa."),
+            ("orodha_rudia(thamani: Haijulikani, idadi: Namba) -> Orodha<Haijulikani>", "Orodha ya `thamani` mara `idadi`."),
+            ("seti(...vipengele: Haijulikani) -> Seti<Haijulikani>", "Seti ya vipengele vilivyotolewa (marudio huondolewa)."),
+            ("seti_tupu() -> Seti<Haijulikani>", "Seti tupu."),
+            ("tokeo(thamani: Haijulikani) -> Tokeo<Haijulikani, Haijulikani>", "`Tokeo::Sawa(thamani)`."),
         ],
-        tokeo_neno(ValueType::Unknown),
-    );
-    contract(
-        &mut functions,
-        "endesha",
-        vec![
-            ValueType::Neno,
-            ValueType::Orodha(Box::new(ValueType::Neno)),
+        constants: &[
+            ("KWELI: Ukweli", ""),
+            ("SIYO_KWELI: Ukweli", ""),
+            ("TUPU: Tupu", ""),
         ],
-        ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
-    );
-    functions.insert(
-        "vigezo".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Orodha(Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "pata_env".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Chaguo(Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "toka".to_string(),
-        FnContract {
-            params: vec![ValueType::Namba],
-            ret: ValueType::Tupu,
-        },
-    );
-    functions.insert(
-        "mlinzi_anza".to_string(),
-        FnContract {
-            params: vec![ValueType::Namba],
-            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "mlinzi_lisha".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Tupu,
-        },
-    );
-    functions.insert(
-        "kikomo_kumbukumbu".to_string(),
-        FnContract {
-            params: vec![ValueType::Namba],
-            ret: ValueType::Tupu,
-        },
-    );
-    functions.insert(
-        "sikiliza_ishara".to_string(),
-        FnContract {
-            params: vec![ValueType::Namba, ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "rejesha_ishara".to_string(),
-        FnContract {
-            params: vec![ValueType::Namba],
-            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "mkondo_unganisha".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Mkondo), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "mkondo_sikiliza".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tokeo(
-                Box::new(ValueType::MkondoSikilizaji),
-                Box::new(ValueType::Neno),
-            ),
-        },
-    );
-    functions.insert(
-        "mkondo_tumikia".to_string(),
-        FnContract {
-            params: vec![
-                ValueType::MkondoSikilizaji,
-                ValueType::Neno,
-                ValueType::Namba,
-                ValueType::Chaguo(Box::new(ValueType::TlsUsanidi)),
-            ],
-            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "mkondo_tumikia_http".to_string(),
-        FnContract {
-            // ombi/jibu are Value::Struct("OmbiHttp"/"JibuHttp", ...) at runtime — Unknown here
-            // since this codebase's FnContract has no way to express "a struct with these named
-            // fields," the same reflection-friendly-but-untyped-at-the-signature-level tradeoff
-            // the JSON codec's kutoka_json already accepts (see json-codec-design.md).
-            params: vec![
-                ValueType::MkondoSikilizaji,
-                ValueType::Neno,
-                ValueType::Namba,
-                ValueType::Chaguo(Box::new(ValueType::TlsUsanidi)),
-            ],
-            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "tls_sanidi".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno, ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::TlsUsanidi), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "kwa_json".to_string(),
-        FnContract {
-            params: vec![ValueType::Unknown],
-            ret: ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "kutoka_json".to_string(),
-        // Declared as Kamusi<Neno, Unknown> — the codec's runtime output shape actually varies
-        // (a JSON array decodes as Orodha, a scalar as Namba/Neno/etc.), but a builtin's return
-        // type here is one static type, and a JSON object (the common "parse a response body"
-        // case) is the shape whose fields need `.pata(...)` to be statically callable at all.
-        // Other shapes still work at runtime; only their static method/index calls need a cast.
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tokeo(
-                Box::new(ValueType::Kamusi(
-                    Box::new(ValueType::Neno),
-                    Box::new(ValueType::Unknown),
-                )),
-                Box::new(ValueType::Neno),
-            ),
-        },
-    );
-    let mut constants = HashMap::new();
-    constants.insert("TOLEO".to_string(), ValueType::Neno);
-    constants.insert("JINA_OS".to_string(), ValueType::Neno);
+        structs: &[],
+    },
+    BuiltinModule {
+        name: "hisabati",
+        doc: "Hisabati: hesabu, trigonometria, logi na namba za nasibu.",
+        functions: &[
+            ("abs(n: Namba) -> Namba", "Thamani kamili (bila ishara)."),
+            ("absolute(n: Namba) -> Namba", "Thamani kamili (bila ishara)."),
+            ("akosini(x: Namba) -> Tokeo<Namba, Neno>", "Arccos, kwa radiani; kosa nje ya [-1, 1]."),
+            ("akosini_h(x: Namba) -> Tokeo<Namba, Neno>", "Arccosh; kosa chini ya 1."),
+            ("asini(x: Namba) -> Tokeo<Namba, Neno>", "Arcsin, kwa radiani; kosa nje ya [-1, 1]."),
+            ("asini_h(x: Namba) -> Tokeo<Namba, Neno>", "Arcsinh."),
+            ("atanjenti(x: Namba) -> Tokeo<Namba, Neno>", "Arctan, kwa radiani."),
+            ("atanjenti2(y: Namba, x: Namba) -> Namba", "Pembe ya nukta (x, y) kutoka mhimili wa x, kwa radiani."),
+            ("atanjenti_h(x: Namba) -> Tokeo<Namba, Neno>", "Arctanh; kosa nje ya (-1, 1)."),
+            ("baki(x: Namba, y: Namba) -> Tokeo<Namba, Neno>", "Baki la x / y; kosa y ikiwa 0."),
+            ("chagua_nasibu(orodha: Orodha<Haijulikani>) -> Haijulikani?", "Kipengele kimoja cha nasibu, au `Hamna` orodha ikiwa tupu."),
+            ("changanya(orodha: Orodha<Haijulikani>) -> Orodha<Haijulikani>", "Nakala ya orodha kwa mpangilio wa nasibu."),
+            ("dari(n: Namba) -> Namba", "Namba kamili ndogo zaidi isiyo chini ya n."),
+            ("duara(n: Namba) -> Namba", "n kwa namba kamili iliyo karibu zaidi."),
+            ("duara_maeneo(x: Namba, m: Namba) -> Namba", "x kwa maeneo m ya desimali."),
+            ("expm1(x: Namba) -> Namba", "e^x - 1, sahihi kwa x ndogo."),
+            ("faktoriali(n: Namba) -> Tokeo<Namba, Neno>", "n!; kosa kwa n hasi au isiyo kamili."),
+            ("gawio(a: Namba, b: Namba) -> Tokeo<Namba, Neno>", "a / b; kosa b ikiwa 0."),
+            ("haipot(x: Namba, y: Namba) -> Namba", "Urefu wa hipotenusi: √(x² + y²)."),
+            ("ishara(n: Namba) -> Namba", "-1, 0 au 1 kulingana na ishara ya n."),
+            ("jumla(a: Namba, b: Namba) -> Namba", "a + b."),
+            ("kikwazo(x: Namba, chini: Namba, juu: Namba) -> Namba", "x ikibanwa kati ya chini na juu."),
+            ("kipeo(msingi: Namba, nguvu: Namba) -> Tokeo<Namba, Neno>", "msingi kwa nguvu; kosa matokeo yasipokuwa namba halisi."),
+            ("kipeuo2(n: Namba) -> Tokeo<Namba, Neno>", "Kipeuo cha pili; kosa kwa n hasi."),
+            ("kipeuo3(n: Namba) -> Namba", "Kipeuo cha tatu."),
+            ("kosini(x: Namba) -> Namba", "Cos ya x (radiani)."),
+            ("kosini_h(x: Namba) -> Namba", "Cosh ya x."),
+            ("kubwa(a: Namba, b: Namba) -> Namba", "Kubwa kati ya a na b."),
+            ("kwenda_nyuzi(r: Namba) -> Namba", "Radiani kwenda nyuzi (digrii)."),
+            ("kwenda_radiani(d: Namba) -> Namba", "Nyuzi (digrii) kwenda radiani."),
+            ("logi(x: Namba) -> Tokeo<Namba, Neno>", "Logi asilia; kosa kwa x isiyo chanya."),
+            ("logi10(x: Namba) -> Tokeo<Namba, Neno>", "Logi ya msingi 10; kosa kwa x isiyo chanya."),
+            ("logi1p(x: Namba) -> Tokeo<Namba, Neno>", "Logi asilia ya 1 + x, sahihi kwa x ndogo."),
+            ("logi2(x: Namba) -> Tokeo<Namba, Neno>", "Logi ya msingi 2; kosa kwa x isiyo chanya."),
+            ("mizizi(n: Namba) -> Tokeo<Namba, Neno>", "Kipeuo cha pili; kosa kwa n hasi."),
+            ("mzizi(x: Namba, n: Namba) -> Tokeo<Namba, Neno>", "Kipeuo cha n cha x."),
+            ("namba_kuu_kutoka(maandishi: Neno) -> Tokeo<Namba_Kuu, Neno>", "Namba kamili kubwa bila kikomo kutoka maandishi."),
+            ("namba_sahihi_kutoka(maandishi: Neno) -> Tokeo<Namba_Sahihi, Neno>", "Desimali sahihi kutoka maandishi."),
+            ("nasibu() -> Namba", "Namba ya nasibu katika [0, 1)."),
+            ("nasibu_chini(chini: Namba, juu: Namba) -> Namba", "Namba ya nasibu katika [chini, juu)."),
+            ("nasibu_kamili(chini: Namba, juu: Namba) -> Namba", "Namba kamili kati ya chini na juu (zote mbili zimo)."),
+            ("nasibu_mbegu(mbegu: Namba) -> Tupu", "Huanza mfululizo unaorudiwa wa namba za nasibu (kwa majaribio)."),
+            ("ndogo(a: Namba, b: Namba) -> Namba", "Ndogo kati ya a na b."),
+            ("ni_namba(x: Namba) -> Ukweli", "Kweli x isipokuwa NaN."),
+            ("ni_ukomo(x: Namba) -> Ukweli", "Kweli x ikiwa ukomo (chanya au hasi)."),
+            ("punguza(n: Namba) -> Namba", "n bila sehemu ya desimali (kuelekea 0)."),
+            ("sakafu(n: Namba) -> Namba", "Namba kamili kubwa zaidi isiyozidi n."),
+            ("si_namba(x: Namba) -> Ukweli", "Kweli x ikiwa NaN."),
+            ("sini(x: Namba) -> Namba", "Sin ya x (radiani)."),
+            ("sini_h(x: Namba) -> Namba", "Sinh ya x."),
+            ("tanjenti(x: Namba) -> Namba", "Tan ya x (radiani)."),
+            ("tanjenti_h(x: Namba) -> Namba", "Tanh ya x."),
+            ("tofauti(a: Namba, b: Namba) -> Namba", "a - b."),
+            ("upeo(msingi: Namba, nguvu: Namba) -> Tokeo<Namba, Neno>", "msingi kwa nguvu; kosa matokeo yasipokuwa namba halisi."),
+            ("upeo_wa_e(x: Namba) -> Namba", "e kwa nguvu x."),
+            ("zao(a: Namba, b: Namba) -> Namba", "a × b."),
+        ],
+        constants: &[
+            ("E: Namba", "Namba ya Euler."),
+            ("EPSILON: Namba", "Tofauti ndogo zaidi kati ya 1 na Namba inayofuata."),
+            ("INF: Namba", "Ukomo chanya."),
+            ("KIPEUO1_2: Namba", "1 / √2."),
+            ("KIPEUO2: Namba", "√2."),
+            ("KIPEUO3: Namba", "√3."),
+            ("KIPEUO5: Namba", "√5."),
+            ("LN10: Namba", "Logi asilia ya 10."),
+            ("LN2: Namba", "Logi asilia ya 2."),
+            ("LOG10E: Namba", "Logi ya msingi 10 ya e."),
+            ("LOG2E: Namba", "Logi ya msingi 2 ya e."),
+            ("NAN: Namba", "Si namba (NaN)."),
+            ("PHI: Namba", "Uwiano wa dhahabu."),
+            ("PI: Namba", "π."),
+            ("Siyo_Namba: Namba", "Si namba (NaN)."),
+            ("TAU: Namba", "2π."),
+            ("Ukomo: Namba", "Ukomo chanya."),
+        ],
+        structs: &[],
+    },
+    BuiltinModule {
+        name: "mfumo",
+        doc: "Mfumo: mazingira, programu nyingine, JSON, mtandao (TCP, TLS, HTTP) na ishara.",
+        functions: &[
+            ("endesha(amri: Neno, hoja: Orodha<Neno>) -> Tokeo<Neno, Neno>", "Endesha programu nyingine; matokeo yake (stdout) ikifaulu, au kosa lenye msimbo na stderr."),
+            ("http_ombi(njia: Neno, anwani: Neno, chaguo?: ChaguoHttp) -> Tokeo<JibuHttp, Neno>", "Ombi la HTTP(S) la njia yoyote (GET, POST, ...). Jibu zima kwa hali yoyote; kosa ni la muunganisho tu (au la hali isiyo 2xx, `kosa_hali` ikiwa kweli)."),
+            ("kikomo_kumbukumbu(baiti: Namba) -> Tupu", "Kikomo cha kumbukumbu ya programu, kwa baiti (0: hakuna); kukipita husimamisha programu."),
+            ("kutoka_json(maandishi: Neno) -> Tokeo<Kamusi<Neno, Haijulikani>, Neno>", "Thamani kutoka maandishi ya JSON."),
+            ("kwa_json(thamani: Haijulikani) -> Tokeo<Neno, Neno>", "Maandishi ya JSON ya thamani."),
+            ("mkondo_sikiliza(anwani: Neno) -> Tokeo<MkondoSikilizaji, Neno>", "Sikiliza miunganisho ya TCP kwenye anwani (\"mwenyeji:mlango\")."),
+            ("mkondo_tumikia(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls?: TlsUsanidi?) -> Tokeo<Tupu, Neno>", "Hudumia kila muunganisho kwa kazi `kazi_jina(Mkondo)` kwenye nyuzi `idadi_ya_nyuzi`."),
+            ("mkondo_tumikia_http(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls?: TlsUsanidi?) -> Tokeo<Tupu, Neno>", "Seva ya HTTP/1.1: kila ombi ni `kazi_jina(OmbiHttp) -> JibuHttp`."),
+            ("mkondo_unganisha(anwani: Neno) -> Tokeo<Mkondo, Neno>", "Unganisha kwa TCP kwenye anwani (\"mwenyeji:mlango\")."),
+            ("mlinzi_anza(ms: Namba) -> Tokeo<Tupu, Neno>", "Anza mlinzi: programu isipomlisha ndani ya ms milisekunde, husimamishwa."),
+            ("mlinzi_lisha() -> Tupu", "Lisha mlinzi aliyeanzishwa na `mlinzi_anza`."),
+            ("pata_env(jina: Neno) -> Neno?", "Thamani ya kigezo cha mazingira, au `Hamna`."),
+            ("rejesha_ishara(ishara: Namba) -> Tokeo<Tupu, Neno>", "Rudisha ishara ya OS kwenye ushughulikiaji wake wa kawaida."),
+            ("sikiliza_ishara(ishara: Namba, kazi_jina: Neno) -> Tokeo<Tupu, Neno>", "Ita kazi `kazi_jina` ishara ya OS ikifika (Unix)."),
+            ("tls_sanidi(cheti_njia: Neno, ufunguo_njia: Neno) -> Tokeo<TlsUsanidi, Neno>", "Pakia cheti na ufunguo (PEM) kwa seva ya TLS."),
+            ("toka(kodi: Namba) -> Tupu", "Maliza programu kwa msimbo wa kutoka."),
+            ("vigezo() -> Orodha<Neno>", "Hoja za mstari wa amri."),
+            ("weka_env(jina: Neno, thamani: Neno) -> Tupu", "Weka kigezo cha mazingira."),
+        ],
+        constants: &[
+            ("JINA_OS: Neno", "Jina la mfumo wa uendeshaji."),
+            ("TOLEO: Neno", "Toleo la Asili."),
+        ],
+        structs: &[
+            StructSrc {
+                name: "OmbiHttp",
+                doc: "Ombi ambalo seva ya `mkondo_tumikia_http` hupitisha kwa kazi yake.",
+                fields: &[
+                    ("njia: Neno", "GET, POST, ..."),
+                    ("anwani: Neno", "Njia na hoja za ombi (\"/bidhaa?id=7\")."),
+                    ("vichwa: Kamusi<Neno, Neno>", "Vichwa vya ombi, majina kwa herufi ndogo."),
+                    ("mwili: Neno", "Mwili wa ombi."),
+                ],
+            },
+            StructSrc {
+                name: "JibuHttp",
+                doc: "Jibu la HTTP: kazi ya seva hulirudisha, `http_ombi` hulipokea.",
+                fields: &[
+                    ("hali: Namba", "Msimbo wa hali (200, 404, ...)."),
+                    ("vichwa: Kamusi<Neno, Neno>", "Vichwa, majina kwa herufi ndogo; kichwa kinachorudiwa huunganishwa kwa \", \"."),
+                    ("mwili: Neno", "Mwili (tupu kwa `hifadhi`; base64 kwa `jibu_base64`)."),
+                    ("sababu?: Neno", "Maelezo ya hali (\"Not Found\")."),
+                    ("anwani?: Neno", "Anwani ya mwisho, baada ya kuelekezwa."),
+                    ("toleo?: Neno", "Toleo la HTTP (\"HTTP/1.1\")."),
+                    ("vichwa_vyote?: Orodha<Jozi<Neno, Neno>>", "Kila kichwa kwa mpangilio, marudio yakiwa tofauti (`set-cookie`); seva huvituma vyote."),
+                    ("muda?: Namba", "Sekunde ombi lilizochukua, pamoja na kuelekezwa na kujaribu tena."),
+                ],
+            },
+            StructSrc {
+                name: "ChaguoHttp",
+                doc: "Chaguo za `http_ombi`; kila uga ni wa hiari. Mwili ni mmoja tu kati ya `mwili`, `mwili_base64`, `json`, `fomu`, `fomu_sehemu`/`fomu_faili` na `faili`.",
+                fields: &[
+                    ("vichwa?: Kamusi<Neno, Neno>", "Vichwa vya ombi (\"User-Agent\", \"Accept\", ...)."),
+                    ("hoja?: Kamusi<Neno, Neno>", "Huongezwa kwenye anwani kama `?jina=thamani`, zikisimbwa."),
+                    ("mwili?: Neno", "Mwili wa maandishi (text/plain; charset=utf-8)."),
+                    ("mwili_base64?: Neno", "Mwili wa baiti, ulioandikwa kwa base64 (application/octet-stream)."),
+                    ("json?: Haijulikani", "Thamani yoyote, hutumwa kama JSON (application/json)."),
+                    ("fomu?: Kamusi<Neno, Neno>", "Fomu ya application/x-www-form-urlencoded."),
+                    ("fomu_sehemu?: Kamusi<Neno, Neno>", "Sehemu za maandishi za fomu ya multipart/form-data."),
+                    ("fomu_faili?: Kamusi<Neno, Neno>", "Sehemu za faili za fomu ya multipart: jina la sehemu → njia ya faili."),
+                    ("faili?: Neno", "Tuma faili hili kama mwili, bila kulisoma lote kwenye kumbukumbu."),
+                    ("aina?: Neno", "Content-Type ya mwili, badala ya ile ya kawaida."),
+                    ("mtumiaji?: Neno", "Uthibitisho wa Basic (pamoja na `nenosiri`)."),
+                    ("nenosiri?: Neno", "Nenosiri la uthibitisho wa Basic."),
+                    ("tokeni?: Neno", "Uthibitisho wa Bearer."),
+                    ("muda?: Namba", "Sekunde za ombi lote (kawaida 60; 0: bila kikomo)."),
+                    ("muda_kuunganisha?: Namba", "Sekunde za kuunganisha tu."),
+                    ("elekezo?: Namba", "Idadi ya juu ya kuelekezwa kufuatwa (kawaida 10; 0: jibu la 3xx hurudishwa)."),
+                    ("jaribu_tena?: Namba", "Majaribio zaidi (hadi 10) ya njia zisizobadilisha kitu, muunganisho ukishindwa au hali ikiwa 429/502/503/504; husubiri `Retry-After`."),
+                    ("wakala?: Neno", "Wakala: \"http://mwenyeji:mlango\", \"socks5://...\" (mtumiaji:nenosiri@ yanaruhusiwa); \"\" huzima HTTPS_PROXY/HTTP_PROXY."),
+                    ("familia_ip?: Namba", "4 au 6: tumia IPv4 au IPv6 pekee."),
+                    ("cheti_ca?: Neno", "Faili la PEM la vyeti vya mamlaka vitakavyoaminiwa pekee (badala ya orodha ya Mozilla)."),
+                    ("cheti?: Neno", "Cheti cha mteja (PEM) kwa TLS ya pande mbili, pamoja na `ufunguo`."),
+                    ("ufunguo?: Neno", "Ufunguo wa siri (PEM) wa `cheti`."),
+                    ("vidakuzi?: Ukweli", "Tumia mkebe mmoja wa vidakuzi wa programu nzima: hupokea `Set-Cookie`, hutuma `Cookie`."),
+                    ("kikomo?: Namba", "Baiti za juu za mwili wa jibu (kawaida 64 MiB)."),
+                    ("hifadhi?: Neno", "Andika mwili kwenye faili hili (kwa vipande; faili haliandikwi ombi likishindwa)."),
+                    ("jibu_base64?: Ukweli", "Rudisha mwili kama base64 (kwa baiti zisizo maandishi)."),
+                    ("kosa_hali?: Ukweli", "Hali isiyo 2xx iwe kosa lenye hali na mwanzo wa mwili."),
+                ],
+            },
+        ],
+    },
+    BuiltinModule {
+        name: "majira",
+        doc: "Majira: saa, tarehe na muda (UTC, kalenda ya Gregori).",
+        functions: &[
+            ("kipima_muda() -> Namba", "Sekunde za saa isiyorudi nyuma, za kupima muda."),
+            ("kutoka_iso(maandishi: Neno) -> Tokeo<Wakati, Neno>", "Wakati kutoka ISO 8601 (\"2026-10-09T12:30:00Z\", au yenye +03:00)."),
+            ("kutoka_sekunde(n: Namba) -> Wakati", "Wakati wa sekunde n tangu 1970-01-01 UTC."),
+            ("kutoka_tarehe(mwaka: Namba, mwezi: Namba, siku: Namba) -> Tokeo<Wakati, Neno>", "Wakati wa saa sita usiku (UTC) wa tarehe hiyo; kosa tarehe isipokuwepo."),
+            ("kwa_iso(w: Wakati) -> Neno", "Tarehe na saa kwa ISO 8601 (UTC): \"2026-10-09T12:30:00Z\"."),
+            ("lala(sekunde: Namba) -> Tupu", "Subiri kwa sekunde hizo."),
+            ("majira() -> Namba", "Sekunde tangu 1970-01-01 UTC, sasa hivi."),
+            ("sasa() -> Wakati", "Wakati wa sasa."),
+            ("sekunde(w: Wakati) -> Namba", "Sekunde za w tangu 1970-01-01 UTC."),
+            ("tarehe(w: Wakati) -> Kamusi<Neno, Namba>", "mwaka, mwezi, siku, saa, dakika, sekunde, siku_ya_wiki (1 = Jumatatu), siku_ya_mwaka."),
+            ("umbiza(w: Wakati) -> Neno", "\"2026-10-09 12:30:00\" (UTC)."),
+            ("umbiza_eneo(w: Wakati, dakika: Namba) -> Neno", "Kama umbiza, kwa saa za eneo lililo dakika `dakika` mbele ya UTC."),
+        ],
+        constants: &[
+            ("MWANZO_WA_ZAMANI: Namba", "Sekunde za 1970-01-01 UTC (0)."),
+            ("SEKUNDE_KWA_SIKU: Namba", "86400."),
+        ],
+        structs: &[],
+    },
+    BuiltinModule {
+        name: "matumizi",
+        doc: "Matumizi: kuandika na kusoma kwenye skrini.",
+        functions: &[
+            ("chapisha(ujumbe: Neno) -> Tupu", "Andika mstari kwenye stdout."),
+            ("makosa(ujumbe: Neno) -> Tupu", "Andika \"KOSA: ujumbe\" kwenye stderr."),
+            ("omba(swali: Neno) -> Neno", "Soma mstari mmoja kutoka stdin."),
+            ("onyo(ujumbe: Neno) -> Tupu", "Andika onyo kwenye stderr."),
+            ("paparika(ujumbe: Neno) -> Tupu", "Simamisha programu kwa ujumbe huo."),
+        ],
+        constants: &[],
+        structs: &[],
+    },
+    BuiltinModule {
+        name: "faili",
+        doc: "Faili: kusoma na kuandika faili, saraka na njia.",
+        functions: &[
+            ("andika_faili(njia: Neno, data: Neno) -> Tokeo<Tupu, Neno>", "Andika data kwenye faili (huunda au hufuta yaliyokuwepo)."),
+            ("badili_jina(kutoka: Neno, kwenda: Neno) -> Tokeo<Tupu, Neno>", "Hamisha au badili jina la faili au saraka."),
+            ("faili_fungua(njia: Neno, hali: Neno) -> Tokeo<Faili, Neno>", "Kishikizo cha faili; hali ni \"soma\", \"andika\" au \"ongeza\"."),
+            ("futa(njia: Neno) -> Tokeo<Tupu, Neno>", "Futa faili."),
+            ("futa_saraka(njia: Neno) -> Tokeo<Tupu, Neno>", "Futa saraka pamoja na yaliyomo."),
+            ("nakili(kutoka: Neno, kwenda: Neno) -> Tokeo<Namba, Neno>", "Nakili faili; idadi ya baiti zilizonakiliwa."),
+            ("ni_faili(njia: Neno) -> Ukweli", "Kweli njia ikiwa faili."),
+            ("ni_saraka(njia: Neno) -> Ukweli", "Kweli njia ikiwa saraka."),
+            ("njia_jina(njia: Neno) -> Neno?", "Sehemu ya mwisho ya njia."),
+            ("njia_kamili(njia: Neno) -> Tokeo<Neno, Neno>", "Njia kamili, bila `.`, `..` wala viungo."),
+            ("njia_kiendelezi(njia: Neno) -> Neno?", "Kiendelezi cha jina (bila nukta)."),
+            ("njia_mzazi(njia: Neno) -> Neno?", "Saraka inayoshikilia njia."),
+            ("njia_unganisha(a: Neno, b: Neno) -> Neno", "Unganisha njia mbili (maandishi tu)."),
+            ("ongeza(njia: Neno, data: Neno) -> Tokeo<Tupu, Neno>", "Ongeza data mwishoni mwa faili."),
+            ("orodha_saraka(njia: Neno) -> Tokeo<Orodha<Neno>, Neno>", "Majina yaliyomo kwenye saraka, kwa mpangilio."),
+            ("soma_faili(njia: Neno) -> Tokeo<Neno, Neno>", "Yaliyomo yote ya faili."),
+            ("ukubwa(njia: Neno) -> Namba", "Ukubwa wa faili kwa baiti (0 lisipokuwepo)."),
+            ("unda_saraka(njia: Neno) -> Tokeo<Tupu, Neno>", "Unda saraka pamoja na wazazi wake."),
+            ("vipo(njia: Neno) -> Ukweli", "Kweli njia ikiwepo."),
+        ],
+        constants: &[("NJIA_SEPARATOR: Neno", "Kitenganishi cha njia cha mfumo (\"/\" au \"\\\\\").")],
+        structs: &[],
+    },
+    BuiltinModule {
+        name: "sambamba",
+        doc: "Sambamba: nyuzi za OS (1:1), njia za ujumbe na kufuli.",
+        functions: &[
+            ("fungo(thamani: Haijulikani) -> Tokeo<Fungo<Haijulikani>, Neno>", "Kufuli inayolinda thamani inayoshirikiwa na nyuzi."),
+            ("njia() -> Jozi<NjiaTx<Haijulikani>, NjiaRx<Haijulikani>>", "Njia ya ujumbe: (mtumaji, mpokeaji)."),
+            ("njia_na_kikomo(kikomo: Namba) -> Jozi<NjiaTxBounded<Haijulikani>, NjiaRxBounded<Haijulikani>>", "Njia yenye nafasi `kikomo`; kutuma husubiri ikijaa."),
+            ("subiri_tenda(uzi_id: Namba) -> Tokeo<Tupu, Neno>", "Subiri uzi ulioanzishwa na `tenda` umalize."),
+            ("tenda(kazi_jina: Neno, ...hoja: Haijulikani) -> Tokeo<Namba, Neno>", "Anza kazi `kazi_jina(hoja...)` kwenye uzi mpya; kitambulisho cha uzi."),
+        ],
+        constants: &[],
+        structs: &[],
+    },
+    BuiltinModule {
+        name: "kiungo",
+        doc: "Kiungo (FFI): bado haijatengenezwa; kila kazi hurudisha kosa.",
+        functions: &[
+            ("saza_kiungo(njia: Neno) -> Tokeo<Anuani, Neno>", "Pakia maktaba ya nje (bado haijatengenezwa)."),
+            ("wito_kiungo(anuani: Anuani, jina: Neno) -> Tokeo<Haijulikani, Neno>", "Ita kazi ya maktaba ya nje (bado haijatengenezwa)."),
+        ],
+        constants: &[],
+        structs: &[],
+    },
+    BuiltinModule {
+        name: "syscall",
+        doc: "Syscall: wito wa moja kwa moja kwa kernel (ndani ya `wazi`).",
+        functions: &[("syscall(nr: Namba, a: Namba, b: Namba, c: Namba) -> Anuani", "Wito wa kernel nambari nr wenye hoja tatu.")],
+        constants: &[],
+        structs: &[],
+    },
+    BuiltinModule {
+        name: "runtime",
+        doc: "Runtime: habari kuhusu kitekelezi na mfumo kinachoendeshwa.",
+        functions: &[
+            ("arch() -> Neno", "Usanifu wa CPU (\"x86_64\", \"aarch64\", \"wasm32\")."),
+            ("jina_os() -> Neno", "Jina la mfumo wa uendeshaji."),
+            ("mazingira() -> Kamusi<Neno, Neno>", "Vigezo vyote vya mazingira."),
+            ("muda_wa_kuanza() -> Wakati", "Wakati programu ilipoanza."),
+            ("ni_debug() -> Ukweli", "Kweli kwa ujenzi wa debug."),
+            ("ni_wasm() -> Ukweli", "Kweli ndani ya kivinjari (wasm)."),
+            ("toleo() -> Neno", "Toleo la Asili."),
+        ],
+        constants: &[],
+        structs: &[],
+    },
+    BuiltinModule {
+        name: "kasha_gc",
+        doc: "Kasha_GC: thamani inayoshirikiwa kwa kuhesabu marejeo. Ya hiari: inahitaji `leta kasha_gc`. Njia (.shirikisha, .idadi, .pata, .weka) ni za kishikizo.",
+        functions: &[
+            ("kasha_gc_dhaifu(kasha: Kasha_GC<Haijulikani>) -> Kasha_GC_Dhaifu<Haijulikani>", "Rejeo dhaifu lisilohesabiwa; huvunja mizunguko."),
+            ("kasha_gc_unda(thamani: Haijulikani) -> Kasha_GC<Haijulikani>", "Kasha jipya linaloshikilia thamani."),
+        ],
+        constants: &[],
+        structs: &[],
+    },
+    BuiltinModule {
+        name: "ruwaza",
+        doc: "Ruwaza: sintaksia ya Perl (Unicode, bila look-around wala backreferences); muda wa kulinganisha unakua kwa mstari na urefu wa maandishi. Kila kazi hurudisha kosa ruwaza isipokuwa sahihi.",
+        functions: &[
+            ("ruwaza_badilisha(ruwaza: Neno, maandishi: Neno, kwa: Neno) -> Tokeo<Neno, Neno>", "Badilisha kila ulinganisho; `$1` au `${jina}` ndani ya `kwa` ni kikundi, `$$` ni alama ya dola."),
+            ("ruwaza_gawanya(ruwaza: Neno, maandishi: Neno) -> Tokeo<Orodha<Neno>, Neno>", "Gawanya maandishi kwenye kila ulinganisho."),
+            ("ruwaza_inalingana(ruwaza: Neno, maandishi: Neno) -> Tokeo<Ukweli, Neno>", "Kweli ruwaza ikilingana mahali popote."),
+            ("ruwaza_tafuta(ruwaza: Neno, maandishi: Neno) -> Tokeo<Neno?, Neno>", "Ulinganisho wa kwanza."),
+            ("ruwaza_vikundi(ruwaza: Neno, maandishi: Neno) -> Tokeo<Orodha<Neno>?, Neno>", "Vikundi vya ulinganisho wa kwanza; kikundi 0 ni ulinganisho mzima, kisichoshiriki ni maandishi tupu."),
+            ("ruwaza_zote(ruwaza: Neno, maandishi: Neno) -> Tokeo<Orodha<Neno>, Neno>", "Kila ulinganisho, kwa mpangilio."),
+        ],
+        constants: &[],
+        structs: &[],
+    },
+    BuiltinModule {
+        name: "usimbaji",
+        doc: "Usimbaji: base64, hex, hashi na vitambulisho (juu ya baiti za UTF-8; hex ni herufi ndogo).",
+        functions: &[
+            ("base64_fumbua(maandishi: Neno) -> Tokeo<Neno, Neno>", "Fumbua base64 ya kawaida; kosa isipokuwa base64 ya maandishi ya UTF-8."),
+            ("base64_simba(maandishi: Neno) -> Neno", "Simba kwa base64 ya kawaida."),
+            ("hashi_sha256(maandishi: Neno) -> Neno", "SHA-256, kwa hex."),
+            ("hashi_sha512(maandishi: Neno) -> Neno", "SHA-512, kwa hex."),
+            ("hex_simba(maandishi: Neno) -> Neno", "Baiti kwa hex."),
+            ("hmac_sha256(ufunguo: Neno, ujumbe: Neno) -> Neno", "HMAC-SHA256 ya ujumbe kwa ufunguo, kwa hex."),
+            ("kitambulisho() -> Neno", "UUID ya nasibu (toleo 4); `nasibu_mbegu` huifanya irudiwe pia."),
+        ],
+        constants: &[],
+        structs: &[],
+    },
+];
+
+/// A field of a builtin `umbo`: its name, its type as written, whether a literal may omit it,
+/// and what it holds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StructField {
+    pub name: String,
+    pub ty: String,
+    pub optional: bool,
+    pub doc: &'static str,
+}
+
+/// A `umbo` builtins take or return (`OmbiHttp`, `JibuHttp`, `ChaguoHttp`), known to every
+/// program without a declaration; a program's own `umbo` of the same name takes its place.
+#[derive(Clone, Debug)]
+pub struct BuiltinStruct {
+    pub name: String,
+    pub module: &'static str,
+    pub fields: Vec<StructField>,
+    pub doc: &'static str,
+}
+
+fn parse_struct(src: &StructSrc, module: &'static str) -> BuiltinStruct {
+    let fields = src
+        .fields
+        .iter()
+        .map(|(f, doc)| {
+            let (n, ty) = f.split_once(':').expect("uga: `jina: Aina`");
+            let n = n.trim();
+            StructField {
+                name: n.trim_end_matches('?').to_string(),
+                ty: ty.trim().to_string(),
+                optional: n.ends_with('?'),
+                doc,
+            }
+        })
+        .collect();
+    BuiltinStruct {
+        name: src.name.to_string(),
+        module,
+        fields,
+        doc: src.doc,
+    }
+}
+
+/// Every builtin `umbo`, in table order.
+pub fn builtin_structs() -> &'static [BuiltinStruct] {
+    static STRUCTS: OnceLock<Vec<BuiltinStruct>> = OnceLock::new();
+    STRUCTS.get_or_init(|| {
+        BUILTIN_MODULES
+            .iter()
+            .flat_map(|m| m.structs.iter().map(|s| parse_struct(s, m.name)))
+            .collect()
+    })
+}
+
+/// The builtin `umbo` called `name`, if there is one.
+pub fn builtin_struct(name: &str) -> Option<&'static BuiltinStruct> {
+    builtin_structs().iter().find(|s| s.name == name)
+}
+
+/// Names the builtin `umbo` types for [`crate::semantic::parse_value_type_with`].
+pub fn resolve_builtin_type(name: &str) -> Option<ValueType> {
+    builtin_struct(name).map(|s| ValueType::Struct(s.name.clone()))
+}
+
+/// Parse a signature written as in [`BUILTIN_MODULES`] (or an `.asi` line):
+/// `[kazi ]name[<T>](p: T, q?: T, ...r: T) [-> R]`. `None` when it is not one.
+pub fn parse_signature(
+    src: &str,
+    resolve: &dyn Fn(&str) -> Option<ValueType>,
+) -> Option<(String, FnContract)> {
+    let src = src.trim();
+    let src = src.strip_prefix("kazi ").unwrap_or(src).trim_start();
+    let open = src.find('(')?;
+    let close = matching_paren(src, open)?;
+    let name = src[..open].split('<').next()?.trim();
+    if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return None;
+    }
+    let mut contract = FnContract::default();
+    for p in crate::split_generic_args(&src[open + 1..close])
+        .into_iter()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        if contract.variadic {
+            return None; // `...r` must be last
+        }
+        let (n, ty) = p.split_once(':').unwrap_or((p, "Haijulikani"));
+        let mut n = n.trim();
+        if let Some(rest) = n.strip_prefix("...") {
+            contract.variadic = true;
+            n = rest;
+        } else if let Some(rest) = n.strip_suffix('?') {
+            contract.optional += 1;
+            n = rest;
+        } else if contract.optional > 0 {
+            return None; // optional parameters are trailing
+        }
+        contract.names.push(n.to_string());
+        contract
+            .params
+            .push(crate::semantic::parse_value_type_with(ty.trim(), resolve));
+    }
+    let tail = src[close + 1..].trim();
+    let tail = tail.split('{').next().unwrap_or("").trim();
+    contract.ret = match tail.strip_prefix("->") {
+        Some(r) => crate::semantic::parse_value_type_with(r.trim(), resolve),
+        None => ValueType::Tupu,
+    };
+    Some((name.to_string(), contract))
+}
+
+fn matching_paren(s: &str, open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (i, c) in s[open..].char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(open + i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// `name(p: T, q?: T, ...r: T) -> R` — the inverse of [`parse_signature`] (parameters without a
+/// known name are written `_0`, `_1`, …).
+pub fn format_signature(name: &str, c: &FnContract) -> String {
+    let last = c.params.len().saturating_sub(1);
+    let first_optional = c.min_args();
+    let params: Vec<String> = c
+        .params
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let n = c.names.get(i).cloned().unwrap_or_else(|| format!("_{i}"));
+            let ty = crate::format_value_type(t);
+            if c.variadic && i == last {
+                format!("...{n}: {ty}")
+            } else if i >= first_optional {
+                format!("{n}?: {ty}")
+            } else {
+                format!("{n}: {ty}")
+            }
+        })
+        .collect();
+    format!(
+        "{name}({}) -> {}",
+        params.join(", "),
+        crate::format_value_type(&c.ret)
+    )
+}
+
+fn build_table(m: &BuiltinModule) -> BuiltinExportTable {
+    let mut functions = HashMap::new();
+    for (src, doc) in m.functions {
+        let (name, mut contract) = parse_signature(src, &resolve_builtin_type)
+            .unwrap_or_else(|| panic!("{}: sahihi batili: {src}", m.name));
+        contract.doc = doc.to_string();
+        functions.insert(name, contract);
+    }
+    let constants = m
+        .constants
+        .iter()
+        .map(|(src, _)| {
+            let (name, ty) = src.split_once(':').expect("thabiti: `JINA: Aina`");
+            (
+                name.trim().to_string(),
+                crate::semantic::parse_value_type_with(ty.trim(), &resolve_builtin_type),
+            )
+        })
+        .collect();
     BuiltinExportTable {
         functions,
         constants,
-    }
-}
-
-/// Time: seconds since epoch, sleep, format. Requires `leta majira`.
-pub fn majira_exports() -> BuiltinExportTable {
-    let mut functions = HashMap::new();
-    contract(
-        &mut functions,
-        "kwa_iso",
-        vec![ValueType::Wakati],
-        ValueType::Neno,
-    );
-    contract(
-        &mut functions,
-        "umbiza_eneo",
-        vec![ValueType::Wakati, ValueType::Namba],
-        ValueType::Neno,
-    );
-    contract(
-        &mut functions,
-        "kutoka_iso",
-        vec![ValueType::Neno],
-        ValueType::Tokeo(Box::new(ValueType::Wakati), Box::new(ValueType::Neno)),
-    );
-    contract(
-        &mut functions,
-        "kutoka_tarehe",
-        vec![ValueType::Namba, ValueType::Namba, ValueType::Namba],
-        ValueType::Tokeo(Box::new(ValueType::Wakati), Box::new(ValueType::Neno)),
-    );
-    contract(
-        &mut functions,
-        "tarehe",
-        vec![ValueType::Wakati],
-        ValueType::Kamusi(Box::new(ValueType::Neno), Box::new(ValueType::Namba)),
-    );
-    contract(&mut functions, "kipima_muda", vec![], ValueType::Namba);
-    functions.insert(
-        "majira".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Namba,
-        },
-    );
-    functions.insert(
-        "sasa".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Wakati,
-        },
-    );
-    functions.insert(
-        "sekunde".to_string(),
-        FnContract {
-            params: vec![ValueType::Wakati],
-            ret: ValueType::Namba,
-        },
-    );
-    functions.insert(
-        "kutoka_sekunde".to_string(),
-        FnContract {
-            params: vec![ValueType::Namba],
-            ret: ValueType::Wakati,
-        },
-    );
-    functions.insert(
-        "umbiza".to_string(),
-        FnContract {
-            params: vec![ValueType::Wakati],
-            ret: ValueType::Neno,
-        },
-    );
-    functions.insert(
-        "lala".to_string(),
-        FnContract {
-            params: vec![ValueType::Namba],
-            ret: ValueType::Tupu,
-        },
-    );
-    let mut constants = HashMap::new();
-    constants.insert("SEKUNDE_KWA_SIKU".to_string(), ValueType::Namba);
-    constants.insert("MWANZO_WA_ZAMANI".to_string(), ValueType::Namba);
-    BuiltinExportTable {
-        functions,
-        constants,
-    }
-}
-
-/// I/O: print, stderr, prompt. Requires `leta matumizi`.
-pub fn matumizi_exports() -> BuiltinExportTable {
-    let mut functions = HashMap::new();
-    functions.insert(
-        "chapisha".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tupu,
-        },
-    );
-    functions.insert(
-        "onyo".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tupu,
-        },
-    );
-    functions.insert(
-        "makosa".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tupu,
-        },
-    );
-    functions.insert(
-        "paparika".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tupu,
-        },
-    );
-    functions.insert(
-        "omba".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Neno,
-        },
-    );
-    BuiltinExportTable {
-        functions,
-        constants: HashMap::new(),
-    }
-}
-
-/// File system: read, write, append, exists, delete, size. Requires `leta faili`.
-pub fn faili_exports() -> BuiltinExportTable {
-    let mut functions = HashMap::new();
-    contract(
-        &mut functions,
-        "orodha_saraka",
-        vec![ValueType::Neno],
-        ValueType::Tokeo(
-            Box::new(ValueType::Orodha(Box::new(ValueType::Neno))),
-            Box::new(ValueType::Neno),
-        ),
-    );
-    contract(
-        &mut functions,
-        "unda_saraka",
-        vec![ValueType::Neno],
-        ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
-    );
-    contract(
-        &mut functions,
-        "futa_saraka",
-        vec![ValueType::Neno],
-        ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
-    );
-    contract(
-        &mut functions,
-        "badili_jina",
-        vec![ValueType::Neno, ValueType::Neno],
-        ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
-    );
-    contract(
-        &mut functions,
-        "nakili",
-        vec![ValueType::Neno, ValueType::Neno],
-        ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno)),
-    );
-    contract(
-        &mut functions,
-        "ni_saraka",
-        vec![ValueType::Neno],
-        ValueType::Ukweli,
-    );
-    contract(
-        &mut functions,
-        "ni_faili",
-        vec![ValueType::Neno],
-        ValueType::Ukweli,
-    );
-    contract(
-        &mut functions,
-        "njia_unganisha",
-        vec![ValueType::Neno, ValueType::Neno],
-        ValueType::Neno,
-    );
-    contract(
-        &mut functions,
-        "njia_mzazi",
-        vec![ValueType::Neno],
-        ValueType::Chaguo(Box::new(ValueType::Neno)),
-    );
-    contract(
-        &mut functions,
-        "njia_jina",
-        vec![ValueType::Neno],
-        ValueType::Chaguo(Box::new(ValueType::Neno)),
-    );
-    contract(
-        &mut functions,
-        "njia_kiendelezi",
-        vec![ValueType::Neno],
-        ValueType::Chaguo(Box::new(ValueType::Neno)),
-    );
-    contract(
-        &mut functions,
-        "njia_kamili",
-        vec![ValueType::Neno],
-        ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
-    );
-    functions.insert(
-        "soma_faili".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "andika_faili".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno, ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "ongeza".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno, ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "vipo".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Ukweli,
-        },
-    );
-    functions.insert(
-        "futa".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "ukubwa".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Namba,
-        },
-    );
-    functions.insert(
-        "faili_fungua".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno, ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Faili), Box::new(ValueType::Neno)),
-        },
-    );
-    let mut constants = HashMap::new();
-    constants.insert("NJIA_SEPARATOR".to_string(), ValueType::Neno);
-    BuiltinExportTable {
-        functions,
-        constants,
-    }
-}
-
-/// Sambamba (concurrency): tenda/subiri_tenda (thread spawn/join, 1:1 OS-thread model), njia
-/// (channel), fungo (mutex). Requires `leta sambamba`. `tenda` is variadic (kazi name + however
-/// many args that kazi takes) — special-cased by name in the analyzer's arity check, matching
-/// the existing `orodha`/`seti` precedent, not a general FnContract flag.
-pub fn sambamba_exports() -> BuiltinExportTable {
-    let mut functions = HashMap::new();
-    functions.insert(
-        "tenda".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "subiri_tenda".to_string(),
-        FnContract {
-            params: vec![ValueType::Namba],
-            ret: ValueType::Tokeo(Box::new(ValueType::Tupu), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "njia".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Jozi(
-                Box::new(ValueType::NjiaTx(Box::new(ValueType::Unknown))),
-                Box::new(ValueType::NjiaRx(Box::new(ValueType::Unknown))),
-            ),
-        },
-    );
-    functions.insert(
-        "njia_na_kikomo".to_string(),
-        FnContract {
-            params: vec![ValueType::Namba],
-            ret: ValueType::Jozi(
-                Box::new(ValueType::NjiaTxBounded(Box::new(ValueType::Unknown))),
-                Box::new(ValueType::NjiaRxBounded(Box::new(ValueType::Unknown))),
-            ),
-        },
-    );
-    functions.insert(
-        "fungo".to_string(),
-        FnContract {
-            params: vec![ValueType::Unknown],
-            ret: ValueType::Tokeo(
-                Box::new(ValueType::Fungo(Box::new(ValueType::Unknown))),
-                Box::new(ValueType::Neno),
-            ),
-        },
-    );
-    BuiltinExportTable {
-        functions,
-        constants: HashMap::new(),
-    }
-}
-
-/// Kiungo (FFI): load lib, call symbol. Requires `leta kiungo`. Stub returns error.
-pub fn kiungo_exports() -> BuiltinExportTable {
-    let mut functions = HashMap::new();
-    functions.insert(
-        "saza_kiungo".to_string(),
-        FnContract {
-            params: vec![ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Anuani), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "wito_kiungo".to_string(),
-        FnContract {
-            params: vec![ValueType::Anuani, ValueType::Neno],
-            ret: ValueType::Tokeo(Box::new(ValueType::Unknown), Box::new(ValueType::Neno)),
-        },
-    );
-    BuiltinExportTable {
-        functions,
-        constants: HashMap::new(),
-    }
-}
-
-/// Syscall: raw system call. Requires `leta syscall`. Stub returns 0.
-pub fn syscall_exports() -> BuiltinExportTable {
-    let mut functions = HashMap::new();
-    functions.insert(
-        "syscall".to_string(),
-        FnContract {
-            params: vec![
-                ValueType::Namba,
-                ValueType::Namba,
-                ValueType::Namba,
-                ValueType::Namba,
-            ],
-            ret: ValueType::Anuani,
-        },
-    );
-    BuiltinExportTable {
-        functions,
-        constants: HashMap::new(),
-    }
-}
-
-/// Runtime (kitekelezi): version, platform. Requires `leta runtime`.
-pub fn runtime_exports() -> BuiltinExportTable {
-    let mut functions = HashMap::new();
-    functions.insert(
-        "toleo".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Neno,
-        },
-    );
-    functions.insert(
-        "jina_os".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Neno,
-        },
-    );
-    // These were already implemented (core/evaluator/src/builtins/runtime.rs) and callable at
-    // runtime, but missing from this export table — so `leta runtime` alone was never enough to
-    // actually use them: the semantic checker rejected every call with SEM037 "kazi haijulikani".
-    functions.insert(
-        "arch".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Neno,
-        },
-    );
-    functions.insert(
-        "ni_debug".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Ukweli,
-        },
-    );
-    functions.insert(
-        "ni_wasm".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Ukweli,
-        },
-    );
-    functions.insert(
-        "mazingira".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Kamusi(Box::new(ValueType::Neno), Box::new(ValueType::Neno)),
-        },
-    );
-    functions.insert(
-        "muda_wa_kuanza".to_string(),
-        FnContract {
-            params: vec![],
-            ret: ValueType::Wakati,
-        },
-    );
-    BuiltinExportTable {
-        functions,
-        constants: HashMap::new(),
-    }
-}
-
-/// Kasha_GC (managed memory): reference-counted shared wrapper. Requires `leta kasha_gc`. Not in
-/// the default prelude — opt-in, layered on top of the ownership model (see spec's roadmap).
-pub fn kasha_gc_exports() -> BuiltinExportTable {
-    let mut functions = HashMap::new();
-    functions.insert(
-        "kasha_gc_unda".to_string(),
-        FnContract {
-            params: vec![ValueType::Unknown],
-            ret: ValueType::KashaGC(Box::new(ValueType::Unknown)),
-        },
-    );
-    functions.insert(
-        "kasha_gc_dhaifu".to_string(),
-        FnContract {
-            params: vec![ValueType::KashaGC(Box::new(ValueType::Unknown))],
-            ret: ValueType::KashaGCDhaifu(Box::new(ValueType::Unknown)),
-        },
-    );
-    BuiltinExportTable {
-        functions,
-        constants: HashMap::new(),
-    }
-}
-
-fn tokeo_neno(ok: ValueType) -> ValueType {
-    ValueType::Tokeo(Box::new(ok), Box::new(ValueType::Neno))
-}
-
-/// Regular expressions: `ruwaza_*(ruwaza, maandishi, ...)`, each a `Tokeo` whose error is an
-/// invalid pattern.
-pub fn ruwaza_exports() -> BuiltinExportTable {
-    let mut functions = HashMap::new();
-    let texts = || ValueType::Orodha(Box::new(ValueType::Neno));
-    let two = || vec![ValueType::Neno, ValueType::Neno];
-    contract(
-        &mut functions,
-        "ruwaza_inalingana",
-        two(),
-        tokeo_neno(ValueType::Ukweli),
-    );
-    contract(
-        &mut functions,
-        "ruwaza_tafuta",
-        two(),
-        tokeo_neno(ValueType::Chaguo(Box::new(ValueType::Neno))),
-    );
-    contract(&mut functions, "ruwaza_zote", two(), tokeo_neno(texts()));
-    contract(
-        &mut functions,
-        "ruwaza_vikundi",
-        two(),
-        tokeo_neno(ValueType::Chaguo(Box::new(texts()))),
-    );
-    contract(
-        &mut functions,
-        "ruwaza_badilisha",
-        vec![ValueType::Neno, ValueType::Neno, ValueType::Neno],
-        tokeo_neno(ValueType::Neno),
-    );
-    contract(&mut functions, "ruwaza_gawanya", two(), tokeo_neno(texts()));
-    BuiltinExportTable {
-        functions,
-        constants: HashMap::new(),
-    }
-}
-
-/// Encodings, hashes and identifiers.
-pub fn usimbaji_exports() -> BuiltinExportTable {
-    let mut functions = HashMap::new();
-    for name in ["base64_simba", "hex_simba", "hashi_sha256", "hashi_sha512"] {
-        contract(&mut functions, name, vec![ValueType::Neno], ValueType::Neno);
-    }
-    contract(
-        &mut functions,
-        "base64_fumbua",
-        vec![ValueType::Neno],
-        tokeo_neno(ValueType::Neno),
-    );
-    contract(
-        &mut functions,
-        "hmac_sha256",
-        vec![ValueType::Neno, ValueType::Neno],
-        ValueType::Neno,
-    );
-    contract(&mut functions, "kitambulisho", vec![], ValueType::Neno);
-    BuiltinExportTable {
-        functions,
-        constants: HashMap::new(),
     }
 }
 
 /// Return builtin export table for the given module name, or None.
 pub fn builtin_module_exports(name: &str) -> Option<BuiltinExportTable> {
-    match name {
-        "msingi" => Some(msingi_exports()),
-        "mfumo" => Some(mfumo_exports()),
-        "majira" => Some(majira_exports()),
-        "matumizi" => Some(matumizi_exports()),
-        "faili" => Some(faili_exports()),
-        "hisabati" => Some(hisabati_exports()),
-        "runtime" => Some(runtime_exports()),
-        "syscall" => Some(syscall_exports()),
-        "kiungo" => Some(kiungo_exports()),
-        "sambamba" => Some(sambamba_exports()),
-        "kasha_gc" => Some(kasha_gc_exports()),
-        "ruwaza" => Some(ruwaza_exports()),
-        "usimbaji" => Some(usimbaji_exports()),
-        _ => None,
+    static TABLES: OnceLock<HashMap<&'static str, BuiltinExportTable>> = OnceLock::new();
+    TABLES
+        .get_or_init(|| {
+            BUILTIN_MODULES
+                .iter()
+                .map(|m| (m.name, build_table(m)))
+                .collect()
+        })
+        .get(name)
+        .cloned()
+}
+
+/// The table entry for builtin module `name`.
+pub fn builtin_module(name: &str) -> Option<&'static BuiltinModule> {
+    BUILTIN_MODULES.iter().find(|m| m.name == name)
+}
+
+/// `lib/std/<name>.asi`: builtin module `m` written in Asili, generated from [`BUILTIN_MODULES`]
+/// (`pata-core`'s `stdlib_stubs_are_generated` test checks the files and rewrites them with
+/// `ASILI_GOLDEN=write`).
+pub fn render_stub(m: &BuiltinModule) -> String {
+    let mut out = format!(
+        "# Kiolesura cha moduli ya `{}`, kwa Asili.\n\
+         # Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;\n\
+         # badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs\n",
+        m.name
+    );
+    let comment = |out: &mut String, text: &str| {
+        for line in wrap(text, 94) {
+            out.push_str("# ");
+            out.push_str(&line);
+            out.push('\n');
+        }
+    };
+    if !m.doc.is_empty() {
+        out.push_str("#\n");
+        comment(&mut out, m.doc);
     }
+    for st in builtin_structs().iter().filter(|s| s.module == m.name) {
+        out.push('\n');
+        comment(&mut out, st.doc);
+        out.push_str(&format!("umbo {} {{\n", st.name));
+        for f in &st.fields {
+            for line in wrap(f.doc, 90) {
+                out.push_str(&format!("    # {line}\n"));
+            }
+            let opt = if f.optional { "?" } else { "" };
+            out.push_str(&format!("    {}{opt}: {},\n", f.name, f.ty));
+        }
+        out.push_str("}\n");
+    }
+    if !m.constants.is_empty() {
+        out.push('\n');
+        for (src, doc) in m.constants {
+            comment(&mut out, doc);
+            out.push_str(&format!("thabiti {src}\n"));
+        }
+    }
+    let table = builtin_module_exports(m.name).unwrap_or_default();
+    for (src, _) in m.functions {
+        let Some((name, _)) = parse_signature(src, &resolve_builtin_type) else {
+            continue;
+        };
+        let contract = &table.functions[&name];
+        out.push('\n');
+        comment(&mut out, &contract.doc);
+        out.push_str(&format!("kazi {}\n", format_signature(&name, contract)));
+    }
+    out
+}
+
+/// `text` in lines of at most `width` characters, broken at spaces.
+fn wrap(text: &str, width: usize) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for word in text.split_whitespace() {
+        match lines.last_mut() {
+            Some(line) if line.chars().count() + 1 + word.chars().count() <= width => {
+                line.push(' ');
+                line.push_str(word);
+            }
+            _ => lines.push(word.to_string()),
+        }
+    }
+    lines
 }
 
 /// Types with built-in methods (the receivers of `x.njia(...)` that are not a `umbo` or
@@ -1313,5 +956,84 @@ pub fn method_return_type(receiver: &ValueType, method: &str) -> ValueType {
         (ValueType::Fungo(ref t), "pata") => *t.clone(),
         (ValueType::Fungo(_), "weka") => ValueType::Tupu,
         _ => ValueType::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sig(src: &str) -> Option<(String, FnContract)> {
+        parse_signature(src, &resolve_builtin_type)
+    }
+
+    #[test]
+    fn signatures_parse_and_print_back() {
+        for src in [
+            "f(a: Neno, b?: Kamusi<Neno, Neno>) -> Tokeo<JibuHttp, Neno>",
+            "g(...vitu: Haijulikani) -> Orodha<Haijulikani>",
+            "h(a: Namba, ...b: Neno) -> Tupu",
+            "k() -> Namba?",
+        ] {
+            let (name, c) = sig(src).expect(src);
+            assert_eq!(format_signature(&name, &c), src);
+        }
+        let (_, c) = sig("kazi f(a: Neno, b?: Namba, c?: Neno) -> Tupu").unwrap();
+        assert_eq!((c.min_args(), c.optional, c.variadic), (1, 2, false));
+        assert!(c.accepts(1) && c.accepts(3) && !c.accepts(0) && !c.accepts(4));
+        let (_, c) = sig("tenda(kazi_jina: Neno, ...hoja: Haijulikani) -> Tupu").unwrap();
+        assert!(c.accepts(1) && c.accepts(9) && !c.accepts(0));
+        assert_eq!(c.param_for_arg(5), Some(&ValueType::Unknown));
+        // A builtin `umbo` is a type; no `->` is `Tupu`.
+        let (_, c) = sig("kazi f(o: OmbiHttp)").unwrap();
+        assert_eq!(c.params, vec![ValueType::Struct("OmbiHttp".into())]);
+        assert_eq!(c.ret, ValueType::Tupu);
+    }
+
+    #[test]
+    fn malformed_signatures_are_refused() {
+        assert!(
+            sig("f(a?: Neno, b: Neno) -> Tupu").is_none(),
+            "optional before required"
+        );
+        assert!(
+            sig("f(...a: Neno, b: Neno) -> Tupu").is_none(),
+            "variadic not last"
+        );
+        assert!(sig("f a: Neno) -> Tupu").is_none());
+        assert!(sig("(a: Neno) -> Tupu").is_none());
+    }
+
+    /// Every table entry parses, every builtin `umbo` field has a type, and the module list
+    /// matches [`BUILTIN_MODULE_NAMES`].
+    #[test]
+    fn the_table_is_well_formed() {
+        let names: Vec<&str> = BUILTIN_MODULES.iter().map(|m| m.name).collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        let mut expected = BUILTIN_MODULE_NAMES.to_vec();
+        expected.sort();
+        assert_eq!(sorted, expected);
+        for m in BUILTIN_MODULES {
+            let table = builtin_module_exports(m.name).unwrap();
+            assert_eq!(
+                table.functions.len(),
+                m.functions.len(),
+                "{} repeats a name",
+                m.name
+            );
+            for (src, doc) in m.functions {
+                assert!(!doc.is_empty(), "{}: `{src}` has no description", m.name);
+            }
+        }
+        for st in builtin_structs() {
+            assert!(
+                st.fields
+                    .iter()
+                    .all(|f| !f.ty.is_empty() && !f.doc.is_empty()),
+                "{}",
+                st.name
+            );
+        }
     }
 }

@@ -1,3 +1,8 @@
-# Syscall – interface stub
+# Kiolesura cha moduli ya `syscall`, kwa Asili.
+# Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;
+# badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs
+#
+# Syscall: wito wa moja kwa moja kwa kernel (ndani ya `wazi`).
 
+# Wito wa kernel nambari nr wenye hoja tatu.
 kazi syscall(nr: Namba, a: Namba, b: Namba, c: Namba) -> Anuani

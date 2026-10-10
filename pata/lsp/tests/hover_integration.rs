@@ -130,3 +130,52 @@ fn test_hover_parameter() {
         );
     }
 }
+
+fn hover_text(code: &str, line: u32, character: u32) -> String {
+    match compute_hover(code, line, character)
+        .expect("hover")
+        .contents
+    {
+        pata_lsp::tower_lsp::lsp_types::HoverContents::Scalar(
+            pata_lsp::tower_lsp::lsp_types::MarkedString::String(content),
+        ) => content,
+        other => panic!("Expected scalar hover content: {other:?}"),
+    }
+}
+
+/// A builtin's hover is its signature (names, optional `?` parameters) and description, from
+/// the builtin table.
+#[test]
+fn test_hover_builtin_function_and_struct() {
+    let code = "kazi kuu() -> Tupu {\n    weka j = http_ombi(\"GET\", \"https://mfano.com\", ChaguoHttp { muda: 5 })\n}";
+    let line = code.lines().nth(1).unwrap();
+    let text = hover_text(code, 1, line.find("http_ombi").unwrap() as u32 + 2);
+    assert!(
+        text.contains("kazi http_ombi(njia: Neno, anwani: Neno, chaguo?: ChaguoHttp) -> Tokeo<JibuHttp, Neno>"),
+        "{text}"
+    );
+    assert!(
+        text.contains("Ombi la HTTP(S)") && text.contains("moduli: `mfumo`"),
+        "{text}"
+    );
+    let text = hover_text(code, 1, line.find("ChaguoHttp").unwrap() as u32 + 2);
+    assert!(
+        text.contains("umbo ChaguoHttp {") && text.contains("- `muda`: Sekunde"),
+        "{text}"
+    );
+}
+
+#[test]
+fn test_signature_help_builtin_names_and_doc() {
+    let code = "kazi kuu() -> Tupu {\n    tenda(\"kazi\", 1, 2, 3)\n}";
+    let column = code.lines().nth(1).unwrap().find('3').unwrap() as u32;
+    let info = pata_lsp::signature::compute_signature_help(code, 1, column, None).expect("help");
+    assert_eq!(
+        info.label,
+        "kazi tenda(kazi_jina: Neno, ...hoja: Haijulikani) -> Tokeo<Namba, Neno>"
+    );
+    assert_eq!(info.params, vec!["kazi_jina: Neno", "...hoja: Haijulikani"]);
+    // The fourth argument is still `...hoja`.
+    assert_eq!(info.active_param, 1);
+    assert!(info.doc.expect("doc").contains("uzi mpya"));
+}

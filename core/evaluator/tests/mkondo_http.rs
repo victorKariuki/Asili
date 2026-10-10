@@ -5,10 +5,9 @@
 //! wire bytes is both simpler and a stronger proof than trusting a client library's own framing).
 //!
 //! `OmbiHttp`/`JibuHttp` are plain `Value::Struct`s at runtime (the same reflection-friendly
-//! shape the JSON codec uses) — but the Asili *source* in each test still needs a matching
-//! `umbo OmbiHttp { ... }`/`umbo JibuHttp { ... }` declaration for the semantic analyzer to
-//! accept `ombi: OmbiHttp` as a parameter type and type-check field access on it (SEM098/SEM099
-//! otherwise) — the struct's *name* is never checked at runtime by `http.rs`, only its fields.
+//! shape the JSON codec uses), and builtin `umbo`s a program uses without declaring them. Most
+//! tests here still declare their own (a program's declaration takes the builtin's place), which
+//! keeps that path covered; `asili_client_and_server_without_declarations` uses the builtins.
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -400,4 +399,57 @@ fn malformed_request_line_is_rejected_with_400() {
 
     let (status, _) = read_one_response(&mut client, &mut carry);
     assert_eq!(status, 400);
+}
+
+/// Both ends in Asili, neither declaring `OmbiHttp`/`JibuHttp`: the server sets two cookies
+/// through `vichwa_vyote`, and the client (`http_ombi` with `vidakuzi`) sends them back.
+#[test]
+fn asili_client_and_server_without_declarations() {
+    let server = compile(
+        r#"
+        leta mfumo
+
+        kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
+            ikiwa ombi.anwani == "/ingia" {
+                rejesha JibuHttp {
+                    hali: 200,
+                    vichwa: kamusi(),
+                    mwili: "karibu",
+                    vichwa_vyote: [jozi("Set-Cookie", "a=1"), jozi("Set-Cookie", "b=2")],
+                }
+            }
+            rejesha JibuHttp { hali: 200, vichwa: kamusi(), mwili: ombi.vichwa.pata("cookie").angu("hakuna") }
+        }
+
+        kazi anza(anwani: Neno) -> Tupu {
+            weka s = jaribu (mkondo_sikiliza(anwani))
+            jaribu (mkondo_tumikia_http(s, "mtumishi", 2.0))
+        }
+    "#,
+    );
+    let probe = std::net::TcpListener::bind("127.0.0.1:0").expect("bind probe");
+    let addr = probe.local_addr().expect("addr").to_string();
+    drop(probe);
+    let server_addr = addr.clone();
+    std::thread::spawn(move || {
+        let _ = run_function(&server, "anza", vec![Value::neno(server_addr)]);
+    });
+    drop(connect_with_retry(&addr));
+    let client = compile(&format!(
+        r#"
+        leta mfumo
+
+        kazi mteja() -> Tokeo<Neno, Neno> {{
+            weka chaguo = ChaguoHttp {{ vidakuzi: kweli }}
+            weka kwanza = http_ombi("GET", "http://{addr}/ingia", chaguo)?
+            weka pili = http_ombi("GET", "http://{addr}/", ChaguoHttp {{ vidakuzi: kweli }})?
+            rejesha tokeo(kwanza.mwili + " " + pili.mwili)
+        }}
+    "#
+    ));
+    let result = run_function(&client, "mteja", vec![]).expect("runs");
+    assert_eq!(
+        result,
+        Value::Tokeo(Ok(Box::new(Value::neno("karibu a=1; b=2".to_string()))))
+    );
 }

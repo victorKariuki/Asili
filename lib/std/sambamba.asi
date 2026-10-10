@@ -1,8 +1,20 @@
-# Sambamba (concurrency) – interface stub
-# Mfumo wa nyuzi 1:1 za OS. `tenda` inapokea jina la kazi na hoja za kazi hiyo (idadi yoyote).
+# Kiolesura cha moduli ya `sambamba`, kwa Asili.
+# Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;
+# badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs
+#
+# Sambamba: nyuzi za OS (1:1), njia za ujumbe na kufuli.
 
-kazi tenda(kazi_jina: Neno) -> Tokeo<Namba, Neno>
+# Kufuli inayolinda thamani inayoshirikiwa na nyuzi.
+kazi fungo(thamani: Haijulikani) -> Tokeo<Fungo<Haijulikani>, Neno>
+
+# Njia ya ujumbe: (mtumaji, mpokeaji).
+kazi njia() -> Jozi<NjiaTx<Haijulikani>, NjiaRx<Haijulikani>>
+
+# Njia yenye nafasi `kikomo`; kutuma husubiri ikijaa.
+kazi njia_na_kikomo(kikomo: Namba) -> Jozi<NjiaTxBounded<Haijulikani>, NjiaRxBounded<Haijulikani>>
+
+# Subiri uzi ulioanzishwa na `tenda` umalize.
 kazi subiri_tenda(uzi_id: Namba) -> Tokeo<Tupu, Neno>
-kazi njia() -> Jozi<NjiaTx<T>, NjiaRx<T>>
-kazi njia_na_kikomo(kikomo: Namba) -> Jozi<NjiaTxBounded<T>, NjiaRxBounded<T>>
-kazi fungo(thamani: T) -> Tokeo<Fungo<T>, Neno>
+
+# Anza kazi `kazi_jina(hoja...)` kwenye uzi mpya; kitambulisho cha uzi.
+kazi tenda(kazi_jina: Neno, ...hoja: Haijulikani) -> Tokeo<Namba, Neno>

@@ -766,7 +766,7 @@ impl fmt::Display for ValueType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ValueType {
     Namba,
     Neno,
@@ -820,13 +820,53 @@ pub enum ValueType {
     Fungo(Box<ValueType>),
     /// Type variable (T, E, U, etc. for generic types).
     TypeVar(String),
+    #[default]
     Unknown,
 }
 
 /// Contract for external functions (used by semantic_check_with_env).
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[allow(dead_code)] // constructed by callers
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct FnContract {
     pub params: Vec<ValueType>,
     pub ret: ValueType,
+    /// Parameter names, parallel to `params` (empty when not known).
+    #[serde(default)]
+    pub names: Vec<String>,
+    /// How many trailing parameters a call may leave out.
+    #[serde(default)]
+    pub optional: usize,
+    /// The last parameter takes any number of arguments (`...hoja: T`), each of its type.
+    #[serde(default)]
+    pub variadic: bool,
+    /// One line on what the function does (LSP hover, `lib/std` stubs).
+    #[serde(default)]
+    pub doc: String,
+}
+
+impl FnContract {
+    /// A contract with only types: every parameter required, no names or doc.
+    pub fn new(params: Vec<ValueType>, ret: ValueType) -> Self {
+        FnContract {
+            params,
+            ret,
+            ..Default::default()
+        }
+    }
+
+    /// The fewest arguments a call may pass.
+    pub fn min_args(&self) -> usize {
+        self.params.len() - self.optional - usize::from(self.variadic)
+    }
+
+    /// Whether `n` arguments are accepted.
+    pub fn accepts(&self, n: usize) -> bool {
+        n >= self.min_args() && (self.variadic || n <= self.params.len())
+    }
+
+    /// The parameter type argument `i` is checked against (a variadic tail repeats its type).
+    pub fn param_for_arg(&self, i: usize) -> Option<&ValueType> {
+        self.params
+            .get(i)
+            .or_else(|| self.variadic.then(|| self.params.last()).flatten())
+    }
 }

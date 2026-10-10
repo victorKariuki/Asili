@@ -115,6 +115,7 @@ fn test_drop_in_if_scope() {
         FnContract {
             params: vec![ValueType::Namba],
             ret: ValueType::Tupu,
+            ..Default::default()
         },
     );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());

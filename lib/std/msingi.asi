@@ -1,18 +1,42 @@
-# Msingi (prelude) – interface stub
+# Kiolesura cha moduli ya `msingi`, kwa Asili.
+# Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;
+# badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs
+#
+# Msingi: aina na viunda vya msingi; viko wigoni bila `leta`.
 
 thabiti KWELI: Ukweli
 thabiti SIYO_KWELI: Ukweli
 thabiti TUPU: Tupu
 
-kazi orodha() -> Orodha
-kazi orodha_rudia(thamani: Unknown, idadi: Namba) -> Orodha
-kazi kamusi() -> Kamusi
-kazi kamusi_tupu() -> Kamusi
-kazi jozi(a: Unknown, b: Unknown) -> Jozi
-kazi tokeo(val) -> Tokeo
-kazi kosa(ujumbe: Neno) -> Tokeo
-kazi chaguo(val) -> Chaguo
+# `Chaguo::Kuna(thamani)`.
+kazi chaguo(thamani: Haijulikani) -> Haijulikani?
 
-kazi seti() -> Seti<T>
-kazi seti_tupu() -> Seti<T>
-kazi kumbukumbu_unda(thamani: T) -> Kumbukumbu<T>
+# Jozi ya thamani mbili.
+kazi jozi(a: Haijulikani, b: Haijulikani) -> Jozi<Haijulikani, Haijulikani>
+
+# Kamusi tupu.
+kazi kamusi() -> Kamusi<Haijulikani, Haijulikani>
+
+# Kamusi tupu.
+kazi kamusi_tupu() -> Kamusi<Haijulikani, Haijulikani>
+
+# `Tokeo::Kosa(ujumbe)`.
+kazi kosa(ujumbe: Neno) -> Tokeo<Haijulikani, Neno>
+
+# Kisanduku cha heap kinachomiliki thamani.
+kazi kumbukumbu_unda(thamani: Haijulikani) -> Kumbukumbu<Haijulikani>
+
+# Orodha ya vipengele vilivyotolewa.
+kazi orodha(...vipengele: Haijulikani) -> Orodha<Haijulikani>
+
+# Orodha ya `thamani` mara `idadi`.
+kazi orodha_rudia(thamani: Haijulikani, idadi: Namba) -> Orodha<Haijulikani>
+
+# Seti ya vipengele vilivyotolewa (marudio huondolewa).
+kazi seti(...vipengele: Haijulikani) -> Seti<Haijulikani>
+
+# Seti tupu.
+kazi seti_tupu() -> Seti<Haijulikani>
+
+# `Tokeo::Sawa(thamani)`.
+kazi tokeo(thamani: Haijulikani) -> Tokeo<Haijulikani, Haijulikani>

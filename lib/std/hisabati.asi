@@ -1,86 +1,208 @@
-# Msingi::hisabati (interface stub)
+# Kiolesura cha moduli ya `hisabati`, kwa Asili.
+# Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;
+# badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs
+#
+# Hisabati: hesabu, trigonometria, logi na namba za nasibu.
 
-umbo Kosa_Hisabati {
-    aina: Neno,
-    ujumbe: Neno,
-}
-
-thabiti Ukomo: Namba
-thabiti Siyo_Namba: Namba
-thabiti PI: Namba
+# Namba ya Euler.
 thabiti E: Namba
-thabiti PHI: Namba
-thabiti TAU: Namba
-thabiti LN10: Namba
-thabiti LN2: Namba
-thabiti LOG10E: Namba
-thabiti LOG2E: Namba
-thabiti KIPEUO1_2: Namba
-thabiti KIPEUO2: Namba
-thabiti KIPEUO3: Namba
-thabiti KIPEUO5: Namba
+# Tofauti ndogo zaidi kati ya 1 na Namba inayofuata.
 thabiti EPSILON: Namba
+# Ukomo chanya.
 thabiti INF: Namba
+# 1 / √2.
+thabiti KIPEUO1_2: Namba
+# √2.
+thabiti KIPEUO2: Namba
+# √3.
+thabiti KIPEUO3: Namba
+# √5.
+thabiti KIPEUO5: Namba
+# Logi asilia ya 10.
+thabiti LN10: Namba
+# Logi asilia ya 2.
+thabiti LN2: Namba
+# Logi ya msingi 10 ya e.
+thabiti LOG10E: Namba
+# Logi ya msingi 2 ya e.
+thabiti LOG2E: Namba
+# Si namba (NaN).
 thabiti NAN: Namba
+# Uwiano wa dhahabu.
+thabiti PHI: Namba
+# π.
+thabiti PI: Namba
+# Si namba (NaN).
+thabiti Siyo_Namba: Namba
+# 2π.
+thabiti TAU: Namba
+# Ukomo chanya.
+thabiti Ukomo: Namba
 
-kazi jumla(a: Namba, b: Namba) -> Namba
-kazi tofauti(a: Namba, b: Namba) -> Namba
-kazi zao(a: Namba, b: Namba) -> Namba
-
-kazi gawio(a: Namba, b: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi kipeo(msingi: Namba, nguvu: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi mizizi(n: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-
-kazi duara(n: Namba) -> Namba
-kazi absolute(n: Namba) -> Namba
+# Thamani kamili (bila ishara).
 kazi abs(n: Namba) -> Namba
-kazi ishara(n: Namba) -> Namba
-kazi upeo(msingi: Namba, nguvu: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi kipeuo2(n: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi kipeuo3(n: Namba) -> Namba
-kazi haipot(x: Namba, y: Namba) -> Namba
-kazi upeo_wa_e(x: Namba) -> Namba
-kazi expm1(x: Namba) -> Namba
-kazi sakafu(n: Namba) -> Namba
-kazi dari(n: Namba) -> Namba
-kazi duara_maeneo(x: Namba, m: Namba) -> Namba
-kazi punguza(n: Namba) -> Namba
-kazi kubwa(a: Namba, b: Namba) -> Namba
-kazi ndogo(a: Namba, b: Namba) -> Namba
-kazi kikwazo(x: Namba, chini: Namba, juu: Namba) -> Namba
-kazi kwenda_radiani(d: Namba) -> Namba
-kazi kwenda_nyuzi(r: Namba) -> Namba
-kazi mzizi(x: Namba, n: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi faktoriali(n: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi baki(x: Namba, y: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi logi(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi logi10(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi logi2(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi logi1p(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi asini(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi akosini(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi atanjenti(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi asini_h(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi akosini_h(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi atanjenti_h(x: Namba) -> Tokeo<Namba, Kosa_Hisabati>
-kazi sini(x: Namba) -> Namba
-kazi kosini(x: Namba) -> Namba
-kazi tanjenti(x: Namba) -> Namba
+
+# Thamani kamili (bila ishara).
+kazi absolute(n: Namba) -> Namba
+
+# Arccos, kwa radiani; kosa nje ya [-1, 1].
+kazi akosini(x: Namba) -> Tokeo<Namba, Neno>
+
+# Arccosh; kosa chini ya 1.
+kazi akosini_h(x: Namba) -> Tokeo<Namba, Neno>
+
+# Arcsin, kwa radiani; kosa nje ya [-1, 1].
+kazi asini(x: Namba) -> Tokeo<Namba, Neno>
+
+# Arcsinh.
+kazi asini_h(x: Namba) -> Tokeo<Namba, Neno>
+
+# Arctan, kwa radiani.
+kazi atanjenti(x: Namba) -> Tokeo<Namba, Neno>
+
+# Pembe ya nukta (x, y) kutoka mhimili wa x, kwa radiani.
 kazi atanjenti2(y: Namba, x: Namba) -> Namba
-kazi sini_h(x: Namba) -> Namba
+
+# Arctanh; kosa nje ya (-1, 1).
+kazi atanjenti_h(x: Namba) -> Tokeo<Namba, Neno>
+
+# Baki la x / y; kosa y ikiwa 0.
+kazi baki(x: Namba, y: Namba) -> Tokeo<Namba, Neno>
+
+# Kipengele kimoja cha nasibu, au `Hamna` orodha ikiwa tupu.
+kazi chagua_nasibu(orodha: Orodha<Haijulikani>) -> Haijulikani?
+
+# Nakala ya orodha kwa mpangilio wa nasibu.
+kazi changanya(orodha: Orodha<Haijulikani>) -> Orodha<Haijulikani>
+
+# Namba kamili ndogo zaidi isiyo chini ya n.
+kazi dari(n: Namba) -> Namba
+
+# n kwa namba kamili iliyo karibu zaidi.
+kazi duara(n: Namba) -> Namba
+
+# x kwa maeneo m ya desimali.
+kazi duara_maeneo(x: Namba, m: Namba) -> Namba
+
+# e^x - 1, sahihi kwa x ndogo.
+kazi expm1(x: Namba) -> Namba
+
+# n!; kosa kwa n hasi au isiyo kamili.
+kazi faktoriali(n: Namba) -> Tokeo<Namba, Neno>
+
+# a / b; kosa b ikiwa 0.
+kazi gawio(a: Namba, b: Namba) -> Tokeo<Namba, Neno>
+
+# Urefu wa hipotenusi: √(x² + y²).
+kazi haipot(x: Namba, y: Namba) -> Namba
+
+# -1, 0 au 1 kulingana na ishara ya n.
+kazi ishara(n: Namba) -> Namba
+
+# a + b.
+kazi jumla(a: Namba, b: Namba) -> Namba
+
+# x ikibanwa kati ya chini na juu.
+kazi kikwazo(x: Namba, chini: Namba, juu: Namba) -> Namba
+
+# msingi kwa nguvu; kosa matokeo yasipokuwa namba halisi.
+kazi kipeo(msingi: Namba, nguvu: Namba) -> Tokeo<Namba, Neno>
+
+# Kipeuo cha pili; kosa kwa n hasi.
+kazi kipeuo2(n: Namba) -> Tokeo<Namba, Neno>
+
+# Kipeuo cha tatu.
+kazi kipeuo3(n: Namba) -> Namba
+
+# Cos ya x (radiani).
+kazi kosini(x: Namba) -> Namba
+
+# Cosh ya x.
 kazi kosini_h(x: Namba) -> Namba
-kazi tanjenti_h(x: Namba) -> Namba
-kazi ni_namba(x: Namba) -> Ukweli
-kazi si_namba(x: Namba) -> Ukweli
-kazi ni_ukomo(x: Namba) -> Ukweli
+
+# Kubwa kati ya a na b.
+kazi kubwa(a: Namba, b: Namba) -> Namba
+
+# Radiani kwenda nyuzi (digrii).
+kazi kwenda_nyuzi(r: Namba) -> Namba
+
+# Nyuzi (digrii) kwenda radiani.
+kazi kwenda_radiani(d: Namba) -> Namba
+
+# Logi asilia; kosa kwa x isiyo chanya.
+kazi logi(x: Namba) -> Tokeo<Namba, Neno>
+
+# Logi ya msingi 10; kosa kwa x isiyo chanya.
+kazi logi10(x: Namba) -> Tokeo<Namba, Neno>
+
+# Logi asilia ya 1 + x, sahihi kwa x ndogo.
+kazi logi1p(x: Namba) -> Tokeo<Namba, Neno>
+
+# Logi ya msingi 2; kosa kwa x isiyo chanya.
+kazi logi2(x: Namba) -> Tokeo<Namba, Neno>
+
+# Kipeuo cha pili; kosa kwa n hasi.
+kazi mizizi(n: Namba) -> Tokeo<Namba, Neno>
+
+# Kipeuo cha n cha x.
+kazi mzizi(x: Namba, n: Namba) -> Tokeo<Namba, Neno>
+
+# Namba kamili kubwa bila kikomo kutoka maandishi.
+kazi namba_kuu_kutoka(maandishi: Neno) -> Tokeo<Namba_Kuu, Neno>
+
+# Desimali sahihi kutoka maandishi.
+kazi namba_sahihi_kutoka(maandishi: Neno) -> Tokeo<Namba_Sahihi, Neno>
+
+# Namba ya nasibu katika [0, 1).
 kazi nasibu() -> Namba
+
+# Namba ya nasibu katika [chini, juu).
 kazi nasibu_chini(chini: Namba, juu: Namba) -> Namba
+
 # Namba kamili kati ya chini na juu (zote mbili zimo).
 kazi nasibu_kamili(chini: Namba, juu: Namba) -> Namba
+
 # Huanza mfululizo unaorudiwa wa namba za nasibu (kwa majaribio).
 kazi nasibu_mbegu(mbegu: Namba) -> Tupu
-kazi changanya(orodha: Orodha<T>) -> Orodha<T>
-kazi chagua_nasibu(orodha: Orodha<T>) -> Chaguo<T>
 
-kazi namba_kuu_kutoka(maandishi: Neno) -> Tokeo<Namba_Kuu, Neno>
-kazi namba_sahihi_kutoka(maandishi: Neno) -> Tokeo<Namba_Sahihi, Neno>
+# Ndogo kati ya a na b.
+kazi ndogo(a: Namba, b: Namba) -> Namba
+
+# Kweli x isipokuwa NaN.
+kazi ni_namba(x: Namba) -> Ukweli
+
+# Kweli x ikiwa ukomo (chanya au hasi).
+kazi ni_ukomo(x: Namba) -> Ukweli
+
+# n bila sehemu ya desimali (kuelekea 0).
+kazi punguza(n: Namba) -> Namba
+
+# Namba kamili kubwa zaidi isiyozidi n.
+kazi sakafu(n: Namba) -> Namba
+
+# Kweli x ikiwa NaN.
+kazi si_namba(x: Namba) -> Ukweli
+
+# Sin ya x (radiani).
+kazi sini(x: Namba) -> Namba
+
+# Sinh ya x.
+kazi sini_h(x: Namba) -> Namba
+
+# Tan ya x (radiani).
+kazi tanjenti(x: Namba) -> Namba
+
+# Tanh ya x.
+kazi tanjenti_h(x: Namba) -> Namba
+
+# a - b.
+kazi tofauti(a: Namba, b: Namba) -> Namba
+
+# msingi kwa nguvu; kosa matokeo yasipokuwa namba halisi.
+kazi upeo(msingi: Namba, nguvu: Namba) -> Tokeo<Namba, Neno>
+
+# e kwa nguvu x.
+kazi upeo_wa_e(x: Namba) -> Namba
+
+# a × b.
+kazi zao(a: Namba, b: Namba) -> Namba

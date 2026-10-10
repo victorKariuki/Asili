@@ -1,5 +1,12 @@
-# Kasha_GC (managed memory) – interface stub
-# Ya hiari: inahitaji `leta kasha_gc`. Njia (.shirikisha, .idadi, .pata, .weka) ni za kishikizo.
+# Kiolesura cha moduli ya `kasha_gc`, kwa Asili.
+# Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;
+# badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs
+#
+# Kasha_GC: thamani inayoshirikiwa kwa kuhesabu marejeo. Ya hiari: inahitaji `leta kasha_gc`.
+# Njia (.shirikisha, .idadi, .pata, .weka) ni za kishikizo.
 
-kazi kasha_gc_unda(thamani: T) -> Kasha_GC<T>
-kazi kasha_gc_dhaifu(kasha: Kasha_GC<T>) -> Kasha_GC_Dhaifu<T>
+# Rejeo dhaifu lisilohesabiwa; huvunja mizunguko.
+kazi kasha_gc_dhaifu(kasha: Kasha_GC<Haijulikani>) -> Kasha_GC_Dhaifu<Haijulikani>
+
+# Kasha jipya linaloshikilia thamani.
+kazi kasha_gc_unda(thamani: Haijulikani) -> Kasha_GC<Haijulikani>

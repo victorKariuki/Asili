@@ -19,6 +19,7 @@ fn parses_main() {
         FnContract {
             params: vec![ValueType::Neno],
             ret: ValueType::Tupu,
+            ..Default::default()
         },
     );
     semantic_check_with_env(&module, true, extern_fns, HashMap::new()).expect("semantics");
@@ -300,6 +301,7 @@ fn unconsumed_tokeo_emits_sem048() {
         FnContract {
             params: vec![ValueType::Namba, ValueType::Namba],
             ret: ValueType::Tokeo(Box::new(ValueType::Namba), Box::new(ValueType::Neno)),
+            ..Default::default()
         },
     );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());

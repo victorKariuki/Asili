@@ -8,10 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **HTTP client, regular expressions, encodings and hashes**: `mfumo` gains `http_pata` (GET),
-  `http_tuma` (POST) and `http_ombi` (any method and headers; the whole response as a
-  `JibuHttp { hali, vichwa, mwili }`), over HTTPS with rustls and the Mozilla roots, proxy
-  variables honoured, gzip decoded and connections reused. A new `ruwaza` module has
+- **Builtin signatures in one place, with names and descriptions**: `core/parser/src/builtins.rs`
+  now writes every builtin as an Asili signature (`name(p: T, q?: T, ...r: T) -> R`) with a
+  Swahili description, and builtin `umbo`s (`OmbiHttp`, `JibuHttp`, `ChaguoHttp`) that programs
+  use without declaring them (`?` fields may be left out of a literal). The analyzer checks
+  optional and variadic parameters from it (replacing a hard-coded list), the editor shows
+  parameter names and descriptions in hover, signature help and completion, and
+  `lib/std/*.asi` is generated from it (`ASILI_GOLDEN=write cargo test -p pata-core
+  stdlib_stubs`) instead of written by hand.
+
+- **HTTP client, regular expressions, encodings and hashes**: `mfumo` gains one HTTP client,
+  `http_ombi(njia, anwani, chaguo?: ChaguoHttp) -> Tokeo<JibuHttp, Neno>`: any method; headers,
+  query, text/base64/JSON/form/multipart/file bodies; Basic and Bearer auth; timeouts; redirects
+  (never HTTPS→HTTP, credentials dropped across origins); retries with `Retry-After`; HTTP and
+  SOCKS proxies; IPv4/IPv6; custom roots and client certificates (mutual TLS); an opt-in cookie
+  jar; a body limit; streaming to a file; base64 bodies; charset decoding; gzip and brotli;
+  keep-alive pools shared across threads. The response is the server's `JibuHttp`, with
+  `sababu`, `anwani`, `toleo`, `vichwa_vyote` and `muda` added. A new `ruwaza` module has
   `ruwaza_inalingana`, `ruwaza_tafuta`, `ruwaza_zote`, `ruwaza_vikundi` (capture groups),
   `ruwaza_badilisha` (`$1`/`${jina}` replacements) and `ruwaza_gawanya` — linear-time,
   Unicode-aware, an invalid pattern a `Kosa`, compiled patterns cached per thread. A new
@@ -627,6 +640,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was not built.
 
 ### Fixed
+
+- `kwa_json` (and `http_ombi`'s `json`) writes a whole number as `3`, not `3.0`, which servers
+  reading an integer require.
+- `Chaguo::Kuna(x)` is a `Chaguo<T>` to the analyzer, so it can be passed where a builtin takes
+  one (`mkondo_tumikia`'s `tls`).
 
 - **`jaribu` propagates**: in a `kazi` returning `Tokeo`/`Chaguo`, `jaribu x` stopped the whole
   program on an error instead of returning it to the caller as documented (and as `x?` does);

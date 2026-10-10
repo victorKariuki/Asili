@@ -77,7 +77,7 @@ The repository follows a Linux-kernel–style modular layout. Each directory is 
 
 ### /lib (Maktaba)
 
-- **std/** — Standard library surface (written in `.as` and `.asi`). These files are the in-language interface for the same modules the builtins implement (e.g. hisabati, mfumo, moduli).
+- **std/** — Standard library surface: one `.asi` per builtin module (hisabati, mfumo, …), its builtin `umbo`s, constants and functions written in Asili with their descriptions. Generated from the builtin table (`core/parser/src/builtins.rs`), never edited by hand.
 - **tests/** — Integration tests for the entire ecosystem.
 - **docs/** — Uses `.asdoc` templates to generate documentation via `pata maelezo`.
 

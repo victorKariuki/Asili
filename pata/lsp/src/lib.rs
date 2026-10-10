@@ -65,6 +65,7 @@
 //! `pata_core::find_module_file`; still no `pata.lock`-driven version-constraint awareness).
 
 pub mod actions;
+pub mod builtin_docs;
 mod diagnostics;
 mod doc_store;
 mod format;
@@ -455,7 +456,7 @@ impl LanguageServer for Backend {
         Ok(Some(SignatureHelp {
             signatures: vec![SignatureInformation {
                 label: info.label,
-                documentation: None,
+                documentation: info.doc.map(tower_lsp::lsp_types::Documentation::String),
                 parameters: Some(parameters),
                 active_parameter: None,
             }],

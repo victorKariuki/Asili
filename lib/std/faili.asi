@@ -1,29 +1,65 @@
-# Faili (file system) – interface stub
+# Kiolesura cha moduli ya `faili`, kwa Asili.
+# Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;
+# badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs
+#
+# Faili: kusoma na kuandika faili, saraka na njia.
 
+# Kitenganishi cha njia cha mfumo ("/" au "\\").
 thabiti NJIA_SEPARATOR: Neno
 
-kazi soma_faili(njia: Neno) -> Tokeo<Neno, Neno>
+# Andika data kwenye faili (huunda au hufuta yaliyokuwepo).
 kazi andika_faili(njia: Neno, data: Neno) -> Tokeo<Tupu, Neno>
-kazi ongeza(njia: Neno, data: Neno) -> Tokeo<Tupu, Neno>
-kazi vipo(njia: Neno) -> Ukweli
-kazi futa(njia: Neno) -> Tokeo<Tupu, Neno>
-kazi ukubwa(njia: Neno) -> Namba
 
-# Saraka.
-kazi orodha_saraka(njia: Neno) -> Tokeo<Orodha<Neno>, Neno>
-kazi unda_saraka(njia: Neno) -> Tokeo<Tupu, Neno>
-kazi futa_saraka(njia: Neno) -> Tokeo<Tupu, Neno>
+# Hamisha au badili jina la faili au saraka.
 kazi badili_jina(kutoka: Neno, kwenda: Neno) -> Tokeo<Tupu, Neno>
-kazi nakili(kutoka: Neno, kwenda: Neno) -> Tokeo<Namba, Neno>
-kazi ni_saraka(njia: Neno) -> Ukweli
-kazi ni_faili(njia: Neno) -> Ukweli
-
-# Njia (maandishi tu).
-kazi njia_unganisha(a: Neno, b: Neno) -> Neno
-kazi njia_mzazi(njia: Neno) -> Chaguo<Neno>
-kazi njia_jina(njia: Neno) -> Chaguo<Neno>
-kazi njia_kiendelezi(njia: Neno) -> Chaguo<Neno>
-kazi njia_kamili(njia: Neno) -> Tokeo<Neno, Neno>
 
 # Kishikizo cha faili; hali ni "soma", "andika" au "ongeza".
 kazi faili_fungua(njia: Neno, hali: Neno) -> Tokeo<Faili, Neno>
+
+# Futa faili.
+kazi futa(njia: Neno) -> Tokeo<Tupu, Neno>
+
+# Futa saraka pamoja na yaliyomo.
+kazi futa_saraka(njia: Neno) -> Tokeo<Tupu, Neno>
+
+# Nakili faili; idadi ya baiti zilizonakiliwa.
+kazi nakili(kutoka: Neno, kwenda: Neno) -> Tokeo<Namba, Neno>
+
+# Kweli njia ikiwa faili.
+kazi ni_faili(njia: Neno) -> Ukweli
+
+# Kweli njia ikiwa saraka.
+kazi ni_saraka(njia: Neno) -> Ukweli
+
+# Sehemu ya mwisho ya njia.
+kazi njia_jina(njia: Neno) -> Neno?
+
+# Njia kamili, bila `.`, `..` wala viungo.
+kazi njia_kamili(njia: Neno) -> Tokeo<Neno, Neno>
+
+# Kiendelezi cha jina (bila nukta).
+kazi njia_kiendelezi(njia: Neno) -> Neno?
+
+# Saraka inayoshikilia njia.
+kazi njia_mzazi(njia: Neno) -> Neno?
+
+# Unganisha njia mbili (maandishi tu).
+kazi njia_unganisha(a: Neno, b: Neno) -> Neno
+
+# Ongeza data mwishoni mwa faili.
+kazi ongeza(njia: Neno, data: Neno) -> Tokeo<Tupu, Neno>
+
+# Majina yaliyomo kwenye saraka, kwa mpangilio.
+kazi orodha_saraka(njia: Neno) -> Tokeo<Orodha<Neno>, Neno>
+
+# Yaliyomo yote ya faili.
+kazi soma_faili(njia: Neno) -> Tokeo<Neno, Neno>
+
+# Ukubwa wa faili kwa baiti (0 lisipokuwepo).
+kazi ukubwa(njia: Neno) -> Namba
+
+# Unda saraka pamoja na wazazi wake.
+kazi unda_saraka(njia: Neno) -> Tokeo<Tupu, Neno>
+
+# Kweli njia ikiwepo.
+kazi vipo(njia: Neno) -> Ukweli

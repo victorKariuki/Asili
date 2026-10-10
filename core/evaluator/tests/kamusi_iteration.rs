@@ -36,6 +36,7 @@ fn kamusi_iteration() {
         FnContract {
             params: vec![],
             ret: ValueType::Kamusi(Box::new(ValueType::Neno), Box::new(ValueType::Namba)),
+            ..Default::default()
         },
     );
     fns.insert(
@@ -47,6 +48,7 @@ fn kamusi_iteration() {
                 ValueType::Namba,
             ],
             ret: ValueType::Tupu,
+            ..Default::default()
         },
     );
     fns.insert(
@@ -57,6 +59,7 @@ fn kamusi_iteration() {
                 Box::new(ValueType::Namba),
             )],
             ret: ValueType::Namba,
+            ..Default::default()
         },
     );
     fns.insert(
@@ -64,6 +67,7 @@ fn kamusi_iteration() {
         FnContract {
             params: vec![ValueType::Namba],
             ret: ValueType::Tupu,
+            ..Default::default()
         },
     );
 

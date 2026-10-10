@@ -36,10 +36,14 @@ libc = "0.2"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rustls = "0.23"
 rustls-pemfile = "2"
-# The HTTP client (`http_pata`, `http_tuma`, `http_ombi`): rustls rather than the system TLS
-# library, so the static runner needs nothing from the system.
-ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "rustls-webpki-roots", "gzip"] }
-# Loads the LLVM-compiled native library `pata jenga` builds next to an `.asb` (src/aot.rs).
+# The HTTP client (`http_ombi`): rustls rather than the system TLS library, so the static runner
+# needs nothing from the system. Redirects, retries and cookies are followed by
+# `builtins/http_mteja.rs` itself (so cookies stay opt-in): `url` resolves `Location`,
+# `cookie_store` keeps the jar, `encoding_rs` decodes a body in its declared charset.
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "rustls-webpki-roots", "gzip", "brotli", "multipart", "socks-proxy"] }
+url = "2"
+cookie_store = { version = "0.22", default-features = false, features = ["preserve_order"] }
+encoding_rs = "0.8"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # `rand` 0.10 pulls in getrandom 0.4, which needs this explicitly enabled to build for

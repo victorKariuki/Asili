@@ -34,9 +34,7 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
     }
     use serde_json::Value as J;
     Ok(match v {
-        Value::Namba(n) => serde_json::Number::from_f64(*n)
-            .map(J::Number)
-            .unwrap_or(J::Null),
+        Value::Namba(n) => json_number(*n),
         Value::Neno(s) => J::String(s.to_string()),
         Value::Ukweli(b) => J::Bool(*b),
         Value::Tupu | Value::Hamna => J::Null,
@@ -49,9 +47,7 @@ fn to_json_depth(v: &Value, depth: usize) -> Result<serde_json::Value, EvalError
         // A raw memory address has no safe reason to be a JSON number a client could do
         // arithmetic on — encode as a string, deliberately.
         Value::Anuani(a) => J::String(a.to_string()),
-        Value::Wakati(secs) => serde_json::Number::from_f64(*secs)
-            .map(J::Number)
-            .unwrap_or(J::Null),
+        Value::Wakati(secs) => json_number(*secs),
         Value::Chaguo(opt) => match opt {
             Some(inner) => to_json_depth(inner, depth + 1)?,
             None => J::Null,
@@ -277,7 +273,7 @@ mod tests {
             Value::Neno("x".into()),
         ]);
         let j = v.to_json().unwrap();
-        assert_eq!(j, serde_json::json!([1.0, 2.0, "x"]));
+        assert_eq!(j, serde_json::json!([1, 2, "x"]));
     }
 
     #[test]
@@ -286,7 +282,7 @@ mod tests {
             Value::Chaguo(Some(Box::new(Value::Namba(5.0))))
                 .to_json()
                 .unwrap(),
-            serde_json::json!(5.0)
+            serde_json::json!(5)
         );
         assert_eq!(
             Value::Chaguo(None).to_json().unwrap(),
@@ -297,7 +293,7 @@ mod tests {
     #[test]
     fn tokeo_encodes_tagged() {
         let ok = Value::sawa(Value::Namba(1.0));
-        assert_eq!(ok.to_json().unwrap(), serde_json::json!({"Sawa": 1.0}));
+        assert_eq!(ok.to_json().unwrap(), serde_json::json!({"Sawa": 1}));
         let err = Value::kosa("kosa");
         assert_eq!(err.to_json().unwrap(), serde_json::json!({"Kosa": "kosa"}));
     }
@@ -313,7 +309,7 @@ mod tests {
             .into(),
         );
         let j = v.to_json().unwrap();
-        assert_eq!(j, serde_json::json!({"x": 1.0, "y": "hi"}));
+        assert_eq!(j, serde_json::json!({"x": 1, "y": "hi"}));
     }
 
     #[test]
@@ -330,7 +326,7 @@ mod tests {
         );
         assert_eq!(
             with_data.to_json().unwrap(),
-            serde_json::json!({"aina": "Kuna", "data": 7.0})
+            serde_json::json!({"aina": "Kuna", "data": 7})
         );
     }
 
@@ -374,7 +370,7 @@ mod tests {
         map.insert(MapKey::Neno("a".into()), Value::Namba(1.0));
         let v = Value::Kamusi(std::rc::Rc::new(map));
         let j = v.to_json().unwrap();
-        assert_eq!(j, serde_json::json!({"a": 1.0}));
+        assert_eq!(j, serde_json::json!({"a": 1}));
     }
 
     #[test]
@@ -392,4 +388,16 @@ mod tests {
             other => panic!("expected Kamusi, got {other:?}"),
         }
     }
+}
+
+/// A `Namba` as a JSON number: a whole number within ±2^53 is written without a fraction (`3`,
+/// not `3.0`), which servers parsing it into an integer require; NaN and infinities are `null`.
+fn json_number(n: f64) -> serde_json::Value {
+    const EXACT: f64 = 9_007_199_254_740_992.0; // 2^53
+    if n.fract() == 0.0 && n.abs() <= EXACT && !(n == 0.0 && n.is_sign_negative()) {
+        return serde_json::Value::Number((n as i64).into());
+    }
+    serde_json::Number::from_f64(n)
+        .map(serde_json::Value::Number)
+        .unwrap_or(serde_json::Value::Null)
 }

@@ -71,6 +71,8 @@ pub fn compute_hover(text: &str, line_0: u32, character_0: u32) -> Option<Hover>
                 } else {
                     format!("**Function:** `{}`", f.name)
                 }
+            } else if let Some(text) = crate::builtin_docs::hover(&tok.lexeme) {
+                text
             } else {
                 format_identifier_hover(&tok.lexeme)
             };

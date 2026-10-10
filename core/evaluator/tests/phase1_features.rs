@@ -18,6 +18,7 @@ fn phase1_stdin_input() {
         FnContract {
             params: vec![ValueType::Neno],
             ret: ValueType::Tupu,
+            ..Default::default()
         },
     );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
@@ -68,6 +69,7 @@ fn phase1_time_formatting() {
         FnContract {
             params: vec![],
             ret: ValueType::Namba,
+            ..Default::default()
         },
     );
     extern_fns.insert(
@@ -75,6 +77,7 @@ fn phase1_time_formatting() {
         FnContract {
             params: vec![ValueType::Namba],
             ret: ValueType::Neno,
+            ..Default::default()
         },
     );
     extern_fns.insert(
@@ -82,6 +85,7 @@ fn phase1_time_formatting() {
         FnContract {
             params: vec![ValueType::Neno],
             ret: ValueType::Tupu,
+            ..Default::default()
         },
     );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
@@ -107,6 +111,7 @@ fn phase1_runtime_introspectives() {
         FnContract {
             params: vec![],
             ret: ValueType::Neno,
+            ..Default::default()
         },
     );
     extern_fns.insert(
@@ -114,6 +119,7 @@ fn phase1_runtime_introspectives() {
         FnContract {
             params: vec![],
             ret: ValueType::Ukweli,
+            ..Default::default()
         },
     );
     extern_fns.insert(
@@ -121,6 +127,7 @@ fn phase1_runtime_introspectives() {
         FnContract {
             params: vec![],
             ret: ValueType::Ukweli,
+            ..Default::default()
         },
     );
     extern_fns.insert(
@@ -128,6 +135,7 @@ fn phase1_runtime_introspectives() {
         FnContract {
             params: vec![ValueType::Neno],
             ret: ValueType::Tupu,
+            ..Default::default()
         },
     );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
@@ -213,6 +221,7 @@ fn phase1_non_exhaustive_match_warning() {
         FnContract {
             params: vec![ValueType::Neno],
             ret: ValueType::Tupu,
+            ..Default::default()
         },
     );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
@@ -260,6 +269,7 @@ fn phase1_for_in_iteration() {
         FnContract {
             params: vec![],
             ret: ValueType::Orodha(Box::new(ValueType::Namba)),
+            ..Default::default()
         },
     );
     extern_fns.insert(
@@ -267,6 +277,7 @@ fn phase1_for_in_iteration() {
         FnContract {
             params: vec![ValueType::Namba],
             ret: ValueType::Tupu,
+            ..Default::default()
         },
     );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());
@@ -307,6 +318,7 @@ fn phase1_evaluation_depth() {
         FnContract {
             params: vec![ValueType::Neno],
             ret: ValueType::Tupu,
+            ..Default::default()
         },
     );
     let result = semantic_check_with_env(&module, true, extern_fns, HashMap::new());

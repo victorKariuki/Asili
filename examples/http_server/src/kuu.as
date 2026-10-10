@@ -1,11 +1,9 @@
 leta mfumo
 leta matumizi
 
-umbo OmbiHttp { njia: Neno, anwani: Neno, vichwa: Kamusi<Neno, Neno>, mwili: Neno }
-umbo JibuHttp { hali: Namba, vichwa: Kamusi<Neno, Neno>, mwili: Neno }
-
 # kazi_jina for mkondo_tumikia_http: the framing layer owns parsing and response writing,
-# this function only computes the response from the parsed request.
+# this function only computes the response from the parsed request. OmbiHttp and JibuHttp are
+# builtin `umbo`s (mfumo), so they need no declaration here.
 kazi mtumishi(ombi: OmbiHttp) -> JibuHttp {
     linganisha ombi.anwani {
         "/" => { rejesha JibuHttp { hali: 200, vichwa: kamusi(), mwili: "karibu kwenye seva ya Asili" } }

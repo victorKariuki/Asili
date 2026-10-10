@@ -1,33 +1,158 @@
-# Mfumo (system) – interface stub
+# Kiolesura cha moduli ya `mfumo`, kwa Asili.
+# Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;
+# badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs
+#
+# Mfumo: mazingira, programu nyingine, JSON, mtandao (TCP, TLS, HTTP) na ishara.
 
-thabiti TOLEO: Neno
+# Ombi ambalo seva ya `mkondo_tumikia_http` hupitisha kwa kazi yake.
+umbo OmbiHttp {
+    # GET, POST, ...
+    njia: Neno,
+    # Njia na hoja za ombi ("/bidhaa?id=7").
+    anwani: Neno,
+    # Vichwa vya ombi, majina kwa herufi ndogo.
+    vichwa: Kamusi<Neno, Neno>,
+    # Mwili wa ombi.
+    mwili: Neno,
+}
+
+# Jibu la HTTP: kazi ya seva hulirudisha, `http_ombi` hulipokea.
+umbo JibuHttp {
+    # Msimbo wa hali (200, 404, ...).
+    hali: Namba,
+    # Vichwa, majina kwa herufi ndogo; kichwa kinachorudiwa huunganishwa kwa ", ".
+    vichwa: Kamusi<Neno, Neno>,
+    # Mwili (tupu kwa `hifadhi`; base64 kwa `jibu_base64`).
+    mwili: Neno,
+    # Maelezo ya hali ("Not Found").
+    sababu?: Neno,
+    # Anwani ya mwisho, baada ya kuelekezwa.
+    anwani?: Neno,
+    # Toleo la HTTP ("HTTP/1.1").
+    toleo?: Neno,
+    # Kila kichwa kwa mpangilio, marudio yakiwa tofauti (`set-cookie`); seva huvituma vyote.
+    vichwa_vyote?: Orodha<Jozi<Neno, Neno>>,
+    # Sekunde ombi lilizochukua, pamoja na kuelekezwa na kujaribu tena.
+    muda?: Namba,
+}
+
+# Chaguo za `http_ombi`; kila uga ni wa hiari. Mwili ni mmoja tu kati ya `mwili`,
+# `mwili_base64`, `json`, `fomu`, `fomu_sehemu`/`fomu_faili` na `faili`.
+umbo ChaguoHttp {
+    # Vichwa vya ombi ("User-Agent", "Accept", ...).
+    vichwa?: Kamusi<Neno, Neno>,
+    # Huongezwa kwenye anwani kama `?jina=thamani`, zikisimbwa.
+    hoja?: Kamusi<Neno, Neno>,
+    # Mwili wa maandishi (text/plain; charset=utf-8).
+    mwili?: Neno,
+    # Mwili wa baiti, ulioandikwa kwa base64 (application/octet-stream).
+    mwili_base64?: Neno,
+    # Thamani yoyote, hutumwa kama JSON (application/json).
+    json?: Haijulikani,
+    # Fomu ya application/x-www-form-urlencoded.
+    fomu?: Kamusi<Neno, Neno>,
+    # Sehemu za maandishi za fomu ya multipart/form-data.
+    fomu_sehemu?: Kamusi<Neno, Neno>,
+    # Sehemu za faili za fomu ya multipart: jina la sehemu → njia ya faili.
+    fomu_faili?: Kamusi<Neno, Neno>,
+    # Tuma faili hili kama mwili, bila kulisoma lote kwenye kumbukumbu.
+    faili?: Neno,
+    # Content-Type ya mwili, badala ya ile ya kawaida.
+    aina?: Neno,
+    # Uthibitisho wa Basic (pamoja na `nenosiri`).
+    mtumiaji?: Neno,
+    # Nenosiri la uthibitisho wa Basic.
+    nenosiri?: Neno,
+    # Uthibitisho wa Bearer.
+    tokeni?: Neno,
+    # Sekunde za ombi lote (kawaida 60; 0: bila kikomo).
+    muda?: Namba,
+    # Sekunde za kuunganisha tu.
+    muda_kuunganisha?: Namba,
+    # Idadi ya juu ya kuelekezwa kufuatwa (kawaida 10; 0: jibu la 3xx hurudishwa).
+    elekezo?: Namba,
+    # Majaribio zaidi (hadi 10) ya njia zisizobadilisha kitu, muunganisho ukishindwa au hali
+    # ikiwa 429/502/503/504; husubiri `Retry-After`.
+    jaribu_tena?: Namba,
+    # Wakala: "http://mwenyeji:mlango", "socks5://..." (mtumiaji:nenosiri@ yanaruhusiwa); ""
+    # huzima HTTPS_PROXY/HTTP_PROXY.
+    wakala?: Neno,
+    # 4 au 6: tumia IPv4 au IPv6 pekee.
+    familia_ip?: Namba,
+    # Faili la PEM la vyeti vya mamlaka vitakavyoaminiwa pekee (badala ya orodha ya Mozilla).
+    cheti_ca?: Neno,
+    # Cheti cha mteja (PEM) kwa TLS ya pande mbili, pamoja na `ufunguo`.
+    cheti?: Neno,
+    # Ufunguo wa siri (PEM) wa `cheti`.
+    ufunguo?: Neno,
+    # Tumia mkebe mmoja wa vidakuzi wa programu nzima: hupokea `Set-Cookie`, hutuma `Cookie`.
+    vidakuzi?: Ukweli,
+    # Baiti za juu za mwili wa jibu (kawaida 64 MiB).
+    kikomo?: Namba,
+    # Andika mwili kwenye faili hili (kwa vipande; faili haliandikwi ombi likishindwa).
+    hifadhi?: Neno,
+    # Rudisha mwili kama base64 (kwa baiti zisizo maandishi).
+    jibu_base64?: Ukweli,
+    # Hali isiyo 2xx iwe kosa lenye hali na mwanzo wa mwili.
+    kosa_hali?: Ukweli,
+}
+
+# Jina la mfumo wa uendeshaji.
 thabiti JINA_OS: Neno
+# Toleo la Asili.
+thabiti TOLEO: Neno
 
-kazi vigezo() -> Orodha<Neno>
-kazi pata_env(jina: Neno) -> Chaguo<Neno>
-kazi toka(kodi: Namba) -> Tupu
-kazi weka_env(jina: Neno, thamani: Neno) -> Tupu
 # Endesha programu nyingine; matokeo yake (stdout) ikifaulu, au kosa lenye msimbo na stderr.
 kazi endesha(amri: Neno, hoja: Orodha<Neno>) -> Tokeo<Neno, Neno>
-kazi mlinzi_anza(ms: Namba) -> Tokeo<Tupu, Neno>
-kazi mlinzi_lisha() -> Tupu
+
+# Ombi la HTTP(S) la njia yoyote (GET, POST, ...). Jibu zima kwa hali yoyote; kosa ni la
+# muunganisho tu (au la hali isiyo 2xx, `kosa_hali` ikiwa kweli).
+kazi http_ombi(njia: Neno, anwani: Neno, chaguo?: ChaguoHttp) -> Tokeo<JibuHttp, Neno>
+
+# Kikomo cha kumbukumbu ya programu, kwa baiti (0: hakuna); kukipita husimamisha programu.
 kazi kikomo_kumbukumbu(baiti: Namba) -> Tupu
-kazi sikiliza_ishara(ishara: Namba, kazi_jina: Neno) -> Tokeo<Tupu, Neno>
+
+# Thamani kutoka maandishi ya JSON.
+kazi kutoka_json(maandishi: Neno) -> Tokeo<Kamusi<Neno, Haijulikani>, Neno>
+
+# Maandishi ya JSON ya thamani.
+kazi kwa_json(thamani: Haijulikani) -> Tokeo<Neno, Neno>
+
+# Sikiliza miunganisho ya TCP kwenye anwani ("mwenyeji:mlango").
+kazi mkondo_sikiliza(anwani: Neno) -> Tokeo<MkondoSikilizaji, Neno>
+
+# Hudumia kila muunganisho kwa kazi `kazi_jina(Mkondo)` kwenye nyuzi `idadi_ya_nyuzi`.
+kazi mkondo_tumikia(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls?: TlsUsanidi?) -> Tokeo<Tupu, Neno>
+
+# Seva ya HTTP/1.1: kila ombi ni `kazi_jina(OmbiHttp) -> JibuHttp`.
+kazi mkondo_tumikia_http(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls?: TlsUsanidi?) -> Tokeo<Tupu, Neno>
+
+# Unganisha kwa TCP kwenye anwani ("mwenyeji:mlango").
+kazi mkondo_unganisha(anwani: Neno) -> Tokeo<Mkondo, Neno>
+
+# Anza mlinzi: programu isipomlisha ndani ya ms milisekunde, husimamishwa.
+kazi mlinzi_anza(ms: Namba) -> Tokeo<Tupu, Neno>
+
+# Lisha mlinzi aliyeanzishwa na `mlinzi_anza`.
+kazi mlinzi_lisha() -> Tupu
+
+# Thamani ya kigezo cha mazingira, au `Hamna`.
+kazi pata_env(jina: Neno) -> Neno?
+
+# Rudisha ishara ya OS kwenye ushughulikiaji wake wa kawaida.
 kazi rejesha_ishara(ishara: Namba) -> Tokeo<Tupu, Neno>
 
-# JSON
-kazi kwa_json(thamani: T) -> Tokeo<Neno, Neno>
-kazi kutoka_json(maandishi: Neno) -> Tokeo<Kamusi<Neno, T>, Neno>
+# Ita kazi `kazi_jina` ishara ya OS ikifika (Unix).
+kazi sikiliza_ishara(ishara: Namba, kazi_jina: Neno) -> Tokeo<Tupu, Neno>
 
-# HTTP (mteja). Mwili wa jibu la 2xx, au kosa lenye hali na mwanzo wa mwili.
-kazi http_pata(anwani: Neno) -> Tokeo<Neno, Neno>
-kazi http_tuma(anwani: Neno, mwili: Neno, aina: Neno) -> Tokeo<Neno, Neno>
-# Ombi lolote; jibu zima ni JibuHttp { hali, vichwa, mwili }, hata hali isipokuwa 2xx.
-kazi http_ombi(njia: Neno, anwani: Neno, vichwa: Kamusi<Neno, Neno>, mwili: Neno) -> Tokeo<T, Neno>
-
-# Mtandao (TCP) na TLS
-kazi mkondo_unganisha(anwani: Neno) -> Tokeo<Mkondo, Neno>
-kazi mkondo_sikiliza(anwani: Neno) -> Tokeo<MkondoSikilizaji, Neno>
-kazi mkondo_tumikia(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls: TlsUsanidi?) -> Tokeo<Tupu, Neno>
-kazi mkondo_tumikia_http(sikilizaji: MkondoSikilizaji, kazi_jina: Neno, idadi_ya_nyuzi: Namba, tls: TlsUsanidi?) -> Tokeo<Tupu, Neno>
+# Pakia cheti na ufunguo (PEM) kwa seva ya TLS.
 kazi tls_sanidi(cheti_njia: Neno, ufunguo_njia: Neno) -> Tokeo<TlsUsanidi, Neno>
+
+# Maliza programu kwa msimbo wa kutoka.
+kazi toka(kodi: Namba) -> Tupu
+
+# Hoja za mstari wa amri.
+kazi vigezo() -> Orodha<Neno>
+
+# Weka kigezo cha mazingira.
+kazi weka_env(jina: Neno, thamani: Neno) -> Tupu

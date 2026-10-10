@@ -199,23 +199,17 @@ impl<'a> Analyzer<'a> {
         line: usize,
     ) {
         let field_tys: Vec<(String, ValueType)> = self
-            .module
-            .structs
-            .iter()
-            .find(|s| s.name == struct_name)
-            .map(|s| {
-                s.fields
-                    .iter()
-                    .map(|(fname, fty)| {
-                        let ty = fty
-                            .as_ref()
-                            .map(|t| self.type_from_decl(&t.name))
-                            .unwrap_or(ValueType::Unknown);
-                        (fname.clone(), ty)
-                    })
-                    .collect()
+            .struct_shape(struct_name)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|f| {
+                let ty =
+                    f.ty.as_deref()
+                        .map(|t| self.type_from_decl(t))
+                        .unwrap_or(ValueType::Unknown);
+                (f.name, ty)
             })
-            .unwrap_or_default();
+            .collect();
         for (fname, sub_pat) in fields {
             if let Pattern::Ident {
                 name: bind_name, ..
@@ -1430,25 +1424,12 @@ impl<'a> Analyzer<'a> {
                         return self.type_from_decl(&f.return_type.name);
                     }
                     if let Some(sig) = self.extern_fn_map.get(name.as_str()).cloned() {
-                        // TODO: variadic-by-name is a hardcoded special case, not a general
-                        // FnContract flag — matches the existing "orodha" precedent rather than
-                        // introducing new arity-checking machinery for this one addition.
-                        // mkondo_tumikia's 4th parameter (tls: Chaguo<TlsUsanidi>) is optional —
-                        // callers not using TLS omit it entirely, matching this same
-                        // trailing-optional-argument shape, not true variadic argument counts,
-                        // but reusing this escape hatch is simpler than adding a distinct
-                        // "N required + M optional" arity concept for one builtin.
-                        let variadic = name == "orodha"
-                            || name == "seti"
-                            || name == "tenda"
-                            || name == "mkondo_tumikia"
-                            || name == "mkondo_tumikia_http";
                         // Evaluate all arg types upfront for both validation and generic instantiation.
                         let arg_types: Vec<ValueType> = args
                             .iter()
                             .map(|a| self.check_expr(*a, scopes, UseMode::Move))
                             .collect();
-                        if !variadic && sig.params.len() != arg_types.len() {
+                        if !sig.accepts(arg_types.len()) {
                             self.errors.push(
                                 Diagnostic::new(
                                     "SEM046",
@@ -1457,10 +1438,11 @@ impl<'a> Analyzer<'a> {
                                 .with_stage("semantiki")
                                 .with_span(*line, 1),
                             );
-                        } else if !variadic {
-                            for (idx, (got, want)) in
-                                arg_types.iter().zip(sig.params.iter()).enumerate()
-                            {
+                        } else {
+                            for (idx, got) in arg_types.iter().enumerate() {
+                                let Some(want) = sig.param_for_arg(idx) else {
+                                    continue;
+                                };
                                 if !self.compatible(want, got) {
                                     self.errors.push(
                                         Diagnostic::new(
@@ -1726,7 +1708,7 @@ impl<'a> Analyzer<'a> {
                 line,
                 ..
             } => {
-                let Some(st) = self.module.structs.iter().find(|s| s.name == *struct_name) else {
+                let Some(shape) = self.struct_shape(struct_name) else {
                     self.errors.push(
                         Diagnostic::new("SEM093", format!("umbo haijulikani: {}", struct_name))
                             .with_stage("semantiki")
@@ -1736,7 +1718,8 @@ impl<'a> Analyzer<'a> {
                 };
                 let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
                 for (fname, fexpr) in fields {
-                    if !st.fields.iter().any(|(n, _)| n == fname) {
+                    let decl = shape.iter().find(|f| f.name == *fname);
+                    if decl.is_none() {
                         self.errors.push(
                             Diagnostic::new(
                                 "SEM094",
@@ -1756,8 +1739,8 @@ impl<'a> Analyzer<'a> {
                         );
                     }
                     let ft = self.check_expr(*fexpr, scopes, UseMode::Move);
-                    if let Some((_, Some(ref fty))) = st.fields.iter().find(|(n, _)| n == fname) {
-                        let want = self.type_from_decl(&fty.name);
+                    if let Some(fty) = decl.and_then(|d| d.ty.as_deref()) {
+                        let want = self.type_from_decl(fty);
                         if !self.compatible(&want, &ft) {
                             self.errors.push(
                                 Diagnostic::new(
@@ -1773,12 +1756,12 @@ impl<'a> Analyzer<'a> {
                         }
                     }
                 }
-                for (fname, _) in &st.fields {
-                    if !fields.iter().any(|(n, _)| n == fname) {
+                for f in shape.iter().filter(|f| !f.optional) {
+                    if !fields.iter().any(|(n, _)| *n == f.name) {
                         self.errors.push(
                             Diagnostic::new(
                                 "SEM097",
-                                format!("umbo '{}' linahitaji uga '{}'", struct_name, fname),
+                                format!("umbo '{}' linahitaji uga '{}'", struct_name, f.name),
                             )
                             .with_stage("semantiki")
                             .with_span(*line, 1),
@@ -1789,7 +1772,7 @@ impl<'a> Analyzer<'a> {
             }
             Expr::EnumConstruct {
                 enum_name,
-                variant_name: _,
+                variant_name,
                 data,
                 line,
                 ..
@@ -1803,8 +1786,13 @@ impl<'a> Analyzer<'a> {
                     );
                     return ValueType::Unknown;
                 }
-                if let Some(d) = data {
-                    let _ = self.check_expr(*d, scopes, UseMode::Move);
+                let inner = match data {
+                    Some(d) => self.check_expr(*d, scopes, UseMode::Move),
+                    None => ValueType::Unknown,
+                };
+                // `Chaguo::Kuna(x)` is the `Chaguo<T>` builtins take (`tls?: TlsUsanidi?`).
+                if enum_name.as_str() == "Chaguo" && variant_name.as_str() == "Kuna" {
+                    return ValueType::Chaguo(Box::new(inner));
                 }
                 ValueType::Struct(enum_name.to_string())
             }
@@ -1818,10 +1806,11 @@ impl<'a> Analyzer<'a> {
                 let rec_ty = self.check_expr(*receiver, scopes, UseMode::BorrowImm);
                 match &rec_ty {
                     ValueType::Struct(name) => {
-                        let Some(st) = self.module.structs.iter().find(|s| s.name == *name) else {
+                        let Some(shape) = self.struct_shape(name) else {
                             return ValueType::Unknown;
                         };
-                        if !st.fields.iter().any(|(n, _)| n == field) {
+                        let decl = shape.iter().find(|f| f.name == *field);
+                        if decl.is_none() {
                             self.errors.push(
                                 Diagnostic::new(
                                     "SEM098",
@@ -1831,10 +1820,8 @@ impl<'a> Analyzer<'a> {
                                 .with_span(*line, 1),
                             );
                             ValueType::Unknown
-                        } else if let Some((_, Some(ref fty))) =
-                            st.fields.iter().find(|(n, _)| n == field)
-                        {
-                            self.type_from_decl(&fty.name)
+                        } else if let Some(fty) = decl.and_then(|d| d.ty.as_deref()) {
+                            self.type_from_decl(fty)
                         } else {
                             ValueType::Unknown
                         }
@@ -2188,8 +2175,43 @@ impl<'a> Analyzer<'a> {
             (self.module.structs.iter().any(|st| st.name == name)
                 || self.module.enums.iter().any(|e| e.name == name))
             .then(|| ValueType::Struct(name.to_string()))
+            .or_else(|| crate::builtins::resolve_builtin_type(name))
         })
     }
+
+    /// The fields of `umbo` `name`: the module's own declaration, else a builtin one.
+    fn struct_shape(&self, name: &str) -> Option<Vec<ShapeField>> {
+        if let Some(st) = self.module.structs.iter().find(|s| s.name == name) {
+            return Some(
+                st.fields
+                    .iter()
+                    .map(|(n, t)| ShapeField {
+                        name: n.clone(),
+                        ty: t.as_ref().map(|t| t.name.clone()),
+                        optional: false,
+                    })
+                    .collect(),
+            );
+        }
+        let st = crate::builtins::builtin_struct(name)?;
+        Some(
+            st.fields
+                .iter()
+                .map(|f| ShapeField {
+                    name: f.name.clone(),
+                    ty: Some(f.ty.clone()),
+                    optional: f.optional,
+                })
+                .collect(),
+        )
+    }
+}
+
+/// One field of a `umbo` as the analyzer checks it.
+struct ShapeField {
+    name: String,
+    ty: Option<String>,
+    optional: bool,
 }
 
 pub(crate) fn run_semantic_check(

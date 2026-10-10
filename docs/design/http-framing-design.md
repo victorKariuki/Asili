@@ -61,15 +61,15 @@ only that the expected fields (`njia`/`anwani`/`vichwa`/`mwili` on the way in; `
 leniency (see `json-codec-design.md`) rather than inventing a stricter contract for this one
 feature.
 
-**A real consequence of this choice**: because `Value::Struct` carries no compile-time-checked
-shape in this interpreter's `FnContract` model, an Asili program using `mkondo_tumikia_http` still
-needs its own `umbo OmbiHttp { ... }` / `umbo JibuHttp { ... }` declaration — purely so the
-semantic analyzer accepts `kazi mtumishi(ombi: OmbiHttp) -> JibuHttp` as a parameter/return type
-and type-checks field access (`ombi.njia`) against it (`SEM098`/`SEM099` otherwise). The runtime
-values `http.rs` constructs and consumes never actually go through `umbo`-based construction
-machinery — the declaration exists only to satisfy the type-checker. Both
-`core/evaluator/tests/mkondo_http.rs` and `examples/http_server/src/kuu.as` include the matching
-`umbo` declarations for exactly this reason.
+**A real consequence of this choice**: `Value::Struct` carries no compile-time shape of its own,
+so the analyzer learns the fields from a `umbo` declaration. `OmbiHttp` and `JibuHttp` are
+builtin `umbo`s (`core/parser/src/builtins.rs`, `mfumo`), so a program types
+`kazi mtumishi(ombi: OmbiHttp) -> JibuHttp` and reads `ombi.njia` without declaring them; a
+program's own declaration of the same name takes the builtin's place (older programs keep
+working). `JibuHttp`'s extra fields (`sababu`, `anwani`, `toleo`, `vichwa_vyote`, `muda`) are
+optional — a handler leaves them out, and `vichwa_vyote` lets it send a header twice
+(`Set-Cookie`). The client, `http_ombi`, returns the same `JibuHttp`, so a fetched response can be
+handed straight back from a handler.
 
 ## Request parsing: `httparse` over a bounded-read accumulation loop
 

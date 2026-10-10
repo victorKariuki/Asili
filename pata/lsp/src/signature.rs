@@ -13,6 +13,8 @@ pub struct SignatureInfo {
     /// active one within `label` without re-deriving offsets).
     pub params: Vec<String>,
     pub active_param: usize,
+    /// What the function does, when known (builtins carry a description).
+    pub doc: Option<String>,
 }
 
 /// Find the call the cursor is currently inside: `(callee_name, active_param_index)`, or None
@@ -111,27 +113,24 @@ pub fn compute_signature_help(
         }
     }
 
-    // 3. A builtin — only types are known here (`FnContract` carries no parameter names), so
-    // this is necessarily a lesser signature than 1/2 above: `(Neno) -> Tupu` rather than
-    // `(ujumbe: Neno) -> Tupu`. Naming builtin parameters would mean hand-authoring a name map
-    // or extending `FnContract` itself — a real follow-up, not done here.
+    // 3. A builtin: names, optional/variadic parameters and a description from its contract.
     let (extern_fns, _) = extern_env_from_imports(&module);
     if let Some(contract) = extern_fns.get(&name) {
-        let params: Vec<String> = contract
-            .params
-            .iter()
-            .map(crate::types::format_type)
-            .collect();
-        let label = format!(
-            "kazi {}({}) -> {}",
-            name,
-            params.join(", "),
-            crate::types::format_type(&contract.ret)
-        );
+        let params = crate::builtin_docs::param_labels(&name, contract);
+        // Every argument past the last parameter of a `...hoja` tail is that parameter.
+        let active_param = if contract.variadic {
+            active_param.min(params.len().saturating_sub(1))
+        } else {
+            active_param
+        };
         return Some(SignatureInfo {
-            label,
+            label: format!(
+                "kazi {}",
+                asili_parser::builtins::format_signature(&name, contract)
+            ),
             params,
             active_param,
+            doc: (!contract.doc.is_empty()).then(|| contract.doc.clone()),
         });
     }
 
@@ -147,6 +146,7 @@ fn signature_from_params<'a>(
     let params: Vec<String> = params.map(|(n, t)| format!("{n}: {t}")).collect();
     let label = format!("kazi {}({}) -> {}", name, params.join(", "), return_type);
     SignatureInfo {
+        doc: None,
         label,
         params,
         active_param,

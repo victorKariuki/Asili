@@ -3,10 +3,10 @@
 use crate::semantic::type_expr_to_value_type;
 use crate::types::format_type;
 use asili_lexer::{tokenize, KEYWORDS};
-use asili_parser::{parse_tokens, Module};
+use asili_parser::{parse_tokens, FnContract, Module};
 use tower_lsp::lsp_types::{
-    CodeLens, Command, CompletionItem, CompletionItemKind, DocumentSymbol, FoldingRange,
-    FoldingRangeKind, Location, Position, Range, SymbolInformation, SymbolKind, Url,
+    CodeLens, Command, CompletionItem, CompletionItemKind, DocumentSymbol, Documentation,
+    FoldingRange, FoldingRangeKind, Location, Position, Range, SymbolInformation, SymbolKind, Url,
 };
 
 // ── Keywords always offered in completion ──────────────────────────────────────
@@ -69,29 +69,33 @@ pub fn completion_items(source: &str) -> Vec<CompletionItem> {
         });
     }
 
-    // Built-in functions — from the same export tables the semantic analyzer checks calls
-    // against, so completion offers exactly what compiles.
-    let mut builtins: Vec<(String, String)> = asili_parser::builtins::BUILTIN_MODULE_NAMES
+    // Built-in functions and `umbo`s — from the same table the semantic analyzer checks calls
+    // against, so completion offers exactly what compiles, with each one's description.
+    let mut builtins: Vec<(String, FnContract)> = asili_parser::builtins::BUILTIN_MODULE_NAMES
         .iter()
         .filter_map(|m| asili_parser::builtins::builtin_module_exports(m))
         .flat_map(|table| table.functions)
-        .map(|(name, c)| {
-            let params: Vec<String> = c.params.iter().map(format_type).collect();
-            let detail = format!(
-                "kazi {name}({}) -> {}",
-                params.join(", "),
-                format_type(&c.ret)
-            );
-            (name, detail)
-        })
         .collect();
-    builtins.sort();
+    builtins.sort_by(|a, b| a.0.cmp(&b.0));
     builtins.dedup_by(|a, b| a.0 == b.0);
-    for (name, detail) in builtins {
+    for (name, c) in builtins {
         items.push(CompletionItem {
+            detail: Some(format!(
+                "kazi {}",
+                asili_parser::builtins::format_signature(&name, &c)
+            )),
+            documentation: (!c.doc.is_empty()).then(|| Documentation::String(c.doc.clone())),
             label: name,
             kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some(detail),
+            ..Default::default()
+        });
+    }
+    for st in asili_parser::builtins::builtin_structs() {
+        items.push(CompletionItem {
+            label: st.name.clone(),
+            kind: Some(CompletionItemKind::STRUCT),
+            detail: Some(format!("umbo {} (moduli ya {})", st.name, st.module)),
+            documentation: Some(Documentation::String(st.doc.to_string())),
             ..Default::default()
         });
     }

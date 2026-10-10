@@ -5,8 +5,11 @@ All notable changes to the Asili specification are recorded here.
 ## Unreleased
 
 - Standard library ([05-standard-library.md](05-standard-library.md)): HTTP client
-  (`http_pata`, `http_tuma`, `http_ombi`), new `ruwaza` (regular expressions) and `usimbaji`
-  (encodings, hashes, UUIDs) modules.
+  (`http_ombi` with `ChaguoHttp` options and a `JibuHttp` response; builtin `umbo`s whose `?`
+  fields may be left out of a literal), new `ruwaza` (regular expressions) and `usimbaji`
+  (encodings, hashes, UUIDs) modules; `kwa_json` writes whole numbers without a fraction.
+- Architecture ([02-architecture-and-files.md](02-architecture-and-files.md)): `lib/std/*.asi`
+  is generated from the builtin table.
 - Syntax ([03-syntax.md](03-syntax.md)): `jaribu` in a function that cannot return the error
   stops the program; elsewhere it propagates, as already specified.
 

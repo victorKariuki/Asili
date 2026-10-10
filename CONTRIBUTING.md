@@ -53,7 +53,7 @@ To build it locally:
   `src/extension.ts` is the entry point; bundled with `esbuild` (see `esbuild.js`) rather than
   shipping `node_modules` in the packaged `.vsix`. `make install-ext` from the repo root builds,
   packages, and installs it in one step.
-- **lib/std/** — `.asi` interface stubs for the standard library; keep these in sync with built-in modules and `builtin_modules.rs`.
+- **lib/std/** — `.asi` interface stubs for the standard library, generated from `core/parser/src/builtins.rs` (`BUILTIN_MODULES`). Never edit them by hand: change the table, then run `ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs` (`cargo test -p pata-core` fails while they differ).
 - **driver/** — targets beside the native runner: `wasm` (the browser playground build) and
   `kifaa` (`asili-kifaa`, the `no_std` runtime Cortex-M firmware links with strict code built by
   `pata jenga --lengo cortex-m`).

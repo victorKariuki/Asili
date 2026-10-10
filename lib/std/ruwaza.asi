@@ -1,13 +1,27 @@
-# Ruwaza (regular expressions) – interface stub
+# Kiolesura cha moduli ya `ruwaza`, kwa Asili.
+# Imetengenezwa kutoka core/parser/src/builtins.rs (BUILTIN_MODULES) — usihariri faili hili;
+# badilisha jedwali, kisha: ASILI_GOLDEN=write cargo test -p pata-core stdlib_stubs
 #
-# Sintaksia ni ya Perl (Unicode, bila look-around wala backreferences); muda wa kulinganisha
-# unakua kwa mstari na urefu wa maandishi. Kila kazi hurudisha kosa ruwaza isipokuwa sahihi.
+# Ruwaza: sintaksia ya Perl (Unicode, bila look-around wala backreferences); muda wa
+# kulinganisha unakua kwa mstari na urefu wa maandishi. Kila kazi hurudisha kosa ruwaza
+# isipokuwa sahihi.
 
-kazi ruwaza_inalingana(ruwaza: Neno, maandishi: Neno) -> Tokeo<Ukweli, Neno>
-kazi ruwaza_tafuta(ruwaza: Neno, maandishi: Neno) -> Tokeo<Chaguo<Neno>, Neno>
-kazi ruwaza_zote(ruwaza: Neno, maandishi: Neno) -> Tokeo<Orodha<Neno>, Neno>
-# Kikundi 0 ni ulinganisho mzima; kikundi kisichoshiriki ni maandishi tupu.
-kazi ruwaza_vikundi(ruwaza: Neno, maandishi: Neno) -> Tokeo<Chaguo<Orodha<Neno>>, Neno>
-# `$1` au `${jina}` ndani ya `kwa` ni kikundi; `$$` ni alama ya dola.
+# Badilisha kila ulinganisho; `$1` au `${jina}` ndani ya `kwa` ni kikundi, `$$` ni alama ya
+# dola.
 kazi ruwaza_badilisha(ruwaza: Neno, maandishi: Neno, kwa: Neno) -> Tokeo<Neno, Neno>
+
+# Gawanya maandishi kwenye kila ulinganisho.
 kazi ruwaza_gawanya(ruwaza: Neno, maandishi: Neno) -> Tokeo<Orodha<Neno>, Neno>
+
+# Kweli ruwaza ikilingana mahali popote.
+kazi ruwaza_inalingana(ruwaza: Neno, maandishi: Neno) -> Tokeo<Ukweli, Neno>
+
+# Ulinganisho wa kwanza.
+kazi ruwaza_tafuta(ruwaza: Neno, maandishi: Neno) -> Tokeo<Neno?, Neno>
+
+# Vikundi vya ulinganisho wa kwanza; kikundi 0 ni ulinganisho mzima, kisichoshiriki ni maandishi
+# tupu.
+kazi ruwaza_vikundi(ruwaza: Neno, maandishi: Neno) -> Tokeo<Orodha<Neno>?, Neno>
+
+# Kila ulinganisho, kwa mpangilio.
+kazi ruwaza_zote(ruwaza: Neno, maandishi: Neno) -> Tokeo<Orodha<Neno>, Neno>

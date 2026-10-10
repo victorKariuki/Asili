@@ -156,33 +156,46 @@ hufasiri HTTP/1.1 halisi — `kazi_jina(ombi: OmbiHttp) -> JibuHttp` badala ya
 [http-server-design.md](../design/http-server-design.md),
 [tls-design.md](../design/tls-design.md), [http-framing-design.md](../design/http-framing-design.md).
 
-**HTTP (mteja)**:
+**HTTP (mteja)**: one function, `http_ombi(njia, anwani, chaguo?)`.
 
 ```asili
 leta mfumo
 
-umbo JibuHttp { hali: Namba, vichwa: Kamusi<Neno, Neno>, mwili: Neno }
-
-weka ukurasa = jaribu http_pata("https://example.com/")      # the body of a 2xx response
-weka jibu = jaribu http_tuma("https://api.example.com/v1", "{\"a\": 1}", "application/json")
-
-weka vichwa = kamusi_tupu()
-vichwa.ingiza("Authorization", "Bearer ...")
-weka j: JibuHttp = jaribu http_ombi("DELETE", "https://api.example.com/v1/7", vichwa, "")
-chapisha(j.hali kama Neno)                     # any status, 404 included
+# GET: the whole response, whatever its status.
+weka j = jaribu http_ombi("GET", "https://example.com/")
+chapisha(j.hali kama Neno)                       # 200, or 404, ...
 chapisha(j.vichwa.pata("content-type").angu(""))  # header names in lowercase
+chapisha(j.mwili)
+
+# POST JSON with a token, retrying a busy server, and a non-2xx status as an error.
+weka data = kamusi_tupu()
+data.ingiza("jina", "Amara")
+weka jibu = jaribu http_ombi("POST", "https://api.example.com/v1/watu", ChaguoHttp {
+    json: data,
+    tokeni: "...",
+    jaribu_tena: 3,
+    kosa_hali: kweli,
+})
+
+# Upload a file as a form, download a large file to disk.
+http_ombi("POST", "https://example.com/pakia", ChaguoHttp {
+    fomu_sehemu: {"maelezo": "ripoti"},
+    fomu_faili: {"hati": "ripoti.pdf"},
+})?
+http_ombi("GET", "https://example.com/data.zip", ChaguoHttp { hifadhi: "data.zip", kikomo: 1000000000 })?
 ```
 
-`http_pata(anwani)` (GET) and `http_tuma(anwani, mwili, aina)` (POST, `aina` is the
-`Content-Type`) return `Tokeo<Neno, Neno>`: the body when the status is 2xx, else a `Kosa` with
-the URL, the status and the start of the body. `http_ombi(njia, anwani, vichwa, mwili)` sends
-any method with the given headers (an empty `mwili` sends no body on `GET`/`HEAD`) and returns
-the whole response, whatever its status, as a `JibuHttp { hali, vichwa, mwili }` — the struct the
-HTTP server uses; declare it as above to read its fields. A connection or TLS failure is a
-`Kosa`. HTTPS uses rustls with the Mozilla root certificates; `HTTPS_PROXY`/`HTTP_PROXY`/
-`NO_PROXY` are honoured; gzip responses are decoded; connections to a host are reused across
-requests; a request times out after 60 seconds and a body is read up to 256 MB. Not available in
-the browser playground.
+`ChaguoHttp`, `JibuHttp` and `OmbiHttp` are builtin `umbo`s — no declaration needed — and every
+`ChaguoHttp` field is optional: headers (`vichwa`), query (`hoja`), one body (`mwili`,
+`mwili_base64`, `json`, `fomu`, `fomu_sehemu`/`fomu_faili`, `faili`) and its type (`aina`), Basic
+(`mtumiaji`/`nenosiri`) or Bearer (`tokeni`) authentication, timeouts (`muda`,
+`muda_kuunganisha`), redirects (`elekezo`), retries (`jaribu_tena`), proxy (`wakala`), IPv4/IPv6
+(`familia_ip`), trusted roots (`cheti_ca`), client certificates (`cheti`/`ufunguo`), cookies
+(`vidakuzi`), body limit (`kikomo`), saving to a file (`hifadhi`), base64 bodies
+(`jibu_base64`) and status errors (`kosa_hali`). The full table, the `JibuHttp` fields and the
+security rules (no HTTPS→HTTP redirect, credentials dropped across origins, certificates always
+checked) are in [05-standard-library.md](../spec/05-standard-library.md#http-client). Not
+available in the browser playground.
 
 **JSON**:
 
